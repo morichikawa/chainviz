@@ -59,6 +59,11 @@ Docker 環境そのものを組み立てる役割です。
 - 完了条件は「`docker compose up` でチェーンが起動しブロックが進み続ける」
   「ワークベンチから `cast` で RPC 疎通確認できる」こと。作業後は必ず
   実際に起動確認する
+- TypeScript パッケージ（`packages/*`）向けの「ロジックにはユニットテストを
+  書く」というルールは、この担当（Docker/compose/genesis が中心）には
+  適用されない。代わりに実際に `docker compose up` して動作確認することが
+  この担当にとってのテストに相当する。`chainviz-tester` もこの担当の
+  成果物は対象外（TypeScript を伴わないため）
 - 完了したら `docs/PLAN.md` の該当チェックボックスを更新し、対応する
   GitHub Issue（`gh issue close <番号> -R morichikawa/chainviz`）を閉じる。
   チェックボックスの行に付いている Issue 番号のリンクを参照すること
