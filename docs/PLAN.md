@@ -73,9 +73,9 @@ GitHub: [milestone](https://github.com/morichikawa/chainviz/milestone/1)
 **検証(chainviz-qa 担当)**: node-env の自己確認ではなく、qa が実際に
 動かして検証した結果でクローズする。
 
-- [ ] `docker compose up` でチェーンが起動しブロックが進み続けることを確認
+- [x] `docker compose up` でチェーンが起動しブロックが進み続けることを確認
       [#4](https://github.com/morichikawa/chainviz/issues/4)
-- [ ] ワークベンチから `cast` で RPC 疎通確認
+- [x] ワークベンチから `cast` で RPC 疎通確認
       [#5](https://github.com/morichikawa/chainviz/issues/5)
 
 （ロギングプロキシはこの時点では置かない。Phase 3 で追加）
