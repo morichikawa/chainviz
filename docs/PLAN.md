@@ -122,9 +122,42 @@ GitHub: [milestone](https://github.com/morichikawa/chainviz/milestone/2)
 **成果物**: 動く Phase 1 デモ
 **完了条件**: CONCEPT.md「ロードマップ」Phase 1 の記述どおりに動作する
 
-## ステップ 4 以降（概要のみ。詳細は着手時にこのドキュメントへ追記）
+## ステップ 4: Phase 2 実装 — B層（P2P グラフ）
 
-- [ ] Phase 2（B層: P2P グラフ + ブロック伝播の波）
+GitHub: [milestone](https://github.com/morichikawa/chainviz/milestone/3)
+
+reth(EL)同士のP2Pは`profiles/ethereum`ではまだ繋いでいない（Phase 3で追加予定）
+ため、この段階のピア接続検出はlighthouse(CL)側のBeacon APIを対象にする。
+ブロック伝播の波アニメーションはCL側のP2Pゴシップだけで各reth(EL)ノードへの
+Engine API経由の到達タイミングに差が出るため、EL間P2Pが無くても実現できる。
+
+**collector**:
+
+- [ ] lighthouse Beacon APIをポーリングしピア接続をPeerEdgeへ正規化する
+      [#19](https://github.com/morichikawa/chainviz/issues/19)
+- [ ] rethのeth_subscribe(newHeads)を購読し各ノードの受信時刻を記録する
+      [#20](https://github.com/morichikawa/chainviz/issues/20)
+- [ ] PeerEdgeとブロック伝播タイミングをworld-state store経由でフロントへ配信する
+      [#21](https://github.com/morichikawa/chainviz/issues/21)
+
+**frontend**:
+
+- [ ] フロントのworld-state storeがPeerEdgeを受信・保持できるようにする
+      [#22](https://github.com/morichikawa/chainviz/issues/22)
+- [ ] React FlowでノードカードのあいだにP2Pエッジ(紐)を描画する
+      [#23](https://github.com/morichikawa/chainviz/issues/23)
+- [ ] ネットワークID単位のグルーピング表示
+      [#24](https://github.com/morichikawa/chainviz/issues/24)
+- [ ] ブロック伝播パルスアニメーションの実装
+      [#25](https://github.com/morichikawa/chainviz/issues/25)
+
+**成果物**: 動く Phase 2 デモ
+**完了条件**: CONCEPT.md「ロードマップ」Phase 2 の記述どおりに動作する
+（ノード同士がP2Pエッジで繋がり、ネットワーク単位でグルーピングされ、
+ブロックが伝播するタイミングで実データに基づくパルスがエッジ上を伝わる）
+
+## ステップ 5 以降（概要のみ。詳細は着手時にこのドキュメントへ追記）
+
 - [ ] Phase 3（C層: tx ライフサイクル、ワークベンチ操作の可視化、ウォレット）
 - [ ] キャンバスからのノード/ワークベンチ追加・削除（Phase 2〜3 の間に挟む。
       Collector の操作系 API はステップ 0-3 で設計だけ先に済ませておく）
