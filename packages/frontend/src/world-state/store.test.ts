@@ -347,15 +347,16 @@ describe("applyDiff", () => {
       ],
     };
     const next = applyDiff(state, [
-      { type: "edgeRemoved", fromNodeId: "n2", toNodeId: "n1" },
+      { type: "edgeRemoved", fromNodeId: "n2", toNodeId: "n1", networkId: "1" },
     ]);
     expect(next.edges).toHaveLength(1);
     expect(next.edges).toBe(state.edges);
   });
 
-  it("edgeRemoved drops every same-pair edge regardless of networkId", () => {
-    // edgeRemoved は networkId を持たない（events.DiffEvent 参照）ため、
-    // 同一ペアの複数ネットワークのエッジがあると1つの edgeRemoved で全て消える。
+  it("edgeRemoved removes only the edge on the matching network", () => {
+    // エッジの同一性キーは from/to/networkId の3つ組（ARCHITECTURE.md §2）。
+    // 同一ノードペアが複数ネットワークでピア接続していても、指定した
+    // networkId のエッジだけが消える。
     const state = {
       entities: {},
       edges: [
@@ -364,17 +365,31 @@ describe("applyDiff", () => {
       ],
     };
     const next = applyDiff(state, [
-      { type: "edgeRemoved", fromNodeId: "n1", toNodeId: "n2" },
+      { type: "edgeRemoved", fromNodeId: "n1", toNodeId: "n2", networkId: "1" },
     ]);
-    expect(next.edges).toHaveLength(0);
+    expect(next.edges).toEqual([
+      { kind: "peer", fromNodeId: "n1", toNodeId: "n2", networkId: "2" },
+    ]);
   });
 
-  it("edgeAdded dedupes by node pair, ignoring networkId", () => {
-    // 現状の挙動: edgeAdded の重複判定は from/to のみで networkId を見ない。
-    // そのため同一ペアで networkId 違いの2本目は追加されない（edgeRemoved が
-    // networkId を持たない差分プロトコルと整合する）。描画側
-    // peerEdgesToFlowEdges は networkId 違いを別の紐として扱うため、
-    // この非対称性は既知の制約として記録する。
+  it("keeps the same edges reference when edgeRemoved names a different networkId", () => {
+    // ペアは一致しても networkId が違えば別エッジなので何も消えない。
+    const state = {
+      entities: {},
+      edges: [
+        { kind: "peer" as const, fromNodeId: "n1", toNodeId: "n2", networkId: "1" },
+      ],
+    };
+    const next = applyDiff(state, [
+      { type: "edgeRemoved", fromNodeId: "n1", toNodeId: "n2", networkId: "9" },
+    ]);
+    expect(next.edges).toBe(state.edges);
+  });
+
+  it("edgeAdded keeps same-pair edges on different networks as distinct edges", () => {
+    // 重複判定も from/to/networkId の3つ組で行うため、networkId 違いの
+    // 同一ペアは両方保持される。描画側 peerEdgesToFlowEdges が networkId
+    // 違いを別の紐として2本描く設計と整合する。
     const state = { entities: {}, edges: [] };
     const next = applyDiff(state, [
       {
@@ -386,8 +401,8 @@ describe("applyDiff", () => {
         edge: { kind: "peer", fromNodeId: "n1", toNodeId: "n2", networkId: "2" },
       },
     ]);
-    expect(next.edges).toHaveLength(1);
-    expect(next.edges[0].networkId).toBe("1");
+    expect(next.edges).toHaveLength(2);
+    expect(next.edges.map((e) => e.networkId).sort()).toEqual(["1", "2"]);
   });
 
   it("applies edge and entity events together in one batch", () => {
@@ -411,7 +426,7 @@ describe("applyDiff", () => {
       },
     ]);
     const removed = applyDiff(added, [
-      { type: "edgeRemoved", fromNodeId: "n1", toNodeId: "n2" },
+      { type: "edgeRemoved", fromNodeId: "n1", toNodeId: "n2", networkId: "1" },
     ]);
     expect(removed.edges).toHaveLength(0);
   });
@@ -465,7 +480,7 @@ describe("listEdges", () => {
       },
     ]);
     const removed = applyDiff(added, [
-      { type: "edgeRemoved", fromNodeId: "n1", toNodeId: "n2" },
+      { type: "edgeRemoved", fromNodeId: "n1", toNodeId: "n2", networkId: "1" },
     ]);
     expect(listEdges(removed)).toEqual([]);
   });
