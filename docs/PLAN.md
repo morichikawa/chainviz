@@ -59,10 +59,11 @@ sync-docs スキルで確認する。
 
 GitHub: [milestone](https://github.com/morichikawa/chainviz/milestone/1)
 
-- [ ] genesis 共有のプライベート PoS ネット一式（reth + lighthouse、
-      2〜3 ノード、slot time 短縮、バリデーター最小構成）
+- [ ] genesis 設定ファイル（genesis.json 等）の作成。バリデーター最小構成・
+      slot time 短縮を反映（reth + lighthouse 向け）
       [#1](https://github.com/morichikawa/chainviz/issues/1)
-- [ ] compose ファイルの作成 [#2](https://github.com/morichikawa/chainviz/issues/2)
+- [ ] その genesis を使って reth + lighthouse を2〜3ノード起動する
+      compose ファイルの作成 [#2](https://github.com/morichikawa/chainviz/issues/2)
 - [ ] ワークベンチコンテナ（Foundry）×1 を同ネットワークに接続
       [#3](https://github.com/morichikawa/chainviz/issues/3)
 - [ ] `docker compose up` でチェーンが起動しブロックが進み続けることを確認
