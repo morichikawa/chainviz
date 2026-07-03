@@ -1,4 +1,9 @@
 packages:
   - "packages/*"
 allowBuilds:
+  # dockerode の SSH トランスポート用ネイティブ依存。ローカルソケット
+  # 経由でしか Docker に接続しないためビルド不要。
+  cpu-features: false
   esbuild: true
+  protobufjs: false
+  ssh2: false
