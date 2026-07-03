@@ -256,7 +256,7 @@ describe("applyDiff", () => {
     expect(added.edges).toHaveLength(1);
 
     const removed = applyDiff(added, [
-      { type: "edgeRemoved", fromNodeId: "n1", toNodeId: "n2" },
+      { type: "edgeRemoved", fromNodeId: "n1", toNodeId: "n2", networkId: "1" },
     ]);
     expect(removed.edges).toHaveLength(0);
   });
@@ -270,7 +270,7 @@ describe("applyDiff", () => {
       ],
     };
     const next = applyDiff(state, [
-      { type: "edgeRemoved", fromNodeId: "n1", toNodeId: "n2" },
+      { type: "edgeRemoved", fromNodeId: "n1", toNodeId: "n2", networkId: "1" },
     ]);
     expect(next.edges).toEqual([
       { kind: "peer", fromNodeId: "n2", toNodeId: "n3", networkId: "1" },
@@ -313,7 +313,7 @@ describe("applyDiff", () => {
       ],
     };
     const next = applyDiff(state, [
-      { type: "edgeRemoved", fromNodeId: "x", toNodeId: "y" },
+      { type: "edgeRemoved", fromNodeId: "x", toNodeId: "y", networkId: "1" },
     ]);
     expect(next.edges).toBe(state.edges);
   });

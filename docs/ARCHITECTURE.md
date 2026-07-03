@@ -155,7 +155,12 @@ type DiffEvent =
   | { type: "entityUpdated"; id: string; patch: Partial<WorldStateEntity> }
   | { type: "entityRemoved"; id: string }
   | { type: "edgeAdded"; edge: PeerEdge }
-  | { type: "edgeRemoved"; fromNodeId: string; toNodeId: string };
+  | {
+      type: "edgeRemoved";
+      fromNodeId: string;
+      toNodeId: string;
+      networkId: string; // エッジの同一性キーは from/to/networkId の 3 つ組
+    };
 ```
 
 エンティティ削除時の扱いは CONCEPT.md の決定に従う: `NodeEntity` /
