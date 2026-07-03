@@ -1,0 +1,69 @@
+# B層（P2P ネットワーク）の用語データ。
+# スキーマは docs/ARCHITECTURE.md §5 を参照。
+# 1エントリ = 用語キー -> { name, definition, layer, relatedTerms }
+# name / definition は {ja, en} 形式の多言語テキスト。
+
+p2p:
+  name:
+    ja: P2P ネットワーク
+    en: P2P network
+  definition:
+    ja: >-
+      ノード同士が中央のサーバーを介さず直接つながり合って構成する
+      ネットワーク。ブロックやトランザクションはこの網の目を伝わって
+      チェーン全体へ広がる。chainviz ではノードカードの間の紐として描く。
+    en: >-
+      A network in which nodes connect directly to one another without a central
+      server. Blocks and transactions spread across the whole chain through this
+      mesh. chainviz draws it as cords between node cards.
+  layer: b-network
+  relatedTerms: [peer, discovery, gossip]
+
+peer:
+  name:
+    ja: ピア
+    en: Peer
+  definition:
+    ja: >-
+      あるノードが P2P で直接接続している相手ノードのこと。各ノードは
+      複数のピアを保ち、受け取ったブロックやトランザクションをピアへ
+      転送し合うことでチェーンの状態を共有する。
+    en: >-
+      A counterpart node that a given node is directly connected to over P2P.
+      Each node keeps several peers and relays the blocks and transactions it
+      receives to them, sharing the chain's state.
+  layer: b-network
+  relatedTerms: [p2p, discovery, gossip]
+
+discovery:
+  name:
+    ja: ノード発見
+    en: Node discovery
+  definition:
+    ja: >-
+      新しく参加したノードが接続先のピアを見つける仕組み。Ethereum では
+      discv5 という分散型の探索プロトコルを使い、既知のノードから
+      少しずつ他のノードの情報を集めて接続を広げていく。
+    en: >-
+      The mechanism by which a newly joined node finds peers to connect to.
+      Ethereum uses discv5, a distributed discovery protocol, gathering
+      information about other nodes from known ones to grow its connections.
+  layer: b-network
+  relatedTerms: [peer, p2p]
+
+gossip:
+  name:
+    ja: ゴシップ伝播
+    en: Gossip propagation
+  definition:
+    ja: >-
+      受け取った情報を接続中のピアへ次々と転送し、網の目を伝って全体へ
+      広める伝播方式。1つのノードが作ったブロックが数百ミリ秒で
+      ネットワーク全体へ届くのはこの仕組みによる。
+    en: >-
+      A propagation style in which a node forwards information it receives to its
+      connected peers, spreading it across the mesh to everyone. It is how a
+      block made by one node reaches the whole network within a few hundred
+      milliseconds.
+  layer: b-network
+  relatedTerms: [peer, p2p]

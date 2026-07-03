@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { Canvas } from "../canvas/Canvas.js";
 import { entitiesToFlowNodes } from "../entities/infraNode.js";
+import { peerEdgesToFlowEdges } from "../entities/peerEdge.js";
 import { GlossaryProvider } from "../glossary/GlossaryProvider.js";
 import { glossary as defaultGlossary } from "../glossary/data.js";
 import type { Glossary } from "../glossary/types.js";
@@ -16,7 +17,7 @@ import {
 import { type KeyValueStorage, getBrowserStorage } from "../platform/storage.js";
 import type { ConnectionStatus } from "../websocket/client.js";
 import { createMockClient } from "../websocket/mockData.js";
-import { listEntities } from "../world-state/store.js";
+import { listEdges, listEntities } from "../world-state/store.js";
 import { type ClientFactory, useWorldState } from "../world-state/useWorldState.js";
 
 export interface AppProps {
@@ -71,6 +72,12 @@ function AppShell({
     [state, layout],
   );
 
+  // B層のピア接続。端点が両方カードとして存在する紐だけを描く。
+  const edges = useMemo(
+    () => peerEdgesToFlowEdges(listEdges(state), nodes.map((n) => n.id)),
+    [state, nodes],
+  );
+
   const persist = useCallback(
     (stableId: string, position: Position) => {
       setLayout(saveNodePosition(storage, stableId, position));
@@ -94,7 +101,7 @@ function AppShell({
         {nodes.length === 0 ? (
           <p className="app__empty">{t("canvas.empty")}</p>
         ) : (
-          <Canvas nodes={nodes} onPersistPosition={persist} />
+          <Canvas nodes={nodes} edges={edges} onPersistPosition={persist} />
         )}
       </main>
     </div>

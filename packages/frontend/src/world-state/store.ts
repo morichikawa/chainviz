@@ -83,9 +83,14 @@ export function applyDiff(state: WorldState, events: DiffEvent[]): WorldState {
         break;
       }
       case "edgeAdded": {
-        const { fromNodeId, toNodeId } = event.edge;
+        // エッジの同一性キーは from/to/networkId の3つ組（ARCHITECTURE.md §2。
+        // collector 側 world-state/diff.ts の edgeKey と同じ判定）。
+        const { fromNodeId, toNodeId, networkId } = event.edge;
         const exists = edges.some(
-          (e) => e.fromNodeId === fromNodeId && e.toNodeId === toNodeId,
+          (e) =>
+            e.fromNodeId === fromNodeId &&
+            e.toNodeId === toNodeId &&
+            e.networkId === networkId,
         );
         if (!exists) ensureEdgesCopy().push(event.edge);
         break;
@@ -95,7 +100,8 @@ export function applyDiff(state: WorldState, events: DiffEvent[]): WorldState {
           (e) =>
             !(
               e.fromNodeId === event.fromNodeId &&
-              e.toNodeId === event.toNodeId
+              e.toNodeId === event.toNodeId &&
+              e.networkId === event.networkId
             ),
         );
         if (next.length !== edges.length) edges = next;
@@ -114,4 +120,9 @@ export function applyDiff(state: WorldState, events: DiffEvent[]): WorldState {
 /** WorldState 内のエンティティを配列として取り出す。 */
 export function listEntities(state: WorldState): WorldStateEntity[] {
   return Object.values(state.entities);
+}
+
+/** WorldState 内のピア接続（B層のエッジ）を配列として取り出す。 */
+export function listEdges(state: WorldState): PeerEdge[] {
+  return state.edges;
 }

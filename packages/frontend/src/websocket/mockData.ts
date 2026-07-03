@@ -1,5 +1,6 @@
 import type {
   NodeEntity,
+  PeerEdge,
   WorkbenchEntity,
   WorldStateSnapshot,
 } from "@chainviz/shared";
@@ -53,13 +54,67 @@ const workbench: WorkbenchEntity = {
   walletIds: [],
 };
 
+/**
+ * 実環境（Ethereum プロファイル1つ）の P2P ネットワーク ID。
+ * profiles/ethereum の CHAIN_ID と揃える。networkId は今のところ1種類。
+ */
+export const MOCK_NETWORK_ID = "1337";
+
 /** collector 不在でも UI を確認するためのモックスナップショット。 */
 export function createMockSnapshot(): WorldStateSnapshot {
   return {
     chainType: "ethereum",
     timestamp: Date.now(),
     entities: [rethNode(1, 128), rethNode(2, 128), lighthouseNode, workbench],
-    edges: [],
+    // 2つの reth ノードが実行層 P2P で直接ピア接続している状態を表す。
+    edges: [
+      {
+        kind: "peer",
+        fromNodeId: "reth-node-1",
+        toNodeId: "reth-node-2",
+        networkId: MOCK_NETWORK_ID,
+      },
+    ],
+  };
+}
+
+/**
+ * networkId 単位のグルーピング表示（#24）を確認するためのサンプル。
+ * 実環境では networkId は1種類しかないため既定のスナップショットには
+ * 含めない。2つの異なる networkId のクラスタを持ち、色分けと
+ * グルーピングの挙動を目視・テストで確認できる。
+ */
+export function createMultiNetworkMockSnapshot(): WorldStateSnapshot {
+  const secondNetworkId = "2337";
+  const nodeC: NodeEntity = {
+    ...rethNode(3, 64),
+    id: "reth-node-3",
+    containerName: "chainviz-reth-3",
+  };
+  const nodeD: NodeEntity = {
+    ...rethNode(4, 64),
+    id: "reth-node-4",
+    containerName: "chainviz-reth-4",
+  };
+  const edges: PeerEdge[] = [
+    {
+      kind: "peer",
+      fromNodeId: "reth-node-1",
+      toNodeId: "reth-node-2",
+      networkId: MOCK_NETWORK_ID,
+    },
+    {
+      kind: "peer",
+      fromNodeId: "reth-node-3",
+      toNodeId: "reth-node-4",
+      networkId: secondNetworkId,
+    },
+  ];
+  return {
+    chainType: "ethereum",
+    timestamp: Date.now(),
+    entities: [rethNode(1, 128), rethNode(2, 128), nodeC, nodeD],
+    edges,
   };
 }
 

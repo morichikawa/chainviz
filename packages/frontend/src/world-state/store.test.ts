@@ -10,6 +10,7 @@ import {
   applySnapshot,
   emptyWorldState,
   entityId,
+  listEdges,
   listEntities,
 } from "./store.js";
 
@@ -316,6 +317,119 @@ describe("applyDiff", () => {
     ]);
     expect(next.edges).toBe(state.edges);
   });
+
+  it("does not mutate the input edges array when adding an edge", () => {
+    const state = {
+      entities: {},
+      edges: [
+        { kind: "peer" as const, fromNodeId: "n1", toNodeId: "n2", networkId: "1" },
+      ],
+    };
+    const next = applyDiff(state, [
+      {
+        type: "edgeAdded",
+        edge: { kind: "peer", fromNodeId: "n2", toNodeId: "n3", networkId: "1" },
+      },
+    ]);
+    // 入力配列は不変で、返り値は新しい配列。
+    expect(state.edges).toHaveLength(1);
+    expect(next.edges).toHaveLength(2);
+    expect(next.edges).not.toBe(state.edges);
+  });
+
+  it("does not remove an edge when edgeRemoved gives the reverse direction", () => {
+    // 差分は向き付きで届く前提。edgeRemoved は from/to をそのまま照合するため
+    // 逆向き指定では一致しない。
+    const state = {
+      entities: {},
+      edges: [
+        { kind: "peer" as const, fromNodeId: "n1", toNodeId: "n2", networkId: "1" },
+      ],
+    };
+    const next = applyDiff(state, [
+      { type: "edgeRemoved", fromNodeId: "n2", toNodeId: "n1", networkId: "1" },
+    ]);
+    expect(next.edges).toHaveLength(1);
+    expect(next.edges).toBe(state.edges);
+  });
+
+  it("edgeRemoved removes only the edge on the matching network", () => {
+    // エッジの同一性キーは from/to/networkId の3つ組（ARCHITECTURE.md §2）。
+    // 同一ノードペアが複数ネットワークでピア接続していても、指定した
+    // networkId のエッジだけが消える。
+    const state = {
+      entities: {},
+      edges: [
+        { kind: "peer" as const, fromNodeId: "n1", toNodeId: "n2", networkId: "1" },
+        { kind: "peer" as const, fromNodeId: "n1", toNodeId: "n2", networkId: "2" },
+      ],
+    };
+    const next = applyDiff(state, [
+      { type: "edgeRemoved", fromNodeId: "n1", toNodeId: "n2", networkId: "1" },
+    ]);
+    expect(next.edges).toEqual([
+      { kind: "peer", fromNodeId: "n1", toNodeId: "n2", networkId: "2" },
+    ]);
+  });
+
+  it("keeps the same edges reference when edgeRemoved names a different networkId", () => {
+    // ペアは一致しても networkId が違えば別エッジなので何も消えない。
+    const state = {
+      entities: {},
+      edges: [
+        { kind: "peer" as const, fromNodeId: "n1", toNodeId: "n2", networkId: "1" },
+      ],
+    };
+    const next = applyDiff(state, [
+      { type: "edgeRemoved", fromNodeId: "n1", toNodeId: "n2", networkId: "9" },
+    ]);
+    expect(next.edges).toBe(state.edges);
+  });
+
+  it("edgeAdded keeps same-pair edges on different networks as distinct edges", () => {
+    // 重複判定も from/to/networkId の3つ組で行うため、networkId 違いの
+    // 同一ペアは両方保持される。描画側 peerEdgesToFlowEdges が networkId
+    // 違いを別の紐として2本描く設計と整合する。
+    const state = { entities: {}, edges: [] };
+    const next = applyDiff(state, [
+      {
+        type: "edgeAdded",
+        edge: { kind: "peer", fromNodeId: "n1", toNodeId: "n2", networkId: "1" },
+      },
+      {
+        type: "edgeAdded",
+        edge: { kind: "peer", fromNodeId: "n1", toNodeId: "n2", networkId: "2" },
+      },
+    ]);
+    expect(next.edges).toHaveLength(2);
+    expect(next.edges.map((e) => e.networkId).sort()).toEqual(["1", "2"]);
+  });
+
+  it("applies edge and entity events together in one batch", () => {
+    const next = applyDiff(emptyWorldState, [
+      { type: "entityAdded", entity: node("n1") },
+      { type: "entityAdded", entity: node("n2") },
+      {
+        type: "edgeAdded",
+        edge: { kind: "peer", fromNodeId: "n1", toNodeId: "n2", networkId: "1" },
+      },
+    ]);
+    expect(Object.keys(next.entities).sort()).toEqual(["n1", "n2"]);
+    expect(next.edges).toHaveLength(1);
+  });
+
+  it("removes an edge added in a previous batch", () => {
+    const added = applyDiff(emptyWorldState, [
+      {
+        type: "edgeAdded",
+        edge: { kind: "peer", fromNodeId: "n1", toNodeId: "n2", networkId: "1" },
+      },
+    ]);
+    const removed = applyDiff(added, [
+      { type: "edgeRemoved", fromNodeId: "n1", toNodeId: "n2", networkId: "1" },
+    ]);
+    expect(removed.edges).toHaveLength(0);
+  });
 });
 
 describe("listEntities", () => {
@@ -328,5 +442,46 @@ describe("listEntities", () => {
       edges: [],
     });
     expect(listEntities(state)).toHaveLength(2);
+  });
+});
+
+describe("listEdges", () => {
+  it("returns an empty array for a store without edges", () => {
+    expect(listEdges(emptyWorldState)).toEqual([]);
+  });
+
+  it("returns the peer edges held in the store", () => {
+    const state = applySnapshot({
+      chainType: "ethereum",
+      timestamp: 1,
+      entities: [node("n1"), node("n2")],
+      edges: [{ kind: "peer", fromNodeId: "n1", toNodeId: "n2", networkId: "1" }],
+    });
+    expect(listEdges(state)).toEqual([
+      { kind: "peer", fromNodeId: "n1", toNodeId: "n2", networkId: "1" },
+    ]);
+  });
+
+  it("reflects edges added via a diff", () => {
+    const state = applyDiff(emptyWorldState, [
+      {
+        type: "edgeAdded",
+        edge: { kind: "peer", fromNodeId: "n1", toNodeId: "n2", networkId: "1" },
+      },
+    ]);
+    expect(listEdges(state)).toHaveLength(1);
+  });
+
+  it("returns an empty array again after the last edge is removed", () => {
+    const added = applyDiff(emptyWorldState, [
+      {
+        type: "edgeAdded",
+        edge: { kind: "peer", fromNodeId: "n1", toNodeId: "n2", networkId: "1" },
+      },
+    ]);
+    const removed = applyDiff(added, [
+      { type: "edgeRemoved", fromNodeId: "n1", toNodeId: "n2", networkId: "1" },
+    ]);
+    expect(listEdges(removed)).toEqual([]);
   });
 });
