@@ -1,0 +1,14 @@
+{
+  "name": "@chainviz/frontend",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@chainviz/shared": "workspace:*"
+  }
+}
