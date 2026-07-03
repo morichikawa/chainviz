@@ -1,5 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import { createMockClient, createMockSnapshot } from "./mockData.js";
+import {
+  groupEdgesByNetwork,
+  peerEdgesToFlowEdges,
+} from "../entities/peerEdge.js";
+import {
+  MOCK_NETWORK_ID,
+  createMockClient,
+  createMockSnapshot,
+  createMultiNetworkMockSnapshot,
+} from "./mockData.js";
 
 describe("createMockSnapshot", () => {
   it("contains reth nodes and a workbench with stable ids", () => {
@@ -12,6 +21,66 @@ describe("createMockSnapshot", () => {
     const kinds = snapshot.entities.map((e) => e.kind);
     expect(kinds).toContain("node");
     expect(kinds).toContain("workbench");
+  });
+
+  it("includes a single-network peer edge between the reth nodes", () => {
+    const snapshot = createMockSnapshot();
+    expect(snapshot.edges).toEqual([
+      {
+        kind: "peer",
+        fromNodeId: "reth-node-1",
+        toNodeId: "reth-node-2",
+        networkId: MOCK_NETWORK_ID,
+      },
+    ]);
+    // 端点は必ずスナップショット内のノードとして存在する。
+    const nodeIds = new Set(
+      snapshot.entities
+        .filter((e) => e.kind === "node")
+        .map((e) => (e as { id: string }).id),
+    );
+    for (const edge of snapshot.edges) {
+      expect(nodeIds.has(edge.fromNodeId)).toBe(true);
+      expect(nodeIds.has(edge.toNodeId)).toBe(true);
+    }
+  });
+});
+
+describe("createMultiNetworkMockSnapshot", () => {
+  it("provides two distinct networkIds for grouping checks", () => {
+    const snapshot = createMultiNetworkMockSnapshot();
+    const networkIds = new Set(snapshot.edges.map((e) => e.networkId));
+    expect(networkIds.size).toBe(2);
+    expect(networkIds).toContain(MOCK_NETWORK_ID);
+  });
+
+  it("keeps every edge endpoint present as a node", () => {
+    const snapshot = createMultiNetworkMockSnapshot();
+    const nodeIds = new Set(
+      snapshot.entities
+        .filter((e) => e.kind === "node")
+        .map((e) => (e as { id: string }).id),
+    );
+    for (const edge of snapshot.edges) {
+      expect(nodeIds.has(edge.fromNodeId)).toBe(true);
+      expect(nodeIds.has(edge.toNodeId)).toBe(true);
+    }
+  });
+
+  it("renders into two grouped cords with no dangling edges", () => {
+    // スナップショット → 描画変換までを通し、端点欠落やグルーピング崩れが
+    // 起きないことを確認する。
+    const snapshot = createMultiNetworkMockSnapshot();
+    const presentNodeIds = snapshot.entities
+      .filter((e) => e.kind === "node")
+      .map((e) => (e as { id: string }).id);
+    const flow = peerEdgesToFlowEdges(snapshot.edges, presentNodeIds);
+    expect(flow).toHaveLength(snapshot.edges.length);
+    const groups = groupEdgesByNetwork(flow);
+    expect(groups.size).toBe(2);
+    for (const bucket of groups.values()) {
+      expect(bucket).toHaveLength(1);
+    }
   });
 });
 

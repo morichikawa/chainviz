@@ -115,3 +115,8 @@ export function applyDiff(state: WorldState, events: DiffEvent[]): WorldState {
 export function listEntities(state: WorldState): WorldStateEntity[] {
   return Object.values(state.entities);
 }
+
+/** WorldState 内のピア接続（B層のエッジ）を配列として取り出す。 */
+export function listEdges(state: WorldState): PeerEdge[] {
+  return state.edges;
+}
