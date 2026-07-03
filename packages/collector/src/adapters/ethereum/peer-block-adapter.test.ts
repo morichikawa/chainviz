@@ -75,6 +75,23 @@ function rethFixture(service: string, ip: string): Fixture {
   };
 }
 
+function gethFixture(service: string, ip: string): Fixture {
+  return {
+    summary: {
+      Id: `id-${service}`,
+      Names: [`/chainviz-ethereum-${service}-1`],
+      Image: "ethereum/client-go:latest",
+      State: "running",
+      Labels: {
+        "com.docker.compose.project": "chainviz-ethereum",
+        "com.docker.compose.service": service,
+      },
+      NetworkSettings: { Networks: { chain: { IPAddress: ip } } },
+    },
+    top: { Titles: ["CMD"], Processes: [["geth"]] },
+  };
+}
+
 /** baseUrl 単位に identity / peers レスポンスを差し込める HttpClient。 */
 function beaconHttp(
   byBase: Record<string, { peerId: string; connected: string[] }>,
@@ -316,12 +333,16 @@ describe("EthereumAdapter.subscribePeers", () => {
 });
 
 describe("EthereumAdapter.subscribeBlocks", () => {
-  it("subscribes to every execution node and reports received blocks", async () => {
+  it("subscribes to every execution node and keys receivedAt by the matching beacon", async () => {
+    // 実 profile と同じ構成: reth1/beacon1、reth2/beacon2 が同じ論理ノード。
+    // PeerEdge の端点は beacon の stableId なので、receivedAt のキーも
+    // reth 自身ではなく対応する beacon の stableId に揃うことを確認する。
     const poller = new DockerPoller(
       clientFrom([
         rethFixture("reth1", "172.28.1.1"),
         rethFixture("reth2", "172.28.1.2"),
         beaconFixture("beacon1", "172.28.2.1"),
+        beaconFixture("beacon2", "172.28.2.2"),
       ]),
     );
     const ws = controllableWsClient();
@@ -344,13 +365,122 @@ describe("EthereumAdapter.subscribeBlocks", () => {
     ws.emit("ws://172.28.1.2:8546", header());
 
     expect(blocks).toHaveLength(2);
-    // 2 回目には両ノードの受信時刻がマージされている。
+    // 2 回目には両ノードの受信時刻が、対応する beacon のキーでマージされている。
     expect(blocks[1].receivedAt).toEqual({
-      "chainviz-ethereum/reth1": 1000,
-      "chainviz-ethereum/reth2": 1200,
+      "chainviz-ethereum/beacon1": 1000,
+      "chainviz-ethereum/beacon2": 1200,
     });
     expect(blocks[1].number).toBe(16);
     expect(blocks[1].hash).toBe("0xblock1");
+  });
+
+  it("falls back to the execution node's own stableId when it has no beacon", async () => {
+    // beacon を持たない EL only 構成では reth 自身の stableId をキーにする。
+    const poller = new DockerPoller(
+      clientFrom([rethFixture("reth1", "172.28.1.1")]),
+    );
+    const ws = controllableWsClient();
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      now: () => 1000,
+    });
+    const blocks: BlockEntity[] = [];
+
+    await adapter.subscribeBlocks((b) => blocks.push(b));
+    ws.emit("ws://172.28.1.1:8546", header());
+
+    expect(blocks[0].receivedAt).toEqual({
+      "chainviz-ethereum/reth1": 1000,
+    });
+  });
+
+  it("keys receivedAt by each execution node's own stableId when none have a beacon", async () => {
+    // beacon が一切無い EL only 構成では、両ノードとも自身の stableId をキーに
+    // する。同一ブロックを両ノードが受信すると 2 つの独立したキーで束ねられる。
+    const poller = new DockerPoller(
+      clientFrom([
+        rethFixture("reth1", "172.28.1.1"),
+        rethFixture("reth2", "172.28.1.2"),
+      ]),
+    );
+    const ws = controllableWsClient();
+    let clock = 1000;
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      now: () => clock,
+    });
+    const blocks: BlockEntity[] = [];
+
+    await adapter.subscribeBlocks((b) => blocks.push(b));
+    ws.emit("ws://172.28.1.1:8546", header());
+    clock = 1300;
+    ws.emit("ws://172.28.1.2:8546", header());
+
+    expect(blocks[1].receivedAt).toEqual({
+      "chainviz-ethereum/reth1": 1000,
+      "chainviz-ethereum/reth2": 1300,
+    });
+  });
+
+  it("mixes beacon-keyed and self-keyed receivedAt within one block", async () => {
+    // reth1 は beacon1 に対応するが reth2 は対応 beacon が無い。同一ブロックの
+    // receivedAt には beacon1 のキーと reth2 自身のキーが混在する。
+    const poller = new DockerPoller(
+      clientFrom([
+        rethFixture("reth1", "172.28.1.1"),
+        rethFixture("reth2", "172.28.1.2"),
+        beaconFixture("beacon1", "172.28.2.1"),
+      ]),
+    );
+    const ws = controllableWsClient();
+    let clock = 1000;
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      now: () => clock,
+    });
+    const blocks: BlockEntity[] = [];
+
+    await adapter.subscribeBlocks((b) => blocks.push(b));
+    ws.emit("ws://172.28.1.1:8546", header());
+    clock = 1400;
+    ws.emit("ws://172.28.1.2:8546", header());
+
+    expect(blocks[1].receivedAt).toEqual({
+      "chainviz-ethereum/beacon1": 1000,
+      "chainviz-ethereum/reth2": 1400,
+    });
+  });
+
+  it("collapses receivedAt to one key when two execution nodes share a beacon (first receipt wins)", async () => {
+    // reth1 と geth1 はノード群キーがともに "1" なので、両方が beacon1 に
+    // 対応付く（receivedAtKey が同一）。同一ブロックを両ノードが受信しても
+    // receivedAt は beacon1 の 1 キーに畳まれ、最初の受信時刻だけが残る。
+    // 現状の BlockPropagationTracker（キーごとに初回優先）と受信キー設計の
+    // 組み合わせで生じる挙動を固定する。
+    const poller = new DockerPoller(
+      clientFrom([
+        rethFixture("reth1", "172.28.1.1"),
+        gethFixture("geth1", "172.28.1.9"),
+        beaconFixture("beacon1", "172.28.2.1"),
+      ]),
+    );
+    const ws = controllableWsClient();
+    let clock = 1000;
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      now: () => clock,
+    });
+    const blocks: BlockEntity[] = [];
+
+    await adapter.subscribeBlocks((b) => blocks.push(b));
+    ws.emit("ws://172.28.1.1:8546", header());
+    clock = 1500;
+    ws.emit("ws://172.28.1.9:8546", header());
+
+    // 2 回目の受信でもキーは beacon1 のみ、時刻は初回の 1000 のまま。
+    expect(blocks[1].receivedAt).toEqual({
+      "chainviz-ethereum/beacon1": 1000,
+    });
   });
 
   it("closes all subscriptions on dispose", async () => {

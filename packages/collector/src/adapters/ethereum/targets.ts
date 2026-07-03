@@ -34,7 +34,23 @@ export interface ExecutionTarget {
   stableId: string;
   /** eth_subscribe を張る WebSocket URL。 */
   wsUrl: string;
+  /**
+   * BlockEntity.receivedAt に記録する際のキーに使う安定識別子。
+   * 同じ論理ノードを構成する beacon（consensus）コンテナの stableId を
+   * 指す。PeerEdge の端点は beacon の stableId なので、受信時刻もそこへ
+   * 揃えることで伝播アニメーションが端点と一致する。対応する beacon が
+   * 見つからない場合は Execution ノード自身の stableId にフォールバックする。
+   */
+  receivedAtKey: string;
 }
+
+/** ノード群キーの導出時に取り除く役割プレフィックス。 */
+const ROLE_PREFIXES = [
+  ...EXECUTION_CLIENTS,
+  ...CONSENSUS_CLIENTS,
+  "beacon",
+  "validator",
+];
 
 /** 安定識別子（project/service 形式）から所属ネットワーク ID を導く。 */
 function consensusNetworkId(stableId: string): string {
@@ -74,8 +90,51 @@ export function beaconTargets(
 }
 
 /**
+ * compose サービス名から役割プレフィックス（reth/beacon/validator など）を
+ * 取り除いた残り（例: "reth1" -> "1"、"beacon1" -> "1"）を返す。同じ論理
+ * ノードを構成する execution/consensus コンテナはこの残りが一致する。
+ * どの役割プレフィックスにも当てはまらない場合は undefined を返す。
+ */
+function serviceNodeKey(service: string): string | undefined {
+  const lower = service.toLowerCase();
+  let matched = "";
+  for (const prefix of ROLE_PREFIXES) {
+    if (lower.startsWith(prefix) && prefix.length > matched.length) {
+      matched = prefix;
+    }
+  }
+  if (!matched) return undefined;
+  return lower.slice(matched.length);
+}
+
+/**
+ * Execution コンテナと同じ論理ノードを構成する beacon コンテナの stableId を
+ * 導く。compose サービス名から役割プレフィックスを剥がしたノード群キー
+ * （"reth1" と "beacon1" はどちらも "1"）が一致し、かつ beacon サービスで
+ * あるコンテナを探す。対応が取れなければ undefined（呼び出し側でフォール
+ * バックする）。reth/beacon の対応付けは Ethereum 固有の知識なのでこの
+ * アダプタ内に閉じ込める。
+ */
+export function beaconStableIdForExecution(
+  execution: ContainerObservation,
+  observations: ContainerObservation[],
+): string | undefined {
+  const execService = execution.labels[COMPOSE_SERVICE_LABEL] ?? "";
+  const key = serviceNodeKey(execService);
+  if (key === undefined) return undefined;
+  for (const obs of observations) {
+    if (!isBeaconService(obs)) continue;
+    const service = obs.labels[COMPOSE_SERVICE_LABEL] ?? "";
+    if (serviceNodeKey(service) === key) return obs.stableId;
+  }
+  return undefined;
+}
+
+/**
  * ブロック受信時刻の購読対象になる Execution ノードを観測値から抽出する。
  * execution クライアントであり IP が取れるコンテナだけを対象にする。
+ * receivedAt のキーには、同じ論理ノードの beacon の stableId を割り当てる
+ * （見つからなければ Execution ノード自身の stableId）。
  */
 export function executionTargets(
   observations: ContainerObservation[],
@@ -86,9 +145,11 @@ export function executionTargets(
     const { kind, clientType } = classifyContainer(obs);
     if (kind !== "node") continue;
     if (!EXECUTION_CLIENTS.includes(clientType)) continue;
+    const beaconStableId = beaconStableIdForExecution(obs, observations);
     targets.push({
       stableId: obs.stableId,
       wsUrl: `ws://${obs.ip}:${EXECUTION_WS_PORT}`,
+      receivedAtKey: beaconStableId ?? obs.stableId,
     });
   }
   return targets;

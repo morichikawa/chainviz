@@ -201,7 +201,7 @@ export class EthereumAdapter implements ChainAdapter {
         target.wsUrl,
         (header) => {
           const block = this.blockTracker.record(
-            target.stableId,
+            target.receivedAtKey,
             header,
             this.now(),
           );
