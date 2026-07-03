@@ -57,12 +57,18 @@ sync-docs スキルで確認する。
 
 ## ステップ 2: Ethereum プロファイルのノード環境
 
+GitHub: [milestone](https://github.com/morichikawa/chainviz/milestone/1)
+
 - [ ] genesis 共有のプライベート PoS ネット一式（reth + lighthouse、
       2〜3 ノード、slot time 短縮、バリデーター最小構成）
-- [ ] compose ファイルの作成
+      [#1](https://github.com/morichikawa/chainviz/issues/1)
+- [ ] compose ファイルの作成 [#2](https://github.com/morichikawa/chainviz/issues/2)
 - [ ] ワークベンチコンテナ（Foundry）×1 を同ネットワークに接続
+      [#3](https://github.com/morichikawa/chainviz/issues/3)
 - [ ] `docker compose up` でチェーンが起動しブロックが進み続けることを確認
+      [#4](https://github.com/morichikawa/chainviz/issues/4)
 - [ ] ワークベンチから `cast` で RPC 疎通確認
+      [#5](https://github.com/morichikawa/chainviz/issues/5)
 
 （ロギングプロキシはこの時点では置かない。Phase 3 で追加）
 

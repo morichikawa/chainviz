@@ -53,3 +53,26 @@ Docker 上の Ethereum ノード群を Miro 風の無限キャンバスでリア
   `docs/` が実装を反映しているか確認する
 - 各 Phase（`docs/CONCEPT.md` のロードマップ）が単体で「動くデモ」に
   なることを優先し、先の Phase のための先回り実装をしない
+- GitHub（`morichikawa/chainviz`、private）で Issue 管理する。
+  `docs/PLAN.md` の**チェックボックス1行 = Issue 1つ**の粒度で、着手する
+  ステップに入るタイミングでそのステップの全チェックボックス分をまとめて
+  Issue化する（ステップ単位でまとめて1 Issue にはしない）。ステップは
+  GitHub の milestone に対応させる。担当パッケージに応じて
+  `node-env` / `collector` / `frontend` / `shared` ラベルを付ける。
+  チェックボックスにチェックを付けたら対応する Issue も閉じ、
+  `docs/PLAN.md` にその Issue 番号へのリンクを併記する
+- **Issue ごとにブランチを切る**。`main` 上で直接作業しない。ブランチ名は
+  `issue-<番号>-<内容を表す短い英語スラッグ>`（例: `issue-1-genesis-pos-net`）
+- **1つの変更内容 = 1コミット**に分ける。異なる関心事（設定変更とロジック
+  変更、複数ファイルにまたがる別々の目的の変更など）を1つのコミットに
+  まとめない
+- 作業が終わったら PR を作成し、本文に `Closes #<番号>` を含めて Issue と
+  連動させる。`chainviz-reviewer` と `chainviz-qa` のレビューを経てから
+  `main` にマージする。マージは squash にせず、分けたコミットの履歴を
+  保持する（通常のマージコミット、または rebase マージ）
+- CI（`.github/workflows/ci.yml`）が push のたびに lint / build / test を
+  実行する。ローカルで `pnpm lint && pnpm build && pnpm test` が通ることを
+  確認してから push する
+- タスク完了時は `docs/WORKLOG.md` に作業記録を追記する（何を・なぜ・どう
+  実施したか、次の担当が知っておくべき注意点）。`docs/PLAN.md` のチェック
+  ボックスは進捗管理用であり、経緯の記録は WORKLOG.md の役割
