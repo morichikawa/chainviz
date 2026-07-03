@@ -65,7 +65,21 @@ export async function main(port: number = DEFAULT_PORT): Promise<void> {
   await server.listen(port);
   console.log(`[collector] WebSocket server listening on port ${port}`);
 
+  // A 層: Docker のインフラ観測を周期ポーリングして配信する。
   startPollingLoop(adapter, store, server);
+
+  // B 層: ピア接続（Beacon API）とブロック受信タイミング（eth_subscribe）を
+  // 購読し、差分をワールドステート store 経由でフロントへ配信する。
+  adapter.subscribePeers((edges) => {
+    const diff = store.applyPeers(edges);
+    server.broadcastDiff(diff);
+  });
+  adapter
+    .subscribeBlocks((block) => {
+      const diff = store.applyBlock(block);
+      server.broadcastDiff(diff);
+    })
+    .catch((err) => console.error("[collector] block subscription failed:", err));
 }
 
 // 直接実行されたときだけサーバーを起動する（import 時は副作用なし）。

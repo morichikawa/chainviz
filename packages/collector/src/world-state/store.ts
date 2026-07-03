@@ -2,13 +2,14 @@
 // 新しいポーリング結果を取り込むたびに差分（DiffEvent[]）を計算して返す。
 
 import type {
+  BlockEntity,
   ChainType,
   DiffEvent,
   PeerEdge,
   WorldStateEntity,
   WorldStateSnapshot,
 } from "@chainviz/shared";
-import { computeDiff, entityId } from "./diff.js";
+import { computeDiff, computeEdgeDiff, edgeKey, entityId } from "./diff.js";
 
 /** node / workbench（InfraEntity 系）かどうか。 */
 function isInfraEntity(entity: WorldStateEntity): boolean {
@@ -45,6 +46,31 @@ export class WorldStateStore {
     return diff;
   }
 
+  /**
+   * B 層のピア接続（PeerEdge の集合）を取り込む。前回のエッジ集合との差分を
+   * 計算し、edgeAdded / edgeRemoved を適用する。返り値は適用した差分イベント。
+   */
+  applyPeers(next: PeerEdge[]): DiffEvent[] {
+    const diff = computeEdgeDiff(this.edges, next);
+    for (const event of diff) this.applyEvent(event);
+    this.timestamp = Date.now();
+    return diff;
+  }
+
+  /**
+   * B 層のブロック受信タイミング（BlockEntity）を取り込む。ブロックはハッシュを
+   * キーとするエンティティなので、既存の同一ブロックとの差分だけを計算する
+   * （他のエンティティは触らない）。返り値は適用した差分イベント。
+   */
+  applyBlock(block: BlockEntity): DiffEvent[] {
+    const existing = this.entities.get(block.hash);
+    const prev = existing ? [existing] : [];
+    const diff = computeDiff(prev, [block]);
+    for (const event of diff) this.applyEvent(event);
+    this.timestamp = Date.now();
+    return diff;
+  }
+
   private applyEvent(event: DiffEvent): void {
     switch (event.type) {
       case "entityAdded":
@@ -63,9 +89,22 @@ export class WorldStateStore {
       case "entityRemoved":
         this.entities.delete(event.id);
         break;
-      case "edgeAdded":
+      case "edgeAdded": {
+        const key = edgeKey(event.edge);
+        if (!this.edges.some((e) => edgeKey(e) === key)) {
+          this.edges = [...this.edges, event.edge];
+        }
+        break;
+      }
       case "edgeRemoved":
-        // A 層ではエッジを扱わない（B 層で実装）。
+        this.edges = this.edges.filter(
+          (e) =>
+            !(
+              e.fromNodeId === event.fromNodeId &&
+              e.toNodeId === event.toNodeId &&
+              e.networkId === event.networkId
+            ),
+        );
         break;
     }
   }

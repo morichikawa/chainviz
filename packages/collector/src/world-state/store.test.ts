@@ -1,4 +1,4 @@
-import type { NodeEntity } from "@chainviz/shared";
+import type { BlockEntity, NodeEntity, PeerEdge } from "@chainviz/shared";
 import { describe, expect, it } from "vitest";
 import { WorldStateStore } from "./store.js";
 
@@ -175,5 +175,222 @@ describe("WorldStateStore", () => {
       },
     ]);
     expect(store.getSnapshot().entities).toHaveLength(2);
+  });
+});
+
+function edge(overrides: Partial<PeerEdge> = {}): PeerEdge {
+  return {
+    kind: "peer",
+    fromNodeId: "chainviz-ethereum/beacon1",
+    toNodeId: "chainviz-ethereum/beacon2",
+    networkId: "chainviz-ethereum-consensus",
+    ...overrides,
+  };
+}
+
+describe("WorldStateStore.applyPeers", () => {
+  it("adds a new edge and reflects it in the snapshot", () => {
+    const store = new WorldStateStore();
+    const diff = store.applyPeers([edge()]);
+    expect(diff).toEqual([{ type: "edgeAdded", edge: edge() }]);
+    expect(store.getSnapshot().edges).toEqual([edge()]);
+  });
+
+  it("emits no diff when the edge set is unchanged", () => {
+    const store = new WorldStateStore();
+    store.applyPeers([edge()]);
+    expect(store.applyPeers([edge()])).toEqual([]);
+    expect(store.getSnapshot().edges).toEqual([edge()]);
+  });
+
+  it("removes an edge that is no longer present", () => {
+    const store = new WorldStateStore();
+    store.applyPeers([edge()]);
+    const diff = store.applyPeers([]);
+    expect(diff).toEqual([
+      {
+        type: "edgeRemoved",
+        fromNodeId: "chainviz-ethereum/beacon1",
+        toNodeId: "chainviz-ethereum/beacon2",
+        networkId: "chainviz-ethereum-consensus",
+      },
+    ]);
+    expect(store.getSnapshot().edges).toEqual([]);
+  });
+
+  it("keeps edges separate from entities in the snapshot", () => {
+    const store = new WorldStateStore();
+    store.applyInfra([node()]);
+    store.applyPeers([edge()]);
+    const snapshot = store.getSnapshot();
+    expect(snapshot.entities).toHaveLength(1);
+    expect(snapshot.edges).toHaveLength(1);
+  });
+
+  it("applies add and remove across a set of edges", () => {
+    const store = new WorldStateStore();
+    const e12 = edge();
+    const e13 = edge({ toNodeId: "chainviz-ethereum/beacon3" });
+    store.applyPeers([e12, e13]);
+    const e14 = edge({ toNodeId: "chainviz-ethereum/beacon4" });
+    const diff = store.applyPeers([e12, e14]);
+    expect(diff).toContainEqual({ type: "edgeAdded", edge: e14 });
+    expect(diff).toContainEqual({
+      type: "edgeRemoved",
+      fromNodeId: "chainviz-ethereum/beacon1",
+      toNodeId: "chainviz-ethereum/beacon3",
+      networkId: "chainviz-ethereum-consensus",
+    });
+    const edges = store.getSnapshot().edges;
+    expect(edges).toHaveLength(2);
+    expect(edges).toContainEqual(e12);
+    expect(edges).toContainEqual(e14);
+  });
+
+  it("keeps the new edge when the same pair changes networkId only", () => {
+    // 退行防止: edgeRemoved が networkId を持たなかった頃、同一 from/to ペアで
+    // networkId だけが変わる遷移により、追加直後の新エッジまで巻き込んで削除され
+    // エッジが 0 本になっていた（tester 報告の再現手順）。
+    const store = new WorldStateStore();
+    store.applyPeers([edge({ networkId: "net-a" })]);
+    const diff = store.applyPeers([edge({ networkId: "net-b" })]);
+    expect(diff).toContainEqual({
+      type: "edgeAdded",
+      edge: edge({ networkId: "net-b" }),
+    });
+    expect(diff).toContainEqual({
+      type: "edgeRemoved",
+      fromNodeId: "chainviz-ethereum/beacon1",
+      toNodeId: "chainviz-ethereum/beacon2",
+      networkId: "net-a",
+    });
+    expect(store.getSnapshot().edges).toEqual([edge({ networkId: "net-b" })]);
+  });
+
+  it("does not let callers mutate the internal edge list via the snapshot", () => {
+    const store = new WorldStateStore();
+    store.applyPeers([edge()]);
+    store.getSnapshot().edges.push(edge({ toNodeId: "injected" }));
+    expect(store.getSnapshot().edges).toHaveLength(1);
+  });
+});
+
+function block(overrides: Partial<BlockEntity> = {}): BlockEntity {
+  return {
+    kind: "block",
+    hash: "0xblock1",
+    number: 16,
+    parentHash: "0xparent",
+    timestamp: 100,
+    receivedAt: {},
+    ...overrides,
+  };
+}
+
+describe("WorldStateStore.applyBlock", () => {
+  it("adds a block entity on first receipt", () => {
+    const store = new WorldStateStore();
+    const b = block({ receivedAt: { "chainviz-ethereum/reth1": 1000 } });
+    const diff = store.applyBlock(b);
+    expect(diff).toEqual([{ type: "entityAdded", entity: b }]);
+    expect(store.getSnapshot().entities).toContainEqual(b);
+  });
+
+  it("emits an update with only the changed receivedAt map on later receipts", () => {
+    const store = new WorldStateStore();
+    store.applyBlock(
+      block({ receivedAt: { "chainviz-ethereum/reth1": 1000 } }),
+    );
+    const diff = store.applyBlock(
+      block({
+        receivedAt: {
+          "chainviz-ethereum/reth1": 1000,
+          "chainviz-ethereum/reth2": 1200,
+        },
+      }),
+    );
+    expect(diff).toEqual([
+      {
+        type: "entityUpdated",
+        id: "0xblock1",
+        patch: {
+          receivedAt: {
+            "chainviz-ethereum/reth1": 1000,
+            "chainviz-ethereum/reth2": 1200,
+          },
+        },
+      },
+    ]);
+  });
+
+  it("does not disturb infra entities or edges", () => {
+    const store = new WorldStateStore();
+    store.applyInfra([node()]);
+    store.applyPeers([edge()]);
+    store.applyBlock(block());
+    const snapshot = store.getSnapshot();
+    expect(snapshot.entities.filter((e) => e.kind === "node")).toHaveLength(1);
+    expect(snapshot.entities.filter((e) => e.kind === "block")).toHaveLength(1);
+    expect(snapshot.edges).toHaveLength(1);
+  });
+
+  it("tracks multiple distinct blocks", () => {
+    const store = new WorldStateStore();
+    store.applyBlock(block({ hash: "0xa", number: 1 }));
+    store.applyBlock(block({ hash: "0xb", number: 2 }));
+    const blocks = store
+      .getSnapshot()
+      .entities.filter((e) => e.kind === "block");
+    expect(blocks).toHaveLength(2);
+  });
+
+  it("emits no diff when the same block is applied unchanged", () => {
+    const store = new WorldStateStore();
+    const b = block({ receivedAt: { "chainviz-ethereum/reth1": 1000 } });
+    store.applyBlock(b);
+    expect(store.applyBlock(b)).toEqual([]);
+    expect(
+      store.getSnapshot().entities.filter((e) => e.kind === "block"),
+    ).toHaveLength(1);
+  });
+
+  it("accumulates receivedAt across three receipts, patching only that field", () => {
+    const store = new WorldStateStore();
+    store.applyBlock(block({ receivedAt: { a: 1000 } }));
+    const second = store.applyBlock(
+      block({ receivedAt: { a: 1000, b: 1100 } }),
+    );
+    expect(second).toEqual([
+      {
+        type: "entityUpdated",
+        id: "0xblock1",
+        patch: { receivedAt: { a: 1000, b: 1100 } },
+      },
+    ]);
+    const third = store.applyBlock(
+      block({ receivedAt: { a: 1000, b: 1100, c: 1200 } }),
+    );
+    expect(third).toEqual([
+      {
+        type: "entityUpdated",
+        id: "0xblock1",
+        patch: { receivedAt: { a: 1000, b: 1100, c: 1200 } },
+      },
+    ]);
+    const stored = store
+      .getSnapshot()
+      .entities.find((e) => e.kind === "block") as BlockEntity;
+    expect(stored.receivedAt).toEqual({ a: 1000, b: 1100, c: 1200 });
+  });
+
+  it("does not remove a block entity when peers churn to empty", () => {
+    // applyPeers はエッジだけを触り、ブロックエンティティには影響しない。
+    const store = new WorldStateStore();
+    store.applyBlock(block());
+    store.applyPeers([edge()]);
+    store.applyPeers([]);
+    expect(
+      store.getSnapshot().entities.filter((e) => e.kind === "block"),
+    ).toHaveLength(1);
   });
 });
