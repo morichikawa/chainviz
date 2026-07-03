@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Conventional Commits形式(type(scope): 説明)を強制するcommit-msgフック。
+# 有効化: git config core.hooksPath .githooks (新しいクローンでは1回だけ実行が必要)
+
+commit_msg_file="$1"
+first_line=$(head -n1 "$commit_msg_file")
+
+# feat, fix, docs, style, refactor, test, chore, perf, build, ci, revert
+pattern='^(feat|fix|docs|style|refactor|test|chore|perf|build|ci|revert)(\([a-zA-Z0-9_-]+\))?: .+'
+
+if ! echo "$first_line" | grep -qE "$pattern"; then
+    echo "エラー: コミットメッセージがConventional Commits形式ではありません。" >&2
+    echo "" >&2
+    echo "  形式: <type>(<scope>): <説明>" >&2
+    echo "  type: feat, fix, docs, style, refactor, test, chore, perf, build, ci, revert" >&2
+    echo "" >&2
+    echo "  例: feat: ノードカードのホバー詳細表示を追加" >&2
+    echo "      fix(collector): ピア情報ポーリングの多重起動を修正" >&2
+    echo "" >&2
+    echo "  実際のメッセージ: \"$first_line\"" >&2
+    exit 1
+fi
+
+exit 0
