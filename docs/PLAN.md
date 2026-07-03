@@ -122,9 +122,39 @@ GitHub: [milestone](https://github.com/morichikawa/chainviz/milestone/2)
 **成果物**: 動く Phase 1 デモ
 **完了条件**: CONCEPT.md「ロードマップ」Phase 1 の記述どおりに動作する
 
-## ステップ 4 以降（概要のみ。詳細は着手時にこのドキュメントへ追記）
+## ステップ 4: Phase 2 実装 — B層（P2P グラフ + ブロック伝播）
 
-- [ ] Phase 2（B層: P2P グラフ + ブロック伝播の波）
+GitHub: [milestone](https://github.com/morichikawa/chainviz/milestone/3)
+
+**collector 側と frontend 側は互いに依存しないため並行して進める**。
+frontend 側は collector 完成前でも、モックデータ（`packages/frontend/src/
+websocket/mockData.ts`）に PeerEdge のサンプルを載せて実装・確認する。
+
+**collector**:
+
+- [ ] lighthouse Beacon API をポーリングしピア接続を PeerEdge へ正規化する
+      [#19](https://github.com/morichikawa/chainviz/issues/19)
+- [ ] reth の `eth_subscribe(newHeads)` を購読し各ノードの受信時刻を記録する
+      [#20](https://github.com/morichikawa/chainviz/issues/20)
+- [ ] PeerEdge とブロック伝播タイミングを world-state store 経由でフロントへ
+      配信する [#21](https://github.com/morichikawa/chainviz/issues/21)
+
+**frontend**:
+
+- [x] フロントの world-state store が PeerEdge を受信・保持できるようにする
+      [#22](https://github.com/morichikawa/chainviz/issues/22)
+- [x] React Flow でノードカードのあいだに P2P エッジ（紐）を描画する
+      [#23](https://github.com/morichikawa/chainviz/issues/23)
+- [x] ネットワーク ID 単位のグルーピング表示
+      [#24](https://github.com/morichikawa/chainviz/issues/24)
+- [ ] ブロック伝播パルスアニメーションの実装
+      [#25](https://github.com/morichikawa/chainviz/issues/25)
+
+**成果物**: 動く Phase 2 デモ
+**完了条件**: CONCEPT.md「ロードマップ」Phase 2 の記述どおりに動作する
+
+## ステップ 5 以降（概要のみ。詳細は着手時にこのドキュメントへ追記）
+
 - [ ] Phase 3（C層: tx ライフサイクル、ワークベンチ操作の可視化、ウォレット）
 - [ ] キャンバスからのノード/ワークベンチ追加・削除（Phase 2〜3 の間に挟む。
       Collector の操作系 API はステップ 0-3 で設計だけ先に済ませておく）
