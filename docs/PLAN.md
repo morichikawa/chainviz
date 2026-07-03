@@ -86,17 +86,38 @@ GitHub: [milestone](https://github.com/morichikawa/chainviz/milestone/1)
 
 ## ステップ 3: Phase 1 実装 — A層（インフラ可視化）
 
-- [ ] collector: dockerode で Docker Engine API
-      （containers / top / stats）を 3 秒間隔でポーリング
+GitHub: [milestone](https://github.com/morichikawa/chainviz/milestone/2)
+
+**collector 側と frontend 側は互いに依存しないため並行して進める**。
+それぞれ1本のブランチ・1つのPRにまとめる
+（`issue-7-collector-a-layer` / `issue-10-frontend-a-layer` の想定）。
+完了報告後は `chainviz-tester` → `chainviz-reviewer` → `chainviz-qa` の
+順に通す。
+
+**collector**:
+
+- [ ] dockerode で Docker Engine API（containers / top / stats）を
+      3 秒間隔でポーリング [#7](https://github.com/morichikawa/chainviz/issues/7)
 - [ ] ポーリング結果をワールドステートに正規化
+      [#8](https://github.com/morichikawa/chainviz/issues/8)
 - [ ] WebSocket でフロントへプッシュ（スナップショット + 差分）
-- [ ] frontend: React Flow による無限キャンバスの土台
-- [ ] コンテナのカード表示
+      [#9](https://github.com/morichikawa/chainviz/issues/9)
+
+**frontend**:
+
+- [ ] React Flow による無限キャンバスの土台
+      [#10](https://github.com/morichikawa/chainviz/issues/10)
+- [ ] コンテナのカード表示 [#11](https://github.com/morichikawa/chainviz/issues/11)
 - [ ] ホバーで IP・プロセス・リソースのポップオーバー
+      [#12](https://github.com/morichikawa/chainviz/issues/12)
 - [ ] 用語解説のインライン表示の仕組み
+      [#13](https://github.com/morichikawa/chainviz/issues/13)
 - [ ] A層の用語データ（`glossary/ethereum/terms/a-infra.yaml`）
+      [#14](https://github.com/morichikawa/chainviz/issues/14)
 - [ ] レイアウトの localStorage 永続化（キーは安定識別子。コンテナ ID は使わない）
+      [#15](https://github.com/morichikawa/chainviz/issues/15)
 - [ ] UI 言語切り替え（ja / en）の仕組み
+      [#16](https://github.com/morichikawa/chainviz/issues/16)
 
 **成果物**: 動く Phase 1 デモ
 **完了条件**: CONCEPT.md「ロードマップ」Phase 1 の記述どおりに動作する
