@@ -5,6 +5,7 @@ import {
   MiniMap,
   type Node,
   type NodeTypes,
+  type EdgeTypes,
   ReactFlow,
   ReactFlowProvider,
   applyEdgeChanges,
@@ -14,11 +15,13 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { InfraNodeCard } from "../entities/InfraNodeCard.js";
 import type { InfraFlowNode } from "../entities/infraNode.js";
-import type { PeerFlowEdge } from "../entities/peerEdge.js";
+import { PeerPropagationEdge } from "../entities/PeerPropagationEdge.js";
+import { PEER_EDGE_TYPE, type PeerFlowEdge } from "../entities/peerEdge.js";
 import type { Position } from "../layout/layoutStore.js";
 
-// nodeTypes は再レンダーごとに作り直すと React Flow が警告するため外に出す。
+// nodeTypes / edgeTypes は再レンダーごとに作り直すと React Flow が警告するため外に出す。
 const nodeTypes: NodeTypes = { infra: InfraNodeCard };
+const edgeTypes: EdgeTypes = { [PEER_EDGE_TYPE]: PeerPropagationEdge };
 
 export interface CanvasProps {
   nodes: InfraFlowNode[];
@@ -63,6 +66,7 @@ function CanvasInner({ nodes, edges = [], onPersistPosition }: CanvasProps) {
       nodes={rfNodes}
       edges={rfEdges}
       nodeTypes={nodeTypes}
+      edgeTypes={edgeTypes}
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
       onNodeDragStop={onNodeDragStop}

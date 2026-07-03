@@ -9,12 +9,35 @@ import type { Edge } from "@xyflow/react";
  * ノードカードに接続する。
  */
 
+/**
+ * エッジ上を1回走るパルス（光の点）1つ分の描画データ。
+ * タイミング計算（どちらの端点から出発するか・何ミリ秒かけて渡るか）は
+ * `blockPulse.ts` の純粋関数が実データから算出する。ここはその結果を
+ * React Flow のカスタムエッジへ渡すための入れ物。
+ */
+export interface EdgePulse extends Record<string, unknown> {
+  /** この描画インスタンスを一意に識別するキー（同じエッジ上の重複描画を区別）。 */
+  key: string;
+  /**
+   * パルスの進行方向。エッジは端点を `[小, 大]`（source=小, target=大）に
+   * 正規化しているため、実データ上の伝播が「大→小」の向きなら `true`。
+   */
+  reverse: boolean;
+  /** パルスがエッジを渡り切るのにかける時間（ms）。 */
+  durationMs: number;
+}
+
 export interface PeerEdgeData extends Record<string, unknown> {
   /** どの P2P ネットワークに属する接続か。将来の複数チェーン比較で使う。 */
   networkId: string;
+  /** このエッジ上で現在走らせるブロック伝播パルス（無ければ未設定）。 */
+  pulses?: EdgePulse[];
 }
 
 export type PeerFlowEdge = Edge<PeerEdgeData>;
+
+/** ブロック伝播パルスを描くカスタムエッジの型名（React Flow の edgeTypes キー）。 */
+export const PEER_EDGE_TYPE = "peer";
 
 /**
  * networkId ごとに紐の色を分けるためのパレット。
@@ -82,6 +105,7 @@ export function peerEdgesToFlowEdges(
     const color = networkIdColor(edge.networkId);
     result.push({
       id: `peer-${key}`,
+      type: PEER_EDGE_TYPE,
       source: lo,
       target: hi,
       data: { networkId: edge.networkId },

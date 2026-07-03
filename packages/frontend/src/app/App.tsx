@@ -1,7 +1,10 @@
+import type { BlockEntity } from "@chainviz/shared";
 import { useCallback, useMemo, useState } from "react";
 import { Canvas } from "../canvas/Canvas.js";
+import { attachPulsesToEdges } from "../entities/blockPulse.js";
 import { entitiesToFlowNodes } from "../entities/infraNode.js";
 import { peerEdgesToFlowEdges } from "../entities/peerEdge.js";
+import { useBlockPulses } from "../entities/useBlockPulses.js";
 import { GlossaryProvider } from "../glossary/GlossaryProvider.js";
 import { glossary as defaultGlossary } from "../glossary/data.js";
 import type { Glossary } from "../glossary/types.js";
@@ -78,6 +81,20 @@ function AppShell({
     [state, nodes],
   );
 
+  // ブロックの受信時刻差から伝播パルスを算出し、エッジ上へ走らせる。
+  const blocks = useMemo(
+    () =>
+      listEntities(state).filter(
+        (entity): entity is BlockEntity => entity.kind === "block",
+      ),
+    [state],
+  );
+  const activePulses = useBlockPulses(blocks, edges);
+  const edgesWithPulses = useMemo(
+    () => attachPulsesToEdges(edges, activePulses),
+    [edges, activePulses],
+  );
+
   const persist = useCallback(
     (stableId: string, position: Position) => {
       setLayout(saveNodePosition(storage, stableId, position));
@@ -101,7 +118,11 @@ function AppShell({
         {nodes.length === 0 ? (
           <p className="app__empty">{t("canvas.empty")}</p>
         ) : (
-          <Canvas nodes={nodes} edges={edges} onPersistPosition={persist} />
+          <Canvas
+            nodes={nodes}
+            edges={edgesWithPulses}
+            onPersistPosition={persist}
+          />
         )}
       </main>
     </div>
