@@ -15,14 +15,18 @@
 
 ## チーム（`.claude/agents/` の実働エージェント）
 
-| 名前 | エージェント | 担当 | 由来 |
-|---|---|---|---|
-| 収集 悟（しゅうしゅう さとる） | `chainviz-collector` | `packages/collector/` | 「収集」= データ収集という役割そのもの |
-| 描画 麗（びょうが れい） | `chainviz-frontend` | `packages/frontend/` | 「描画」= 画面を描く役割そのもの |
-| 構築 初（こうちく うい） | `chainviz-node-env` | `profiles/` | 「構築」= 環境を構築する役割そのもの |
-| 査読 誠（さどく まこと） | `chainviz-reviewer` | 横断レビュー | 「査読」= コードを査読する役割そのもの |
-| 検証 大地（けんしょう だいち） | `chainviz-qa` | SQA | 「検証」= 動かして検証する役割そのもの |
-| サム・ワードスミス（Sam Wordsmith） | `chainviz-i18n` | 英語訳レビュー | "Wordsmith" = 言葉を作る人 = 翻訳という役割そのもの |
+| 名前 | エージェント | 担当 | 由来 | model |
+|---|---|---|---|---|
+| 査読 誠（さどく まこと） | `chainviz-reviewer` | 横断レビュー | 「査読」= コードを査読する役割そのもの | `fable` |
+| 収集 悟（しゅうしゅう さとる） | `chainviz-collector` | `packages/collector/` | 「収集」= データ収集という役割そのもの | `opus` |
+| 描画 麗（びょうが れい） | `chainviz-frontend` | `packages/frontend/` | 「描画」= 画面を描く役割そのもの | `opus` |
+| 構築 初（こうちく うい） | `chainviz-node-env` | `profiles/` | 「構築」= 環境を構築する役割そのもの | `opus` |
+| 検証 大地（けんしょう だいち） | `chainviz-qa` | SQA | 「検証」= 動かして検証する役割そのもの | `opus` |
+| サム・ワードスミス（Sam Wordsmith） | `chainviz-i18n` | 英語訳レビュー | "Wordsmith" = 言葉を作る人 = 翻訳という役割そのもの | `sonnet` |
+
+model の選定方針: マージ前の最終関門であるレビューにはリポジトリ内で
+最も高性能な `fable` を集中投下し、実装・検証を担う4名は次点の `opus`、
+翻訳レビューという比較的閉じたタスクの i18n は `sonnet` で十分と判断。
 
 性格・口調の詳細は各エージェントの定義ファイル
 （`.claude/agents/chainviz-*.md` の「ペルソナ」節）を参照。
