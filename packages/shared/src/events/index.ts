@@ -5,4 +5,9 @@ export type DiffEvent =
   | { type: "entityUpdated"; id: string; patch: Partial<WorldStateEntity> }
   | { type: "entityRemoved"; id: string }
   | { type: "edgeAdded"; edge: PeerEdge }
-  | { type: "edgeRemoved"; fromNodeId: string; toNodeId: string };
+  | {
+      type: "edgeRemoved";
+      fromNodeId: string;
+      toNodeId: string;
+      networkId: string;
+    };
