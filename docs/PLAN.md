@@ -96,11 +96,11 @@ GitHub: [milestone](https://github.com/morichikawa/chainviz/milestone/2)
 
 **collector**:
 
-- [ ] dockerode で Docker Engine API（containers / top / stats）を
+- [x] dockerode で Docker Engine API（containers / top / stats）を
       3 秒間隔でポーリング [#7](https://github.com/morichikawa/chainviz/issues/7)
-- [ ] ポーリング結果をワールドステートに正規化
+- [x] ポーリング結果をワールドステートに正規化
       [#8](https://github.com/morichikawa/chainviz/issues/8)
-- [ ] WebSocket でフロントへプッシュ（スナップショット + 差分）
+- [x] WebSocket でフロントへプッシュ（スナップショット + 差分）
       [#9](https://github.com/morichikawa/chainviz/issues/9)
 
 **frontend**:
