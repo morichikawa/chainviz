@@ -48,11 +48,12 @@ issue-<番号>-<内容を表す短い英語スラッグ>
 
 ## CI
 
-push のたびに GitHub Actions(`.github/workflows/ci.yml`)が
-`lint` → `build` → `test` を実行する。push 前にローカルで
+GitHub Actions は使わない(private リポジトリでの Actions 利用料を避ける
+ため)。代わりに `pre-push` フック(`.githooks/pre-push`。上記の
+`core.hooksPath` 設定で有効化される)が `git push` のたびにローカルで
 
 ```sh
 pnpm lint && pnpm build && pnpm test
 ```
 
-が通ることを確認しておく。
+を自動実行し、失敗すると push 自体が中止される。

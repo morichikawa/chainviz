@@ -74,9 +74,10 @@ Docker 上の Ethereum ノード群を Miro 風の無限キャンバスでリア
   連動させる。`chainviz-reviewer` と `chainviz-qa` のレビューを経てから
   `main` にマージする。マージは squash にせず、分けたコミットの履歴を
   保持する（通常のマージコミット、または rebase マージ）
-- CI（`.github/workflows/ci.yml`）が push のたびに lint / build / test を
-  実行する。ローカルで `pnpm lint && pnpm build && pnpm test` が通ることを
-  確認してから push する
+- CI は GitHub Actions を使わない（private リポジトリでの Actions 利用料を
+  避けるため）。代わりに `.githooks/pre-push` フックが push 時にローカルで
+  `pnpm lint && pnpm build && pnpm test` を実行し、失敗したら push 自体を
+  止める（`docs/CONTRIBUTING.md` 参照）
 - タスク完了時は `docs/WORKLOG.md` に作業記録を追記する（何を・なぜ・どう
   実施したか、次の担当が知っておくべき注意点）。`docs/PLAN.md` のチェック
   ボックスは進捗管理用であり、経緯の記録は WORKLOG.md の役割

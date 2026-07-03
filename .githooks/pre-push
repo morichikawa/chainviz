@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# push前にローカルで lint / build / test を実行し、失敗したら push を止める。
+# 有効化: git config core.hooksPath .githooks (新しいクローンでは1回だけ実行が必要)
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root" || exit 1
+
+echo "pre-push: pnpm lint && pnpm build && pnpm test を実行します..." >&2
+
+if ! pnpm lint; then
+    echo "" >&2
+    echo "エラー: pnpm lint が失敗しました。push を中止します。" >&2
+    exit 1
+fi
+
+if ! pnpm build; then
+    echo "" >&2
+    echo "エラー: pnpm build が失敗しました。push を中止します。" >&2
+    exit 1
+fi
+
+if ! pnpm test; then
+    echo "" >&2
+    echo "エラー: pnpm test が失敗しました。push を中止します。" >&2
+    exit 1
+fi
+
+echo "pre-push: すべて成功しました。push を続行します。" >&2
+exit 0
