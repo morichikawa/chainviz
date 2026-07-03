@@ -1,0 +1,238 @@
+:root {
+  --bg: #0f1420;
+  --panel: #1a2030;
+  --panel-2: #232b3d;
+  --text: #e7ecf4;
+  --muted: #9aa6bd;
+  --accent: #4f9dff;
+  --synced: #38d39f;
+  --syncing: #f5b544;
+  font-family:
+    "Inter", system-ui, -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN",
+    "Noto Sans JP", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.app__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: var(--panel);
+  border-bottom: 1px solid #2a3346;
+}
+
+.app__title {
+  font-size: 18px;
+  margin: 0;
+}
+
+.app__subtitle {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 2px 0 0;
+}
+
+.app__controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.status-badge {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+}
+
+.status-badge--connected {
+  color: var(--synced);
+}
+
+.status-badge--connecting {
+  color: var(--syncing);
+}
+
+.language-toggle {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid #33405a;
+  border-radius: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.language-toggle:hover {
+  border-color: var(--accent);
+}
+
+.app__canvas {
+  flex: 1;
+  position: relative;
+}
+
+.app__empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+/* --- インフラカード --- */
+.infra-card {
+  position: relative;
+  min-width: 190px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--panel-2);
+  border: 1px solid #33405a;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.infra-card--workbench {
+  border-color: #7a5cff;
+}
+
+.infra-card__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.infra-card__status {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--syncing);
+}
+
+.infra-card__status.is-synced {
+  background: var(--synced);
+}
+
+.infra-card__kind {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.infra-card__name {
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: 6px;
+}
+
+.infra-card__subtitle {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* --- ホバーポップオーバー --- */
+.infra-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+  min-width: 220px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #0c1119;
+  border: 1px solid #33405a;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.infra-field {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  padding: 3px 0;
+}
+
+.infra-field__label {
+  color: var(--muted);
+}
+
+.infra-field__value {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- 用語インライン解説 --- */
+.glossary-term {
+  position: relative;
+  cursor: help;
+  outline: none;
+}
+
+.glossary-term__label {
+  border-bottom: 1px dotted var(--accent);
+}
+
+.glossary-term--unknown {
+  /* 未登録用語は下線を付けない */
+}
+
+.glossary-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  display: block;
+  width: 260px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #0c1119;
+  border: 1px solid var(--accent);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  text-align: left;
+  white-space: normal;
+}
+
+.glossary-popover__name {
+  display: block;
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.glossary-popover__definition {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.glossary-popover__related {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--accent);
+}

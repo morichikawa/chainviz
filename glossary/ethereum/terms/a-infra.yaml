@@ -1,0 +1,78 @@
+# A層（インフラ）の用語データ。
+# スキーマは docs/ARCHITECTURE.md §5 を参照。
+# 1エントリ = 用語キー -> { name, definition, layer, relatedTerms }
+# name / definition は {ja, en} 形式の多言語テキスト。
+
+container:
+  name:
+    ja: コンテナ
+    en: Container
+  definition:
+    ja: >-
+      アプリケーションとその実行環境をまとめて隔離する軽量な実行単位。chainviz
+      では各 Ethereum ノードやワークベンチが1つの Docker コンテナとして動く。
+    en: >-
+      A lightweight, isolated unit that packages an application together with
+      its runtime. In chainviz each Ethereum node and workbench runs as one
+      Docker container.
+  layer: a-infra
+  relatedTerms: [port-mapping, el-client, cl-client, workbench]
+
+port-mapping:
+  name:
+    ja: ポートマッピング
+    en: Port mapping
+  definition:
+    ja: >-
+      コンテナ内部のポートをホスト側のポートへ結びつけ、外部から到達できる
+      ようにする設定。Ethereum ノードでは JSON-RPC(8545) や P2P(30303) を公開する。
+    en: >-
+      A mapping that binds a port inside the container to a port on the host so
+      it can be reached from outside. Ethereum nodes expose JSON-RPC (8545) and
+      P2P (30303) this way.
+  layer: a-infra
+  relatedTerms: [container]
+
+el-client:
+  name:
+    ja: 実行クライアント（EL）
+    en: Execution client (EL)
+  definition:
+    ja: >-
+      トランザクションの実行と EVM の状態遷移を担うクライアント。JSON-RPC を
+      提供する。chainviz では reth を使う。
+    en: >-
+      The client responsible for executing transactions and applying EVM state
+      transitions, and for serving JSON-RPC. chainviz uses reth.
+  layer: a-infra
+  relatedTerms: [cl-client, container]
+
+cl-client:
+  name:
+    ja: コンセンサスクライアント（CL）
+    en: Consensus client (CL)
+  definition:
+    ja: >-
+      Proof of Stake の合意形成（ブロック提案・投票）を担うクライアント。
+      実行クライアントとは Engine API で連携する。chainviz では lighthouse を使う。
+    en: >-
+      The client that drives Proof of Stake consensus (block proposal and
+      attestation) and talks to the execution client over the Engine API.
+      chainviz uses lighthouse.
+  layer: a-infra
+  relatedTerms: [el-client, container]
+
+workbench:
+  name:
+    ja: ワークベンチ
+    en: Workbench
+  definition:
+    ja: >-
+      ユーザーが tx 送信・コントラクトデプロイなどの操作を行う開発用コンテナ。
+      ノードと同じネットワークに接続し、1台 = 1人の登場人物として扱う。
+    en: >-
+      A development container from which a user sends transactions, deploys
+      contracts, and runs CLI tools. It joins the same network as the nodes and
+      represents one actor per container.
+  layer: a-infra
+  relatedTerms: [container, el-client]

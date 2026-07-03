@@ -5,10 +5,28 @@
   "type": "module",
   "main": "./dist/index.js",
   "scripts": {
+    "dev": "vite",
     "build": "tsc -b",
+    "build:web": "vite build",
+    "preview": "vite preview",
     "test": "vitest run"
   },
   "dependencies": {
-    "@chainviz/shared": "workspace:*"
+    "@chainviz/shared": "workspace:*",
+    "@xyflow/react": "^12.8.0",
+    "js-yaml": "^4.1.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/js-yaml": "^4.0.9",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "jsdom": "^25.0.1",
+    "vite": "^7.0.0",
+    "vitest": "^3.0.0"
   }
 }
