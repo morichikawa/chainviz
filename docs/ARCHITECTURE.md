@@ -50,12 +50,15 @@ packages/collector/src/
   index.ts
 
 packages/frontend/src/
+  app/                 # アプリのルート組み立て（App コンポーネント・依存の初期化）
   canvas/              # React Flow の土台（ズーム/パン/ドラッグ）
   entities/            # ノード/ワークベンチ/ウォレットのカード表示コンポーネント
   glossary/            # インライン解説・用語集パネル
   i18n/                # ja/en 切り替え
   layout/              # レイアウトの localStorage 永続化
-  websocket/           # collector への接続・スナップショット/差分の反映
+  platform/            # ブラウザ API のラッパー（localStorage などの薄い抽象）
+  websocket/           # collector への接続・スナップショット/差分メッセージの受信
+  world-state/         # 受信したスナップショット/差分を畳み込むクライアント側ストア
   chain-profiles/      # チェーンプロファイルごとのフロント表現セット
 ```
 

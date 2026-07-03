@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { describeSnapshot } from "./index.js";
+import {
+  applySnapshot,
+  createChainvizClient,
+  entitiesToFlowNodes,
+  parseGlossaryYaml,
+} from "./index.js";
 
-describe("describeSnapshot", () => {
-  it("summarizes a shared WorldStateSnapshot", () => {
-    const summary = describeSnapshot({
-      chainType: "ethereum",
-      timestamp: 0,
-      entities: [],
-      edges: [],
-    });
-    expect(summary).toBe("ethereum: 0 entities");
+describe("public barrel", () => {
+  it("re-exports the core logic API", () => {
+    expect(typeof applySnapshot).toBe("function");
+    expect(typeof entitiesToFlowNodes).toBe("function");
+    expect(typeof parseGlossaryYaml).toBe("function");
+    expect(typeof createChainvizClient).toBe("function");
   });
 });

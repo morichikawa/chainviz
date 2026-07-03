@@ -105,18 +105,18 @@ GitHub: [milestone](https://github.com/morichikawa/chainviz/milestone/2)
 
 **frontend**:
 
-- [ ] React Flow による無限キャンバスの土台
+- [x] React Flow による無限キャンバスの土台
       [#10](https://github.com/morichikawa/chainviz/issues/10)
-- [ ] コンテナのカード表示 [#11](https://github.com/morichikawa/chainviz/issues/11)
-- [ ] ホバーで IP・プロセス・リソースのポップオーバー
+- [x] コンテナのカード表示 [#11](https://github.com/morichikawa/chainviz/issues/11)
+- [x] ホバーで IP・プロセス・リソースのポップオーバー
       [#12](https://github.com/morichikawa/chainviz/issues/12)
-- [ ] 用語解説のインライン表示の仕組み
+- [x] 用語解説のインライン表示の仕組み
       [#13](https://github.com/morichikawa/chainviz/issues/13)
-- [ ] A層の用語データ（`glossary/ethereum/terms/a-infra.yaml`）
+- [x] A層の用語データ（`glossary/ethereum/terms/a-infra.yaml`）
       [#14](https://github.com/morichikawa/chainviz/issues/14)
-- [ ] レイアウトの localStorage 永続化（キーは安定識別子。コンテナ ID は使わない）
+- [x] レイアウトの localStorage 永続化（キーは安定識別子。コンテナ ID は使わない）
       [#15](https://github.com/morichikawa/chainviz/issues/15)
-- [ ] UI 言語切り替え（ja / en）の仕組み
+- [x] UI 言語切り替え（ja / en）の仕組み
       [#16](https://github.com/morichikawa/chainviz/issues/16)
 
 **成果物**: 動く Phase 1 デモ
