@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"import json,sys,fnmatch; d=json.load(sys.stdin); f=d.get('tool_input',{}).get('file_path') or d.get('tool_response',{}).get('filePath',''); patterns=['*.ts','*.tsx','*docker-compose*.yml','*docker-compose*.yaml','*/package.json','package.json','*/requirements.txt','requirements.txt']; excludes=['*/tests/*','*test*.py','*.test.ts','*.test.tsx','*/node_modules/*']; hit=any(fnmatch.fnmatch(f,p) for p in patterns) and not any(fnmatch.fnmatch(f,e) for e in excludes); print(json.dumps({'systemMessage': 'docs/ARCHITECTURE.md や docs/CONCEPT.md との齟齬がないか sync-docs スキルで確認してください'})) if hit else None\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
