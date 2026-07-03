@@ -1,0 +1,171 @@
+# chainviz Ethereum プロファイル — ノード環境テンプレート
+#
+# genesis を共有した PoS プライベートネット。実行層(reth)+ 合意層
+# (lighthouse)を 2 ノード、Foundry ワークベンチを 1 つ、同じ Docker
+# ネットワークに立ち上げる。
+#
+# 起動:   docker compose up
+# 片付け: docker compose down -v   (-v で genesis / chain データも破棄)
+#
+# genesis は起動のたびに genesis サービスが現在時刻で生成し直す
+# (詳細は README.md「genesis の扱い」)。ノードのデータディレクトリも
+# 起動時に毎回初期化するため、常にまっさらな chain で始まる。
+
+name: chainviz-ethereum
+
+networks:
+  chain:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  genesis: # 生成済み genesis / jwt / バリデーター鍵の共有先
+  clpeer: # beacon ノード間で bootnode ENR を受け渡す
+  reth1data:
+  reth2data:
+  beacon1data:
+  beacon2data:
+  vc1data:
+  vc2data:
+
+services:
+  # --- genesis 生成(1 回実行して終了)---
+  genesis:
+    image: ethpandaops/ethereum-genesis-generator:master
+    entrypoint: ["/bin/sh", "/scripts/generate-genesis.sh"]
+    volumes:
+      - genesis:/data
+      - ./values.env:/config/values.env:ro
+      - ./scripts/generate-genesis.sh:/scripts/generate-genesis.sh:ro
+    networks:
+      - chain
+
+  # --- ノード 1(reth + lighthouse beacon + validator)---
+  reth1:
+    image: ghcr.io/paradigmxyz/reth:latest
+    depends_on:
+      genesis:
+        condition: service_completed_successfully
+    entrypoint: ["/bin/sh", "/scripts/reth-node.sh"]
+    volumes:
+      - genesis:/genesis:ro
+      - reth1data:/data
+      - ./scripts/reth-node.sh:/scripts/reth-node.sh:ro
+    ports:
+      - "8545:8545" # JSON-RPC(ホストから叩けるように公開)
+    networks:
+      chain:
+        ipv4_address: 172.28.1.1
+
+  beacon1:
+    image: sigp/lighthouse:latest
+    depends_on:
+      genesis:
+        condition: service_completed_successfully
+    entrypoint: ["/bin/sh", "/scripts/lighthouse-bn.sh"]
+    environment:
+      BEACON_ROLE: boot
+      ENR_ADDRESS: 172.28.2.1
+      EXECUTION_ENDPOINT: http://reth1:8551
+    volumes:
+      - genesis:/genesis:ro
+      - beacon1data:/data
+      - clpeer:/clpeer
+      - ./scripts/lighthouse-bn.sh:/scripts/lighthouse-bn.sh:ro
+    ports:
+      - "5052:5052" # Beacon HTTP API
+    networks:
+      chain:
+        ipv4_address: 172.28.2.1
+
+  validator1:
+    image: sigp/lighthouse:latest
+    depends_on:
+      - beacon1
+    entrypoint: ["/bin/sh", "/scripts/lighthouse-vc.sh"]
+    environment:
+      KEYS_DIR: /genesis/keys/node0
+      BEACON_NODE: http://beacon1:5052
+      FEE_RECIPIENT: "0x8943545177806ED17B9F23F0a21ee5948eCaa776"
+    volumes:
+      - genesis:/genesis:ro
+      - vc1data:/data
+      - ./scripts/lighthouse-vc.sh:/scripts/lighthouse-vc.sh:ro
+    networks:
+      - chain
+
+  # --- ノード 2(reth + lighthouse beacon + validator)---
+  reth2:
+    image: ghcr.io/paradigmxyz/reth:latest
+    depends_on:
+      genesis:
+        condition: service_completed_successfully
+    entrypoint: ["/bin/sh", "/scripts/reth-node.sh"]
+    volumes:
+      - genesis:/genesis:ro
+      - reth2data:/data
+      - ./scripts/reth-node.sh:/scripts/reth-node.sh:ro
+    networks:
+      chain:
+        ipv4_address: 172.28.1.2
+
+  beacon2:
+    image: sigp/lighthouse:latest
+    depends_on:
+      genesis:
+        condition: service_completed_successfully
+      beacon1:
+        condition: service_started
+    entrypoint: ["/bin/sh", "/scripts/lighthouse-bn.sh"]
+    environment:
+      BEACON_ROLE: peer
+      ENR_ADDRESS: 172.28.2.2
+      EXECUTION_ENDPOINT: http://reth2:8551
+    volumes:
+      - genesis:/genesis:ro
+      - beacon2data:/data
+      - clpeer:/clpeer:ro
+      - ./scripts/lighthouse-bn.sh:/scripts/lighthouse-bn.sh:ro
+    networks:
+      chain:
+        ipv4_address: 172.28.2.2
+
+  validator2:
+    image: sigp/lighthouse:latest
+    depends_on:
+      - beacon2
+    entrypoint: ["/bin/sh", "/scripts/lighthouse-vc.sh"]
+    environment:
+      KEYS_DIR: /genesis/keys/node1
+      BEACON_NODE: http://beacon2:5052
+      FEE_RECIPIENT: "0x8943545177806ED17B9F23F0a21ee5948eCaa776"
+    volumes:
+      - genesis:/genesis:ro
+      - vc2data:/data
+      - ./scripts/lighthouse-vc.sh:/scripts/lighthouse-vc.sh:ro
+    networks:
+      - chain
+
+  # --- ワークベンチ(Foundry。ユーザー操作マシン)---
+  # ノード群と同じネットワークに接続する。cast / forge で reth1 の RPC を叩く。
+  # Hardhat は未導入(docs/CONCEPT.md の決定に従い当面 Foundry のみ)。
+  # 秘密鍵はチェーンと同じ mnemonic から導出する。mnemonic は genesis と
+  # 同じ単一の出所(values.env の EL_AND_CL_MNEMONIC)を env_file で読み込む
+  # ため、プリマイン済みアカウントの鍵と必ず一致する。プリマイン済みなので
+  #   cast send --mnemonic "$EL_AND_CL_MNEMONIC" ...  で送金・デプロイできる。
+  workbench:
+    image: ghcr.io/foundry-rs/foundry:latest
+    depends_on:
+      - reth1
+    entrypoint: ["/bin/sh", "-c", "sleep infinity"]
+    # genesis と同じ values.env を読み込み、mnemonic(EL_AND_CL_MNEMONIC)の
+    # 出所を1箇所に一本化する。他の genesis 用変数も入るが cast / forge は
+    # 参照しないため無害。
+    env_file:
+      - ./values.env
+    environment:
+      ETH_RPC_URL: http://reth1:8545
+    networks:
+      - chain

@@ -59,13 +59,20 @@ sync-docs スキルで確認する。
 
 GitHub: [milestone](https://github.com/morichikawa/chainviz/milestone/1)
 
-- [ ] genesis 設定ファイル（genesis.json 等）の作成。バリデーター最小構成・
+**実装(chainviz-node-env 担当)**: #1〜#3 は1つの環境を組み立てる不可分な
+作業のため、1本のブランチ・1つのPR（`Closes #1, #2, #3`）にまとめる。
+
+- [x] genesis 設定ファイル（genesis.json 等）の作成。バリデーター最小構成・
       slot time 短縮を反映（reth + lighthouse 向け）
       [#1](https://github.com/morichikawa/chainviz/issues/1)
-- [ ] その genesis を使って reth + lighthouse を2〜3ノード起動する
+- [x] その genesis を使って reth + lighthouse を2〜3ノード起動する
       compose ファイルの作成 [#2](https://github.com/morichikawa/chainviz/issues/2)
-- [ ] ワークベンチコンテナ（Foundry）×1 を同ネットワークに接続
+- [x] ワークベンチコンテナ（Foundry）×1 を同ネットワークに接続
       [#3](https://github.com/morichikawa/chainviz/issues/3)
+
+**検証(chainviz-qa 担当)**: node-env の自己確認ではなく、qa が実際に
+動かして検証した結果でクローズする。
+
 - [ ] `docker compose up` でチェーンが起動しブロックが進み続けることを確認
       [#4](https://github.com/morichikawa/chainviz/issues/4)
 - [ ] ワークベンチから `cast` で RPC 疎通確認
