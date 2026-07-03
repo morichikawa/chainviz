@@ -53,6 +53,10 @@ Docker 上の Ethereum ノード群を Miro 風の無限キャンバスでリア
   `docs/` が実装を反映しているか確認する
 - 各 Phase（`docs/CONCEPT.md` のロードマップ）が単体で「動くデモ」に
   なることを優先し、先の Phase のための先回り実装をしない
+- TypeScript パッケージ（`packages/*`）にロジックを追加・変更したら、
+  それに対応するユニットテスト（vitest）も同じ変更の中で書く。
+  既存テストが通ることの確認だけでは不十分（純粋な UI の見た目調整や
+  設定ファイルの変更など、ロジックを伴わない変更は対象外）
 - GitHub（`morichikawa/chainviz`、private）で Issue 管理する。
   `docs/PLAN.md` の**チェックボックス1行 = Issue 1つ**の粒度で、着手する
   ステップに入るタイミングでそのステップの全チェックボックス分をまとめて
@@ -111,9 +115,12 @@ chainviz の開発は「秘書 → 統括 → チーム」の3段構えで進む
   `packages/frontend/`（GUI）
 - **構築 初（こうちく うい）** = `chainviz-node-env`:
   `profiles/`（Docker ノード環境。TypeScript ではなく compose/genesis が中心）
+- **試験 学（しけん まなぶ）** = `chainviz-tester`: 実装担当が書いた
+  基本テストを、異常系・境界値の観点で強化する専任。新機能の実装は
+  しない
 - **査読 誠（さどく まこと）** = `chainviz-reviewer`: 横断レビュー・
-  `packages/shared` の型変更・ビルド/lint/test の静的な最終確認
-  （コードは基本書かない）
+  `packages/shared` の型変更・ビルド/lint/test の静的な最終確認・
+  テストコード自体の質の確認（コードは基本書かない）
 - **検証 大地（けんしょう だいち）** = `chainviz-qa`: SQA担当。実際に
   環境を動かして（docker compose起動、collector/frontendの実行、
   WebSocket疎通など）`docs/PLAN.md`の完了条件を満たしているか検証する
@@ -134,10 +141,13 @@ chainviz の開発は「秘書 → 統括 → チーム」の3段構えで進む
 - 実装担当への割り振り時に、対応する Issue 番号のブランチ
   （`issue-<番号>-<スラッグ>`）を作業場所として使わせる。ブランチ作成自体は
   `main` に影響しない操作なので都度確認を挟まなくてよい
-- 実装担当が完了報告してきたら、`chainviz-reviewer`（静的整合性）と
-  `chainviz-qa`（実際に動かしての検証）の両方を通してから、問題なければ
-  ユーザーに報告する。`chainviz-qa` が完了条件未達を報告した場合は該当の
-  実装担当エージェントに差し戻す
+- 実装担当（TypeScript パッケージ）が完了報告してきたら、
+  `chainviz-tester`（テスト強化）→ `chainviz-reviewer`（静的整合性・
+  テストコードの質）→ `chainviz-qa`（実際に動かしての検証）の順に通して
+  から、問題なければユーザーに報告する。`chainviz-node-env` のような
+  TypeScript を伴わない担当は `chainviz-tester` を経由せず
+  `chainviz-reviewer` → `chainviz-qa` でよい。`chainviz-qa` が完了条件
+  未達を報告した場合は該当の実装担当エージェントに差し戻す
 - `chainviz-reviewer` と `chainviz-qa` の両方を通過した（指摘があれば
   対応・再検証済みの）実装は、**コミット・push・PR作成・マージまで
   都度の確認を待たずに進めてよい**（ユーザーより許可済み）。

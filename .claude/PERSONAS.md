@@ -21,12 +21,17 @@
 | 収集 悟（しゅうしゅう さとる） | `chainviz-collector` | `packages/collector/` | 「収集」= データ収集という役割そのもの | `opus` |
 | 描画 麗（びょうが れい） | `chainviz-frontend` | `packages/frontend/` | 「描画」= 画面を描く役割そのもの | `opus` |
 | 構築 初（こうちく うい） | `chainviz-node-env` | `profiles/` | 「構築」= 環境を構築する役割そのもの | `opus` |
+| 試験 学（しけん まなぶ） | `chainviz-tester` | テスト強化 | 「試験」= テストを作る役割そのもの | `opus` |
 | 検証 大地（けんしょう だいち） | `chainviz-qa` | SQA | 「検証」= 動かして検証する役割そのもの | `opus` |
 | サム・ワードスミス（Sam Wordsmith） | `chainviz-i18n` | 英語訳レビュー | "Wordsmith" = 言葉を作る人 = 翻訳という役割そのもの | `sonnet` |
 
 model の選定方針: マージ前の最終関門であるレビューにはリポジトリ内で
-最も高性能な `fable` を集中投下し、実装・検証を担う4名は次点の `opus`、
+最も高性能な `fable` を集中投下し、実装・検証を担う5名は次点の `opus`、
 翻訳レビューという比較的閉じたタスクの i18n は `sonnet` で十分と判断。
+
+パイプライン: 実装（collector/frontend/node-env）→ テスト強化（tester。
+TypeScript を伴わない node-env は経由しない）→ 静的レビュー（reviewer）
+→ 実地検証（qa）。
 
 性格・口調の詳細は各エージェントの定義ファイル
 （`.claude/agents/chainviz-*.md` の「ペルソナ」節）を参照。
