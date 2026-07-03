@@ -1,6 +1,6 @@
-import type { NodeEntity, WorkbenchEntity } from "@chainviz/shared";
+import type { NodeEntity, PeerEdge, WorkbenchEntity } from "@chainviz/shared";
 import { describe, expect, it } from "vitest";
-import { computeDiff, entityId } from "./diff.js";
+import { computeDiff, computeEdgeDiff, edgeKey, entityId } from "./diff.js";
 
 function node(overrides: Partial<NodeEntity> = {}): NodeEntity {
   return {
@@ -211,5 +211,104 @@ describe("computeDiff", () => {
         patch: { label: "Bob" },
       },
     ]);
+  });
+});
+
+function edge(overrides: Partial<PeerEdge> = {}): PeerEdge {
+  return {
+    kind: "peer",
+    fromNodeId: "p/beacon1",
+    toNodeId: "p/beacon2",
+    networkId: "p-consensus",
+    ...overrides,
+  };
+}
+
+describe("edgeKey", () => {
+  it("combines from, to and networkId", () => {
+    expect(edgeKey(edge())).toBe("p/beacon1|p/beacon2|p-consensus");
+  });
+
+  it("differs when networkId differs", () => {
+    expect(edgeKey(edge())).not.toBe(edgeKey(edge({ networkId: "other" })));
+  });
+});
+
+describe("computeEdgeDiff", () => {
+  it("emits edgeAdded for new edges", () => {
+    expect(computeEdgeDiff([], [edge()])).toEqual([
+      { type: "edgeAdded", edge: edge() },
+    ]);
+  });
+
+  it("emits edgeRemoved carrying the full edge key for edges that disappeared", () => {
+    expect(computeEdgeDiff([edge()], [])).toEqual([
+      {
+        type: "edgeRemoved",
+        fromNodeId: "p/beacon1",
+        toNodeId: "p/beacon2",
+        networkId: "p-consensus",
+      },
+    ]);
+  });
+
+  it("emits nothing when the edge set is unchanged", () => {
+    expect(computeEdgeDiff([edge()], [edge()])).toEqual([]);
+  });
+
+  it("handles add and remove together in one pass", () => {
+    const kept = edge();
+    const gone = edge({ toNodeId: "p/beacon3" });
+    const fresh = edge({ toNodeId: "p/beacon4" });
+    const events = computeEdgeDiff([kept, gone], [kept, fresh]);
+    expect(events).toContainEqual({ type: "edgeAdded", edge: fresh });
+    expect(events).toContainEqual({
+      type: "edgeRemoved",
+      fromNodeId: "p/beacon1",
+      toNodeId: "p/beacon3",
+      networkId: "p-consensus",
+    });
+    expect(events).toHaveLength(2);
+  });
+
+  it("treats a networkId change as a remove plus add", () => {
+    const before = edge({ networkId: "net-a" });
+    const after = edge({ networkId: "net-b" });
+    const events = computeEdgeDiff([before], [after]);
+    expect(events).toContainEqual({ type: "edgeAdded", edge: after });
+    expect(events).toContainEqual({
+      type: "edgeRemoved",
+      fromNodeId: "p/beacon1",
+      toNodeId: "p/beacon2",
+      networkId: "net-a",
+    });
+  });
+
+  it("returns no events for two empty inputs", () => {
+    expect(computeEdgeDiff([], [])).toEqual([]);
+  });
+
+  it("treats a from/to-swapped edge as a different edge (caller must normalize)", () => {
+    // computeEdgeDiff は無向化しない。生成側（toPeerEdges）で from<=to に
+    // 正規化する前提なので、逆順のエッジは別物として扱われる。
+    const forward = edge({ fromNodeId: "p/beacon1", toNodeId: "p/beacon2" });
+    const reversed = edge({ fromNodeId: "p/beacon2", toNodeId: "p/beacon1" });
+    const events = computeEdgeDiff([forward], [reversed]);
+    expect(events).toContainEqual({ type: "edgeAdded", edge: reversed });
+    expect(events).toContainEqual({
+      type: "edgeRemoved",
+      fromNodeId: "p/beacon1",
+      toNodeId: "p/beacon2",
+      networkId: "p-consensus",
+    });
+    expect(events).toHaveLength(2);
+  });
+
+  it("collapses duplicate edges in the inputs via the edge key", () => {
+    // 同一キーのエッジが重複していても Map で畳まれ、二重の add は出ない。
+    expect(computeEdgeDiff([], [edge(), edge()])).toEqual([
+      { type: "edgeAdded", edge: edge() },
+    ]);
+    expect(computeEdgeDiff([edge(), edge()], [edge()])).toEqual([]);
   });
 });
