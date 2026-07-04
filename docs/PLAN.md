@@ -126,10 +126,11 @@ GitHub: [milestone](https://github.com/morichikawa/chainviz/milestone/2)
 
 GitHub: [milestone](https://github.com/morichikawa/chainviz/milestone/3)
 
-reth(EL)同士のP2Pは`profiles/ethereum`ではまだ繋いでいない（Phase 3で追加予定）
-ため、この段階のピア接続検出はlighthouse(CL)側のBeacon APIを対象にする。
-ブロック伝播の波アニメーションはCL側のP2Pゴシップだけで各reth(EL)ノードへの
-Engine API経由の到達タイミングに差が出るため、EL間P2Pが無くても実現できる。
+このステップの実装時点ではreth(EL)同士のP2Pは`profiles/ethereum`でまだ
+繋いでいなかったため、この段階のピア接続検出はlighthouse(CL)側のBeacon API
+を対象にした。ブロック伝播の波アニメーションはCL側のP2Pゴシップだけで各
+reth(EL)ノードへのEngine API経由の到達タイミングに差が出るため、EL間P2Pが
+無くても実現できた(EL間P2Pは後のステップ5・Issue #44で有効化した)。
 
 **collector**:
 
