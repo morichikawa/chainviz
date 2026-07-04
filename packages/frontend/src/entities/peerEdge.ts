@@ -43,12 +43,19 @@ export const PEER_EDGE_TYPE = "peer";
  * networkId ごとに紐の色を分けるためのパレット。
  * 現状の Ethereum プロファイル1つでは networkId は1種類だが、将来の
  * 複数チェーン比較（Phase 6 以降）でネットワークを見分けられるようにしておく。
+ *
+ * 紐は `stroke-opacity` を掛けた状態で背景色(--bg #0f1420)の上に描かれるため、
+ * 見た目のコントラストは単色のコントラスト比だけでは測れない。背景と混色した
+ * 実効色で比較したところ、青・紫は背景の紺色に近い色相のため埋もれやすく
+ * （混色後コントラスト比が約3.9:1）、他の4色より見づらかった。そのため
+ * 青・紫のみ明度を上げている（緑・琥珀・橙・水色は混色後も5:1以上あり変更なし）。
+ * Issue #32。
  */
 export const NETWORK_COLORS: readonly string[] = [
-  "#4f9dff",
+  "#7db8ff",
   "#38d39f",
   "#f5b544",
-  "#c77dff",
+  "#d59bff",
   "#ff8f6b",
   "#5ad1e8",
 ];
@@ -110,7 +117,9 @@ export function peerEdgesToFlowEdges(
       target: hi,
       data: { networkId: edge.networkId },
       className: `peer-edge peer-edge--net-${networkClassToken(edge.networkId)}`,
-      style: { stroke: color, strokeWidth: 1.5 },
+      // strokeWidth は初期値(1.5)だと細く、opacity 併用時に背景へ埋もれ
+      // やすかったため 2 に太くした（Issue #32）。
+      style: { stroke: color, strokeWidth: 2 },
     });
   }
 

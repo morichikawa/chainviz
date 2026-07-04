@@ -36,7 +36,9 @@ export function PeerPropagationEdge({
     <>
       <BaseEdge id={id} path={edgePath} style={style} />
       {pulses.map((pulse) => (
-        <circle key={pulse.key} className="peer-pulse" r={4}>
+        // r は初期値(4)よりわずかに大きくし、ダーク背景での視認性を高めた
+        // （Issue #32、CSS 側の drop-shadow 拡大とあわせて調整）。
+        <circle key={pulse.key} className="peer-pulse" r={5}>
           <animateMotion
             dur={`${pulse.durationMs}ms`}
             repeatCount="1"
