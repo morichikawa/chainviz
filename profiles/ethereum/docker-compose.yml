@@ -7,9 +7,10 @@
 # 起動:   docker compose up
 # 片付け: docker compose down -v   (-v で genesis / chain データも破棄)
 #
-# genesis は起動のたびに genesis サービスが現在時刻で生成し直す
-# (詳細は README.md「genesis の扱い」)。ノードのデータディレクトリも
-# 起動時に毎回初期化するため、常にまっさらな chain で始まる。
+# genesis は初回起動時に genesis サービスが現在時刻で生成し、共有ボリュームに
+# 残す(詳細は README.md「genesis の扱い」)。以降の起動では既存の genesis を
+# 再利用し、再生成しない(冪等)。まっさらな chain で始めたいときは
+# `docker compose down -v` でボリュームごと破棄する。
 
 name: chainviz-ethereum
 
@@ -32,7 +33,7 @@ volumes:
   vc2data:
 
 services:
-  # --- genesis 生成(1 回実行して終了)---
+  # --- genesis 生成(初回のみ実行して終了。以降は再利用し再生成しない)---
   genesis:
     image: ethpandaops/ethereum-genesis-generator:master
     entrypoint: ["/bin/sh", "/scripts/generate-genesis.sh"]
