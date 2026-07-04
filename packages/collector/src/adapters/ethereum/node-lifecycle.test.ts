@@ -18,6 +18,7 @@ function fakeOps(
   opts: {
     usedIps?: string[];
     createFails?: (spec: ContainerSpec) => boolean;
+    stopAndRemoveFails?: (id: string) => boolean;
   } = {},
 ): DockerOperations & {
   created: ContainerSpec[];
@@ -37,6 +38,7 @@ function fakeOps(
       },
     ),
     stopAndRemove: vi.fn(async (id: string): Promise<void> => {
+      if (opts.stopAndRemoveFails?.(id)) throw new Error("stopAndRemove failed");
       removed.push(id);
     }),
     usedNetworkIps: vi.fn(async (): Promise<string[]> => opts.usedIps ?? []),
@@ -226,6 +228,29 @@ describe("EthereumNodeLifecycle.addNode", () => {
     // reth は作られたが、後始末で削除されている。
     expect(ops.created).toHaveLength(1);
     expect(ops.removed).toEqual(["cid-1"]);
+  });
+
+  it("propagates the original beacon error even if the reth rollback also fails", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const ops = fakeOps({
+      usedIps: [],
+      createFails: (spec) => spec.image === "sigp/lighthouse:latest",
+      stopAndRemoveFails: () => true,
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+    // 後始末が失敗しても、呼び出し元へは根本原因の beacon エラー
+    // （"create failed"）が伝わり、後始末エラー（"stopAndRemove failed"）に
+    // 差し替わらない。
+    await expect(lifecycle.addNode("ethereum")).rejects.toThrow(/create failed/);
+    // reth の後始末は試みられている（記録は失敗のため removed には残らない）。
+    expect(ops.stopAndRemove).toHaveBeenCalledWith("cid-1");
+    expect(ops.removed).toHaveLength(0);
+    // 後始末の失敗はログに残る（黙って握りつぶさない）。
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("failed to roll back reth"),
+      expect.any(Error),
+    );
+    errorSpy.mockRestore();
   });
 
   it("does not try to roll back or register anything when reth itself fails", async () => {
