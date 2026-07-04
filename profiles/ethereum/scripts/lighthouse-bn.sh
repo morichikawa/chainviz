@@ -16,7 +16,10 @@ set -e
 set -f
 
 echo "[beacon] データディレクトリを初期化"
-rm -rf /data/*
+# set -f 下では '/data/*' が glob 展開されず、リテラルの '*' を消そうとして
+# 実データが残る。glob に依存しない find で、隠しファイル(lighthouse の
+# *.lock 等)も含めて確実に初期化する。
+find /data -mindepth 1 -delete
 mkdir -p /data
 
 BOOT_ENR_FILE=/clpeer/boot.enr
