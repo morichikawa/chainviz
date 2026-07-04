@@ -16,7 +16,7 @@ set -e
 set -f
 
 echo "[beacon] データディレクトリを初期化"
-# /data はボリュームmarshalなしで起動される場合(chainvizのaddNodeで動的に
+# /data はボリュームマウントなしで起動される場合(chainvizのaddNodeで動的に
 # 追加するコンテナなど)は存在しないことがあるため、find の前に作成しておく
 # (mkdir -p は既存でも無害)。
 # set -f 下では '/data/*' が glob 展開されず、リテラルの '*' を消そうとして
