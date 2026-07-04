@@ -20,6 +20,20 @@ export const POLL_INTERVAL_MS = 3000;
 export const DEFAULT_PORT = 4000;
 
 /**
+ * 待ち受けポートを解決する。環境変数 CHAINVIZ_COLLECTOR_PORT が有効な
+ * 非負整数なら優先し、未設定・不正値なら DEFAULT_PORT を使う。既存の
+ * collector プロセスとポートが衝突しうる状況（E2E テストなど）で、
+ * 起動側がポートを差し替えられるようにするために用いる。
+ */
+export function resolvePort(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.CHAINVIZ_COLLECTOR_PORT;
+  if (raw === undefined || raw.trim() === "") return DEFAULT_PORT;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isInteger(parsed) || parsed < 0) return DEFAULT_PORT;
+  return parsed;
+}
+
+/**
  * profiles/ethereum のホスト絶対パスを解決する。addNode/addWorkbench で
  * scripts/*.sh・values.env を bind mount / 読み込みするために必要。
  * 環境変数 CHAINVIZ_ETHEREUM_PROFILE_DIR で上書きでき、未設定なら
@@ -110,7 +124,7 @@ export async function main(port: number = DEFAULT_PORT): Promise<void> {
 // 直接実行されたときだけサーバーを起動する（import 時は副作用なし）。
 const invokedPath = process.argv[1];
 if (invokedPath && import.meta.url === pathToFileURL(invokedPath).href) {
-  main().catch((err) => {
+  main(resolvePort()).catch((err) => {
     console.error("[collector] fatal:", err);
     process.exit(1);
   });

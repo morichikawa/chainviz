@@ -205,16 +205,16 @@ GitHub: [milestone](https://github.com/morichikawa/chainviz/milestone/5)
 chainviz-qaの手動検証で初めて発覚した。この種の不具合を自動で検出できる
 よう、実環境(Docker+collector)を使った結合テストを導入する。
 
-- [ ] packages/e2eパッケージの土台(Docker起動待ち・collector起動ヘルパー・
+- [x] packages/e2eパッケージの土台(Docker起動待ち・collector起動ヘルパー・
       WebSocketテストクライアント)を作る
       [#51](https://github.com/morichikawa/chainviz/issues/51)
-- [ ] A層・B層のE2Eテスト(スナップショット・ピアエッジ・ブロック伝播
+- [x] A層・B層のE2Eテスト(スナップショット・ピアエッジ・ブロック伝播
       タイミング)を書く
       [#52](https://github.com/morichikawa/chainviz/issues/52)
-- [ ] ステップ5操作コマンドのE2Eテスト(addNode後の実際のブロック追従確認
+- [x] ステップ5操作コマンドのE2Eテスト(addNode後の実際のブロック追従確認
       を含む)を書く
       [#53](https://github.com/morichikawa/chainviz/issues/53)
-- [ ] E2Eテストの実行方法をpnpm test:e2eとして配線しCONTRIBUTING.mdに
+- [x] E2Eテストの実行方法をpnpm test:e2eとして配線しCONTRIBUTING.mdに
       記載する
       [#54](https://github.com/morichikawa/chainviz/issues/54)
 
@@ -238,6 +238,9 @@ E2Eテストが混入しない
       [#32](https://github.com/morichikawa/chainviz/issues/32)
 - [ ] beaconのみ再起動するとEL/CLが乖離しチェーンが完全停止する
       [#43](https://github.com/morichikawa/chainviz/issues/43)
+- [ ] 稼働中スタックにdocker compose up -dを再実行するとgenesisが
+      再生成され既存ノードと不整合になる
+      [#56](https://github.com/morichikawa/chainviz/issues/56)
 
 ## 運用ルール（全ステップ共通）
 

@@ -2,7 +2,7 @@ import type { NodeEntity, WorldStateSnapshot } from "@chainviz/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EthereumAdapter } from "./adapters/ethereum/index.js";
 import type { CollectorServer } from "./server/websocket-server.js";
-import { startPollingLoop } from "./index.js";
+import { DEFAULT_PORT, resolvePort, startPollingLoop } from "./index.js";
 import { WorldStateStore } from "./world-state/store.js";
 
 function node(overrides: Partial<NodeEntity> = {}): NodeEntity {
@@ -165,5 +165,26 @@ describe("startPollingLoop", () => {
     expect(broadcastDiff.mock.calls[0][0]).toEqual([]);
     expect(store.getSnapshot().entities).toEqual([]);
     loop.stop();
+  });
+});
+
+describe("resolvePort", () => {
+  it("returns DEFAULT_PORT when the env var is unset", () => {
+    expect(resolvePort({})).toBe(DEFAULT_PORT);
+  });
+
+  it("returns DEFAULT_PORT when the env var is empty or whitespace", () => {
+    expect(resolvePort({ CHAINVIZ_COLLECTOR_PORT: "" })).toBe(DEFAULT_PORT);
+    expect(resolvePort({ CHAINVIZ_COLLECTOR_PORT: "   " })).toBe(DEFAULT_PORT);
+  });
+
+  it("parses a valid non-negative integer port", () => {
+    expect(resolvePort({ CHAINVIZ_COLLECTOR_PORT: "4123" })).toBe(4123);
+    expect(resolvePort({ CHAINVIZ_COLLECTOR_PORT: "0" })).toBe(0);
+  });
+
+  it("falls back to DEFAULT_PORT for non-numeric or negative values", () => {
+    expect(resolvePort({ CHAINVIZ_COLLECTOR_PORT: "abc" })).toBe(DEFAULT_PORT);
+    expect(resolvePort({ CHAINVIZ_COLLECTOR_PORT: "-5" })).toBe(DEFAULT_PORT);
   });
 });
