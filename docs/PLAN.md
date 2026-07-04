@@ -179,11 +179,11 @@ Phase 2 と Phase 3 の間に挟む機能。新規ノードは「バリデータ
 
 **frontend**:
 
-- [ ] キャンバスにノード/ワークベンチ追加ボタンのUIを実装する
+- [x] キャンバスにノード/ワークベンチ追加ボタンのUIを実装する
       [#37](https://github.com/morichikawa/chainviz/issues/37)
-- [ ] ノード/ワークベンチカードに削除ボタンを実装する
+- [x] ノード/ワークベンチカードに削除ボタンを実装する
       [#38](https://github.com/morichikawa/chainviz/issues/38)
-- [ ] コマンド失敗時のエラー表示を実装する
+- [x] コマンド失敗時のエラー表示を実装する
       [#39](https://github.com/morichikawa/chainviz/issues/39)
 
 **成果物**: キャンバス上でノード/ワークベンチを追加・削除できるデモ

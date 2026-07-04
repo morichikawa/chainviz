@@ -51,11 +51,13 @@ packages/collector/src/
 
 packages/frontend/src/
   app/                 # アプリのルート組み立て（App コンポーネント・依存の初期化）
-  canvas/              # React Flow の土台（ズーム/パン/ドラッグ）
+  canvas/              # React Flow の土台（ズーム/パン/ドラッグ）・操作ツールバー
+  commands/            # 操作コマンドの発行・保留追跡・失敗通知の配線
   entities/            # ノード/ワークベンチ/ウォレットのカード表示コンポーネント
   glossary/            # インライン解説・用語集パネル
   i18n/                # ja/en 切り替え
   layout/              # レイアウトの localStorage 永続化
+  notifications/       # トースト通知（コマンド失敗のエラー表示など）
   platform/            # ブラウザ API のラッパー（localStorage などの薄い抽象）
   websocket/           # collector への接続・スナップショット/差分メッセージの受信
   world-state/         # 受信したスナップショット/差分を畳み込むクライアント側ストア
