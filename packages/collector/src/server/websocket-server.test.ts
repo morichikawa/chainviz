@@ -1,6 +1,12 @@
-import type { DiffEvent, NodeEntity, ServerMessage } from "@chainviz/shared";
-import { afterEach, describe, expect, it } from "vitest";
+import type {
+  Command,
+  DiffEvent,
+  NodeEntity,
+  ServerMessage,
+} from "@chainviz/shared";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
+import type { CommandProcessor } from "./websocket-server.js";
 import { WorldStateStore } from "../world-state/store.js";
 import { CollectorServer } from "./websocket-server.js";
 
@@ -83,8 +89,11 @@ describe("CollectorServer", () => {
     server = undefined;
   });
 
-  async function start(store: WorldStateStore): Promise<number> {
-    server = new CollectorServer(store);
+  async function start(
+    store: WorldStateStore,
+    commands?: CommandProcessor,
+  ): Promise<number> {
+    server = new CollectorServer(store, commands);
     await server.listen(0);
     const addr = server.address;
     if (!addr) throw new Error("server did not bind a port");
@@ -142,9 +151,9 @@ describe("CollectorServer", () => {
     expect(received).toBe(false);
   });
 
-  it("replies with a failing commandResult for commands (not yet implemented)", async () => {
+  it("replies with a failing commandResult when no command processor is wired", async () => {
     const store = new WorldStateStore("ethereum");
-    const port = await start(store);
+    const port = await start(store); // no processor
     const client = await connect(port);
     clients.push(client);
     await client.next(); // snapshot
@@ -164,6 +173,66 @@ describe("CollectorServer", () => {
       expect(message.commandId).toBe("cmd-1");
       expect(message.ok).toBe(false);
       expect(message.error).toBeTruthy();
+    }
+  });
+
+  it("dispatches a command to the processor and returns its result", async () => {
+    const handled: Command[] = [];
+    const processor: CommandProcessor = {
+      handle: vi.fn(async (command: Command) => {
+        handled.push(command);
+        return { ok: true };
+      }),
+    };
+    const store = new WorldStateStore("ethereum");
+    const port = await start(store, processor);
+    const client = await connect(port);
+    clients.push(client);
+    await client.next(); // snapshot
+
+    const replyPromise = client.next();
+    client.ws.send(
+      JSON.stringify({
+        type: "command",
+        commandId: "cmd-9",
+        command: { action: "addNode", chainProfile: "ethereum" },
+      }),
+    );
+
+    const message = await replyPromise;
+    expect(message.type).toBe("commandResult");
+    if (message.type === "commandResult") {
+      expect(message.commandId).toBe("cmd-9");
+      expect(message.ok).toBe(true);
+    }
+    expect(handled).toEqual([
+      { action: "addNode", chainProfile: "ethereum" },
+    ]);
+  });
+
+  it("returns the processor's failure (ok:false) with an error message", async () => {
+    const processor: CommandProcessor = {
+      handle: async () => ({ ok: false, error: "node cannot be removed" }),
+    };
+    const store = new WorldStateStore("ethereum");
+    const port = await start(store, processor);
+    const client = await connect(port);
+    clients.push(client);
+    await client.next(); // snapshot
+
+    const replyPromise = client.next();
+    client.ws.send(
+      JSON.stringify({
+        type: "command",
+        commandId: "cmd-10",
+        command: { action: "removeNode", nodeId: "chainviz-ethereum/reth1" },
+      }),
+    );
+
+    const message = await replyPromise;
+    if (message.type === "commandResult") {
+      expect(message.ok).toBe(false);
+      expect(message.error).toBe("node cannot be removed");
     }
   });
 
@@ -255,6 +324,82 @@ describe("CollectorServer", () => {
       received = true;
     });
     client.ws.send(JSON.stringify({ type: "subscribe", topic: "blocks" }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(received).toBe(false);
+    expect(client.ws.readyState).toBe(WebSocket.OPEN);
+  });
+
+  it("echoes back each commandId even when two commands reuse the same id", async () => {
+    const processor: CommandProcessor = {
+      handle: vi.fn(async () => ({ ok: true })),
+    };
+    const store = new WorldStateStore("ethereum");
+    const port = await start(store, processor);
+    const client = await connect(port);
+    clients.push(client);
+    await client.next(); // snapshot
+
+    const first = client.next();
+    client.ws.send(
+      JSON.stringify({
+        type: "command",
+        commandId: "dup",
+        command: { action: "addWorkbench", label: "A" },
+      }),
+    );
+    const firstMsg = await first;
+
+    const second = client.next();
+    client.ws.send(
+      JSON.stringify({
+        type: "command",
+        commandId: "dup",
+        command: { action: "addWorkbench", label: "B" },
+      }),
+    );
+    const secondMsg = await second;
+
+    // No dedup: both commands are processed and both replies carry the id.
+    for (const msg of [firstMsg, secondMsg]) {
+      expect(msg.type).toBe("commandResult");
+      if (msg.type === "commandResult") expect(msg.commandId).toBe("dup");
+    }
+    expect(processor.handle).toHaveBeenCalledTimes(2);
+  });
+
+  it("still replies (with the echoed id) to a command envelope missing its command field", async () => {
+    const processor: CommandProcessor = {
+      handle: vi.fn(async () => ({ ok: true })),
+    };
+    const store = new WorldStateStore("ethereum");
+    const port = await start(store, processor);
+    const client = await connect(port);
+    clients.push(client);
+    await client.next(); // snapshot
+
+    // A "command" envelope whose command field is missing still reaches the
+    // processor and gets a reply with the echoed id (no crash / no hang).
+    const replyPromise = client.next();
+    client.ws.send(JSON.stringify({ type: "command", commandId: "c-x" }));
+    const message = await replyPromise;
+    expect(message.type).toBe("commandResult");
+    if (message.type === "commandResult") {
+      expect(message.commandId).toBe("c-x");
+    }
+  });
+
+  it("ignores an array payload sent by the client", async () => {
+    const store = new WorldStateStore("ethereum");
+    const port = await start(store);
+    const client = await connect(port);
+    clients.push(client);
+    await client.next(); // snapshot
+
+    let received = false;
+    client.ws.on("message", () => {
+      received = true;
+    });
+    client.ws.send(JSON.stringify([{ type: "command" }]));
     await new Promise((r) => setTimeout(r, 50));
     expect(received).toBe(false);
     expect(client.ws.readyState).toBe(WebSocket.OPEN);

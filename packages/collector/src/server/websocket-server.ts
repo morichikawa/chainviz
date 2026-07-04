@@ -4,16 +4,26 @@
 
 import type {
   ClientMessage,
+  Command,
   DiffEvent,
   ServerMessage,
 } from "@chainviz/shared";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
+import type { CommandResult } from "../commands/lifecycle.js";
 import type { WorldStateStore } from "../world-state/store.js";
+
+/** 操作コマンドを処理して結果を返すもの（commands/handler.ts が実装）。 */
+export interface CommandProcessor {
+  handle(command: Command): Promise<CommandResult>;
+}
 
 export class CollectorServer {
   private wss?: WebSocketServer;
 
-  constructor(private readonly store: WorldStateStore) {}
+  constructor(
+    private readonly store: WorldStateStore,
+    private readonly commands?: CommandProcessor,
+  ) {}
 
   /** 指定ポートで待ち受ける。listening まで待つ。 */
   listen(port: number): Promise<void> {
@@ -39,10 +49,10 @@ export class CollectorServer {
       payload: this.store.getSnapshot(),
     };
     ws.send(JSON.stringify(snapshot));
-    ws.on("message", (data) => this.onMessage(ws, data));
+    ws.on("message", (data) => void this.onMessage(ws, data));
   }
 
-  private onMessage(ws: WebSocket, data: RawData): void {
+  private async onMessage(ws: WebSocket, data: RawData): Promise<void> {
     let message: ClientMessage;
     try {
       message = JSON.parse(data.toString()) as ClientMessage;
@@ -51,14 +61,24 @@ export class CollectorServer {
     }
     if (message?.type !== "command") return;
 
-    // 操作コマンド（ノード/ワークベンチの追加・削除）は後続ステップで実装する。
-    const result: ServerMessage = {
+    // 操作コマンド（ノード/ワークベンチの追加・削除）を処理する。実際の
+    // ワールドステートへの反映は後続のポーリング差分で届く（コマンド自体は
+    // store を直接書き換えない。docs/ARCHITECTURE.md §3）。
+    const result = await this.runCommand(message.command);
+    const reply: ServerMessage = {
       type: "commandResult",
       commandId: message.commandId,
-      ok: false,
-      error: "command handling is not implemented yet",
+      ok: result.ok,
+      error: result.error,
     };
-    ws.send(JSON.stringify(result));
+    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(reply));
+  }
+
+  private async runCommand(command: Command): Promise<CommandResult> {
+    if (!this.commands) {
+      return { ok: false, error: "command handling is not available" };
+    }
+    return this.commands.handle(command);
   }
 
   /** 差分を全接続クライアントへ配信する。差分が空なら何もしない。 */
