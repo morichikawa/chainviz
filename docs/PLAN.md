@@ -196,7 +196,34 @@ collector側もそれに追随することで解消した。
 追従し、削除すると数秒後にキャンバスから消える。既存compose起動の
 バリデーター付きノードは削除できない(エラーが返る)
 
-## ステップ 6 以降（概要のみ。詳細は着手時にこのドキュメントへ追記）
+## ステップ 6: E2E（結合）テストの導入
+
+GitHub: [milestone](https://github.com/morichikawa/chainviz/milestone/5)
+
+ステップ5(addNode)で「ユニットテストはすべて通っているが実環境では
+動かない」不具合(EL間P2Pが無効でブロックに追従しない。Issue #44/#46)が
+chainviz-qaの手動検証で初めて発覚した。この種の不具合を自動で検出できる
+よう、実環境(Docker+collector)を使った結合テストを導入する。
+
+- [ ] packages/e2eパッケージの土台(Docker起動待ち・collector起動ヘルパー・
+      WebSocketテストクライアント)を作る
+      [#51](https://github.com/morichikawa/chainviz/issues/51)
+- [ ] A層・B層のE2Eテスト(スナップショット・ピアエッジ・ブロック伝播
+      タイミング)を書く
+      [#52](https://github.com/morichikawa/chainviz/issues/52)
+- [ ] ステップ5操作コマンドのE2Eテスト(addNode後の実際のブロック追従確認
+      を含む)を書く
+      [#53](https://github.com/morichikawa/chainviz/issues/53)
+- [ ] E2Eテストの実行方法をpnpm test:e2eとして配線しCONTRIBUTING.mdに
+      記載する
+      [#54](https://github.com/morichikawa/chainviz/issues/54)
+
+**成果物**: `pnpm test:e2e`で実行できるE2Eテスト一式
+**完了条件**: 実環境に対しA層・B層・ステップ5の操作コマンドが自動検証され、
+`pnpm lint && pnpm build && pnpm test`(pre-pushフックの対象)には
+E2Eテストが混入しない
+
+## ステップ 7 以降（概要のみ。詳細は着手時にこのドキュメントへ追記）
 
 - [ ] Phase 3（C層: tx ライフサイクル、ワークベンチ操作の可視化、ウォレット）
 - [ ] Phase 4（D層: ノード内部）
@@ -207,10 +234,10 @@ collector側もそれに追随することで解消した。
 
 ## バックログ（特定のステップに紐づかない、後日着手する課題）
 
-- [ ] E2E（結合）テストの導入検討
-      [#30](https://github.com/morichikawa/chainviz/issues/30)
 - [ ] ダークモードのUI視認性を改善する
       [#32](https://github.com/morichikawa/chainviz/issues/32)
+- [ ] beaconのみ再起動するとEL/CLが乖離しチェーンが完全停止する
+      [#43](https://github.com/morichikawa/chainviz/issues/43)
 
 ## 運用ルール（全ステップ共通）
 
