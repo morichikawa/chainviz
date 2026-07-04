@@ -223,6 +223,15 @@ chainviz-qaの手動検証で初めて発覚した。この種の不具合を自
 `pnpm lint && pnpm build && pnpm test`(pre-pushフックの対象)には
 E2Eテストが混入しない
 
+上記の完了後、「すべてのケースを網羅する」ため以下を追加する(ユーザー
+指示。異常系→再接続の順で着手):
+
+- [ ] 異常系シナリオ(不正なchainProfile・存在しないID・不正なコマンド)を
+      追加する
+      [#58](https://github.com/morichikawa/chainviz/issues/58)
+- [ ] 再接続シナリオ(切断→再接続後のスナップショット整合性)を追加する
+      [#59](https://github.com/morichikawa/chainviz/issues/59)
+
 ## ステップ 7 以降（概要のみ。詳細は着手時にこのドキュメントへ追記）
 
 - [ ] Phase 3（C層: tx ライフサイクル、ワークベンチ操作の可視化、ウォレット）
