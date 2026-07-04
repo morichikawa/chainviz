@@ -203,6 +203,8 @@ Phase 2 と Phase 3 の間に挟む機能。新規ノードは「バリデータ
 
 - [ ] E2E（結合）テストの導入検討
       [#30](https://github.com/morichikawa/chainviz/issues/30)
+- [ ] ダークモードのUI視認性を改善する
+      [#32](https://github.com/morichikawa/chainviz/issues/32)
 
 ## 運用ルール（全ステップ共通）
 
