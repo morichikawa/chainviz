@@ -2,9 +2,13 @@
 // 正規化 → ワールドステート store → WebSocket 配信、を配線する。
 
 import Docker from "dockerode";
-import { pathToFileURL } from "node:url";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { EthereumAdapter } from "./adapters/ethereum/index.js";
+import { EthereumNodeLifecycle } from "./adapters/ethereum/node-lifecycle.js";
+import { CommandHandler } from "./commands/handler.js";
 import { createDockerClient } from "./docker/dockerode-client.js";
+import { createDockerOperations } from "./docker/dockerode-operations.js";
 import { DockerPoller } from "./docker/poller.js";
 import { CollectorServer } from "./server/websocket-server.js";
 import { WorldStateStore } from "./world-state/store.js";
@@ -14,6 +18,21 @@ export const POLL_INTERVAL_MS = 3000;
 
 /** WebSocket サーバーの既定ポート。 */
 export const DEFAULT_PORT = 4000;
+
+/**
+ * profiles/ethereum のホスト絶対パスを解決する。addNode/addWorkbench で
+ * scripts/*.sh・values.env を bind mount / 読み込みするために必要。
+ * 環境変数 CHAINVIZ_ETHEREUM_PROFILE_DIR で上書きでき、未設定なら
+ * リポジトリ構成（packages/collector/dist/index.js の 4 つ上が repo ルート）
+ * から導出する。
+ */
+export function resolveProfileDir(): string {
+  const override = process.env.CHAINVIZ_ETHEREUM_PROFILE_DIR;
+  if (override) return override;
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  // dist/index.js -> dist -> collector -> packages -> repo ルート
+  return path.resolve(here, "../../..", "profiles/ethereum");
+}
 
 export interface PollingLoop {
   stop(): void;
@@ -60,7 +79,13 @@ export async function main(port: number = DEFAULT_PORT): Promise<void> {
   const poller = new DockerPoller(createDockerClient(docker));
   const adapter = new EthereumAdapter(poller);
   const store = new WorldStateStore("ethereum");
-  const server = new CollectorServer(store);
+
+  // 操作コマンド（ノード/ワークベンチの追加・削除）の処理を配線する。
+  const lifecycle = new EthereumNodeLifecycle(createDockerOperations(docker), {
+    profileDir: resolveProfileDir(),
+  });
+  const commands = new CommandHandler(lifecycle);
+  const server = new CollectorServer(store, commands);
 
   await server.listen(port);
   console.log(`[collector] WebSocket server listening on port ${port}`);

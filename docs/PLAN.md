@@ -170,11 +170,11 @@ Phase 2 と Phase 3 の間に挟む機能。新規ノードは「バリデータ
 
 **collector**:
 
-- [ ] addNodeコマンドを実装する(バリデーターなしのフォロワーノード追加)
+- [x] addNodeコマンドを実装する(バリデーターなしのフォロワーノード追加)
       [#34](https://github.com/morichikawa/chainviz/issues/34)
-- [ ] removeNodeコマンドを実装する
+- [x] removeNodeコマンドを実装する
       [#35](https://github.com/morichikawa/chainviz/issues/35)
-- [ ] addWorkbench/removeWorkbenchコマンドを実装する
+- [x] addWorkbench/removeWorkbenchコマンドを実装する
       [#36](https://github.com/morichikawa/chainviz/issues/36)
 
 **frontend**:
