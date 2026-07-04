@@ -8,6 +8,7 @@ import type {
   ContainerSpec,
   CreatedContainer,
   DockerOperations,
+  LabeledContainer,
 } from "./operations.js";
 
 /** dockerode の network.inspect() が返す形のうち、参照する部分だけ。 */
@@ -77,6 +78,14 @@ function stripCidr(address: string): string {
   return address.split("/")[0] ?? address;
 }
 
+/**
+ * ラベルの key/value ペアから、dockerode の listContainers に渡す
+ * "key=value" 形式のフィルタ配列を組み立てる。
+ */
+export function toLabelFilters(labels: Record<string, string>): string[] {
+  return Object.entries(labels).map(([key, value]) => `${key}=${value}`);
+}
+
 /** dockerode のエラーが「コンテナが存在しない（404）」かどうか。 */
 function isNoSuchContainer(err: unknown): boolean {
   return (
@@ -143,6 +152,16 @@ export function createDockerOperations(docker: Docker): DockerOperations {
       const network = docker.getNetwork(networkName);
       const info = (await network.inspect()) as NetworkInspectInfo;
       return collectNetworkIps(info);
+    },
+
+    async listContainersByLabels(
+      labels: Record<string, string>,
+    ): Promise<LabeledContainer[]> {
+      const containers = await docker.listContainers({
+        all: true,
+        filters: { label: toLabelFilters(labels) },
+      });
+      return containers.map((c) => ({ id: c.Id, labels: c.Labels ?? {} }));
     },
   };
 }

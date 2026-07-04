@@ -53,26 +53,41 @@ export interface PollingLoop {
 }
 
 /**
- * プロセス全体を巻き込む未捕捉の非同期エラーに対する安全網を張る。
+ * プロセス全体を巻き込む未捕捉のエラーに対する安全網を張る。
  *
- * collector は addNode/addWorkbench で作成した managed コンテナの参照を
- * メモリ上のレジストリだけで保持している。プロセスが落ちるとこのレジストリが
- * 失われ、作成済みコンテナがすべて孤児になる（削除できなくなる）。そのため、
- * Docker/WebSocket など I/O 層で稀に発生する未捕捉の非同期エラー（例: コンテナ
- * 削除の競合や、状態遷移中のソケットで遅れて発火する 'error' イベント）が
- * プロセス全体を停止させると、被害が「1 コマンドの失敗」では済まず、孤児の
- * 蓄積という連鎖的な悪化を招く（Issue #63）。
+ * Issue #63 の時点では、addNode/addWorkbench で作成した managed コンテナの
+ * 参照がメモリ上のレジストリだけに存在し、プロセスが落ちるとレジストリが
+ * 失われて作成済みコンテナが孤児になる（削除できなくなる）ことを理由に、
+ * uncaughtException も含めて「ログして継続する」方針を採っていた。
  *
- * ここでは Node の既定挙動（unhandledRejection でプロセス終了）を上書きし、
- * 検知した異常は握りつぶさずに必ずログへ残したうえで、長時間稼働する
- * データ収集プロセス自体は落とさない。個々の操作コマンドのエラーは
+ * Issue #65 で collector 起動時に `com.chainviz.managed` ラベルから
+ * レジストリを再構築するようになったため、その前提（プロセス消滅 = 全コン
+ * テナ孤児化）は解消した。孤児化の心配がなくなった以上、uncaughtException
+ * については Node 公式の指針どおり「例外を捕捉できなかった時点でプロセスの
+ * 状態は不定であり、そのまま実行を続けるべきではない」という原則に戻し、
+ * ログを残したうえでプロセスを終了する。
+ *
+ * collector は `node dist/index.js` でホスト上に手動起動される開発・学習用
+ * ツールであり、自動再起動の仕組み（supervisor やコンテナの restart ポリシー）
+ * は用意していない。したがって exit(1) 後は開発者が手動で再起動するまで停止
+ * したままになるが、クラッシュはこのターミナルの終了とフロント側の切断表示で
+ * 即座に可視化されるため、不定状態のプロセスが壊れた観測結果を配信し続ける
+ * よりも望ましい。再起動後は recoverManagedContainers が既存の managed
+ * コンテナを回収するため、実行中のノード/ワークベンチが失われることはない。
+ * 将来 supervisor 等の自動再起動を導入した場合も、この exit(1) はそのまま
+ * 再起動の契機として機能する。
+ *
+ * 一方 unhandledRejection は「await し忘れた・catch し忘れた promise の
+ * 失敗」であることが多く、必ずしもプロセス全体の状態が破損しているとは
+ * 限らないため、引き続きログして継続する（個々の操作コマンドのエラーは
  * CommandHandler が commandResult(ok:false) としてフロントへ返す経路が別に
- * あるため、この安全網はあくまで「どのハンドラにも紐づかない背景の非同期
- * エラー」だけを受け止める最後の砦である。
+ * あるため、ここはあくまで「どのハンドラにも紐づかない背景のエラー」だけを
+ * 受け止める最後の砦である）。
  */
 export function installProcessSafetyNet(
   log: (message: string, detail: unknown) => void = (message, detail) =>
     console.error(message, detail),
+  exit: (code: number) => void = (code) => process.exit(code),
 ): void {
   process.on("unhandledRejection", (reason) => {
     log(
@@ -82,9 +97,10 @@ export function installProcessSafetyNet(
   });
   process.on("uncaughtException", (err) => {
     log(
-      "[collector] uncaught exception; keeping the collector alive:",
+      "[collector] uncaught exception; exiting (restart the collector manually to resume):",
       err,
     );
+    exit(1);
   });
 }
 
@@ -134,6 +150,11 @@ export async function main(port: number = DEFAULT_PORT): Promise<void> {
   const lifecycle = new EthereumNodeLifecycle(createDockerOperations(docker), {
     profileDir: resolveProfileDir(),
   });
+  // com.chainviz.managed ラベルから、前回起動時に addNode/addWorkbench で
+  // 作成した既存コンテナを回収し、レジストリ（this.nodes/this.workbenches）を
+  // 再構築する。CommandHandler をワイヤリングする（= removeNode 等を受け付け
+  // 始める）前に必ず完了させる（Issue #65）。
+  await lifecycle.recoverManagedContainers();
   const commands = new CommandHandler(lifecycle);
   const server = new CollectorServer(store, commands);
 
