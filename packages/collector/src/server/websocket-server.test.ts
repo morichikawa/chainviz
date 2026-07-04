@@ -6,6 +6,7 @@ import type {
 } from "@chainviz/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
+import { WebSocketServer } from "ws";
 import type { CommandProcessor } from "./websocket-server.js";
 import { WorldStateStore } from "../world-state/store.js";
 import { CollectorServer } from "./websocket-server.js";
@@ -438,5 +439,75 @@ describe("CollectorServer", () => {
     const store = new WorldStateStore("ethereum");
     const idle = new CollectorServer(store);
     await expect(idle.close()).resolves.toBeUndefined();
+  });
+
+  /** private な wss にテストからアクセスするためのヘルパー。 */
+  function internalWss(s: CollectorServer): WebSocketServer {
+    return (s as unknown as { wss: WebSocketServer }).wss;
+  }
+
+  async function startWithLog(
+    store: WorldStateStore,
+    log: (message: string, detail: unknown) => void,
+  ): Promise<number> {
+    server = new CollectorServer(store, undefined, log);
+    await server.listen(0);
+    const addr = server.address;
+    if (!addr) throw new Error("server did not bind a port");
+    return addr.port;
+  }
+
+  it("logs a per-connection socket error instead of throwing (crashing the process)", async () => {
+    const logged: unknown[] = [];
+    const store = new WorldStateStore("ethereum");
+    const port = await startWithLog(store, (_m, detail) => logged.push(detail));
+
+    const client = await connect(port);
+    clients.push(client);
+    await client.next(); // snapshot
+
+    // サーバー側のソケットを取得し、突然切断で起きるような 'error' を発火させる。
+    // error リスナーが張られていなければ EventEmitter 規約で throw される。
+    const [serverSocket] = [...internalWss(server!).clients];
+    expect(serverSocket).toBeDefined();
+    const boom = new Error("ECONNRESET");
+    expect(() => serverSocket.emit("error", boom)).not.toThrow();
+    expect(logged).toContain(boom);
+
+    // 他のクライアントの配信は生きたまま
+    expect(client.ws.readyState).toBe(WebSocket.OPEN);
+  });
+
+  it("does not let one connection's socket error tear down other connections", async () => {
+    const store = new WorldStateStore("ethereum");
+    const port = await startWithLog(store, () => {});
+
+    const a = await connect(port);
+    const b = await connect(port);
+    clients.push(a, b);
+    await a.next(); // snapshot
+    await b.next(); // snapshot
+
+    const [socketA] = [...internalWss(server!).clients];
+    socketA.emit("error", new Error("ECONNRESET"));
+
+    // b への配信は引き続き届く
+    const bDiff = b.next();
+    const events: DiffEvent[] = [{ type: "entityRemoved", id: "x" }];
+    server!.broadcastDiff(events);
+    const message = await bDiff;
+    expect(message.type).toBe("diff");
+  });
+
+  it("logs a server-level error emitted after it starts listening", async () => {
+    const logged: unknown[] = [];
+    const store = new WorldStateStore("ethereum");
+    await startWithLog(store, (_m, detail) => logged.push(detail));
+
+    // listening 後のサーバーレベル error が未監視のまま throw されないこと、
+    // かつログに残ること（reject 済み promise へ握り潰されないこと）。
+    const boom = new Error("late server error");
+    expect(() => internalWss(server!).emit("error", boom)).not.toThrow();
+    expect(logged).toContain(boom);
   });
 });

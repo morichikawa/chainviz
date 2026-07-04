@@ -17,12 +17,19 @@ export interface CommandProcessor {
   handle(command: Command): Promise<CommandResult>;
 }
 
+/** 発生源が特定できるソケット/サーバーのエラーをログに残す関数。 */
+export type ServerLogger = (message: string, detail: unknown) => void;
+
+const defaultLog: ServerLogger = (message, detail) =>
+  console.error(message, detail);
+
 export class CollectorServer {
   private wss?: WebSocketServer;
 
   constructor(
     private readonly store: WorldStateStore,
     private readonly commands?: CommandProcessor,
+    private readonly log: ServerLogger = defaultLog,
   ) {}
 
   /** 指定ポートで待ち受ける。listening まで待つ。 */
@@ -30,8 +37,23 @@ export class CollectorServer {
     return new Promise((resolve, reject) => {
       const wss = new WebSocketServer({ port });
       wss.on("connection", (ws) => this.onConnection(ws));
-      wss.once("listening", () => resolve());
-      wss.once("error", (err) => reject(err));
+
+      // 起動時のエラー（ポート衝突など）は listen() を reject する。
+      const onStartupError = (err: Error): void => reject(err);
+      wss.once("error", onStartupError);
+
+      wss.once("listening", () => {
+        // 起動が済んだら reject 用ハンドラを外し、以後のサーバーレベル
+        // エラーは恒久的にログへ流すハンドラに付け替える。error リスナーが
+        // 未登録のまま発火すると EventEmitter の規約で throw され、
+        // プロセス全体の安全網（index.ts の installProcessSafetyNet）に
+        // 流れてしまうため（Issue #68）。
+        wss.removeListener("error", onStartupError);
+        wss.on("error", (err) =>
+          this.log("[collector] websocket server error:", err),
+        );
+        resolve();
+      });
       this.wss = wss;
     });
   }
@@ -44,6 +66,14 @@ export class CollectorServer {
   }
 
   private onConnection(ws: WebSocket): void {
+    // ソケットレベルのエラー（クライアントの突然切断による ECONNRESET 等）を
+    // 接続単位で受け止める。error リスナー未登録のまま error が発火すると
+    // EventEmitter の規約で throw され、発生源が特定できるにもかかわらず
+    // プロセス全体の安全網（index.ts の installProcessSafetyNet）に流れて
+    // しまい、ws 内部の後始末を含む呼び出しスタックを中断する（Issue #68）。
+    ws.on("error", (err) =>
+      this.log("[collector] websocket connection error:", err),
+    );
     const snapshot: ServerMessage = {
       type: "snapshot",
       payload: this.store.getSnapshot(),
