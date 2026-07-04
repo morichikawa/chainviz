@@ -74,8 +74,16 @@ function CanvasInner({ nodes, edges = [], onPersistPosition }: CanvasProps) {
       minZoom={0.2}
       maxZoom={2}
       proOptions={{ hideAttribution: true }}
+      // React Flow の Controls / MiniMap は既定でライトテーマ（白背景）の
+      // まま描画され、アプリ全体のダークな配色から浮いて見づらかった。
+      // React Flow 標準のダークテーマ変数に切り替える（Issue #32）。
+      colorMode="dark"
     >
-      <Background />
+      {/* colorMode="dark" にすると React Flow が --xy-background-color-default
+          (#141414) を定義し、Background 既定色がその無彩色グレーになる。
+          アプリのパレット（紺色 --bg #0f1420）から色相が外れるため、
+          bgColor を明示してキャンバス背景をアプリ側と揃える（Issue #32）。 */}
+      <Background bgColor="var(--bg)" />
       <Controls />
       <MiniMap pannable zoomable />
     </ReactFlow>

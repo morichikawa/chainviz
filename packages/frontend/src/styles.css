@@ -3,10 +3,21 @@
   --panel: #1a2030;
   --panel-2: #232b3d;
   --text: #e7ecf4;
-  --muted: #9aa6bd;
+  /* card__subtitle / infra-field__label など「主張しすぎない補助テキスト」用。
+     初期値(#9aa6bd)は背景とのコントラスト比が実測5.77:1(カード上)と
+     WCAG AA(4.5:1)をやや上回る程度だったため、視認性改善のため明度を
+     上げた(#a9b5cc、カード上で6.85:1)。Issue #32。 */
+  --muted: #a9b5cc;
   --accent: #4f9dff;
   --synced: #38d39f;
   --syncing: #f5b544;
+  /* カード・入力欄・ポップオーバーなどの輪郭線。初期値(#33405a)は背景
+     (--bg)とのコントラスト比が1.77:1しかなく、キャンバス上でカードの
+     境界が判別しづらかったため明度を上げた(2.56:1)。Issue #32。 */
+  --border: #46577d;
+  /* ヘッダー・ツールバーの区切り線。--border よりわずかに控えめな色味に
+     留め、主要な境界線(カード)との強弱をつける。 */
+  --divider: #33405a;
   font-family:
     "Inter", system-ui, -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN",
     "Noto Sans JP", sans-serif;
@@ -40,7 +51,7 @@ body {
   justify-content: space-between;
   padding: 12px 20px;
   background: var(--panel);
-  border-bottom: 1px solid #2a3346;
+  border-bottom: 1px solid var(--divider);
 }
 
 .app__title {
@@ -79,7 +90,7 @@ body {
 .language-toggle {
   background: var(--panel-2);
   color: var(--text);
-  border: 1px solid #33405a;
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 6px 12px;
   cursor: pointer;
@@ -116,7 +127,7 @@ body {
   padding: 8px;
   border-radius: 12px;
   background: rgba(26, 32, 48, 0.9);
-  border: 1px solid #2a3346;
+  border: 1px solid var(--divider);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
 }
 
@@ -129,7 +140,7 @@ body {
 .canvas-toolbar__button {
   background: var(--panel-2);
   color: var(--text);
-  border: 1px solid #33405a;
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 6px 12px;
   cursor: pointer;
@@ -144,7 +155,7 @@ body {
 .canvas-toolbar__input {
   background: var(--bg);
   color: var(--text);
-  border: 1px solid #33405a;
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 6px 10px;
   font-size: 13px;
@@ -163,7 +174,7 @@ body {
   padding: 12px 14px;
   border-radius: 12px;
   background: var(--panel-2);
-  border: 1px solid #33405a;
+  border: 1px solid var(--border);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
 }
 
@@ -240,16 +251,21 @@ body {
 }
 
 /* --- B層: P2P ピア接続（紐） --- */
-/* 個々の色は networkId ごとに JS 側で stroke を設定する。 */
+/* 個々の色は networkId ごとに JS 側で stroke を設定する。
+   初期値(0.7)は背景(--bg)と混色すると実測コントラスト比が3.9:1程度まで
+   下がる色があり(特に青・紫系)、紐が背景に埋もれて見えたため引き上げた。
+   Issue #32。 */
 .peer-edge .react-flow__edge-path {
-  stroke-opacity: 0.7;
+  stroke-opacity: 0.85;
 }
 
 /* ブロック伝播パルス（エッジ上を走る光の点）。実データに基づく所要時間で
-   animateMotion がパスを辿る。色は紐と区別できる明るい発光にする。 */
+   animateMotion がパスを辿る。色は紐と区別できる明るい発光にする。
+   グロー半径を広げ、ダーク背景でも波の伝播がより追いやすいようにした。
+   Issue #32。 */
 .peer-pulse {
   fill: #eaf4ff;
-  filter: drop-shadow(0 0 4px #4f9dff) drop-shadow(0 0 8px #4f9dff);
+  filter: drop-shadow(0 0 5px #6cb2ff) drop-shadow(0 0 10px #6cb2ff);
   pointer-events: none;
 }
 
@@ -263,7 +279,7 @@ body {
   padding: 10px 12px;
   border-radius: 10px;
   background: #0c1119;
-  border: 1px solid #33405a;
+  border: 1px solid var(--border);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 }
 
@@ -355,7 +371,7 @@ body {
   padding: 10px 12px;
   border-radius: 10px;
   background: #1a2030;
-  border: 1px solid #33405a;
+  border: 1px solid var(--border);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   font-size: 13px;
 }
