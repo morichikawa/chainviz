@@ -267,5 +267,13 @@ mempool:
 
 - `collector` 内の状態ストア実装（インメモリのみで十分か、再起動時の
   復元をどうするか）
+  - 部分的に確定（Issue #65）: addNode/addWorkbench で作成した managed
+    コンテナのレジストリ（`EthereumNodeLifecycle` の nodes/workbenches）に
+    ついては、ファイルベースの永続化を持たず、**Docker のラベルを単一の
+    真実の情報源**とする。collector 起動時に `com.chainviz.managed=true`
+    かつ自プロファイルの `com.docker.compose.project` を持つコンテナを
+    走査する `recoverManagedContainers()` でレジストリを再構築する。
+    ワールドステートそのもの（A〜D 層の観測結果）は引き続きインメモリで、
+    再接続クライアントには store のスナップショットで復元する。
 - WebSocket の再接続・スナップショット再送のプロトコル詳細
 - ロギングプロキシの具体的な実装形態（別コンテナか collector 内蔵か）

@@ -245,7 +245,7 @@ E2Eテストが混入しない
 
 - [ ] ダークモードのUI視認性を改善する
       [#32](https://github.com/morichikawa/chainviz/issues/32)
-- [ ] beaconのみ再起動するとEL/CLが乖離しチェーンが完全停止する
+- [x] beaconのみ再起動するとEL/CLが乖離しチェーンが完全停止する
       [#43](https://github.com/morichikawa/chainviz/issues/43)
 - [x] 稼働中スタックにdocker compose up -dを再実行するとgenesisが
       再生成され既存ノードと不整合になる

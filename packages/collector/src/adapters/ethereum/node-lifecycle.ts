@@ -26,6 +26,7 @@ import type { NodeLifecycle } from "../../commands/lifecycle.js";
 import type {
   ContainerSpec,
   DockerOperations,
+  LabeledContainer,
 } from "../../docker/operations.js";
 
 const COMPOSE_PROJECT_LABEL = "com.docker.compose.project";
@@ -86,10 +87,35 @@ interface ManagedContainer {
   containerId: string;
 }
 
+/**
+ * execution/consensus のどちらか、または両方を optional にしているのは、
+ * 通常の addNode では常にペアで作られる一方、recoverManagedContainers に
+ * よる起動時の回収では「片方だけ生き残っている」状態（例: removeNode が
+ * 片方の削除に成功した直後に collector が落ちた場合）も現実に起こりうる
+ * ため。片方だけでも登録しておけば、removeNode の再実行で後始末できる。
+ */
 interface ManagedNode {
   index: number;
-  execution: ManagedContainer;
-  consensus: ManagedContainer;
+  execution?: ManagedContainer;
+  consensus?: ManagedContainer;
+}
+
+/** com.chainviz.role ラベルの値のうち、reth/beacon ペアを表すもの。 */
+type NodeRole = "execution" | "consensus";
+
+function isNodeRole(value: string | undefined): value is NodeRole {
+  return value === "execution" || value === "consensus";
+}
+
+/**
+ * reth<n> / beacon<n> という service 名から、ペア対応付けに使う番号 n を
+ * 取り出す。形式に合わなければ undefined（回収時に読み捨てる対象）。
+ */
+export function parseNodeIndex(service: string): number | undefined {
+  const match = service.match(/^(?:reth|beacon)(\d+)$/);
+  if (!match) return undefined;
+  const index = Number.parseInt(match[1] as string, 10);
+  return Number.isFinite(index) ? index : undefined;
 }
 
 /**
@@ -142,6 +168,119 @@ export class EthereumNodeLifecycle implements NodeLifecycle {
     config: EthereumNodeLifecycleConfig,
   ) {
     this.cfg = { ...DEFAULTS, ...config };
+  }
+
+  /**
+   * collector 起動時に呼び出し、この lifecycle が作成したコンテナ（前回の
+   * 起動で addNode/addWorkbench が作成し、その後 collector プロセスの再起動で
+   * メモリ上のレジストリから失われたもの）を Docker Engine API から走査して
+   * レジストリ（this.nodes/this.workbenches）を再構築する。ファイルベースの
+   * 永続化ではなく、Docker 側のラベルを単一の真実の情報源として扱う（Issue #65）。
+   *
+   * フィルタは `com.chainviz.managed=true` に加えて、この lifecycle が付与する
+   * `com.docker.compose.project`（cfg.composeProject）も必須にする。managed
+   * ラベルだけで絞ると、将来別のチェーンプロファイルの lifecycle が同じ
+   * managed ラベルを使ったときに互いのコンテナを取り込んでしまい、チェーン
+   * プロファイル独立性の原則（CLAUDE.md）に反するため。
+   *
+   * 呼び出し前提: レジストリがまだ空であること（collector 起動シーケンスの
+   * 一部として一度だけ呼ぶ想定）。CommandHandler をワイヤリングする前
+   * （addNode/removeNode 等を受け付ける前）に呼び出すこと。
+   */
+  async recoverManagedContainers(): Promise<void> {
+    const containers = await this.ops.listContainersByLabels({
+      [MANAGED_LABEL]: "true",
+      [COMPOSE_PROJECT_LABEL]: this.cfg.composeProject,
+    });
+
+    const nodesByIndex = new Map<
+      number,
+      { execution?: ManagedContainer; consensus?: ManagedContainer }
+    >();
+
+    for (const container of containers) {
+      const managed = this.toManagedContainer(container);
+      if (!managed) continue;
+      const { service, role, managedContainer } = managed;
+
+      if (role === "workbench") {
+        this.workbenches.push(managedContainer);
+        continue;
+      }
+
+      const index = parseNodeIndex(service);
+      if (index === undefined) {
+        console.warn(
+          `[ethereum] managed ${role} container "${service}" has no parseable node index; skipped during recovery`,
+        );
+        continue;
+      }
+      const entry = nodesByIndex.get(index) ?? {};
+      entry[role] = managedContainer;
+      nodesByIndex.set(index, entry);
+    }
+
+    for (const [index, entry] of nodesByIndex) {
+      this.nodes.push({
+        index,
+        execution: entry.execution,
+        consensus: entry.consensus,
+      });
+    }
+
+    // ワークベンチのコンテナ名サフィックス（-1, -2, ...）の採番を、回収できた
+    // ワークベンチの個数から再開する。ラベルから復元できるのは過去に採番した
+    // 最大番号ではなく現存する個数だけなので、過去に削除された分だけ番号が
+    // 進んでいた場合は理論上サフィックスが衝突しうる。ただし衝突時は
+    // createAndStart が失敗し commandResult(ok:false) として返るため実害は
+    // 限定的で、復元直後の addWorkbench で同名衝突が起きにくくなる効果を優先する。
+    this.workbenchSeq = this.workbenches.length;
+  }
+
+  /**
+   * ラベル検索で見つかった 1 コンテナを、回収に必要な情報（service 名・
+   * role・ManagedContainer）へ変換する。安定 ID を組み立てられない、または
+   * role が想定外のコンテナは undefined を返し、呼び出し側で読み捨てる。
+   */
+  private toManagedContainer(
+    container: LabeledContainer,
+  ): { service: string; role: NodeRole | "workbench"; managedContainer: ManagedContainer } | undefined {
+    const service = container.labels[COMPOSE_SERVICE_LABEL];
+    if (!service) {
+      console.warn(
+        `[ethereum] managed container ${container.id} has no ${COMPOSE_SERVICE_LABEL} label; skipped during recovery`,
+      );
+      return undefined;
+    }
+    const role = container.labels[ROLE_LABEL];
+    if (role !== "workbench" && !isNodeRole(role)) {
+      console.warn(
+        `[ethereum] managed container "${service}" has unknown role "${String(role)}"; skipped during recovery`,
+      );
+      return undefined;
+    }
+    // 安定 ID は "<project>/<service>" 形式で組み立てる（docker/observe.ts の
+    // computeStableId と一致させるため）。project ラベルは addNode/addWorkbench
+    // が必ず付与しており、listContainersByLabels のフィルタでも必須にしている
+    // ので、正規のコンテナでは欠落しない。ここに来て欠落しているのは想定外の
+    // 外来コンテナであり、composeProject で補完すると別プロジェクトのコンテナに
+    // "chainviz-ethereum/<service>" という誤った安定 ID を付けてしまうため、
+    // 補完はせず warn してスキップする。
+    const project = container.labels[COMPOSE_PROJECT_LABEL];
+    if (!project) {
+      console.warn(
+        `[ethereum] managed container "${service}" has no ${COMPOSE_PROJECT_LABEL} label; skipped during recovery`,
+      );
+      return undefined;
+    }
+    return {
+      service,
+      role,
+      managedContainer: {
+        stableId: `${project}/${service}`,
+        containerId: container.id,
+      },
+    };
   }
 
   async addNode(chainProfile: string): Promise<void> {
@@ -204,7 +343,8 @@ export class EthereumNodeLifecycle implements NodeLifecycle {
 
   async removeNode(nodeId: string): Promise<void> {
     const idx = this.nodes.findIndex(
-      (n) => n.execution.stableId === nodeId || n.consensus.stableId === nodeId,
+      (n) =>
+        n.execution?.stableId === nodeId || n.consensus?.stableId === nodeId,
     );
     if (idx === -1) {
       throw new Error(
@@ -215,9 +355,11 @@ export class EthereumNodeLifecycle implements NodeLifecycle {
     // consensus → execution の順に削除し、両方成功してから登録を外す。
     // 途中で失敗した場合も登録が残るため、removeNode の再実行でリトライ
     // できる（stopAndRemove は停止・削除済みのコンテナに対して失敗しない
-    // ため、削除済み分を重ねて呼んでも安全）。
-    await this.ops.stopAndRemove(node.consensus.containerId);
-    await this.ops.stopAndRemove(node.execution.containerId);
+    // ため、削除済み分を重ねて呼んでも安全）。片方しか記録されていない
+    // 場合（起動時の回収で片割れしか見つからなかった場合）は、その片方
+    // だけを削除する。
+    if (node.consensus) await this.ops.stopAndRemove(node.consensus.containerId);
+    if (node.execution) await this.ops.stopAndRemove(node.execution.containerId);
     const current = this.nodes.indexOf(node);
     if (current !== -1) this.nodes.splice(current, 1);
   }

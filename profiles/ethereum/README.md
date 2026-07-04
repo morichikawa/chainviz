@@ -38,6 +38,36 @@ docker compose down -v     # 停止 + genesis / chain データ破棄
 - ホストからの JSON-RPC: `http://localhost:8545`(reth1)
 - ホストからの Beacon API: `http://localhost:5052`(beacon1)
 
+### 一部のサービスだけを再起動するとき(Issue #43)
+
+`reth-node.sh` / `lighthouse-bn.sh` は起動のたびにデータディレクトリを
+初期化して genesis からやり直す設計になっている(後述「genesis の扱い」)。
+このため **`docker compose restart beacon1 beacon2` のように beacon(CL)だけを
+再起動してはいけない**。CL は genesis からやり直す一方、再起動していない
+reth(EL)は既存のブロックデータを保持したまま先行してしまい、EL/CL の
+ヘッドが乖離して `Exec engine unable to produce payload: engine is likely
+syncing` が継続し、チェーンが完全に停止する(自己回復しない)。
+
+ボリュームを維持したまま一部のサービスを再起動したい場合は、必ず
+`reth<N> beacon<N> validator<N>`(ノード単位)をセットで再起動すること。
+`scripts/restart-node.sh` はこれを楽に行うためのヘルパー(ホスト側で使う
+運用スクリプトで、コンテナにはマウントしない):
+
+```sh
+./scripts/restart-node.sh 1        # reth1 beacon1 validator1 をまとめて再起動
+./scripts/restart-node.sh 1 2      # 両ノードをまとめて再起動(既に停止済みの
+                                    # 場合の復旧にはこちらが必要)
+```
+
+ノード単位でまとめて再起動すれば、EL/CL 双方が同じ genesis からやり直した
+状態になり、後述の EL/CL 間 P2P 再同期によって自動的に追従を再開する
+(片方のノードだけ再起動しても、もう片方が稼働中であれば P2P 経由で
+バックフィルされて復旧する。実機で確認済み)。
+
+最も確実なのは `docker compose down`(-v なし)→ `up` で全サービスを
+再作成することで、`scripts/restart-node.sh` は「ノード群の一部だけを
+手早く再起動したい」場合の補助という位置づけ。
+
 ### ワークベンチから RPC を叩く
 
 ```sh
