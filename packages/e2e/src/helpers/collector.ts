@@ -5,9 +5,13 @@
 // 起動し、テスト終了時に process.kill() で確実に後片付けする（親タスクの指示）。
 
 import { type ChildProcess, spawn } from "node:child_process";
-import { WebSocket } from "ws";
+import {
+  crashedMessage,
+  detectLaunchStatus,
+  portInUseMessage,
+} from "./collector-launch.js";
 import { collectorEntry, repoRoot } from "./paths.js";
-import { sleep, waitFor } from "./wait.js";
+import { sleep } from "./wait.js";
 
 export interface RunningCollector {
   port: number;
@@ -17,21 +21,81 @@ export interface RunningCollector {
   stop(): Promise<void>;
 }
 
-/** WebSocket ポートが接続を受け付けられるようになったかを確認する。 */
-function canConnect(port: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}`);
-    const done = (ok: boolean): void => {
-      ws.removeAllListeners();
-      try {
-        ws.close();
-      } catch {
-        // ignore
-      }
-      resolve(ok);
+/**
+ * 子プロセス自身が指定ポートで listen し終えるまで待つ。
+ *
+ * WebSocket 接続を試みる方式（旧実装）だと、別プロセス（別 worktree の
+ * test:e2e など）が同じポートで既に listen している場合に、自分の子プロセスが
+ * EADDRINUSE で即死していても誤って「起動できた」と判定してしまう
+ * （Issue #64）。そのため、必ず「自分が起動したこの子プロセスのログ」だけを
+ * 根拠に判定する。
+ */
+function waitForOwnProcessToListen(
+  child: ChildProcess,
+  port: number,
+  getLogs: () => string,
+  timeoutMs: number,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const cleanup = (): void => {
+      clearTimeout(timer);
+      child.stdout?.off("data", check);
+      child.stderr?.off("data", check);
+      child.off("close", check);
     };
-    ws.once("open", () => done(true));
-    ws.once("error", () => done(false));
+    const settle = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      fn();
+    };
+
+    const check = (): void => {
+      const status = detectLaunchStatus({
+        logs: getLogs(),
+        port,
+        exited: child.exitCode !== null || child.signalCode !== null,
+        exitCode: child.exitCode,
+      });
+      switch (status.kind) {
+        case "listening":
+          settle(resolve);
+          return;
+        case "portInUse":
+          settle(() => reject(new Error(portInUseMessage(port, getLogs()))));
+          return;
+        case "crashed":
+          settle(() =>
+            reject(new Error(crashedMessage(status.exitCode, getLogs()))),
+          );
+          return;
+        case "pending":
+          return;
+      }
+    };
+
+    const timer = setTimeout(() => {
+      settle(() =>
+        reject(
+          new Error(
+            `timed out after ${timeoutMs}ms waiting for collector to log ` +
+              `"listening on port ${port}". logs:\n${getLogs()}`,
+          ),
+        ),
+      );
+    }, timeoutMs);
+
+    child.stdout?.on("data", check);
+    child.stderr?.on("data", check);
+    // "close" は stdio がすべて閉じてから発火するため、"exit" と違って
+    // EADDRINUSE 等の stderr がログに反映済みであることを保証できる
+    // （"exit" だと flush 前に発火してログ不完全のまま crashed 誤判定しうる）。
+    child.on("close", check);
+    // 呼び出し前に既にログ出力・終了が済んでいる可能性（イベントの取りこぼし）
+    // に備えて、リスナー登録直後に一度だけ即座にも判定しておく。
+    check();
   });
 }
 
@@ -83,21 +147,7 @@ export async function startCollector(port = 4123): Promise<RunningCollector> {
   };
 
   try {
-    await waitFor(
-      async () => {
-        if (exited) {
-          throw new Error(
-            `collector exited early (code ${child.exitCode}). logs:\n${logs}`,
-          );
-        }
-        return canConnect(port);
-      },
-      {
-        timeoutMs: 30_000,
-        intervalMs: 500,
-        description: `collector to listen on port ${port}`,
-      },
-    );
+    await waitForOwnProcessToListen(child, port, () => logs, 30_000);
   } catch (err) {
     await running.stop();
     throw err;
