@@ -452,6 +452,26 @@ describe("EthereumNodeLifecycle workbench commands", () => {
     expect(ops.removed).toEqual(["cid-1"]);
   });
 
+  it("resolves both concurrent removeWorkbench calls for the same workbench", async () => {
+    // 同じ workbenchId に対する removeWorkbench が短時間に重なるケース。
+    // stopAndRemove 側で 409（削除進行中）が成功相当に扱われる（dockerode-operations）
+    // 前提のもとでは、両方の呼び出しとも解決し、登録は残らない（孤児が生じない）。
+    const ops = fakeOps();
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+    await lifecycle.addWorkbench("Alice");
+
+    const results = await Promise.allSettled([
+      lifecycle.removeWorkbench("chainviz-ethereum/Alice"),
+      lifecycle.removeWorkbench("chainviz-ethereum/Alice"),
+    ]);
+    expect(results.every((r) => r.status === "fulfilled")).toBe(true);
+
+    // 削除後は登録が外れており、以降の removeWorkbench は拒否される。
+    await expect(
+      lifecycle.removeWorkbench("chainviz-ethereum/Alice"),
+    ).rejects.toThrow(/was not added via addWorkbench/);
+  });
+
   it("refuses to remove a workbench that was not added", async () => {
     const ops = fakeOps();
     const lifecycle = new EthereumNodeLifecycle(ops, config);

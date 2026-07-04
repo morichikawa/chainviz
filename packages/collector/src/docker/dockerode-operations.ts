@@ -86,6 +86,21 @@ function isNoSuchContainer(err: unknown): boolean {
   );
 }
 
+/**
+ * dockerode のエラーが「削除処理が既に進行中（409 conflict）」かどうか。
+ * 同じコンテナに対して remove が短時間に重なった場合や、Docker 側の状態遷移と
+ * 削除が競合した場合に発生する（例: "removal of container ... is already in
+ * progress"）。この状態は「別の削除が最終的にコンテナを消す」ことを意味するため、
+ * stopAndRemove の契約（既に削除済み/削除中でも失敗しない）では成功相当として扱う。
+ */
+function isRemovalInProgress(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const e = err as { statusCode?: number; message?: unknown };
+  if (e.statusCode !== 409) return false;
+  const message = typeof e.message === "string" ? e.message : "";
+  return /removal of container .* is already in progress/i.test(message);
+}
+
 /** dockerode の Docker を DockerOperations として使えるようラップする。 */
 export function createDockerOperations(docker: Docker): DockerOperations {
   return {
@@ -105,9 +120,21 @@ export function createDockerOperations(docker: Docker): DockerOperations {
       try {
         await container.remove({ force: true });
       } catch (err) {
-        // 既に削除済み（404）なら DockerOperations の契約どおり成功扱いに
-        // する。それ以外の失敗は呼び出し側で扱えるよう伝播させる。
+        // 既に削除済み（404）なら DockerOperations の契約どおり成功扱いにする。
         if (isNoSuchContainer(err)) return;
+        // 別の削除が進行中（409）でも、そのコンテナは最終的に消えるため成功相当と
+        // して扱う。これは複数の removeNode/removeWorkbench や Docker 側の状態遷移が
+        // 重なったときに起きる良性の競合であり、ここで例外を伝播させると本来消える
+        // コンテナに対して commandResult(ok:false) を返してしまう（さらに未捕捉だと
+        // プロセスを巻き込みかねない）。異常として握りつぶすのではなく、進行中である
+        // ことをログに残したうえで成功扱いにする。
+        if (isRemovalInProgress(err)) {
+          console.warn(
+            `[collector] container ${containerId} removal already in progress; treating as removed`,
+          );
+          return;
+        }
+        // それ以外の失敗は握りつぶさず、呼び出し側（CommandHandler）で扱えるよう伝播させる。
         throw err;
       }
     },
