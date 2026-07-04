@@ -23,6 +23,7 @@ networks:
 volumes:
   genesis: # 生成済み genesis / jwt / バリデーター鍵の共有先
   clpeer: # beacon ノード間で bootnode ENR を受け渡す
+  elpeer: # reth ノード間で bootnode enode を受け渡す
   reth1data:
   reth2data:
   beacon1data:
@@ -49,9 +50,13 @@ services:
       genesis:
         condition: service_completed_successfully
     entrypoint: ["/bin/sh", "/scripts/reth-node.sh"]
+    environment:
+      RETH_ROLE: boot
+      RETH_P2P_IP: 172.28.1.1
     volumes:
       - genesis:/genesis:ro
       - reth1data:/data
+      - elpeer:/elpeer
       - ./scripts/reth-node.sh:/scripts/reth-node.sh:ro
     ports:
       - "8545:8545" # JSON-RPC(ホストから叩けるように公開)
@@ -102,10 +107,16 @@ services:
     depends_on:
       genesis:
         condition: service_completed_successfully
+      reth1:
+        condition: service_started
     entrypoint: ["/bin/sh", "/scripts/reth-node.sh"]
+    environment:
+      RETH_ROLE: peer
+      RETH_P2P_IP: 172.28.1.2
     volumes:
       - genesis:/genesis:ro
       - reth2data:/data
+      - elpeer:/elpeer:ro
       - ./scripts/reth-node.sh:/scripts/reth-node.sh:ro
     networks:
       chain:
