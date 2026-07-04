@@ -2,7 +2,12 @@ import type { NodeEntity, WorldStateSnapshot } from "@chainviz/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EthereumAdapter } from "./adapters/ethereum/index.js";
 import type { CollectorServer } from "./server/websocket-server.js";
-import { DEFAULT_PORT, resolvePort, startPollingLoop } from "./index.js";
+import {
+  DEFAULT_PORT,
+  installProcessSafetyNet,
+  resolvePort,
+  startPollingLoop,
+} from "./index.js";
 import { WorldStateStore } from "./world-state/store.js";
 
 function node(overrides: Partial<NodeEntity> = {}): NodeEntity {
@@ -186,5 +191,86 @@ describe("resolvePort", () => {
   it("falls back to DEFAULT_PORT for non-numeric or negative values", () => {
     expect(resolvePort({ CHAINVIZ_COLLECTOR_PORT: "abc" })).toBe(DEFAULT_PORT);
     expect(resolvePort({ CHAINVIZ_COLLECTOR_PORT: "-5" })).toBe(DEFAULT_PORT);
+  });
+});
+
+describe("installProcessSafetyNet", () => {
+  // 実プロセスにハンドラを登録するが、追加したものだけを退避・除去してテスト間で
+  // 汚染しないようにする（vitest 自身のハンドラは触らない）。
+  type Ev = "unhandledRejection" | "uncaughtException";
+
+  /**
+   * installProcessSafetyNet が新しく追加したハンドラだけを取り出す。
+   * 呼び出し後に自動で除去できるよう cleanup も返す。
+   */
+  type Listener = (arg: unknown) => void;
+  const listenersOf = (ev: Ev): Listener[] =>
+    (process.listeners as (event: string) => unknown[])(ev) as Listener[];
+
+  function captureInstalledHandlers(log: (m: string, d: unknown) => void): {
+    handlers: Record<Ev, Listener>;
+    cleanup: () => void;
+  } {
+    const events: Ev[] = ["unhandledRejection", "uncaughtException"];
+    const before: Record<Ev, Listener[]> = {
+      unhandledRejection: listenersOf("unhandledRejection"),
+      uncaughtException: listenersOf("uncaughtException"),
+    };
+
+    installProcessSafetyNet(log);
+
+    const handlers = {} as Record<Ev, Listener>;
+    const added: Array<[Ev, Listener]> = [];
+    for (const ev of events) {
+      const fresh = listenersOf(ev).filter((l) => !before[ev].includes(l));
+      expect(fresh).toHaveLength(1);
+      handlers[ev] = fresh[0];
+      added.push([ev, fresh[0]]);
+    }
+    return {
+      handlers,
+      cleanup: () => {
+        const remove = process.removeListener.bind(process) as (
+          event: string,
+          listener: (...a: unknown[]) => void,
+        ) => void;
+        for (const [ev, l] of added) remove(ev, l);
+      },
+    };
+  }
+
+  it("registers one unhandledRejection and one uncaughtException handler", () => {
+    const { cleanup } = captureInstalledHandlers(() => {});
+    cleanup();
+  });
+
+  it("logs an unhandled rejection instead of letting it crash the process", () => {
+    const log = vi.fn();
+    const { handlers, cleanup } = captureInstalledHandlers(log);
+    try {
+      const reason = new Error("stray background rejection");
+      // ハンドラ呼び出し自体が例外を投げず（=プロセスを落とさず）、内容をログに残す。
+      expect(() => handlers.unhandledRejection(reason)).not.toThrow();
+      expect(log).toHaveBeenCalledTimes(1);
+      expect(log).toHaveBeenCalledWith(
+        expect.stringMatching(/unhandled/i),
+        reason,
+      );
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("logs an uncaught exception instead of letting it crash the process", () => {
+    const log = vi.fn();
+    const { handlers, cleanup } = captureInstalledHandlers(log);
+    try {
+      const err = new Error("stray uncaught error");
+      expect(() => handlers.uncaughtException(err)).not.toThrow();
+      expect(log).toHaveBeenCalledTimes(1);
+      expect(log).toHaveBeenCalledWith(expect.stringMatching(/uncaught/i), err);
+    } finally {
+      cleanup();
+    }
   });
 });
