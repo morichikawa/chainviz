@@ -80,6 +80,24 @@ export async function ensureChainRunning(
   });
 }
 
+/**
+ * chainviz-ethereum プロジェクトに属するコンテナ数を数える。compose 起動の
+ * ノードと collector が addNode/addWorkbench で作成した managed コンテナの
+ * 両方が `com.docker.compose.project=chainviz-ethereum` ラベルを持つため、
+ * このラベルで絞り込む。異常系コマンドがコンテナを一切作らないことの検証に使う。
+ */
+export async function countProjectContainers(): Promise<number> {
+  const { stdout } = await execFileAsync("docker", [
+    "ps",
+    "-a",
+    "--filter",
+    "label=com.docker.compose.project=chainviz-ethereum",
+    "--format",
+    "{{.ID}}",
+  ]);
+  return stdout.split("\n").filter((line) => line.trim().length > 0).length;
+}
+
 /** スタックを停止・破棄する（クリーンアップ用。テストからは通常呼ばない）。 */
 export async function tearDownChain(): Promise<void> {
   await compose(["down", "-v"]);
