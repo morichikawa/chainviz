@@ -1,5 +1,6 @@
 import { Handle, type NodeProps, Position } from "@xyflow/react";
 import { useState } from "react";
+import { useCommandActions } from "../commands/CommandActionsContext.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { InfraPopover } from "./InfraPopover.js";
@@ -13,12 +14,18 @@ import type { InfraFlowNode } from "./infraNode.js";
 export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
   const { entity } = data;
   const { t } = useLanguage();
+  const actions = useCommandActions();
   const [hovered, setHovered] = useState(false);
 
   const kindLabel = entity.kind === "node" ? t("card.node") : t("card.workbench");
   const subtitle =
     entity.kind === "node" ? entity.clientType : entity.label;
   const synced = entity.kind === "node" ? entity.syncStatus === "synced" : true;
+
+  const onRemove = () => {
+    if (entity.kind === "node") actions.removeNode(entity.id);
+    else actions.removeWorkbench(entity.id);
+  };
 
   return (
     <div
@@ -53,6 +60,19 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
             {kindLabel}
           </GlossaryTerm>
         </span>
+        {/* React Flow のドラッグ開始を拾わないよう nodrag を付け、ポインタ
+            ダウンの伝播も止める。 */}
+        <button
+          type="button"
+          className="infra-card__remove nodrag"
+          aria-label={t("action.remove")}
+          title={t("action.remove")}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={onRemove}
+          data-testid={`infra-card-remove-${entity.id}`}
+        >
+          ×
+        </button>
       </div>
       <div className="infra-card__name">{entity.containerName}</div>
       <div className="infra-card__subtitle">{subtitle}</div>

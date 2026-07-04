@@ -103,6 +103,59 @@ body {
   color: var(--muted);
 }
 
+/* --- キャンバス操作ツールバー（ノード/ワークベンチ追加） --- */
+.canvas-toolbar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px;
+  border-radius: 12px;
+  background: rgba(26, 32, 48, 0.9);
+  border: 1px solid #2a3346;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.canvas-toolbar__workbench {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.canvas-toolbar__button {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid #33405a;
+  border-radius: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.canvas-toolbar__button:hover {
+  border-color: var(--accent);
+}
+
+.canvas-toolbar__input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid #33405a;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  width: 130px;
+}
+
+.canvas-toolbar__input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 /* --- インフラカード --- */
 .infra-card {
   position: relative;
@@ -112,6 +165,28 @@ body {
   background: var(--panel-2);
   border: 1px solid #33405a;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.infra-card__remove {
+  margin-left: auto;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.infra-card__remove:hover {
+  color: #ff6b6b;
+  border-color: #ff6b6b;
+  background: rgba(255, 107, 107, 0.12);
 }
 
 .infra-card--workbench {
@@ -259,4 +334,53 @@ body {
   margin-top: 6px;
   font-size: 11px;
   color: var(--accent);
+}
+
+/* --- トースト通知（コマンド失敗のエラー表示など） --- */
+.toast-stack {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 360px;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #1a2030;
+  border: 1px solid #33405a;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  font-size: 13px;
+}
+
+.toast--error {
+  border-color: #ff6b6b;
+  background: #2a1a20;
+}
+
+.toast__message {
+  flex: 1;
+  line-height: 1.4;
+}
+
+.toast__dismiss {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.toast__dismiss:hover {
+  color: var(--text);
 }

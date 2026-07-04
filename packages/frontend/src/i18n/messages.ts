@@ -36,6 +36,35 @@ export const messages = {
     ja: "表示するコンテナがありません",
     en: "No containers to display",
   },
+  "action.addNode": { ja: "ノードを追加", en: "Add node" },
+  "action.addWorkbench": { ja: "ワークベンチを追加", en: "Add workbench" },
+  "action.workbenchLabelPlaceholder": {
+    ja: "ワークベンチ名",
+    en: "Workbench label",
+  },
+  "action.remove": { ja: "削除", en: "Remove" },
+  "toast.region": { ja: "通知", en: "Notifications" },
+  "toast.dismiss": { ja: "閉じる", en: "Dismiss" },
+  "command.error.addNode": {
+    ja: "ノードの追加に失敗しました",
+    en: "Failed to add node",
+  },
+  "command.error.removeNode": {
+    ja: "ノードの削除に失敗しました",
+    en: "Failed to remove node",
+  },
+  "command.error.addWorkbench": {
+    ja: "ワークベンチの追加に失敗しました",
+    en: "Failed to add workbench",
+  },
+  "command.error.removeWorkbench": {
+    ja: "ワークベンチの削除に失敗しました",
+    en: "Failed to remove workbench",
+  },
+  "command.error.unknown": {
+    ja: "コマンドの実行に失敗しました",
+    en: "Command failed",
+  },
 } as const satisfies Record<string, Localized>;
 
 export type MessageKey = keyof typeof messages;
