@@ -18,6 +18,7 @@ chainviz/
     shared/          # ワールドステートの型・プロトコル・ChainProfile の型
     collector/        # バックエンド（観察 + 操作）
     frontend/          # GUI（React Flow キャンバス）
+    e2e/               # E2E 結合テスト（collector を実 Docker と疎通させて検証）
   profiles/
     ethereum/          # チェーンプロファイル: ノード環境テンプレート（compose）
   glossary/            # 用語解説データ（CONCEPT.md「データの置き場所」参照）
