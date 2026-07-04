@@ -126,6 +126,176 @@ describe("createMockClient", () => {
     );
   });
 
+  it("simulates a successful addNode with an entityAdded diff and ok result", async () => {
+    const onDiff = vi.fn();
+    const onCommandResult = vi.fn();
+    const client = createMockClient(
+      { onDiff, onCommandResult },
+      { intervalMs: 0 },
+    );
+    client.connect();
+    const id = client.sendCommand({ action: "addNode", chainProfile: "ethereum" });
+    await Promise.resolve();
+
+    expect(onCommandResult).toHaveBeenCalledWith(id, true, undefined);
+    const diff = onDiff.mock.calls[0][0];
+    expect(diff[0].type).toBe("entityAdded");
+    expect(diff[0].entity.kind).toBe("node");
+  });
+
+  it("simulates a successful addWorkbench carrying the given label", async () => {
+    const onDiff = vi.fn();
+    const client = createMockClient({ onDiff }, { intervalMs: 0 });
+    client.connect();
+    client.sendCommand({ action: "addWorkbench", label: "Carol" });
+    await Promise.resolve();
+
+    const diff = onDiff.mock.calls[0][0];
+    expect(diff[0].type).toBe("entityAdded");
+    expect(diff[0].entity.kind).toBe("workbench");
+    expect(diff[0].entity.label).toBe("Carol");
+  });
+
+  it("rejects removing an initial (validator) node with ok:false and an error", async () => {
+    const onDiff = vi.fn();
+    const onCommandResult = vi.fn();
+    const client = createMockClient(
+      { onDiff, onCommandResult },
+      { intervalMs: 0 },
+    );
+    client.connect();
+    const id = client.sendCommand({ action: "removeNode", nodeId: "reth-node-1" });
+    await Promise.resolve();
+
+    expect(onCommandResult).toHaveBeenCalledWith(id, false, expect.any(String));
+    expect(onDiff).not.toHaveBeenCalled();
+  });
+
+  it("removes an added follower node and reports success", async () => {
+    const onDiff = vi.fn();
+    const onCommandResult = vi.fn();
+    const client = createMockClient(
+      { onDiff, onCommandResult },
+      { intervalMs: 0 },
+    );
+    client.connect();
+    client.sendCommand({ action: "addNode", chainProfile: "ethereum" });
+    await Promise.resolve();
+    const addedId = onDiff.mock.calls[0][0][0].entity.id as string;
+
+    const removeId = client.sendCommand({ action: "removeNode", nodeId: addedId });
+    await Promise.resolve();
+
+    expect(onCommandResult).toHaveBeenLastCalledWith(removeId, true, undefined);
+    const lastDiff = onDiff.mock.calls.at(-1)?.[0];
+    expect(lastDiff[0]).toEqual({ type: "entityRemoved", id: addedId });
+  });
+
+  it("rejects removing an unknown workbench", async () => {
+    const onCommandResult = vi.fn();
+    const client = createMockClient({ onCommandResult }, { intervalMs: 0 });
+    client.connect();
+    const id = client.sendCommand({
+      action: "removeWorkbench",
+      workbenchId: "does-not-exist",
+    });
+    await Promise.resolve();
+    expect(onCommandResult).toHaveBeenCalledWith(id, false, expect.any(String));
+  });
+
+  it("rejects removing a node id that never existed", async () => {
+    const onDiff = vi.fn();
+    const onCommandResult = vi.fn();
+    const client = createMockClient({ onDiff, onCommandResult }, { intervalMs: 0 });
+    client.connect();
+    const id = client.sendCommand({ action: "removeNode", nodeId: "ghost-node" });
+    await Promise.resolve();
+    expect(onCommandResult).toHaveBeenCalledWith(id, false, expect.any(String));
+    expect(onDiff).not.toHaveBeenCalled();
+  });
+
+  it("adds and removes a workbench in a round trip", async () => {
+    const onDiff = vi.fn();
+    const onCommandResult = vi.fn();
+    const client = createMockClient({ onDiff, onCommandResult }, { intervalMs: 0 });
+    client.connect();
+    client.sendCommand({ action: "addWorkbench", label: "Zoe" });
+    await Promise.resolve();
+    const addedId = onDiff.mock.calls[0][0][0].entity.id as string;
+
+    const removeId = client.sendCommand({
+      action: "removeWorkbench",
+      workbenchId: addedId,
+    });
+    await Promise.resolve();
+    expect(onCommandResult).toHaveBeenLastCalledWith(removeId, true, undefined);
+    expect(onDiff.mock.calls.at(-1)?.[0][0]).toEqual({
+      type: "entityRemoved",
+      id: addedId,
+    });
+  });
+
+  it("assigns unique entity ids across a burst of mixed adds", async () => {
+    const onDiff = vi.fn();
+    const client = createMockClient({ onDiff }, { intervalMs: 0 });
+    client.connect();
+    client.sendCommand({ action: "addNode", chainProfile: "ethereum" });
+    client.sendCommand({ action: "addWorkbench", label: "a" });
+    client.sendCommand({ action: "addNode", chainProfile: "ethereum" });
+    client.sendCommand({ action: "addWorkbench", label: "b" });
+    await Promise.resolve();
+
+    const ids = onDiff.mock.calls.map((call) => call[0][0].entity.id as string);
+    expect(ids).toHaveLength(4);
+    expect(new Set(ids).size).toBe(4);
+    // 追加エンティティの id は初期スナップショットの id と衝突しない。
+    for (const id of ids) {
+      expect(id).not.toBe("reth-node-1");
+      expect(id).not.toBe("workbench-alice");
+    }
+  });
+
+  it("returns monotonically increasing command ids", () => {
+    const client = createMockClient({}, { intervalMs: 0 });
+    const first = client.sendCommand({ action: "addWorkbench", label: "a" });
+    const second = client.sendCommand({ action: "addWorkbench", label: "b" });
+    expect(first).not.toBe(second);
+  });
+
+  it("defers command results by commandLatencyMs and clears them on disconnect", () => {
+    vi.useFakeTimers();
+    const onCommandResult = vi.fn();
+    const client = createMockClient(
+      { onCommandResult },
+      { intervalMs: 0, commandLatencyMs: 500 },
+    );
+    client.connect();
+    client.sendCommand({ action: "addNode", chainProfile: "ethereum" });
+    // 遅延中はまだ結果が返らない。
+    vi.advanceTimersByTime(499);
+    expect(onCommandResult).not.toHaveBeenCalled();
+
+    // 結果が返る前に切断すると保留中のタイマーは破棄され、結果は届かない。
+    client.disconnect();
+    vi.advanceTimersByTime(5000);
+    expect(onCommandResult).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("delivers a deferred command result once the latency elapses", () => {
+    vi.useFakeTimers();
+    const onCommandResult = vi.fn();
+    const client = createMockClient(
+      { onCommandResult },
+      { intervalMs: 0, commandLatencyMs: 500 },
+    );
+    client.connect();
+    const id = client.sendCommand({ action: "addNode", chainProfile: "ethereum" });
+    vi.advanceTimersByTime(500);
+    expect(onCommandResult).toHaveBeenCalledWith(id, true, undefined);
+    vi.useRealTimers();
+  });
+
   it("does not re-emit a snapshot on a second connect while connected", () => {
     const onSnapshot = vi.fn();
     const client = createMockClient({ onSnapshot }, { intervalMs: 0 });
