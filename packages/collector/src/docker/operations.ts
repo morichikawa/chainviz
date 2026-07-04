@@ -41,6 +41,12 @@ export interface CreatedContainer {
   id: string;
 }
 
+/** ラベル検索で見つかったコンテナの最小情報。 */
+export interface LabeledContainer {
+  id: string;
+  labels: Record<string, string>;
+}
+
 /** コンテナのライフサイクル操作の最小面（dockerode 実装で満たす）。 */
 export interface DockerOperations {
   /** コンテナを作成して起動する。 */
@@ -52,4 +58,15 @@ export interface DockerOperations {
    * 新規ノードの固定 IP を未使用帯から採番するために使う。
    */
   usedNetworkIps(networkName: string): Promise<string[]>;
+  /**
+   * 指定したラベル（すべて一致）を持つコンテナ一覧を返す（停止中も含む）。
+   * collector 起動時に、過去に addNode/addWorkbench で作成した managed
+   * コンテナをラベルから回収し、レジストリを再構築するために使う
+   * （ChainAdapter 側が停止中コンテナの扱いも判断できるよう、稼働状態に
+   * 関わらず含める）。ラベルの意味（どのキーが何を表すか）はここでは扱わず、
+   * 呼び出し側（ChainAdapter）が解釈する。
+   */
+  listContainersByLabels(
+    labels: Record<string, string>,
+  ): Promise<LabeledContainer[]>;
 }
