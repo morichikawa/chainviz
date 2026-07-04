@@ -6,11 +6,13 @@ import type {
   ContainerSpec,
   CreatedContainer,
   DockerOperations,
+  LabeledContainer,
 } from "../../docker/operations.js";
 import {
   allocateNodeIndex,
   EthereumNodeLifecycle,
   parseMnemonic,
+  parseNodeIndex,
 } from "./node-lifecycle.js";
 
 /** 作成した spec を記録し、削除された ID を記録するフェイク operations。 */
@@ -19,6 +21,7 @@ function fakeOps(
     usedIps?: string[];
     createFails?: (spec: ContainerSpec) => boolean;
     stopAndRemoveFails?: (id: string) => boolean;
+    managedContainers?: LabeledContainer[];
   } = {},
 ): DockerOperations & {
   created: ContainerSpec[];
@@ -42,6 +45,9 @@ function fakeOps(
       removed.push(id);
     }),
     usedNetworkIps: vi.fn(async (): Promise<string[]> => opts.usedIps ?? []),
+    listContainersByLabels: vi.fn(
+      async (): Promise<LabeledContainer[]> => opts.managedContainers ?? [],
+    ),
   };
 }
 
@@ -148,6 +154,219 @@ describe("allocateNodeIndex", () => {
     // 3 taken as index, 4 blocked by execution IP, 5 blocked by consensus IP.
     const used = new Set(["172.28.1.4", "172.28.2.5"]);
     expect(allocateNodeIndex(used, new Set([3]))).toBe(6);
+  });
+});
+
+describe("parseNodeIndex", () => {
+  it("extracts the trailing number from a reth service name", () => {
+    expect(parseNodeIndex("reth3")).toBe(3);
+  });
+
+  it("extracts the trailing number from a beacon service name", () => {
+    expect(parseNodeIndex("beacon12")).toBe(12);
+  });
+
+  it("returns undefined for a compose node without a managed-style number", () => {
+    expect(parseNodeIndex("reth")).toBeUndefined();
+  });
+
+  it("returns undefined for a service name that does not start with reth/beacon", () => {
+    expect(parseNodeIndex("Alice-1")).toBeUndefined();
+  });
+});
+
+describe("EthereumNodeLifecycle.recoverManagedContainers", () => {
+  function managed(
+    service: string,
+    role: string,
+    id: string,
+    project = "chainviz-ethereum",
+  ): LabeledContainer {
+    return {
+      id,
+      labels: {
+        "com.docker.compose.project": project,
+        "com.docker.compose.service": service,
+        "com.chainviz.managed": "true",
+        "com.chainviz.role": role,
+      },
+    };
+  }
+
+  it("rebuilds a reth+beacon pair and lets removeNode delete it", async () => {
+    const ops = fakeOps({
+      managedContainers: [
+        managed("reth5", "execution", "reth-cid"),
+        managed("beacon5", "consensus", "beacon-cid"),
+      ],
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+    await lifecycle.recoverManagedContainers();
+
+    await lifecycle.removeNode("chainviz-ethereum/reth5");
+    expect(ops.removed).toEqual(["beacon-cid", "reth-cid"]);
+  });
+
+  it("scopes the recovery query to this chain profile's compose project", async () => {
+    const ops = fakeOps({
+      managedContainers: [managed("reth5", "execution", "reth-cid")],
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+    await lifecycle.recoverManagedContainers();
+
+    expect(ops.listContainersByLabels).toHaveBeenCalledWith({
+      "com.chainviz.managed": "true",
+      "com.docker.compose.project": "chainviz-ethereum",
+    });
+  });
+
+  it("recovers a workbench and lets removeWorkbench delete it", async () => {
+    const ops = fakeOps({
+      managedContainers: [managed("Alice", "workbench", "wb-cid")],
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+    await lifecycle.recoverManagedContainers();
+
+    await lifecycle.removeWorkbench("chainviz-ethereum/Alice");
+    expect(ops.removed).toEqual(["wb-cid"]);
+  });
+
+  it("allocates the next free index after recovering an existing node", async () => {
+    const ops = fakeOps({
+      managedContainers: [
+        managed("reth5", "execution", "reth-cid"),
+        managed("beacon5", "consensus", "beacon-cid"),
+      ],
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+    await lifecycle.recoverManagedContainers();
+
+    await lifecycle.addNode("ethereum");
+    const services = ops.created.map(
+      (s) => s.labels?.["com.docker.compose.service"],
+    );
+    // 回収済みの index 5 は taken として扱われるため、次の addNode は
+    // (index 5 と衝突せず) 空いている最小の index である 3 を選ぶ。
+    expect(services).toEqual(["reth3", "beacon3"]);
+  });
+
+  it("still allows removing a node whose pair is incomplete (only execution survived)", async () => {
+    const ops = fakeOps({
+      managedContainers: [managed("reth7", "execution", "reth-cid")],
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+    await lifecycle.recoverManagedContainers();
+
+    await lifecycle.removeNode("chainviz-ethereum/reth7");
+    expect(ops.removed).toEqual(["reth-cid"]);
+  });
+
+  it("still allows removing a node whose pair is incomplete (only consensus survived)", async () => {
+    const ops = fakeOps({
+      managedContainers: [managed("beacon8", "consensus", "beacon-cid")],
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+    await lifecycle.recoverManagedContainers();
+
+    await lifecycle.removeNode("chainviz-ethereum/beacon8");
+    expect(ops.removed).toEqual(["beacon-cid"]);
+  });
+
+  it("skips a managed container with no compose service label", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const ops = fakeOps({
+      managedContainers: [
+        { id: "orphan-cid", labels: { "com.chainviz.managed": "true" } },
+      ],
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+    await lifecycle.recoverManagedContainers();
+
+    await expect(
+      lifecycle.removeWorkbench("chainviz-ethereum/orphan"),
+    ).rejects.toThrow(/was not added via addWorkbench/);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("has no com.docker.compose.service label"),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("skips a managed container with an unrecognized role label", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const ops = fakeOps({
+      managedContainers: [managed("mystery1", "sidecar", "mystery-cid")],
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+    await lifecycle.recoverManagedContainers();
+
+    expect(ops.removed).toHaveLength(0);
+    await expect(
+      lifecycle.removeNode("chainviz-ethereum/mystery1"),
+    ).rejects.toThrow(/was not added via addNode/);
+    warnSpy.mockRestore();
+  });
+
+  it("skips a node/consensus container whose service name has no parseable index", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const ops = fakeOps({
+      managedContainers: [managed("reth", "execution", "weird-cid")],
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+    await lifecycle.recoverManagedContainers();
+
+    await expect(
+      lifecycle.removeNode("chainviz-ethereum/reth"),
+    ).rejects.toThrow(/was not added via addNode/);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("no parseable node index"),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("skips a managed container that has no compose project label", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const ops = fakeOps({
+      managedContainers: [
+        {
+          id: "reth-cid",
+          labels: {
+            "com.docker.compose.service": "reth9",
+            "com.chainviz.managed": "true",
+            "com.chainviz.role": "execution",
+          },
+        },
+      ],
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+    await lifecycle.recoverManagedContainers();
+
+    // project ラベルが無いコンテナは安定 ID を捏造せずスキップするため、
+    // removeNode は「addNode で追加されていない」として拒否される。
+    await expect(
+      lifecycle.removeNode("chainviz-ethereum/reth9"),
+    ).rejects.toThrow(/was not added via addNode/);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("has no com.docker.compose.project label"),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("recovers multiple workbenches so a later addWorkbench avoids name collisions", async () => {
+    const ops = fakeOps({
+      managedContainers: [
+        managed("Alice", "workbench", "alice-cid"),
+        managed("Bob", "workbench", "bob-cid"),
+      ],
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+    await lifecycle.recoverManagedContainers();
+
+    await lifecycle.addWorkbench("Alice");
+    const services = ops.created.map(
+      (s) => s.labels?.["com.docker.compose.service"],
+    );
+    // "Alice" は既に管理下にあるので "-2" に退避する。
+    expect(services).toEqual(["Alice-2"]);
   });
 });
 

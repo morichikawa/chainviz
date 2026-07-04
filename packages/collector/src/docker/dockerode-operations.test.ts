@@ -4,6 +4,7 @@ import {
   collectNetworkIps,
   createDockerOperations,
   toCreateOptions,
+  toLabelFilters,
 } from "./dockerode-operations.js";
 import type { ContainerSpec } from "./operations.js";
 
@@ -287,5 +288,58 @@ describe("createDockerOperations", () => {
     await expect(ops.stopAndRemove("cid-1")).rejects.toThrow(
       /some other conflict/,
     );
+  });
+
+  it("lists containers matching all given labels, including stopped ones", async () => {
+    const listContainers = vi.fn().mockResolvedValue([
+      { Id: "cid-1", Labels: { "com.chainviz.managed": "true", "com.chainviz.role": "execution" } },
+      { Id: "cid-2", Labels: { "com.chainviz.managed": "true", "com.chainviz.role": "consensus" } },
+    ]);
+    const docker = { listContainers } as unknown as Docker;
+
+    const ops = createDockerOperations(docker);
+    const result = await ops.listContainersByLabels({
+      "com.chainviz.managed": "true",
+    });
+
+    expect(listContainers).toHaveBeenCalledWith({
+      all: true,
+      filters: { label: ["com.chainviz.managed=true"] },
+    });
+    expect(result).toEqual([
+      {
+        id: "cid-1",
+        labels: { "com.chainviz.managed": "true", "com.chainviz.role": "execution" },
+      },
+      {
+        id: "cid-2",
+        labels: { "com.chainviz.managed": "true", "com.chainviz.role": "consensus" },
+      },
+    ]);
+  });
+
+  it("defaults to an empty labels object when a container has none", async () => {
+    const listContainers = vi.fn().mockResolvedValue([{ Id: "cid-1" }]);
+    const docker = { listContainers } as unknown as Docker;
+
+    const ops = createDockerOperations(docker);
+    const result = await ops.listContainersByLabels({ foo: "bar" });
+
+    expect(result).toEqual([{ id: "cid-1", labels: {} }]);
+  });
+});
+
+describe("toLabelFilters", () => {
+  it("converts a labels object into key=value filter strings", () => {
+    expect(
+      toLabelFilters({ "com.chainviz.managed": "true", "com.chainviz.role": "workbench" }),
+    ).toEqual([
+      "com.chainviz.managed=true",
+      "com.chainviz.role=workbench",
+    ]);
+  });
+
+  it("returns an empty array for an empty labels object", () => {
+    expect(toLabelFilters({})).toEqual([]);
   });
 });
