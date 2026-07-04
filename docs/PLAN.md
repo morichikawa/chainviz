@@ -229,7 +229,7 @@ E2Eテストが混入しない
 - [x] 異常系シナリオ(不正なchainProfile・存在しないID・不正なコマンド)を
       追加する
       [#58](https://github.com/morichikawa/chainviz/issues/58)
-- [ ] 再接続シナリオ(切断→再接続後のスナップショット整合性)を追加する
+- [x] 再接続シナリオ(切断→再接続後のスナップショット整合性)を追加する
       [#59](https://github.com/morichikawa/chainviz/issues/59)
 
 ## ステップ 7 以降（概要のみ。詳細は着手時にこのドキュメントへ追記）
