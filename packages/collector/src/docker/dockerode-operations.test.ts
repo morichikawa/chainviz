@@ -245,4 +245,47 @@ describe("createDockerOperations", () => {
     await expect(ops.stopAndRemove("cid-gone")).resolves.toBeUndefined();
     expect(remove).toHaveBeenCalledWith({ force: true });
   });
+
+  it("treats a concurrent removal (409 already in progress) as success", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const stop = vi.fn().mockResolvedValue(undefined);
+      // dockerode が返す 409 の実メッセージ形（repro で確認した文言）を模す。
+      const conflict = Object.assign(
+        new Error(
+          "(HTTP code 409) unexpected - removal of container abc123 is already in progress ",
+        ),
+        { statusCode: 409 },
+      );
+      const remove = vi.fn().mockRejectedValue(conflict);
+      const getContainer = vi.fn().mockReturnValue({ stop, remove });
+      const docker = { getContainer } as unknown as Docker;
+
+      const ops = createDockerOperations(docker);
+      // 別の削除が進行中でも、そのコンテナは最終的に消えるため成功相当に扱う。
+      await expect(ops.stopAndRemove("abc123")).resolves.toBeUndefined();
+      expect(remove).toHaveBeenCalledWith({ force: true });
+      // 異常として握りつぶすのではなく、進行中である旨をログに残す。
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("does not treat an unrelated 409 conflict as success", async () => {
+    const stop = vi.fn().mockResolvedValue(undefined);
+    // 409 でもメッセージが「削除進行中」でないものは良性の競合ではないため伝播させる。
+    const conflict = Object.assign(
+      new Error("(HTTP code 409) unexpected - some other conflict"),
+      { statusCode: 409 },
+    );
+    const remove = vi.fn().mockRejectedValue(conflict);
+    const getContainer = vi.fn().mockReturnValue({ stop, remove });
+    const docker = { getContainer } as unknown as Docker;
+
+    const ops = createDockerOperations(docker);
+    await expect(ops.stopAndRemove("cid-1")).rejects.toThrow(
+      /some other conflict/,
+    );
+  });
 });

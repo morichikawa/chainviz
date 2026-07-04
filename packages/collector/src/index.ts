@@ -53,6 +53,42 @@ export interface PollingLoop {
 }
 
 /**
+ * プロセス全体を巻き込む未捕捉の非同期エラーに対する安全網を張る。
+ *
+ * collector は addNode/addWorkbench で作成した managed コンテナの参照を
+ * メモリ上のレジストリだけで保持している。プロセスが落ちるとこのレジストリが
+ * 失われ、作成済みコンテナがすべて孤児になる（削除できなくなる）。そのため、
+ * Docker/WebSocket など I/O 層で稀に発生する未捕捉の非同期エラー（例: コンテナ
+ * 削除の競合や、状態遷移中のソケットで遅れて発火する 'error' イベント）が
+ * プロセス全体を停止させると、被害が「1 コマンドの失敗」では済まず、孤児の
+ * 蓄積という連鎖的な悪化を招く（Issue #63）。
+ *
+ * ここでは Node の既定挙動（unhandledRejection でプロセス終了）を上書きし、
+ * 検知した異常は握りつぶさずに必ずログへ残したうえで、長時間稼働する
+ * データ収集プロセス自体は落とさない。個々の操作コマンドのエラーは
+ * CommandHandler が commandResult(ok:false) としてフロントへ返す経路が別に
+ * あるため、この安全網はあくまで「どのハンドラにも紐づかない背景の非同期
+ * エラー」だけを受け止める最後の砦である。
+ */
+export function installProcessSafetyNet(
+  log: (message: string, detail: unknown) => void = (message, detail) =>
+    console.error(message, detail),
+): void {
+  process.on("unhandledRejection", (reason) => {
+    log(
+      "[collector] unhandled promise rejection; keeping the collector alive:",
+      reason,
+    );
+  });
+  process.on("uncaughtException", (err) => {
+    log(
+      "[collector] uncaught exception; keeping the collector alive:",
+      err,
+    );
+  });
+}
+
+/**
  * アダプタでポーリング→store へ取り込み→差分を配信、を周期実行する。
  * 前回のポーリングが完了してから次を予約する（重複実行を避ける）。
  */
@@ -124,6 +160,9 @@ export async function main(port: number = DEFAULT_PORT): Promise<void> {
 // 直接実行されたときだけサーバーを起動する（import 時は副作用なし）。
 const invokedPath = process.argv[1];
 if (invokedPath && import.meta.url === pathToFileURL(invokedPath).href) {
+  // 背景の非同期エラーでプロセスごと落ちて managed コンテナを孤児化させないよう、
+  // サーバー起動前に安全網を張る（Issue #63）。
+  installProcessSafetyNet();
   main(resolvePort()).catch((err) => {
     console.error("[collector] fatal:", err);
     process.exit(1);
