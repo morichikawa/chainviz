@@ -17,5 +17,9 @@ export default defineConfig({
     fileParallelism: false,
     pool: "forks",
     poolOptions: { forks: { singleFork: true } },
+    // 同一ホスト上の複数 test:e2e 実行（別 worktree・別ブランチを含む）が
+    // docker compose スタック / collector ポートを奪い合わないよう、実行
+    // 全体を排他ロックする（Issue #64）。
+    globalSetup: ["./src/helpers/global-setup.ts"],
   },
 });
