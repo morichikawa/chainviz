@@ -164,9 +164,14 @@ GitHub: [milestone](https://github.com/morichikawa/chainviz/milestone/4)
 Phase 2 と Phase 3 の間に挟む機能。新規ノードは「バリデーターなしの
 フォロワー reth+beacon ペア」として追加する(既存 genesis のバリデーター鍵は
 固定数のため、バリデーター化には genesis 再生成が必要になり現実的でない)。
-`profiles/ethereum/scripts/{reth-node.sh,lighthouse-bn.sh}` は既にノード
-固有の値をハードコードしておらず環境変数だけで駆動するため、node-env 側の
-変更なしで collector が dockerode 経由で直接起動できる見込み。
+
+着手時点では`profiles/ethereum/scripts/{reth-node.sh,lighthouse-bn.sh}`が
+環境変数だけで駆動するためnode-env側の変更は不要と見込んでいたが、実際には
+reth(EL)同士のP2Pが無効化されており、チェーンが進行した後に参加する新規
+rethが履歴をバックフィルできず追従しないという問題が統合QAで発覚した。
+node-env側でEL間P2P同期を有効化し([#44](https://github.com/morichikawa/chainviz/issues/44)、
+関連バグ修正 [#46](https://github.com/morichikawa/chainviz/issues/46))、
+collector側もそれに追随することで解消した。
 
 **collector**:
 
