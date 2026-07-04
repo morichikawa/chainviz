@@ -173,7 +173,19 @@ export class EthereumNodeLifecycle implements NodeLifecycle {
       );
     } catch (err) {
       // reth だけ孤立させないよう後始末してから失敗を伝える。
-      await this.ops.stopAndRemove(reth.id).catch(() => {});
+      // 後始末自体が失敗した場合はログに残す（握りつぶすと、孤立した
+      // reth コンテナが A 層ポーリングでキャンバスに現れる一方、this.nodes
+      // には未登録のため removeNode で拒否され、UI から消せないゴースト状態に
+      // なってしまう）。ただし呼び出し元へは根本原因である元の beacon エラーを
+      // 優先して再 throw し、後始末エラーに差し替えない。
+      try {
+        await this.ops.stopAndRemove(reth.id);
+      } catch (cleanupErr) {
+        console.error(
+          "[ethereum] failed to roll back reth after beacon start failure:",
+          cleanupErr,
+        );
+      }
       throw err;
     }
 
