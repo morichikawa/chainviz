@@ -3,15 +3,31 @@
 #
 # EL(reth)用 genesis.json と CL(lighthouse)用 genesis.ssz / config.yaml、
 # jwtsecret、バリデーター鍵を共有ボリューム /data に生成する。
-# genesis 時刻を「現在時刻」で埋め込むため、docker compose 起動のたびに
-# 前回分を破棄して作り直す(古い genesis 時刻での起動を防ぐ)。
+# genesis 時刻を「現在時刻」で埋め込む。
+#
+# 冪等性: 共有ボリューム上に生成済みの genesis 一式が既に存在する場合は、
+# 何もせずに終了する。稼働中スタックに `docker compose up -d` を再実行しても
+# genesis サービスが再走して新しいタイムスタンプで上書きしてしまい、既存
+# ノードと genesis ハッシュが食い違う事故を防ぐ(Issue #56)。生成物は
+# 起動のたびに作り直すのではなく、共有ボリュームが存在する限り初回だけ作る。
+# まっさらな chain で始めたい場合は `docker compose down -v` でボリュームごと
+# 破棄すれば、次回起動時に再生成される。
 set -e
 
 GEN=/data/metadata
 KEYS=/data/keys
+# 生成完了を示すマーカー。生成処理の最後に書き出す。途中で失敗した実行は
+# マーカーを残さないため、次回はやり直しになる(半端な生成物での起動を防ぐ)。
+DONE_MARKER=/data/.genesis-complete
+
+if [ -f "$DONE_MARKER" ]; then
+  echo "[generate] 生成済みの genesis を検出(${DONE_MARKER})。再生成せず終了する。"
+  echo "[generate] 作り直すには 'docker compose down -v' でボリュームを破棄すること。"
+  exit 0
+fi
 
 echo "[generate] 前回の生成物を破棄"
-rm -rf /data/metadata /data/jwt /data/keys /data/parsed
+rm -rf /data/metadata /data/jwt /data/keys /data/parsed "$DONE_MARKER"
 
 echo "[generate] EL + CL genesis を生成(genesis 時刻 = 現在時刻)"
 export GENESIS_TIMESTAMP="$(date +%s)"
@@ -51,4 +67,7 @@ while [ "$i" -lt "$NODE_COUNT" ]; do
   i=$(( i + 1 ))
 done
 
+# すべて成功したときだけ完了マーカーを書く。以降の起動はこのマーカーを見て
+# 再生成をスキップする(冪等性)。
+touch "$DONE_MARKER"
 echo "[generate] 完了"

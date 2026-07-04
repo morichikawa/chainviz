@@ -63,12 +63,12 @@ export async function ensureChainRunning(
     await compose(["down", "-v"]);
     await compose(["up", "-d"]);
   } else if (!(await chainReachableAndProgressing())) {
-    // 既に健全に動いている場合は up -d を呼ばない。genesis は一発生成の
-    // ワンショットサービスで、up -d のたびに再実行され GENESIS_TIMESTAMP を
-    // 現在時刻で振り直して共有ボリュームの genesis を作り直す。すると後から
-    // addNode で参加するノードが「別の genesis」で init してしまい、既存
-    // ノードと genesis ハッシュが食い違って EL の P2P ハンドシェイクに失敗し、
-    // ブロックへ追従できなくなる。稼働中スタックはそのまま再利用する。
+    // 未起動・不健全なときだけ up -d する。健全に動いている場合は genesis
+    // 再生成 + 同期のコストを避けるため、稼働中スタックをそのまま再利用する。
+    // なお genesis サービスは冪等化済み（Issue #56。generate-genesis.sh が
+    // 共有ボリューム上の完了マーカーを見て再生成をスキップする）ため、稼働中に
+    // up -d を再実行しても genesis は上書きされず、後から addNode で参加する
+    // ノードも既存ノードと同一 genesis で init される。
     await compose(["up", "-d"]);
   }
 
