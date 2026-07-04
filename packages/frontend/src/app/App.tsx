@@ -1,6 +1,11 @@
 import type { BlockEntity } from "@chainviz/shared";
 import { useCallback, useMemo, useState } from "react";
 import { Canvas } from "../canvas/Canvas.js";
+import { CanvasToolbar } from "../canvas/CanvasToolbar.js";
+import { CommandActionsProvider } from "../commands/CommandActionsContext.js";
+import { useCommands } from "../commands/useCommands.js";
+import { ToastStack } from "../notifications/Toast.js";
+import { useNotifications } from "../notifications/useNotifications.js";
 import { attachPulsesToEdges } from "../entities/blockPulse.js";
 import { entitiesToFlowNodes } from "../entities/infraNode.js";
 import { peerEdgesToFlowEdges } from "../entities/peerEdge.js";
@@ -21,7 +26,7 @@ import { type KeyValueStorage, getBrowserStorage } from "../platform/storage.js"
 import type { ConnectionStatus } from "../websocket/client.js";
 import { createMockClient } from "../websocket/mockData.js";
 import { listEdges, listEntities } from "../world-state/store.js";
-import { type ClientFactory, useWorldState } from "../world-state/useWorldState.js";
+import type { ClientFactory } from "../world-state/useWorldState.js";
 
 export interface AppProps {
   /** collector クライアント生成関数。既定はモック。 */
@@ -67,8 +72,9 @@ function AppShell({
 }) {
   const { t } = useLanguage();
   const [layout, setLayout] = useState<LayoutMap>(() => loadLayout(storage));
+  const { notifications, notify, dismiss } = useNotifications();
 
-  const { state, status } = useWorldState(clientFactory);
+  const { state, status, actions } = useCommands(clientFactory, notify, t);
 
   const nodes = useMemo(
     () => entitiesToFlowNodes(listEntities(state), layout),
@@ -114,17 +120,21 @@ function AppShell({
           <LanguageToggle />
         </div>
       </header>
-      <main className="app__canvas">
-        {nodes.length === 0 ? (
-          <p className="app__empty">{t("canvas.empty")}</p>
-        ) : (
-          <Canvas
-            nodes={nodes}
-            edges={edgesWithPulses}
-            onPersistPosition={persist}
-          />
-        )}
-      </main>
+      <CommandActionsProvider actions={actions}>
+        <main className="app__canvas">
+          <CanvasToolbar />
+          {nodes.length === 0 ? (
+            <p className="app__empty">{t("canvas.empty")}</p>
+          ) : (
+            <Canvas
+              nodes={nodes}
+              edges={edgesWithPulses}
+              onPersistPosition={persist}
+            />
+          )}
+          <ToastStack notifications={notifications} onDismiss={dismiss} />
+        </main>
+      </CommandActionsProvider>
     </div>
   );
 }

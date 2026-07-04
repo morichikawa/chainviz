@@ -1,4 +1,6 @@
 import type {
+  Command,
+  DiffEvent,
   NodeEntity,
   PeerEdge,
   WorkbenchEntity,
@@ -118,30 +120,140 @@ export function createMultiNetworkMockSnapshot(): WorldStateSnapshot {
   };
 }
 
+/**
+ * 初期スナップショットに含まれるノード（compose 起動のバリデーター相当）。
+ * 実環境の完了条件どおり、これらは削除できずエラーが返る。追加した
+ * フォロワーノード / ワークベンチは削除できる。
+ */
+const NON_REMOVABLE_NODE_IDS = new Set([
+  "reth-node-1",
+  "reth-node-2",
+  "lighthouse-1",
+]);
+
+/** addNode で追加するフォロワー reth ノード（同期中から始まる）。 */
+function newFollowerNode(seq: number): NodeEntity {
+  return {
+    kind: "node",
+    id: `reth-follower-${seq}`,
+    containerName: `chainviz-reth-follower-${seq}`,
+    ip: `172.20.0.${100 + seq}`,
+    ports: [8545, 30303],
+    resources: { cpuPercent: 2.0, memMB: 400 },
+    process: { name: "reth node", version: "1.1.0" },
+    chainType: "ethereum",
+    clientType: "reth",
+    syncStatus: "syncing",
+    blockHeight: 0,
+    headBlockHash: "0x00000000",
+  };
+}
+
+/** addWorkbench で追加するワークベンチ。 */
+function newWorkbench(seq: number, label: string): WorkbenchEntity {
+  return {
+    kind: "workbench",
+    id: `workbench-${seq}`,
+    containerName: `chainviz-workbench-${seq}`,
+    ip: `172.20.0.${150 + seq}`,
+    ports: [],
+    resources: { cpuPercent: 0.2, memMB: 48 },
+    process: { name: "foundry" },
+    label,
+    walletIds: [],
+  };
+}
+
 export interface MockClientOptions {
   /** ブロック高を進める diff の送出間隔(ms)。0 以下でタイマーを起動しない。 */
   intervalMs?: number;
+  /**
+   * コマンド送信から結果を返すまでの遅延(ms)。0 以下ならマイクロタスクで
+   * 即時に返す（テスト用）。既定は 0。
+   */
+  commandLatencyMs?: number;
 }
 
 /**
  * collector と同じ ChainvizClient インターフェースを満たすモック。
  * connect 時に snapshot を1回流し、以後は定期的に blockHeight を進める diff を
  * 送る（間隔は intervalMs、テストでは 0 を渡してタイマーを止められる）。
+ *
+ * 操作コマンド（addNode / removeNode / addWorkbench / removeWorkbench）は
+ * collector が未完成のため、ここで簡易にシミュレートする。成功時は対応する
+ * entityAdded / entityRemoved diff を流したうえで commandResult(ok:true) を、
+ * 失敗時（存在しない id / 削除不可のノード）は commandResult(ok:false, error)
+ * を返す。これにより成功・失敗双方の見た目を collector なしで確認できる。
  */
 export function createMockClient(
   handlers: ChainvizClientHandlers,
   options: MockClientOptions = {},
 ): ChainvizClient {
   const intervalMs = options.intervalMs ?? 3000;
+  const commandLatencyMs = options.commandLatencyMs ?? 0;
   let status: ConnectionStatus = "disconnected";
   let timer: ReturnType<typeof setInterval> | null = null;
+  const commandTimers = new Set<ReturnType<typeof setTimeout>>();
   let blockHeight = 128;
   let counter = 0;
+  let entitySeq = 0;
+
+  // 追加・削除の判定に使う、現在存在するエンティティ id の集合。
+  const nodeIds = new Set(["reth-node-1", "reth-node-2", "lighthouse-1"]);
+  const workbenchIds = new Set(["workbench-alice"]);
 
   function setStatus(next: ConnectionStatus) {
     if (status === next) return;
     status = next;
     handlers.onStatusChange?.(next);
+  }
+
+  /** コマンドを適用し、流す diff と結果を返す。 */
+  function applyCommand(command: Command): { ok: boolean; error?: string; diff?: DiffEvent } {
+    switch (command.action) {
+      case "addNode": {
+        const node = newFollowerNode(++entitySeq);
+        nodeIds.add(node.id);
+        return { ok: true, diff: { type: "entityAdded", entity: node } };
+      }
+      case "addWorkbench": {
+        const wb = newWorkbench(++entitySeq, command.label);
+        workbenchIds.add(wb.id);
+        return { ok: true, diff: { type: "entityAdded", entity: wb } };
+      }
+      case "removeNode": {
+        if (!nodeIds.has(command.nodeId)) {
+          return { ok: false, error: `node not found: ${command.nodeId}` };
+        }
+        if (NON_REMOVABLE_NODE_IDS.has(command.nodeId)) {
+          return {
+            ok: false,
+            error: "cannot remove a validator node started by compose",
+          };
+        }
+        nodeIds.delete(command.nodeId);
+        return {
+          ok: true,
+          diff: { type: "entityRemoved", id: command.nodeId },
+        };
+      }
+      case "removeWorkbench": {
+        if (!workbenchIds.has(command.workbenchId)) {
+          return { ok: false, error: `workbench not found: ${command.workbenchId}` };
+        }
+        workbenchIds.delete(command.workbenchId);
+        return {
+          ok: true,
+          diff: { type: "entityRemoved", id: command.workbenchId },
+        };
+      }
+    }
+  }
+
+  function resolveCommand(commandId: string, command: Command) {
+    const result = applyCommand(command);
+    if (result.diff) handlers.onDiff?.([result.diff]);
+    handlers.onCommandResult?.(commandId, result.ok, result.error);
   }
 
   return {
@@ -174,12 +286,25 @@ export function createMockClient(
         clearInterval(timer);
         timer = null;
       }
+      for (const t of commandTimers) clearTimeout(t);
+      commandTimers.clear();
       setStatus("disconnected");
     },
 
-    sendCommand() {
-      // モックは操作コマンドを受け付けるが何もしない。
-      return `mock-cmd-${++counter}`;
+    sendCommand(command) {
+      const commandId = `mock-cmd-${++counter}`;
+      // sendCommand の呼び出し側（useCommands）が commandId を pending へ記録
+      // し終えてから結果を返すよう、必ず非同期で resolve する。
+      if (commandLatencyMs > 0) {
+        const t = setTimeout(() => {
+          commandTimers.delete(t);
+          resolveCommand(commandId, command);
+        }, commandLatencyMs);
+        commandTimers.add(t);
+      } else {
+        queueMicrotask(() => resolveCommand(commandId, command));
+      }
+      return commandId;
     },
 
     getStatus() {
