@@ -207,7 +207,10 @@ describe("installProcessSafetyNet", () => {
   const listenersOf = (ev: Ev): Listener[] =>
     (process.listeners as (event: string) => unknown[])(ev) as Listener[];
 
-  function captureInstalledHandlers(log: (m: string, d: unknown) => void): {
+  function captureInstalledHandlers(
+    log: (m: string, d: unknown) => void,
+    exit: (code: number) => void = () => {},
+  ): {
     handlers: Record<Ev, Listener>;
     cleanup: () => void;
   } {
@@ -217,7 +220,7 @@ describe("installProcessSafetyNet", () => {
       uncaughtException: listenersOf("uncaughtException"),
     };
 
-    installProcessSafetyNet(log);
+    installProcessSafetyNet(log, exit);
 
     const handlers = {} as Record<Ev, Listener>;
     const added: Array<[Ev, Listener]> = [];
@@ -261,14 +264,31 @@ describe("installProcessSafetyNet", () => {
     }
   });
 
-  it("logs an uncaught exception instead of letting it crash the process", () => {
+  it("logs an uncaught exception and exits the process", () => {
     const log = vi.fn();
-    const { handlers, cleanup } = captureInstalledHandlers(log);
+    const exit = vi.fn();
+    const { handlers, cleanup } = captureInstalledHandlers(log, exit);
     try {
       const err = new Error("stray uncaught error");
       expect(() => handlers.uncaughtException(err)).not.toThrow();
       expect(log).toHaveBeenCalledTimes(1);
       expect(log).toHaveBeenCalledWith(expect.stringMatching(/uncaught/i), err);
+      // 孤児化の心配は recoverManagedContainers が解消したため、プロセスの
+      // 状態が不定な uncaughtException では継続せず終了する（Issue #65）。
+      expect(exit).toHaveBeenCalledTimes(1);
+      expect(exit).toHaveBeenCalledWith(1);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("does not exit on an unhandled rejection", () => {
+    const log = vi.fn();
+    const exit = vi.fn();
+    const { handlers, cleanup } = captureInstalledHandlers(log, exit);
+    try {
+      handlers.unhandledRejection(new Error("stray background rejection"));
+      expect(exit).not.toHaveBeenCalled();
     } finally {
       cleanup();
     }
