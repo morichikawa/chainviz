@@ -120,3 +120,54 @@
   - 合格。push・PR作成・マージへ進んでよい。
   - QA(chainviz-qa)はdocsのみの変更のため省略可と判断(前回レビューと
     同じ理由)。
+
+### 2026-07-05 開発用一括起動/停止スクリプト(dev-up/dev-down)のレビュー(差し戻し)
+
+- 担当: reviewer
+- ブランチ: chore-dev-up-down-scripts(コミット 9d846e0, 548eeb9)
+- 内容:
+  - `scripts/dev-up.sh` / `scripts/dev-down.sh`、`package.json` の
+    `dev:up`/`dev:down`、`.gitignore` の `.dev-pids/` 追加、
+    `docs/CONTRIBUTING.md` の使い方追記をレビューした。
+  - `pnpm lint && pnpm build && pnpm test` は全パッケージで通ることを確認
+    (collector 498件・frontend 411件ほか全パス)。
+  - 環境変数名(`CHAINVIZ_COLLECTOR_PORT`/`CHAINVIZ_PROXY_PORT`/
+    `VITE_COLLECTOR_URL`)が collector/frontend の実装と一致していること、
+    collector が WebSocket listen をポーリング開始より先に行うため
+    コールドスタートでも `wait_for_port` が成立することを確認した。
+  - `.gitignore` 追加は適切。シェルスクリプトは `packages/*` のロジック
+    ではないため vitest 対象外とする判断は妥当。境界原則(フロントは
+    collector 経由のみ)にも違反なし。コミット粒度(本体+配線 / docs の
+    2コミット)も適切。
+- 差し戻し理由(要修正):
+  - (1) `dev-up.sh` に二重起動ガードがない。起動済みの状態でもう一度
+    実行すると、新しい collector は EADDRINUSE で即死するのに
+    `wait_for_port` は旧インスタンスのポートを見て成功し、「起動しました」
+    と偽の成功を報告する。さらに pid ファイルが死んだ PID で上書きされ、
+    ログも truncate されるため、以後 `dev-down.sh` では旧インスタンスを
+    停止できず孤児プロセス化する。起動前に pid ファイル+`kill -0` で
+    稼働中インスタンスを検出したら exit 1 するガードが必要。
+  - (2) `dev-down.sh` が `kill -9` 後の生存確認をせず、失敗しても
+    pid ファイルを削除して exit 0 する。SIGKILL 後に `kill -0` で再確認し、
+    まだ生きていれば pid ファイルを残してエラーを報告し非0で終了すること。
+- 推奨(必須ではない):
+  - frontend の記録 PID は pnpm ラッパーのもの。SIGKILL フォールバック時は
+    pnpm だけが死んで vite が孤児化しポートを握り続ける可能性がある。
+    `setsid` で起動してプロセスグループごと `kill -- -$pid` するのが堅い。
+  - Docker 再利用判定が「running コンテナが1つでもあるか」だけで、
+    一部コンテナだけ exited のスタックを修復せず再利用する。E2E ハーネス
+    (docker.ts)はチェーン進行の健全性で判定し不健全なら up -d する。
+    genesis は Issue #56 で冪等化済みなので、全サービスが running で
+    なければ up -d する形に寄せられる。
+  - `wait_for_port` の 30回×1秒という固定リトライは「ローカルプロセスの
+    listen 開始待ち」でありチェーン進行状態に依存しないため許容だが、
+    その前提を示すコメントを1行添えるとよい。
+- 決定事項・注意点:
+  - CONTRIBUTING.md の既存記述「稼働中に up -d すると genesis が作り
+    直され P2P に失敗する」は Issue #56(genesis 冪等化)以前の理由で、
+    docker.ts のコメントとは食い違っている(このブランチ起因ではない
+    既存の docs ドリフト。別途整理が望ましい)。
+  - この作業には対応する GitHub Issue が無く、ブランチ名も
+    `issue-<番号>-<スラッグ>` 規約に沿っていない。ユーザー要望起点の
+    PLAN 外作業だが、追跡のため Issue を作成して紐付けるか、規約の
+    例外とする判断を統括が明示すること。
