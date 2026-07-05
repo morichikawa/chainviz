@@ -3,6 +3,8 @@ import type {
   DiffEvent,
   NodeEntity,
   PeerEdge,
+  TransactionEntity,
+  WalletEntity,
   WorkbenchEntity,
   WorldStateSnapshot,
 } from "@chainviz/shared";
@@ -44,6 +46,34 @@ const lighthouseNode: NodeEntity = {
   headBlockHash: "0x00000080",
 };
 
+/** 0x + 指定プレフィックス + ゼロ埋めで 40 桁のダミーアドレスを作る。 */
+function addr(prefix: string): string {
+  return `0x${prefix.padEnd(40, "0")}`;
+}
+
+/** 0x + 指定シード + ゼロ埋めで 64 桁のダミー tx ハッシュを作る。 */
+function txHash(seed: string): string {
+  return `0x${seed.padEnd(64, "0")}`;
+}
+
+/** eth（整数）を wei 建ての整数文字列に変換する。 */
+function ethWei(eth: bigint): string {
+  return (eth * 10n ** 18n).toString();
+}
+
+// C層のモック用ウォレット・トランザクション。collector 側（#76/#77）が
+// 未完成のため、フロントの表示・アニメーション確認用にここでサンプルを持つ。
+const ALICE_WALLET = addr("a11ce");
+const BOB_WALLET = addr("b0b");
+const SAFE_WALLET = addr("5afe");
+
+const ALICE_TX1 = txHash("a11ce01");
+const BOB_TX1 = txHash("b0b01");
+
+/** Alice ウォレットの初期状態（createMockSnapshot と live 更新で共有）。 */
+const INITIAL_ALICE_NONCE = 3;
+const INITIAL_ALICE_BALANCE_WEI = 5n * 10n ** 18n;
+
 const workbench: WorkbenchEntity = {
   kind: "workbench",
   id: "workbench-alice",
@@ -53,8 +83,77 @@ const workbench: WorkbenchEntity = {
   resources: { cpuPercent: 0.3, memMB: 64 },
   process: { name: "foundry" },
   label: "Alice",
-  walletIds: [],
+  walletIds: [ALICE_WALLET, SAFE_WALLET],
 };
+
+/** Alice の EOA。workbench-alice が所有し、tx ライフサイクルの主役になる。 */
+function aliceWallet(): WalletEntity {
+  return {
+    kind: "wallet",
+    address: ALICE_WALLET,
+    chainType: "ethereum",
+    balance: INITIAL_ALICE_BALANCE_WEI.toString(),
+    nonce: INITIAL_ALICE_NONCE,
+    isSmartAccount: false,
+    ownerWorkbenchId: "workbench-alice",
+    recentTxHashes: [ALICE_TX1],
+  };
+}
+
+/**
+ * Bob の EOA。所有していたワークベンチが削除された状態（ownerWorkbenchId:
+ * null）を再現する。CONCEPT.md の決定どおり、所有エッジは消えるがウォレット
+ * 自体のカードは残る（カード上に「所有者は削除済み」を表示）。
+ */
+function bobWallet(): WalletEntity {
+  return {
+    kind: "wallet",
+    address: BOB_WALLET,
+    chainType: "ethereum",
+    balance: ethWei(2n),
+    nonce: 7,
+    isSmartAccount: false,
+    ownerWorkbenchId: null,
+    recentTxHashes: [BOB_TX1],
+  };
+}
+
+/** スマートアカウント（コントラクトウォレット）。workbench-alice が所有。 */
+function safeWallet(): WalletEntity {
+  return {
+    kind: "wallet",
+    address: SAFE_WALLET,
+    chainType: "ethereum",
+    balance: ethWei(10n),
+    nonce: 0,
+    isSmartAccount: true,
+    ownerWorkbenchId: "workbench-alice",
+    recentTxHashes: [],
+  };
+}
+
+/** Alice が送信し mempool で待機中（pending）の tx。 */
+function alicePendingTx(): TransactionEntity {
+  return {
+    kind: "transaction",
+    hash: ALICE_TX1,
+    from: ALICE_WALLET,
+    to: BOB_WALLET,
+    status: "pending",
+  };
+}
+
+/** Bob の確定済み（included）tx。 */
+function bobIncludedTx(): TransactionEntity {
+  return {
+    kind: "transaction",
+    hash: BOB_TX1,
+    from: BOB_WALLET,
+    to: ALICE_WALLET,
+    status: "included",
+    blockHash: "0x00000080",
+  };
+}
 
 /**
  * 実環境（Ethereum プロファイル1つ）の P2P ネットワーク ID。
@@ -67,7 +166,17 @@ export function createMockSnapshot(): WorldStateSnapshot {
   return {
     chainType: "ethereum",
     timestamp: Date.now(),
-    entities: [rethNode(1, 128), rethNode(2, 128), lighthouseNode, workbench],
+    entities: [
+      rethNode(1, 128),
+      rethNode(2, 128),
+      lighthouseNode,
+      workbench,
+      aliceWallet(),
+      bobWallet(),
+      safeWallet(),
+      alicePendingTx(),
+      bobIncludedTx(),
+    ],
     // 2つの reth ノードが実行層 P2P で直接ピア接続している状態を表す。
     edges: [
       {
@@ -202,6 +311,74 @@ export function createMockClient(
   const nodeIds = new Set(["reth-node-1", "reth-node-2", "lighthouse-1"]);
   const workbenchIds = new Set(["workbench-alice"]);
 
+  // C層 tx ライフサイクルの live シミュレーション状態。connect のたびに
+  // resetTxState で初期化し、送出するスナップショットと整合させる。
+  let aliceNonce = INITIAL_ALICE_NONCE;
+  let aliceBalanceWei = INITIAL_ALICE_BALANCE_WEI;
+  let aliceRecent: string[] = [ALICE_TX1];
+  let pendingHash: string | null = ALICE_TX1;
+  let txSeq = 0;
+
+  function resetTxState() {
+    aliceNonce = INITIAL_ALICE_NONCE;
+    aliceBalanceWei = INITIAL_ALICE_BALANCE_WEI;
+    aliceRecent = [ALICE_TX1];
+    pendingHash = ALICE_TX1;
+    txSeq = 0;
+  }
+
+  /**
+   * 1 tick 分の tx ライフサイクルを進める差分を返す。前回 pending だった tx を
+   * included に確定させて Alice の nonce/残高を更新し、新しい pending tx を
+   * mempool へ投入する。recentTxHashes からあふれた古い tx は掃除する。
+   */
+  function advanceTxLifecycle(): DiffEvent[] {
+    const diffs: DiffEvent[] = [];
+
+    if (pendingHash) {
+      const blockHash = `0x${blockHeight.toString(16).padStart(8, "0")}`;
+      diffs.push({
+        type: "entityUpdated",
+        id: pendingHash,
+        patch: { status: "included", blockHash },
+      });
+      aliceNonce += 1;
+      // gas 概算(21000 gas × 1 gwei)を残高から差し引く。
+      aliceBalanceWei -= 21_000n * 1_000_000_000n;
+      diffs.push({
+        type: "entityUpdated",
+        id: ALICE_WALLET,
+        patch: { nonce: aliceNonce, balance: aliceBalanceWei.toString() },
+      });
+    }
+
+    const hash = txHash(`feed${txSeq++}`);
+    pendingHash = hash;
+    diffs.push({
+      type: "entityAdded",
+      entity: {
+        kind: "transaction",
+        hash,
+        from: ALICE_WALLET,
+        to: BOB_WALLET,
+        status: "pending",
+      },
+    });
+
+    const nextRecent = [hash, ...aliceRecent];
+    const overflow = nextRecent.slice(6);
+    aliceRecent = nextRecent.slice(0, 6);
+    diffs.push({
+      type: "entityUpdated",
+      id: ALICE_WALLET,
+      patch: { recentTxHashes: [...aliceRecent] },
+    });
+    for (const dropped of overflow) {
+      diffs.push({ type: "entityRemoved", id: dropped });
+    }
+    return diffs;
+  }
+
   function setStatus(next: ConnectionStatus) {
     if (status === next) return;
     status = next;
@@ -260,6 +437,7 @@ export function createMockClient(
     connect() {
       if (status === "connected") return;
       setStatus("connected");
+      resetTxState();
       handlers.onSnapshot?.(createMockSnapshot());
 
       if (intervalMs > 0) {
@@ -276,6 +454,7 @@ export function createMockClient(
               id: "reth-node-2",
               patch: { blockHeight },
             },
+            ...advanceTxLifecycle(),
           ]);
         }, intervalMs);
       }

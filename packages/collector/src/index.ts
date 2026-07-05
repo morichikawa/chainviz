@@ -246,6 +246,17 @@ export async function main(port: number = DEFAULT_PORT): Promise<void> {
       server.broadcastDiff(diff);
     })
     .catch((err) => console.error("[collector] block subscription failed:", err));
+
+  // C 層: tx ライフサイクル（mempool 投入 → ブロック取り込み）を購読し、
+  // TransactionEntity の差分をワールドステート store 経由でフロントへ配信する。
+  adapter
+    .subscribeTransactions((tx) => {
+      const diff = store.applyTransaction(tx);
+      server.broadcastDiff(diff);
+    })
+    .catch((err) =>
+      console.error("[collector] transaction subscription failed:", err),
+    );
 }
 
 // 直接実行されたときだけサーバーを起動する（import 時は副作用なし）。
