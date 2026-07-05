@@ -8,10 +8,10 @@
 import type {
   BlockEntity,
   ChainAdapter,
-  DiffEvent,
   InfraEntity,
   NodeEntity,
   PeerEdge,
+  TransactionEntity,
   WorkbenchEntity,
   WorldStateSnapshot,
 } from "@chainviz/shared";
@@ -27,13 +27,19 @@ import {
 import { BlockPropagationTracker } from "./blocks.js";
 import { classifyContainer } from "./classify.js";
 import {
+  createFetchEthRpcClient,
+  type EthRpcClient,
+} from "./eth-rpc-client.js";
+import {
   createWsEthClient,
   type EthWsClient,
   type NewHeadsSubscription,
+  type Subscription,
 } from "./eth-ws-client.js";
 import { createFetchHttpClient, type HttpClient } from "./http-client.js";
 import { toPeerEdges, type BeaconNodePeers } from "./peers.js";
 import { beaconTargets, executionTargets } from "./targets.js";
+import { TransactionLifecycleTracker } from "./transactions.js";
 
 /** ピアポーリングの既定間隔。 */
 export const PEER_POLL_INTERVAL_MS = 3000;
@@ -42,6 +48,8 @@ export const PEER_POLL_INTERVAL_MS = 3000;
 export interface EthereumAdapterDeps {
   httpClient?: HttpClient;
   ethWsClient?: EthWsClient;
+  /** tx 詳細・ブロック内 tx 一覧を取得する HTTP JSON-RPC クライアント。 */
+  ethRpcClient?: EthRpcClient;
   peerPollIntervalMs?: number;
   /** テスト用の時刻ソース。既定は Date.now。 */
   now?: () => number;
@@ -70,13 +78,20 @@ export class EthereumAdapter implements ChainAdapter {
 
   private readonly http: HttpClient;
   private readonly ethWs: EthWsClient;
+  private readonly ethRpc: EthRpcClient;
   private readonly peerPollIntervalMs: number;
   private readonly now: () => number;
   private readonly blockTracker = new BlockPropagationTracker();
+  private readonly txTracker = new TransactionLifecycleTracker();
 
   private peerTimer?: ReturnType<typeof setTimeout>;
   private peerLoopRunning = false;
   private blockSubscriptions: NewHeadsSubscription[] = [];
+  private txSubscriptions: Subscription[] = [];
+  // 同一ブロックを複数ノードが newHeads で通知するため、included 判定用の
+  // ブロック取得を 1 ブロックにつき 1 回だけに絞る（重複した RPC を避ける）。
+  private readonly processedBlocks = new Set<string>();
+  private readonly maxProcessedBlocks = 500;
 
   constructor(
     private readonly poller: DockerPoller,
@@ -84,6 +99,7 @@ export class EthereumAdapter implements ChainAdapter {
   ) {
     this.http = deps.httpClient ?? createFetchHttpClient();
     this.ethWs = deps.ethWsClient ?? createWsEthClient();
+    this.ethRpc = deps.ethRpcClient ?? createFetchEthRpcClient();
     this.peerPollIntervalMs = deps.peerPollIntervalMs ?? PEER_POLL_INTERVAL_MS;
     this.now = deps.now ?? (() => Date.now());
   }
@@ -217,7 +233,126 @@ export class EthereumAdapter implements ChainAdapter {
     }
   }
 
-  /** ピアポーリングとブロック購読を停止する（テスト・シャットダウン用）。 */
+  // --- C 層: tx ライフサイクル（pending → included） ---
+
+  /**
+   * C 層: tx のライフサイクルを購読する。各 Execution ノードに対し
+   * newPendingTransactions（mempool 投入の検知）と newHeads（ブロック取り込みの
+   * 検知）を購読し、状態が変化した TransactionEntity を onTx へ渡す。
+   *
+   * newHeads は B 層の subscribeBlocks でも購読しているが、あちらはブロック
+   * 受信時刻（伝播アニメーション）専用で tx を扱わない。層ごとに関心を分離する
+   * ため C 層は独自に newHeads を購読し、ここではブロック内 tx 一覧の突き合わせ
+   * だけを行う。同一ブロックは複数ノードから通知されるので、included 判定用の
+   * ブロック取得は processedBlocks で 1 回に絞る。
+   */
+  async subscribeTransactions(
+    onTx: (tx: TransactionEntity) => void,
+  ): Promise<void> {
+    const observations = await this.poller.pollOnce();
+    const targets = executionTargets(observations);
+
+    for (const target of targets) {
+      const pendingSub = this.ethWs.subscribePendingTransactions(
+        target.wsUrl,
+        (hash) => void this.handlePendingTx(target.rpcUrl, hash, onTx),
+        (err) =>
+          console.error(
+            `[ethereum] pending tx subscription failed for ${target.stableId}:`,
+            err,
+          ),
+      );
+      this.txSubscriptions.push(pendingSub);
+
+      const inclusionSub = this.ethWs.subscribeNewHeads(
+        target.wsUrl,
+        (header) =>
+          void this.handleBlockInclusion(target.rpcUrl, header.hash, onTx),
+        (err) =>
+          console.error(
+            `[ethereum] tx inclusion subscription failed for ${target.stableId}:`,
+            err,
+          ),
+      );
+      this.txSubscriptions.push(inclusionSub);
+    }
+  }
+
+  /**
+   * newPendingTransactions で得た tx ハッシュの詳細（from/to）を HTTP JSON-RPC で
+   * 取得し、pending として記録する。まだ伝播していない等で詳細が取れない場合は
+   * 何もしない。取得失敗はログして握り、購読自体は継続させる。
+   */
+  private async handlePendingTx(
+    rpcUrl: string,
+    hash: string,
+    onTx: (tx: TransactionEntity) => void,
+  ): Promise<void> {
+    try {
+      const detail = await this.ethRpc.getTransactionByHash(rpcUrl, hash);
+      if (!detail) return;
+      const entity = this.txTracker.recordPending(detail);
+      if (entity) onTx(entity);
+    } catch (err) {
+      console.error(`[ethereum] failed to fetch pending tx ${hash}:`, err);
+    }
+  }
+
+  /**
+   * newHeads で得たブロックハッシュから、ブロックに含まれる tx 一覧を HTTP
+   * JSON-RPC で取得し、pending だった tx を included へ遷移させる（未追跡の tx は
+   * included として新規追加）。取得失敗はログして握り、購読自体は継続させる。
+   */
+  private async handleBlockInclusion(
+    rpcUrl: string,
+    blockHash: string,
+    onTx: (tx: TransactionEntity) => void,
+  ): Promise<void> {
+    if (!this.markBlockProcessed(blockHash)) return;
+    try {
+      const block = await this.ethRpc.getBlockByHash(rpcUrl, blockHash);
+      if (!block) {
+        // ブロックがまだ取得できない（伝播遅延など）。処理済みマークを外し、
+        // 同一ブロックを通知する後続ノードからの newHeads で再試行できるように
+        // する。複数ノードが同一ブロックを通知する性質がそのまま再試行機構になる。
+        this.processedBlocks.delete(blockHash);
+        return;
+      }
+      const changed = this.txTracker.recordInclusion(
+        block.hash,
+        block.transactions,
+      );
+      for (const entity of changed) onTx(entity);
+    } catch (err) {
+      // 取得に失敗した場合も処理済みマークを外し、後続ノードからの通知で
+      // 再試行できるようにする（さもないと当該ブロックの tx が pending のまま固まる）。
+      this.processedBlocks.delete(blockHash);
+      console.error(
+        `[ethereum] failed to fetch block ${blockHash} for tx inclusion:`,
+        err,
+      );
+    }
+  }
+
+  /**
+   * ブロックハッシュを「処理中/処理済み」として記録し、初回なら true を返す。
+   * 既に記録済みなら false（別ノードからの重複通知）。RPC 取得に失敗した場合は
+   * 呼び出し側が processedBlocks から当該ハッシュを削除し、後続ノードからの通知で
+   * 再試行できるようにする。保持数の上限を超えたら古いものから捨てる
+   * （メモリ無制限化の防止）。
+   */
+  private markBlockProcessed(blockHash: string): boolean {
+    if (this.processedBlocks.has(blockHash)) return false;
+    this.processedBlocks.add(blockHash);
+    while (this.processedBlocks.size > this.maxProcessedBlocks) {
+      const oldest = this.processedBlocks.values().next().value;
+      if (oldest === undefined) break;
+      this.processedBlocks.delete(oldest);
+    }
+    return true;
+  }
+
+  /** ピアポーリング・ブロック購読・tx 購読を停止する（テスト・シャットダウン用）。 */
   dispose(): void {
     this.peerLoopRunning = false;
     if (this.peerTimer) {
@@ -226,11 +361,7 @@ export class EthereumAdapter implements ChainAdapter {
     }
     for (const sub of this.blockSubscriptions) sub.close();
     this.blockSubscriptions = [];
-  }
-
-  /** C 層: チェーンイベントの購読。Phase 3 で実装する。 */
-  subscribeChainEvents(onEvent: (event: DiffEvent) => void): void {
-    // 未実装（B 層の範囲外）。
-    void onEvent;
+    for (const sub of this.txSubscriptions) sub.close();
+    this.txSubscriptions = [];
   }
 }

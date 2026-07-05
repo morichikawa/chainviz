@@ -1,4 +1,9 @@
-import type { BlockEntity, NodeEntity, PeerEdge } from "@chainviz/shared";
+import type {
+  BlockEntity,
+  NodeEntity,
+  PeerEdge,
+  TransactionEntity,
+} from "@chainviz/shared";
 import { describe, expect, it } from "vitest";
 import { WorldStateStore } from "./store.js";
 
@@ -392,5 +397,77 @@ describe("WorldStateStore.applyBlock", () => {
     expect(
       store.getSnapshot().entities.filter((e) => e.kind === "block"),
     ).toHaveLength(1);
+  });
+});
+
+function tx(overrides: Partial<TransactionEntity> = {}): TransactionEntity {
+  return {
+    kind: "transaction",
+    hash: "0xtx1",
+    from: "0xsender",
+    to: "0xrecipient",
+    status: "pending",
+    ...overrides,
+  };
+}
+
+describe("WorldStateStore.applyTransaction", () => {
+  it("adds a pending tx on first receipt", () => {
+    const store = new WorldStateStore();
+    const diff = store.applyTransaction(tx());
+    expect(diff).toEqual([{ type: "entityAdded", entity: tx() }]);
+    expect(store.getSnapshot().entities).toContainEqual(tx());
+  });
+
+  it("emits an update with only the changed fields on inclusion", () => {
+    const store = new WorldStateStore();
+    store.applyTransaction(tx());
+    const diff = store.applyTransaction(
+      tx({ status: "included", blockHash: "0xblock" }),
+    );
+    expect(diff).toEqual([
+      {
+        type: "entityUpdated",
+        id: "0xtx1",
+        patch: { status: "included", blockHash: "0xblock" },
+      },
+    ]);
+    const stored = store
+      .getSnapshot()
+      .entities.find((e) => e.kind === "transaction") as TransactionEntity;
+    expect(stored.status).toBe("included");
+    expect(stored.blockHash).toBe("0xblock");
+    // 変化していない from/to は保持される。
+    expect(stored.from).toBe("0xsender");
+  });
+
+  it("emits no diff when the same tx is applied unchanged", () => {
+    const store = new WorldStateStore();
+    store.applyTransaction(tx());
+    expect(store.applyTransaction(tx())).toEqual([]);
+  });
+
+  it("tracks multiple distinct txs", () => {
+    const store = new WorldStateStore();
+    store.applyTransaction(tx({ hash: "0xa" }));
+    store.applyTransaction(tx({ hash: "0xb" }));
+    expect(
+      store.getSnapshot().entities.filter((e) => e.kind === "transaction"),
+    ).toHaveLength(2);
+  });
+
+  it("keeps txs separate from infra entities, blocks and edges", () => {
+    const store = new WorldStateStore();
+    store.applyInfra([node()]);
+    store.applyPeers([edge()]);
+    store.applyBlock(block());
+    store.applyTransaction(tx());
+    const snapshot = store.getSnapshot();
+    expect(snapshot.entities.filter((e) => e.kind === "node")).toHaveLength(1);
+    expect(snapshot.entities.filter((e) => e.kind === "block")).toHaveLength(1);
+    expect(
+      snapshot.entities.filter((e) => e.kind === "transaction"),
+    ).toHaveLength(1);
+    expect(snapshot.edges).toHaveLength(1);
   });
 });
