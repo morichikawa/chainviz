@@ -86,6 +86,13 @@ cast send --mnemonic "$EL_AND_CL_MNEMONIC" --mnemonic-index 0 \
 genesis でプリマインされている(導出パスは Foundry 既定と同じ
 `m/44'/60'/0'/0/N`)。
 
+`ETH_RPC_URL` は reth1 直接ではなく **ロギングプロキシ経由**(`http://host.docker.internal:4001`)
+を指す(後述「ワークベンチの RPC 観測(ロギングプロキシ)」)。**プロキシは
+collector プロセスがホスト上のポート 4001 で提供する**ため、上記の `cast`
+コマンドを成功させるには collector(のプロキシ)がホスト側で起動している
+必要がある。起動していない場合、ワークベンチからの RPC は
+`Connection refused`(host:4001)で失敗する。
+
 ## genesis の扱い
 
 genesis.json(EL)と genesis.ssz / config.yaml(CL)は **生成時刻を埋め込む**
@@ -139,11 +146,35 @@ genesisがそのまま使われる。
   - 副作用として EL 間の tx gossip(pending tx の相互伝播)も同時に有効になる。
     reth ではブロック同期だけを分離して有効化できないため許容している。
 
-## この段階で意図的に入れていないもの
+## ワークベンチの RPC 観測(ロギングプロキシ)
 
-- **ロギングプロキシ**(ワークベンチ RPC 観測用): `docs/PLAN.md` の方針どおり
-  Phase 3 で collector 側と合わせて追加する。現状ワークベンチは reth1 の RPC を
-  直接叩く。
+ワークベンチの RPC 呼び出しを可視化するため、ワークベンチは reth1 を直接
+叩かず **ロギングプロキシ経由** で接続する(`docs/CONCEPT.md`「ユーザー操作
+マシン(ワークベンチ)の投影」の決定)。プロキシは受け取った RPC 呼び出しを
+ログに残しつつ、そのまま reth1 へ転送する。
+
+- **プロキシの実体は collector プロセス**。collector がホスト上のポート 4001 で
+  待ち受ける(collector 本体の WebSocket サーバーは 4000 番、プロキシは
+  4001 番)。プロキシ自体の実装は collector 側の担当
+  ([#79](https://github.com/morichikawa/chainviz/issues/79))であり、この
+  プロファイルは接続先を向けるだけ。
+- **コンテナからホストへの到達経路**: プロキシはコンテナではなくホスト上の
+  プロセスなので、ワークベンチコンテナからは Docker ネットワーク内の名前解決
+  では届かない。`docker-compose.yml` の workbench に
+  `extra_hosts: ["host.docker.internal:host-gateway"]` を付け、
+  `ETH_RPC_URL=http://host.docker.internal:4001` を指す。`host-gateway` は
+  Docker 20.10+ の機能で、`host.docker.internal` をホスト IP(Docker Engine の
+  デフォルトブリッジのゲートウェイ、通常 `172.17.0.1`)へ解決する。Linux の
+  Docker Engine でも機能することをこの環境で `cast chain-id` の疎通により
+  実測確認済み。
+  - 代替として `chain` ネットワーク(`172.28.0.0/16`)のゲートウェイ IP
+    `172.28.0.1` を直接指す方法もあるが、サブネット定義に依存して壊れやすい
+    ため、サブネットに依存しない `host.docker.internal` を採用している。
+- **前提**: プロキシは collector が提供するため、ワークベンチからの RPC を
+  成功させるには collector(のプロキシ)がホスト側で起動している必要がある。
+  起動していない場合は `Connection refused`(host:4001)になる。`profiles`
+  単体で `docker compose up` してもワークベンチの `cast` は collector
+  なしでは通らない点に注意(チェーン自体は起動・進行する)。
 
 ## ノードを増やすには(2 → 3)
 

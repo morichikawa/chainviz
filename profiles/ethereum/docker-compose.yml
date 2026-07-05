@@ -161,7 +161,10 @@ services:
       - chain
 
   # --- ワークベンチ(Foundry。ユーザー操作マシン)---
-  # ノード群と同じネットワークに接続する。cast / forge で reth1 の RPC を叩く。
+  # ノード群と同じネットワークに接続する。cast / forge の RPC 呼び出しは
+  # reth1 を直接叩かず、ロギングプロキシ(collector が担う)経由に向ける。
+  # プロキシは受け取った RPC をログに残しつつ reth1 へ転送する
+  # (docs/CONCEPT.md「ユーザー操作マシン(ワークベンチ)の投影」の決定)。
   # Hardhat は未導入(docs/CONCEPT.md の決定に従い当面 Foundry のみ)。
   # 秘密鍵はチェーンと同じ mnemonic から導出する。mnemonic は genesis と
   # 同じ単一の出所(values.env の EL_AND_CL_MNEMONIC)を env_file で読み込む
@@ -177,7 +180,18 @@ services:
     # 参照しないため無害。
     env_file:
       - ./values.env
+    # ロギングプロキシ(collector)はコンテナではなくホスト上のプロセスとして
+    # ポート 4001 で待ち受ける(collector 本体の WebSocket は 4000 番)。
+    # コンテナからホストへ到達するために host-gateway を host.docker.internal
+    # へ割り当てる(Docker 20.10+ の機能。Linux の Docker Engine 上でも
+    # host-gateway がホスト IP に解決されるため機能する。この環境で
+    # `cast chain-id` の疎通を実測確認済み)。
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      ETH_RPC_URL: http://reth1:8545
+      # reth1 直接ではなくロギングプロキシ経由に向ける。プロキシが RPC 呼び出しを
+      # ログに残してから reth1 の RPC へ転送する(ホスト上のプロキシからの
+      # 具体的な到達アドレスは Issue #79 で確定)。
+      ETH_RPC_URL: http://host.docker.internal:4001
     networks:
       - chain
