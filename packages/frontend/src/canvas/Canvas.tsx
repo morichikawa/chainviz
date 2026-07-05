@@ -20,6 +20,8 @@ import { WalletCard } from "../entities/WalletCard.js";
 import { WALLET_NODE_TYPE } from "../entities/walletNode.js";
 import { OwnershipEdge } from "../entities/OwnershipEdge.js";
 import { OWNERSHIP_EDGE_TYPE } from "../entities/ownershipEdge.js";
+import { OperationPulseEdge } from "../entities/OperationPulseEdge.js";
+import { OPERATION_EDGE_TYPE } from "../entities/operationEdge.js";
 import {
   type CanvasFlowEdge,
   type CanvasFlowNode,
@@ -35,6 +37,7 @@ const nodeTypes: NodeTypes = {
 const edgeTypes: EdgeTypes = {
   [PEER_EDGE_TYPE]: PeerPropagationEdge,
   [OWNERSHIP_EDGE_TYPE]: OwnershipEdge,
+  [OPERATION_EDGE_TYPE]: OperationPulseEdge,
 };
 
 export interface CanvasProps {

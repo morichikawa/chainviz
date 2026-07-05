@@ -16,6 +16,7 @@ import { peerEdgesToFlowEdges } from "../entities/peerEdge.js";
 import { ownershipEdgesToFlowEdges } from "../entities/ownershipEdge.js";
 import { indexTransactions } from "../entities/transaction.js";
 import { useBlockPulses } from "../entities/useBlockPulses.js";
+import { useOperationPulses } from "../entities/useOperationPulses.js";
 import { useTxLifecycle } from "../entities/useTxLifecycle.js";
 import { walletsToFlowNodes } from "../entities/walletNode.js";
 import { GlossaryProvider } from "../glossary/GlossaryProvider.js";
@@ -82,7 +83,11 @@ function AppShell({
   const [layout, setLayout] = useState<LayoutMap>(() => loadLayout(storage));
   const { notifications, notify, dismiss } = useNotifications();
 
-  const { state, status, actions } = useCommands(clientFactory, notify, t);
+  const { state, status, operations, actions } = useCommands(
+    clientFactory,
+    notify,
+    t,
+  );
 
   const entities = useMemo(() => listEntities(state), [state]);
 
@@ -156,13 +161,17 @@ function AppShell({
     [wallets, infraNodeIds],
   );
 
+  // ワークベンチ → ノードの操作（RPC 呼び出し）を、観測された瞬間だけ一時的な
+  // エッジ + パルスとして描く（走り終わると消える揮発性のエッジ）。
+  const operationEdges = useOperationPulses(operations, infraNodeIds);
+
   const nodes = useMemo(
     () => [...infraNodes, ...walletNodes],
     [infraNodes, walletNodes],
   );
   const edges = useMemo(
-    () => [...peerEdgesWithPulses, ...ownershipEdges],
-    [peerEdgesWithPulses, ownershipEdges],
+    () => [...peerEdgesWithPulses, ...ownershipEdges, ...operationEdges],
+    [peerEdgesWithPulses, ownershipEdges, operationEdges],
   );
 
   const persist = useCallback(

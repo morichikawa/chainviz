@@ -21,6 +21,10 @@
   /* C層の所有エッジ（ワークベンチ → ウォレット）の色。B層のピア接続とは
      別系統の意味なので、ネットワーク色パレットとは違う琥珀寄りの色にする。 */
   --own-edge: #e0a94f;
+  /* ワークベンチ → ノードの操作エッジ（RPC 呼び出し）の色。B層のピア接続
+     （青緑系パレット）・C層の所有エッジ（琥珀）のどちらとも混同しないよう、
+     別系統のマゼンタにする。operationEdge.ts の OPERATION_EDGE_COLOR と一致。 */
+  --op-edge: #ff5db1;
   font-family:
     "Inter", system-ui, -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN",
     "Noto Sans JP", sans-serif;
@@ -373,6 +377,22 @@ body {
 .peer-pulse {
   fill: #eaf4ff;
   filter: drop-shadow(0 0 5px #6cb2ff) drop-shadow(0 0 10px #6cb2ff);
+  pointer-events: none;
+}
+
+/* --- ワークベンチ → ノードの操作エッジ（RPC 呼び出し） --- */
+/* 操作が観測された瞬間だけ一時的に現れるエッジ。ブロック伝播（peer, 実線）とも
+   所有エッジ（own, 琥珀の点線）とも見分けられるよう、マゼンタの短い点線にする。 */
+.operation-edge .react-flow__edge-path {
+  stroke-opacity: 0.85;
+  stroke-dasharray: 3 4;
+}
+
+/* 操作パルス（エッジ上を走る光の点）。ブロック伝播パルスと区別できるよう、
+   マゼンタの発光にする。 */
+.operation-pulse {
+  fill: #ffd9ee;
+  filter: drop-shadow(0 0 5px var(--op-edge)) drop-shadow(0 0 10px var(--op-edge));
   pointer-events: none;
 }
 

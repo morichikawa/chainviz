@@ -135,6 +135,31 @@ describe("createMockClient tx lifecycle", () => {
     client.disconnect();
     vi.useRealTimers();
   });
+
+  it("observes a workbench -> reth-node-1 operation on each tick", () => {
+    vi.useFakeTimers();
+    const onDiff = vi.fn();
+    const client = createMockClient({ onDiff }, { intervalMs: 1000 });
+    client.connect();
+    vi.advanceTimersByTime(1000);
+    const diffs = onDiff.mock.calls[0][0];
+    const observed = diffs.find(
+      (d: { type: string }) => d.type === "operationObserved",
+    );
+    expect(observed).toMatchObject({
+      type: "operationObserved",
+      edge: {
+        kind: "operation",
+        fromWorkbenchId: "workbench-alice",
+        toNodeId: "reth-node-1",
+        operation: "eth_sendRawTransaction",
+      },
+    });
+    // 端点はともにスナップショット内のインフラエンティティとして存在する。
+    expect(observed.edge.fromWorkbenchId).toBe("workbench-alice");
+    client.disconnect();
+    vi.useRealTimers();
+  });
 });
 
 describe("createMultiNetworkMockSnapshot", () => {

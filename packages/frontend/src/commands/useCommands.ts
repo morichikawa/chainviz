@@ -1,5 +1,6 @@
 import type { Command } from "@chainviz/shared";
 import { useCallback, useMemo, useRef } from "react";
+import type { OperationSignal } from "../entities/operationEdge.js";
 import type { MessageKey } from "../i18n/messages.js";
 import type { NotificationInput } from "../notifications/notificationStore.js";
 import type { WorldState } from "../world-state/store.js";
@@ -26,6 +27,8 @@ export interface CommandActions {
 export interface UseCommandsResult {
   state: WorldState;
   status: ConnectionStatus;
+  /** 揮発性の操作観測イベント列（描画側で操作パルスに消費する）。 */
+  operations: OperationSignal[];
   actions: CommandActions;
 }
 
@@ -62,7 +65,7 @@ export function useCommands(
     [],
   );
 
-  const { state, status, sendCommand } = useWorldState(
+  const { state, status, operations, sendCommand } = useWorldState(
     clientFactory,
     handleCommandResult,
   );
@@ -89,5 +92,5 @@ export function useCommands(
     [dispatch],
   );
 
-  return { state, status, actions };
+  return { state, status, operations, actions };
 }

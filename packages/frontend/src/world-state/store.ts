@@ -1,5 +1,6 @@
 import type {
   DiffEvent,
+  OperationEdge,
   PeerEdge,
   WorldStateEntity,
   WorldStateSnapshot,
@@ -115,6 +116,21 @@ export function applyDiff(state: WorldState, events: DiffEvent[]): WorldState {
   }
 
   return { entities, edges };
+}
+
+/**
+ * 差分イベント列から揮発性の操作観測（operationObserved）だけを抜き出す。
+ *
+ * OperationEdge はワールドステート（entities / edges）へ畳み込まず、描画側が
+ * 受信時に一度きりのパルスアニメーションとして消費する（ARCHITECTURE.md §2）。
+ * そのため applyDiff とは分離し、この関数で取り出して別経路へ流す。
+ */
+export function extractOperations(events: DiffEvent[]): OperationEdge[] {
+  const operations: OperationEdge[] = [];
+  for (const event of events) {
+    if (event.type === "operationObserved") operations.push(event.edge);
+  }
+  return operations;
 }
 
 /** WorldState 内のエンティティを配列として取り出す。 */
