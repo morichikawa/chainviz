@@ -1,0 +1,121 @@
+# C層（トランザクション）の用語データ。
+# スキーマは docs/ARCHITECTURE.md §5 を参照。
+# 1エントリ = 用語キー -> { name, definition, layer, relatedTerms }
+# name / definition は {ja, en} 形式の多言語テキスト。
+
+transaction:
+  name:
+    ja: トランザクション（tx）
+    en: Transaction (tx)
+  definition:
+    ja: >-
+      アカウントが署名して送り出す、チェーンの状態を変える1件の指示。送金や
+      コントラクト呼び出しがこれにあたる。まず mempool で待機し、ブロックに
+      取り込まれて初めて確定する。chainviz ではウォレットカード上で pending
+      から included へ変わる様子をアニメーションで示す。
+    en: >-
+      A single signed instruction from an account that changes chain state, such
+      as a transfer or a contract call. It first waits in the mempool and is only
+      final once included in a block. chainviz animates the change from pending to
+      included on the wallet card.
+  layer: c-transaction
+  relatedTerms: [mempool, nonce, gas, eoa]
+
+mempool:
+  name:
+    ja: mempool（メモリプール）
+    en: Mempool
+  definition:
+    ja: >-
+      各ノードが保持する、まだブロックに取り込まれていないトランザクションの
+      待機列。送信された tx はここに入り、提案者がブロックを作るときに拾われて
+      取り込まれる。取り込まれるまでの「保留中」の状態がここに滞留する。
+    en: >-
+      A per-node waiting area for transactions that have not yet been included in a
+      block. A submitted tx lands here and is picked up when a proposer builds a
+      block. The "pending" state lingers here until inclusion.
+  layer: c-transaction
+  relatedTerms: [transaction, gas]
+
+nonce:
+  name:
+    ja: nonce（ノンス）
+    en: Nonce
+  definition:
+    ja: >-
+      1つの EOA が送ったトランザクションの通し番号（0 から始まる連番）。
+      同じ nonce の二重使用や順序の飛びを防ぎ、tx の実行順を一意に定める。
+      tx が1件確定するたびに、その送信元アカウントの nonce は1つ増える。
+    en: >-
+      A per-EOA sequence number for the transactions it has sent (a counter
+      starting at 0). It prevents reuse of the same nonce and out-of-order gaps,
+      fixing a unique execution order. The sender's nonce increases by one each
+      time one of its transactions is finalized.
+  layer: c-transaction
+  relatedTerms: [transaction, eoa]
+
+eoa:
+  name:
+    ja: EOA（外部所有アカウント）
+    en: EOA (Externally Owned Account)
+  definition:
+    ja: >-
+      秘密鍵によって管理される通常のアカウント。コードを持たず、鍵で署名する
+      ことでトランザクションを発行できる。人やワークベンチが直接操作する
+      アドレスはこれにあたる。コードを持つスマートアカウントと対になる概念。
+    en: >-
+      An ordinary account controlled by a private key. It holds no code and can
+      issue transactions by signing with the key. Addresses that people or
+      workbenches operate directly are EOAs. It is the counterpart to a smart
+      account, which holds code.
+  layer: c-transaction
+  relatedTerms: [smart-account, nonce, wei]
+
+smart-account:
+  name:
+    ja: スマートアカウント
+    en: Smart account
+  definition:
+    ja: >-
+      コード（コントラクト）を持つアカウント。EOA と違い独自の検証・実行ロジックを
+      持てるため、複数署名やガス代の肩代わりといった柔軟な操作ができる。
+      ERC-4337（アカウントアブストラクション）で使われる。
+    en: >-
+      An account that holds code (a contract). Unlike an EOA it can carry its own
+      verification and execution logic, enabling flexible operations such as
+      multi-signature or paying gas on someone's behalf. It is used by ERC-4337
+      (account abstraction).
+  layer: c-transaction
+  relatedTerms: [eoa]
+
+wei:
+  name:
+    ja: wei（ウェイ）
+    en: Wei
+  definition:
+    ja: >-
+      Ether の最小単位。1 Ether = 10^18 wei。残高や送金額・ガス代は内部的には
+      すべて整数の wei で扱われ、小数の誤差なく計算できる。chainviz は残高を
+      wei と Ether の両方で表示する。
+    en: >-
+      The smallest unit of Ether. 1 Ether = 10^18 wei. Balances, transfer amounts,
+      and gas costs are all handled internally as integer wei so they compute
+      without rounding error. chainviz shows balances in both wei and Ether.
+  layer: c-transaction
+  relatedTerms: [gas, eoa]
+
+gas:
+  name:
+    ja: ガス
+    en: Gas
+  definition:
+    ja: >-
+      トランザクションの実行に必要な計算量を測る単位。送信者は gas 使用量に
+      応じた手数料を wei で支払う。手数料の高い tx ほど mempool から優先して
+      ブロックに取り込まれやすい。
+    en: >-
+      A unit that measures the amount of computation a transaction needs. The
+      sender pays a fee in wei proportional to gas used. Transactions offering
+      higher fees tend to be picked from the mempool into a block sooner.
+  layer: c-transaction
+  relatedTerms: [transaction, mempool, wei]
