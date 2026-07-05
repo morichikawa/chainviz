@@ -277,3 +277,10 @@ mempool:
     再接続クライアントには store のスナップショットで復元する。
 - WebSocket の再接続・スナップショット再送のプロトコル詳細
 - ロギングプロキシの具体的な実装形態（別コンテナか collector 内蔵か）
+  - 確定（Issue #79）: 別コンテナにはせず **collector 内蔵**とする。
+    collector プロセス内で JSON-RPC を中継する HTTP プロキシを起動し、
+    通過した RPC を観測（ワールドステートの D 層）として記録する。
+    待受ポートの既定は **4001**（WebSocket サーバーの 4000 と衝突しない
+    値）、中継先の既定は既定ワークベンチが叩くノードの JSON-RPC
+    エンドポイント。いずれも環境変数 `CHAINVIZ_PROXY_PORT` /
+    `CHAINVIZ_PROXY_TARGET` で上書きできる。
