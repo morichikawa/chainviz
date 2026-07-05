@@ -321,6 +321,9 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
 - [ ] P2Pエッジと所有エッジの色相が近く(ともにアンバー系)、線種でしか
       区別できない環境がある。色相を分離する
       [#95](https://github.com/morichikawa/chainviz/issues/95)
+- [x] WSL2環境でcollectorのWebSocket/ロギングプロキシがVS Codeのポート
+      転送経由で繋がらない
+      [#99](https://github.com/morichikawa/chainviz/issues/99)
 
 ## 運用ルール（全ステップ共通）
 

@@ -328,3 +328,38 @@
     新規作成、Issue に紐付かない作業のみ meta.md」なので、いずれ
     「(対応する Issue が無ければ meta.md、あればファイルを新規作成)」の
     ように明確化するとよい。今回のマージは妨げない。
+
+### 2026-07-06 調査: WSL2環境でブラウザから collector(4000/4001)へ ERR_CONNECTION_REFUSED になる件
+- 担当: detective(原因究明)
+- ブランチ: main(調査のみ。コード変更なし)
+- 症状: WSL2 + VS Code Remote 環境で、Windows 側ブラウザから vite dev server
+  (5173)には接続できるのに、collector の WebSocket サーバー(4000)と
+  ロギングプロキシ(4001)には毎回 `net::ERR_CONNECTION_REFUSED` になる。
+- 実測で確認した事実:
+  - collector は WebSocket サーバー(`server/websocket-server.ts` の
+    `new WebSocketServer({ port })`)・ロギングプロキシ(`proxy/logging-proxy.ts`
+    の `server.listen(port)`)ともホスト指定なしで listen しており、この環境
+    (WSL2, Node 系)ではどちらも IPv6 `::` に dual-stack で bind される
+    (`ss`/`lsof` で確認。WSL2 内からは 127.0.0.1 でも ::1 でも接続できる)。
+  - vite は `127.0.0.1:5173`(IPv4)で listen している。
+  - WSL2 の NAT モード localhost 転送は、WSL 側 listener のアドレスファミリを
+    そのまま Windows 側に写す。Windows 側 netstat での実測:
+    5173(WSL側 IPv4) → `127.0.0.1:5173` で LISTEN、
+    4000/4001(WSL側 IPv6 `::`) → `[::1]:4000` / `[::1]:4001` のみで LISTEN
+    (`127.0.0.1:4000/4001` には誰も listen していない)。
+  - `scripts/dev-up.sh` は `VITE_COLLECTOR_URL="ws://127.0.0.1:4000"` と
+    IPv4 loopback を明示指定している。そのためブラウザは Windows 側の
+    `127.0.0.1:4000` に接続し、connection refused になる(PowerShell の
+    TcpClient で同一症状を再現済み。`::1:4000` へは接続できる)。
+  - bind 方式別の対照実験(ポート14000〜14002)でも同結果:
+    WSL側 `::` bind → Windows `[::1]` のみ / `0.0.0.0` bind → Windows
+    `127.0.0.1` のみ / `127.0.0.1` bind → Windows `127.0.0.1` のみ。
+- 根本原因: 「collector/プロキシの IPv6 `::` bind」×「WSL2 localhost 転送が
+  アドレスファミリを写す挙動」×「フロントの接続先が `ws://127.0.0.1:4000`
+  固定」の組み合わせ。WSL2 内では dual-stack で IPv4 接続も受け付けるため
+  問題が顕在化せず、Windows 側からのみ落ちる。
+- 対処方針: collector 側の listen を `0.0.0.0` に明示指定する修正が妥当
+  (chainviz-collector に引き継ぎ)。プロキシ(4001)はワークベンチコンテナが
+  `host.docker.internal`(Docker bridge の IPv4)経由で叩くため、`127.0.0.1`
+  bind は不可で `0.0.0.0` が必要。`ws://localhost:4000` へ URL を変える案は
+  ブラウザ・OS の名前解決順序に依存するため採らない。

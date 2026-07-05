@@ -133,3 +133,37 @@
   - 補足: WSL2 + VS Code Remote 環境でのブラウザ側の実接続確認はユーザー環境
     での作業であり本検証の範囲外(依頼どおり)。本マシン内での IPv4 bind の
     実測と既存機能への無影響の確認をもって合格とする。
+
+### 2026-07-06 Issue #99 事後docs反映(調査記録・PLAN.mdバックログ)のレビュー(reviewer)
+
+- 担当: reviewer
+- ブランチ: docs-plan-99-backlog
+- 内容: docsのみのコミット2件(67501d1 / 092206d)を静的レビューし、**合格**とした。
+  - 67501d1: `docs/worklog/meta.md` に detective の WSL2 調査記録を追記
+    (調査時 main 上で作業しており未コミットだったもの)。
+  - 092206d: `docs/PLAN.md` バックログに #99 のチェック済み項目を追加
+    (記載漏れの補完)。
+- 確認したこと:
+  - Issue #99 の状態: `gh issue view 99 --json state` で CLOSED
+    (2026-07-05T15:26Z)を確認。PLAN.md の `[x]` と一致。リンク先・タイトル
+    表記も実際の Issue タイトルと一致。
+  - meta.md 追記内容の事実確認: 記述されている根本原因(host 省略時の IPv6
+    `::` bind、WSL2 localhost 転送がアドレスファミリを写す挙動、
+    `ws://127.0.0.1:4000` 固定との組み合わせ)は、本 worklog の担当記録・
+    修正後のコード内コメント(`websocket-server.ts` / `logging-proxy.ts`)と
+    完全に整合。`scripts/dev-up.sh` 78行目の
+    `VITE_COLLECTOR_URL="ws://127.0.0.1:$COLLECTOR_PORT"`、プロキシが
+    `host.docker.internal` 経由のため `0.0.0.0` を要する点も実装と一致。
+    捏造・事実誤認は見当たらない。「ホスト指定なしで listen」は修正前の
+    調査時点の記述であり、記録自体に「調査のみ。コード変更なし」と明記
+    されているため歴史的記録として正確。
+  - Issue 全件突合: `gh issue list --state all`(58件)と PLAN.md 内の
+    Issue リンクを突合し、番号集合が完全一致。未チェックのリンク付き項目は
+    #86・#95 の2件のみで、いずれも OPEN。CLOSED の Issue はすべてチェック
+    済み。他に記載漏れなし。
+  - コミット粒度: 2コミットがそれぞれ単一の関心事(meta.md 追記 / PLAN.md
+    補完)に分かれており適切。メッセージも Conventional Commits に適合。
+  - `pnpm lint` / `pnpm build` / `pnpm test` を全パッケージで実行し、
+    すべて通過(frontend 411 テスト含む)。
+- 補足: docsのみの変更で実行系への影響が無いため、chainviz-qa の実機検証
+  省略は妥当と判断する。
