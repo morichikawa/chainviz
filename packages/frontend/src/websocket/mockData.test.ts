@@ -46,6 +46,97 @@ describe("createMockSnapshot", () => {
   });
 });
 
+describe("createMockSnapshot C-layer content", () => {
+  it("includes wallets (EOA, smart account) and transactions", () => {
+    const snapshot = createMockSnapshot();
+    const wallets = snapshot.entities.filter((e) => e.kind === "wallet");
+    const txs = snapshot.entities.filter((e) => e.kind === "transaction");
+    expect(wallets.length).toBeGreaterThanOrEqual(2);
+    expect(txs.length).toBeGreaterThanOrEqual(1);
+    expect(wallets.some((w) => w.kind === "wallet" && w.isSmartAccount)).toBe(
+      true,
+    );
+  });
+
+  it("includes an orphaned wallet whose owner was deleted (ownerWorkbenchId null)", () => {
+    const snapshot = createMockSnapshot();
+    const orphaned = snapshot.entities.filter(
+      (e) => e.kind === "wallet" && e.ownerWorkbenchId === null,
+    );
+    expect(orphaned.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("has a pending transaction to demonstrate the mempool state", () => {
+    const snapshot = createMockSnapshot();
+    const pending = snapshot.entities.filter(
+      (e) => e.kind === "transaction" && e.status === "pending",
+    );
+    expect(pending.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("references its wallets from the workbench walletIds", () => {
+    const snapshot = createMockSnapshot();
+    const workbench = snapshot.entities.find(
+      (e) => e.kind === "workbench",
+    );
+    const walletAddresses = new Set(
+      snapshot.entities
+        .filter((e) => e.kind === "wallet")
+        .map((e) => (e as { address: string }).address),
+    );
+    if (workbench?.kind !== "workbench") throw new Error("no workbench");
+    expect(workbench.walletIds.length).toBeGreaterThanOrEqual(1);
+    for (const id of workbench.walletIds) {
+      expect(walletAddresses.has(id)).toBe(true);
+    }
+  });
+});
+
+describe("createMockClient tx lifecycle", () => {
+  it("settles the pending tx and injects a new pending tx on each tick", () => {
+    vi.useFakeTimers();
+    const onDiff = vi.fn();
+    const client = createMockClient({ onDiff }, { intervalMs: 1000 });
+    client.connect();
+    vi.advanceTimersByTime(1000);
+
+    expect(onDiff).toHaveBeenCalledTimes(1);
+    const diffs = onDiff.mock.calls[0][0];
+    // 前回 pending だった tx が included へ確定する差分がある。
+    const settled = diffs.find(
+      (d: { type: string; patch?: { status?: string } }) =>
+        d.type === "entityUpdated" && d.patch?.status === "included",
+    );
+    expect(settled).toBeTruthy();
+    // 新しい pending tx が mempool へ投入される差分がある。
+    const added = diffs.find(
+      (d: { type: string; entity?: { kind?: string; status?: string } }) =>
+        d.type === "entityAdded" &&
+        d.entity?.kind === "transaction" &&
+        d.entity?.status === "pending",
+    );
+    expect(added).toBeTruthy();
+    client.disconnect();
+    vi.useRealTimers();
+  });
+
+  it("advances the owner wallet's nonce when a tx settles", () => {
+    vi.useFakeTimers();
+    const onDiff = vi.fn();
+    const client = createMockClient({ onDiff }, { intervalMs: 1000 });
+    client.connect();
+    vi.advanceTimersByTime(1000);
+    const diffs = onDiff.mock.calls[0][0];
+    const nonceUpdate = diffs.find(
+      (d: { type: string; patch?: { nonce?: number } }) =>
+        d.type === "entityUpdated" && typeof d.patch?.nonce === "number",
+    );
+    expect(nonceUpdate).toBeTruthy();
+    client.disconnect();
+    vi.useRealTimers();
+  });
+});
+
 describe("createMultiNetworkMockSnapshot", () => {
   it("provides two distinct networkIds for grouping checks", () => {
     const snapshot = createMultiNetworkMockSnapshot();
