@@ -68,4 +68,5 @@
 | #81-#84 | Issue #81/#82/#84 C層フロント(txライフサイクル・ウォレット・用語) | [2026-07-05](worklog/issue-81-84.md) |
 | #83 | Issue #83 ワークベンチ→ノードの操作エッジ(operationObserved)をエッジ+パルスで描画 | [2026-07-05](worklog/issue-83.md) |
 | #99 | Issue #99 WSL2環境でcollectorのWebSocket/ロギングプロキシが繋がらない(listen host を0.0.0.0に明示) | [2026-07-06](worklog/issue-99.md) |
+| #103 | Issue #103 compose起動ノードの削除ボタン改善のバックログ追加(docsのみ)のレビュー | [2026-07-06](worklog/issue-103.md) |
 | - | 特定Issueに紐付かない記録(PLAN.md/CLAUDE.md更新等) | [2026-07-05〜2026-07-06](worklog/meta.md) |
