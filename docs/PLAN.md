@@ -330,6 +330,8 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
 - [ ] compose起動ノードの削除ボタンを押すと必ずエラーになる(UIで防げて
       いない)
       [#103](https://github.com/morichikawa/chainviz/issues/103)
+- [ ] reth(EL)同士のP2P接続がPeerEdgeとして描画されない
+      [#106](https://github.com/morichikawa/chainviz/issues/106)
 
 ## 運用ルール（全ステップ共通）
 
