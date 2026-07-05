@@ -298,6 +298,23 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
 - [x] 稼働中スタックにdocker compose up -dを再実行するとgenesisが
       再生成され既存ノードと不整合になる
       [#56](https://github.com/morichikawa/chainviz/issues/56)
+- [x] コンテナ削除処理の競合(HTTP 409)でcollectorプロセスがクラッシュし
+      孤児コンテナが蓄積する
+      [#63](https://github.com/morichikawa/chainviz/issues/63)
+- [x] test:e2eを複数worktreeで同時実行するとcollectorのポート奪い合いで
+      タイムアウトする
+      [#64](https://github.com/morichikawa/chainviz/issues/64)
+- [x] 起動時にcom.chainviz.managedラベルから既存managedコンテナを回収し
+      レジストリを再構築する
+      [#65](https://github.com/morichikawa/chainviz/issues/65)
+- [x] WebSocket接続ごとにerrorリスナーを張り、ソケットエラーをプロセス
+      全体の安全網に頼らせない
+      [#68](https://github.com/morichikawa/chainviz/issues/68)
+- [ ] txライフサイクルにfailedステータスを実装する
+      [#86](https://github.com/morichikawa/chainviz/issues/86)
+- [ ] P2Pエッジと所有エッジの色相が近く(ともにアンバー系)、線種でしか
+      区別できない環境がある。色相を分離する
+      [#95](https://github.com/morichikawa/chainviz/issues/95)
 
 ## 運用ルール（全ステップ共通）
 
