@@ -2,6 +2,7 @@ import type {
   Command,
   DiffEvent,
   NodeEntity,
+  OperationEdge,
   PeerEdge,
   TransactionEntity,
   WalletEntity,
@@ -160,6 +161,23 @@ function bobIncludedTx(): TransactionEntity {
  * profiles/ethereum の CHAIN_ID と揃える。networkId は今のところ1種類。
  */
 export const MOCK_NETWORK_ID = "1337";
+
+/**
+ * ワークベンチ → ノードの操作観測イベント（operationObserved）のモックを作る。
+ * 実環境ではロギングプロキシが観測した RPC 呼び出しから collector が生成するが、
+ * オフライン確認用に、workbench-alice が reth-node-1 へ RPC を送った瞬間を模す。
+ * 揮発性イベントなのでスナップショットには含めず、live 差分としてのみ流す。
+ */
+export function mockOperationObserved(operation: string): DiffEvent {
+  const edge: OperationEdge = {
+    kind: "operation",
+    fromWorkbenchId: "workbench-alice",
+    toNodeId: "reth-node-1",
+    operation,
+    observedAt: Date.now(),
+  };
+  return { type: "operationObserved", edge };
+}
 
 /** collector 不在でも UI を確認するためのモックスナップショット。 */
 export function createMockSnapshot(): WorldStateSnapshot {
@@ -454,6 +472,10 @@ export function createMockClient(
               id: "reth-node-2",
               patch: { blockHeight },
             },
+            // 毎 tick、workbench-alice が新しい tx を投入する（advanceTxLifecycle）。
+            // その裏で走る RPC 呼び出し（cast send 相当）を操作エッジとして観測させ、
+            // ワークベンチ → reth-node-1 のパルスを流す。
+            mockOperationObserved("eth_sendRawTransaction"),
             ...advanceTxLifecycle(),
           ]);
         }, intervalMs);

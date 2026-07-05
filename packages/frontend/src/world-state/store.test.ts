@@ -1,5 +1,6 @@
 import type {
   NodeEntity,
+  OperationEdge,
   WalletEntity,
   WorkbenchEntity,
   WorldStateSnapshot,
@@ -10,6 +11,7 @@ import {
   applySnapshot,
   emptyWorldState,
   entityId,
+  extractOperations,
   listEdges,
   listEntities,
 } from "./store.js";
@@ -483,5 +485,38 @@ describe("listEdges", () => {
       { type: "edgeRemoved", fromNodeId: "n1", toNodeId: "n2", networkId: "1" },
     ]);
     expect(listEdges(removed)).toEqual([]);
+  });
+});
+
+describe("operationObserved (volatile, not folded into world state)", () => {
+  const opEdge: OperationEdge = {
+    kind: "operation",
+    fromWorkbenchId: "workbench-alice",
+    toNodeId: "reth-node-1",
+    operation: "eth_sendRawTransaction",
+    observedAt: 1_000,
+  };
+
+  it("applyDiff ignores operationObserved (no entities/edges added)", () => {
+    const next = applyDiff(emptyWorldState, [
+      { type: "operationObserved", edge: opEdge },
+    ]);
+    expect(listEntities(next)).toEqual([]);
+    expect(listEdges(next)).toEqual([]);
+  });
+
+  it("extractOperations pulls out only operationObserved edges", () => {
+    const ops = extractOperations([
+      { type: "entityAdded", entity: node("n1") },
+      { type: "operationObserved", edge: opEdge },
+      { type: "operationObserved", edge: { ...opEdge, operation: "eth_call" } },
+    ]);
+    expect(ops).toEqual([opEdge, { ...opEdge, operation: "eth_call" }]);
+  });
+
+  it("extractOperations returns an empty array when there are none", () => {
+    expect(
+      extractOperations([{ type: "entityRemoved", id: "n1" }]),
+    ).toEqual([]);
   });
 });
