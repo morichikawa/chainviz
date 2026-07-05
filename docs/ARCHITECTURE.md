@@ -196,7 +196,15 @@ type DiffEvent =
   受信時にエッジ＋パルスのアニメーションとして消費し、自身のタイミングで
   消す（CONCEPT.md「操作がエッジになる」参照）。`OperationEdge.operation` の
   値はチェーン依存の生の文字列であり、その解釈・表示はフロントの
-  チェーンプロファイル表現セットの責務とする
+  チェーンプロファイル表現セットの責務とする。
+  フロント側の実装は差分適用（`world-state/store.ts` の `applyDiff`）から
+  `operationObserved` を分離し（`extractOperations`）、通し番号を付けて
+  `useWorldState` の `operations` として別経路へ流す。`entities/useOperationPulses`
+  が未処理の観測ごとに一時的な操作エッジ（`OperationFlowEdge`）を生成し、
+  `OPERATION_PULSE_DURATION_MS` 経過後にエッジごと消す（パルスが流れている間
+  だけ存在する揮発性のエッジ）。端点のワークベンチ／ノードがキャンバス上に
+  無い観測は無視する。色は B層のピア接続・C層の所有エッジと混同しないよう
+  別系統のマゼンタ（`--op-edge`）にする
 
 ## 3. Collector ⇔ フロントの WebSocket プロトコル
 

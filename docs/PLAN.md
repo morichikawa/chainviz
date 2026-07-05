@@ -270,7 +270,7 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
       [#81](https://github.com/morichikawa/chainviz/issues/81)
 - [x] ウォレットのカード表示と所有エッジを実装する
       [#82](https://github.com/morichikawa/chainviz/issues/82)
-- [ ] ワークベンチ→ノードのRPC呼び出しエッジを描画する
+- [x] ワークベンチ→ノードのRPC呼び出しエッジを描画する
       [#83](https://github.com/morichikawa/chainviz/issues/83)
 - [x] C層向け用語データ(mempool・tx・nonce・EOA等)をglossaryに追加する
       [#84](https://github.com/morichikawa/chainviz/issues/84)
