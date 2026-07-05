@@ -104,3 +104,33 @@
     状態に畳み込んではならない（passthrough で配信のみ）。frontend の
     `applyDiff` は現状 default 節で未知イベントを無視するため型追加だけ
     では挙動が変わらない。パルス描画側で消費する実装が別途必要
+
+### 2026-07-05 Issue #80 shared 型定義のレビュー（reviewer）
+
+- 担当: reviewer
+- ブランチ: issue-80-operation-edges
+- 内容: 統括による後処理（コミット分割・main マージ・worklog 統合）後の
+  ブランチ状態を再レビューした。結果は合格
+- 確認結果:
+  - コミット粒度: `git log main..HEAD` は4コミット
+    （feat(shared) 型+テスト / docs ARCHITECTURE.md / chore main マージ /
+    docs worklog）。型とテストが同一コミットなのは CLAUDE.md
+    「ロジック変更と同じ変更の中でテストを書く」に沿っており適切。
+    各コミットの関心事の混在なし
+  - worklog の橋渡し注記: 「2段構え案を実装着手時に単純化した」
+    「edgeAdded/edgeRemoved の kind 判別化はこの単純化により不要になった」
+    という記述は、下段エントリの設計理由（RPC 呼び出しは揮発性の出来事で
+    あり永続状態にならない・スナップショット再現の意味がない・完了条件に
+    対する先回り実装をしない）と一致しており、事実誤認・捏造なし
+  - main マージ: merge-base が main の HEAD と一致し、
+    `git diff main HEAD` の差分は本ブランチ由来の6ファイルのみ。
+    コンフリクトマーカーの残留なし。`docs/WORKLOG.md` は索引のみの
+    分割後構成になっており、#80 の索引行も存在する
+  - `pnpm lint && pnpm build && pnpm test` 全パッケージ通過
+    （shared 6 / collector 483 / frontend 353 / e2e 34）
+- 軽微な指摘（差し戻し不要）:
+  - `docs/WORKLOG.md` の #80 索引行の説明が「型設計の検討」のままで、
+    型定義の実施まで進んだ現状よりやや古い（本レビューで更新済み）
+  - `WorldStateEdge` union は現時点でテスト以外に利用箇所がないが、
+    #80 本体のフロント描画で両 kind を扱う際の受け皿として
+    ARCHITECTURE.md に記載済みのため許容する

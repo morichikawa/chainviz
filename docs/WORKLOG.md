@@ -64,6 +64,6 @@
 | #77 | Issue #77 ワークベンチのウォレット残高・nonceをポーリングしWalletEntityに反映 | [2026-07-05](worklog/issue-77.md) |
 | #78 | Issue #78 ワークベンチの接続先をロギングプロキシ経由に変更する | [2026-07-05](worklog/issue-78.md) |
 | #79 | Issue #79 ワークベンチRPC観測用ロギングプロキシの実装 | [2026-07-05](worklog/issue-79.md) |
-| #80 | Issue #80 に向けた shared 型設計の検討 | [2026-07-05](worklog/issue-80.md) |
+| #80 | Issue #80 操作エッジ(OperationEdge/operationObserved)の shared 型設計・定義 | [2026-07-05](worklog/issue-80.md) |
 | #81-#84 | Issue #81/#82/#84 C層フロント(txライフサイクル・ウォレット・用語) | [2026-07-05](worklog/issue-81-84.md) |
 | - | 特定Issueに紐付かない記録(PLAN.md/CLAUDE.md更新等) | [2026-07-05](worklog/meta.md) |
