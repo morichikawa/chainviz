@@ -324,6 +324,9 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
 - [x] WSL2環境でcollectorのWebSocket/ロギングプロキシがVS Codeのポート
       転送経由で繋がらない
       [#99](https://github.com/morichikawa/chainviz/issues/99)
+- [ ] compose起動ノードの削除ボタンを押すと必ずエラーになる(UIで防げて
+      いない)
+      [#103](https://github.com/morichikawa/chainviz/issues/103)
 
 ## 運用ルール（全ステップ共通）
 
