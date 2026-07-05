@@ -348,3 +348,18 @@ mempool:
     ログに残す（黙って握りつぶさない）。`operationObserved` は揮発性のため
     store の状態には畳み込まず（`WorldStateStore.applyEvent` は反映しない）、
     `broadcastDiff` 経由で配信のみ行う。
+  - 確定（Issue #99）: ロギングプロキシ（4001）と WebSocket サーバー（4000）は
+    いずれも listen 時に host を **`0.0.0.0`（IPv4 全アドレス）に明示指定**する。
+    host を省くと Node は IPv6 の `::` に bind するが、WSL2 + VS Code Remote
+    環境の localhost 転送は WSL 側 listener のアドレスファミリをそのまま
+    Windows 側リレーへ写すため、IPv6 bind だと Windows の localhost
+    （IPv4 の 127.0.0.1）から届かず、ブラウザの `ws://127.0.0.1:4000` 接続や
+    `http://127.0.0.1:4001` が確定的に拒否される。プロキシは loopback 限定
+    （`127.0.0.1`）にはできない。ワークベンチコンテナが Docker bridge の
+    IPv4 ゲートウェイ経由で `host.docker.internal:4001` を叩くため、全 IPv4
+    アドレスで待ち受ける `0.0.0.0` である必要がある。
+    なお `0.0.0.0` は全インターフェースからの接続を受け付けるが、chainviz は
+    ローカル開発用ツールであり、修正前の host 省略時点でも Node は既に IPv6 の
+    `::`（全インターフェース）へ bind していたため、`0.0.0.0` への変更で外部への
+    露出が増えるわけではない（IPv4 のみに限定される分、むしろ待ち受け範囲は
+    狭まる）。

@@ -263,7 +263,32 @@ describe("createFetchForwarder", () => {
   });
 });
 
+/** private な server にテストからアクセスして bind アドレスを見るヘルパー。 */
+function internalServer(proxy: LoggingProxy): import("node:http").Server {
+  return (proxy as unknown as { server: import("node:http").Server }).server;
+}
+
 describe("LoggingProxy (integration over a real socket)", () => {
+  it("binds on IPv4 (0.0.0.0) so WSL2 localhost forwarding and container access reach it", async () => {
+    // Issue #99: host を省くと Node は IPv6 "::" に bind し、WSL2 の localhost
+    // 転送が Windows 側の IPv4 localhost から届かなくなる。ワークベンチ
+    // コンテナも Docker bridge の IPv4 ゲートウェイ経由で叩くため、
+    // listen(port, "0.0.0.0") を渡した効果として実際に IPv4（0.0.0.0）で
+    // 待ち受けていることを確認する。
+    const proxy = new LoggingProxy({ forward: stubForward(OK_RESPONSE), log: vi.fn() });
+    await proxy.listen(0);
+    try {
+      const addr = internalServer(proxy).address();
+      expect(addr).not.toBeNull();
+      if (addr && typeof addr === "object") {
+        expect(addr.family).toBe("IPv4");
+        expect(addr.address).toBe("0.0.0.0");
+      }
+    } finally {
+      await proxy.close();
+    }
+  });
+
   it("forwards a POST and returns the upstream response body", async () => {
     const forward = stubForward(OK_RESPONSE);
     const observed: RpcObservation[] = [];

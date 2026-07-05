@@ -117,6 +117,21 @@ describe("CollectorServer", () => {
     }
   });
 
+  it("binds on IPv4 (0.0.0.0) so WSL2 localhost forwarding reaches 127.0.0.1", async () => {
+    // Issue #99: host を省くと ws は IPv6 "::" に bind し、WSL2 の localhost
+    // 転送が Windows 側で [::1] 宛リレーしか作らず、ブラウザの
+    // ws://127.0.0.1（IPv4）接続が拒否される。host: "0.0.0.0" を渡した効果
+    // として、実際に IPv4（0.0.0.0）で待ち受けていることを確認する。
+    const store = new WorldStateStore("ethereum");
+    await start(store);
+    const addr = internalWss(server!).address();
+    expect(addr).not.toBeNull();
+    if (addr && typeof addr === "object") {
+      expect(addr.family).toBe("IPv4");
+      expect(addr.address).toBe("0.0.0.0");
+    }
+  });
+
   it("broadcasts diffs to connected clients", async () => {
     const store = new WorldStateStore("ethereum");
     const port = await start(store);

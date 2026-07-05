@@ -259,7 +259,17 @@ export class LoggingProxy {
         resolve();
       });
 
-      server.listen(port);
+      // host を "0.0.0.0"（IPv4 の全アドレス）に明示指定する。指定を省くと
+      // Node は IPv6 の "::" に bind し、WSL2 の localhost 転送は WSL 側
+      // listener のアドレスファミリをそのまま Windows 側リレーへ写すため、
+      // Windows の localhost（IPv4）からの接続が届かなくなる（Issue #99。
+      // 実測で "0.0.0.0" 指定時に IPv4 bind されることを確認）。
+      // ここは WebSocket サーバーと違い "127.0.0.1" にはできない。ワークベンチ
+      // コンテナが Docker bridge の IPv4 ゲートウェイ経由で
+      // host.docker.internal:4001 を叩くため、loopback 限定に絞ると
+      // コンテナからの転送リクエストが届かなくなる。全 IPv4 アドレスで
+      // 待ち受ける "0.0.0.0" が必要。
+      server.listen(port, "0.0.0.0");
       this.server = server;
     });
   }
