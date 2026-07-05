@@ -134,3 +134,106 @@
   - `WorldStateEdge` union は現時点でテスト以外に利用箇所がないが、
     #80 本体のフロント描画で両 kind を扱う際の受け皿として
     ARCHITECTURE.md に記載済みのため許容する
+
+### 2026-07-05 Issue #80 collector 側の観測→操作エッジ配信の配線（collector）
+
+- 担当: collector
+- ブランチ: issue-80-operation-edges
+- 内容: ロギングプロキシが観測した RPC 呼び出し（`RpcObservation`）を
+  `OperationEdge` へマッピングし、`operationObserved` イベントとして
+  WebSocket で全クライアントへ配信する配線を実装した。
+  - 新規 `packages/collector/src/proxy/operation-observer.ts`:
+    - `parseProxyTargetHost(target)`: 転送先 URL（`CHAINVIZ_PROXY_TARGET`）
+      から host 部を取り出す。`toNodeId` の解決に使う。
+    - `resolveOperationEdge(observation, targetHost, resolver)`: 純粋関数。
+      `method` → `operation`、`timestamp` → `observedAt`、`callerIp` →
+      `fromWorkbenchId`（resolver でワークベンチ id を引く）、`targetHost`
+      → `toNodeId`（resolver でノード id を引く）。どちらかの端点が引けなけ
+      れば `ok:false`（`workbench-unresolved` / `node-unresolved`）を返す。
+    - `createOperationObserver(deps)`: `RpcObserver` を生成する。解決できた
+      観測だけ `broadcast([{ type:"operationObserved", edge }])` で配信し、
+      解決に失敗した観測はどちらの端点が引けなかったかをログに残す（黙って
+      握りつぶさない）。
+  - `packages/collector/src/world-state/store.ts`:
+    - 解決口として `findWorkbenchByIp(ip)` / `findNodeByIp(ip)` を追加。
+      `WorldStateStore` が `OperationEndpointResolver` を満たす。
+    - `applyEvent` に `case "operationObserved": break;`（明示的な no-op）を
+      追加。揮発性イベントを store の状態へ畳み込まないことをコードとして
+      明示した（passthrough は `broadcastDiff` 経由で行う）。
+  - `packages/collector/src/index.ts` の `main()`: 転送先 host を
+    `parseProxyTargetHost` で取り出し、`createOperationObserver` を
+    `startLoggingProxy` の `onObserve` に渡して配線。host を取り出せない
+    場合は操作エッジを配信しない旨を警告ログに残す。
+- 決定事項（設計の理由）:
+  - **端点の解決は観測ごとに store の現在状態へ問い合わせる**。プロキシ
+    起動時点では対象ノード/ワークベンチのエンティティがまだ存在しない
+    可能性があり、後から addNode/addWorkbench で増える。固定の解決結果を
+    埋め込まず毎回引くことで追従する（CLAUDE.md「観測できる状態に依存した
+    固定値を埋め込まない」）。
+  - **解決失敗は配信せずログに残す**。呼び出し元 IP がどのワークベンチにも
+    一致しない（ホストからの直叩き等）／転送先 host がどのノードにも一致
+    しない観測は、どちらが引けなかったかを含めて `console.warn` する。
+    完了条件（呼び出し元・呼び出し先・種類）を満たせない観測を無言で
+    捨てないため。
+  - **転送先の host 解決は IP マッチ**。既定の `CHAINVIZ_PROXY_TARGET` は
+    Docker bridge 上の IP を指す。host 名を指定した場合はノード
+    エンティティの `ip` に一致せずノード解決に失敗しログが残る（この
+    制約は ARCHITECTURE.md にも記載）。
+  - **`operationObserved` は store を素通しし `broadcastDiff` で直接配信**。
+    observer は store の resolver 機能だけを使い、イベント自体は
+    `server.broadcastDiff` へ直接渡す。store の状態には一切入らない。
+- テスト:
+  - `proxy/operation-observer.test.ts`（新規, 10 件）: `parseProxyTargetHost`
+    の host 抽出、`resolveOperationEdge` の正常系マッピング・
+    workbench-unresolved・node-unresolved、`createOperationObserver` の
+    正常系配信・IP 解決失敗時のログ出力（broadcast されないこと）・
+    後から追加されたワークベンチへの追従を検証。
+  - `world-state/store.test.ts`: `findWorkbenchByIp` / `findNodeByIp` の
+    解決・未解決・ノード IP をワークベンチとして誤解決しないことを追加。
+- フロントへの影響確認: `frontend/src/world-state/store.ts` の `applyDiff`
+  は未知イベントを `default` 節で無視するため、`operationObserved` の型
+  追加だけでは挙動が変わらない（描画側の消費は Issue #83 で対応）。
+  `pnpm build`（全パッケージ）・`pnpm test`（collector 498 / frontend 353）・
+  `pnpm lint` の通過を確認済み。
+
+### 2026-07-05 Issue #80 collector 配線のレビュー（reviewer）
+
+- 担当: reviewer
+- ブランチ: issue-80-operation-edges（未コミットの作業ツリーを検分）
+- 内容: collector 担当が実装した「観測 → OperationEdge 解決 →
+  operationObserved 配信」の配線を静的レビューした。結果は**合格**
+  （軽微な指摘1件あり。下記）
+- 確認結果:
+  - 境界の遵守: `operation-observer.ts` は method を文字列のまま運ぶだけで
+    eth_* による分岐なし。frontend への変更なし（`applyDiff` の default 節が
+    未知イベントとして無視することを確認）。チェーン固有語彙のスキーマ/
+    フロントへの漏れなし
+  - エラーの握りつぶし: 解決失敗（workbench-unresolved / node-unresolved）は
+    どちらの端点が引けなかったかを含めて warn ログに残す。`main()` で
+    転送先 URL からホストを取り出せない場合も警告を出して観測配信のみ
+    無効化する。`parseProxyTargetHost` の catch → undefined は呼び出し側で
+    警告されるため握りつぶしに当たらない
+  - 現在状態への依存: 端点解決は観測ごとに store の現在状態へ問い合わせる
+    設計で、後から追加されたワークベンチにも追従する（追従テストあり）。
+    固定タイムアウト等の決め打ち定数なし
+  - operationObserved の非畳み込み: observer は `server.broadcastDiff` へ
+    直接渡し store を経由しない。`broadcastDiff` は WebSocket 配信のみで
+    store に触れないことを確認。`applyEvent` の `case "operationObserved":
+    break;` は防御的な明示 no-op（本番経路で applyEvent に届くことはない）。
+    スナップショットに混入する経路なし
+  - テストの実効性: 変異テストで確認した。(1) 解決失敗時のログ呼び出しを
+    削除 → 失敗系テスト2件が検出。(2) 失敗時の早期 return を削除（失敗でも
+    配信）→ 3件が検出。いずれも有意味なテストであることを確認し、変異は
+    ハッシュ照合のうえ完全に復元した
+  - `pnpm lint && pnpm build && pnpm test` 全パッケージ通過
+    （shared 6 / collector 498 / frontend 353 / e2e 34）
+  - docs: ARCHITECTURE.md の追記・PLAN.md のチェック・WORKLOG.md 索引の
+    更新はいずれも実装と整合
+- 軽微な指摘（コミット前に対応すること）:
+  - `packages/collector/src/index.ts` の `startLoggingProxy` の docstring
+    （「現時点では観測データはログに残すだけで、world-state への組み込みは
+    別 Issue（#80）で対応する」）が古いまま。この変更自体が #80 の組み込み
+    実装なので、コメントを現状（onObserve に operation-observer を配線して
+    operationObserved を配信する）に合わせて更新する
+- コミット分割は未実施。「collector 配線実装+テスト」「docs 更新」の
+  2コミット案は関心事の分離として妥当

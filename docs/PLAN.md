@@ -254,7 +254,7 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
       [#77](https://github.com/morichikawa/chainviz/issues/77)
 - [x] ワークベンチ→ノードのRPC呼び出しを観測するロギングプロキシを実装する
       [#79](https://github.com/morichikawa/chainviz/issues/79)
-- [ ] ロギングプロキシが観測したRPC呼び出しを操作エッジとしてworld-state
+- [x] ロギングプロキシが観測したRPC呼び出しを操作エッジとしてworld-state
       に配信する
       [#80](https://github.com/morichikawa/chainviz/issues/80)
 

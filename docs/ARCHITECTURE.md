@@ -327,3 +327,16 @@ mempool:
     値）、中継先の既定は既定ワークベンチが叩くノードの JSON-RPC
     エンドポイント。いずれも環境変数 `CHAINVIZ_PROXY_PORT` /
     `CHAINVIZ_PROXY_TARGET` で上書きできる。
+  - 確定（Issue #80）: プロキシが観測した RPC 呼び出し（`RpcObservation`）を
+    `OperationEdge` へマッピングし、`operationObserved` イベントとして
+    WebSocket で全クライアントへ passthrough 配信する。マッピングは
+    `proxy/operation-observer.ts` に閉じ込め、`method` → `operation`・
+    `timestamp` → `observedAt`、呼び出し元 IP（`callerIp`）は world-state
+    store の `findWorkbenchByIp` で `fromWorkbenchId` に、中継先ホスト
+    （`CHAINVIZ_PROXY_TARGET` の host 部）は `findNodeByIp` で `toNodeId` に
+    解決する。解決は観測ごとに現在の store 状態へ問い合わせるため、後から
+    追加されたワークベンチ/ノードにも追従する（固定の解決結果を埋め込まない）。
+    どちらかの端点が解決できない観測は配信せず、どちらが引けなかったかを
+    ログに残す（黙って握りつぶさない）。`operationObserved` は揮発性のため
+    store の状態には畳み込まず（`WorldStateStore.applyEvent` は反映しない）、
+    `broadcastDiff` 経由で配信のみ行う。
