@@ -214,3 +214,38 @@
   - 上記1点のみ修正のうえ再レビューに出すこと。修正は数行で済む見込み。
   - Issue化せず`chore-`ブランチで進める判断(WORKLOG分割PR #92等と同様の
     開発ツール整備扱い)は統括の明示判断として了承した。
+
+### 2026-07-05 devスクリプト再々レビュー(合格)
+
+- 担当: reviewer
+- ブランチ: chore-dev-up-down-scripts(コミット 5297303)
+- 内容:
+  - 前回差し戻し(dev-down.sh の `--docker` 実行時に `docker compose down`
+    の失敗が `FAILED` に反映されず exit 0 になる退行)への対応を確認した。
+    - `docker compose down` / `down -v` の双方に `|| FAILED=1` が付き、
+      末尾の `exit "$FAILED"` へ正しく伝播する。`dev-down.sh` は
+      `set -e` 無し(`set -uo pipefail`)なので、失敗後も後続処理は
+      続行しつつ最終終了コードだけ非0になる設計として一貫している。
+    - `cd "$PROFILE_DIR"` の失敗も if 分岐で捕捉し、stderr にエラーを
+      出して `FAILED=1` とし、誤ったディレクトリで compose を実行しない
+      よう down 自体をスキップする。妥当。
+  - 前回推奨だった二重起動ガードの前倒しも確認した。
+    `check_not_already_running collector/frontend` がスクリプト冒頭
+    (Docker確認・ビルドより前)に移動し、「frontendだけ起動中」のケースで
+    collector を部分起動してから exit する問題が解消された。ガードは
+    絶対パスの pidファイルのみ参照し cwd に依存せず、`mkdir -p $PID_DIR`
+    より後に実行されるため、順序変更による副作用は無い。
+  - `pnpm lint && pnpm build && pnpm test` は全パッケージで通ることを
+    確認(shared 6件・collector 498件・frontend 411件・e2e unit 34件)。
+  - コミット粒度: 今回の追加は 5297303 の1件。dev-down.sh の握りつぶし
+    修正(必須指摘)と dev-up.sh のガード順序整理(推奨指摘)が同居して
+    おり、厳密には fix と refactor を分けるのが理想だが、前回の差し戻し
+    対応コミット(4945f6c、同じく2指摘を1コミットで対応)を許容した判断
+    との一貫性から「レビュー指摘対応一式」として許容する。
+- 決定事項・注意点:
+  - 静的レビューとしては合格。残タスクは chainviz-qa による実機確認
+    (二重起動ガード・`--docker` での停止/復旧)と push・PR作成。
+  - 前回までに記録した非ブロッキング事項(Docker再利用判定が running
+    1つ以上で判定される点、CONTRIBUTING.md の genesis 記述ドリフト、
+    wait_for_port の固定リトライへの前提コメント)は未対応のまま。
+    いずれも本ブランチのマージを妨げないが、別途整理が望ましい。
