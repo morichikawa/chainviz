@@ -16,6 +16,10 @@ import { createDockerClient } from "./docker/dockerode-client.js";
 import { createDockerOperations } from "./docker/dockerode-operations.js";
 import { DockerPoller } from "./docker/poller.js";
 import {
+  createOperationObserver,
+  parseProxyTargetHost,
+} from "./proxy/operation-observer.js";
+import {
   createFetchForwarder,
   LoggingProxy,
   type RpcObservation,
@@ -191,9 +195,9 @@ export function startPollingLoop(
 /**
  * ワークベンチ RPC 観測用ロギングプロキシを起動する。ワークベンチからの
  * JSON-RPC を受けて実ノードへ透過転送しつつ、呼び出しを観測データとして
- * 発行する。現時点では観測データはログに残すだけで、world-state への
- * 組み込みは別 Issue（#80）で対応する。onObserve に処理を差し込めるよう
- * にしてある。
+ * 発行する。`onObserve` には `main()` で `operation-observer` の
+ * `createOperationObserver` を差し込み、解決できた観測を `operationObserved`
+ * として world-state 経由でフロントへ配信する（Issue #80）。
  */
 export async function startLoggingProxy(
   port: number = DEFAULT_PROXY_PORT,
@@ -243,7 +247,27 @@ export async function main(port: number = DEFAULT_PORT): Promise<void> {
 
   // ワークベンチ → ノードの JSON-RPC 呼び出しを観測するロギングプロキシを
   // 起動する（Issue #79）。ワークベンチはこのプロキシ経由で reth を叩く。
-  await startLoggingProxy(resolveProxyPort(), resolveProxyTarget());
+  // 観測データは OperationEdge へ解決し、operationObserved イベントとして
+  // フロントへ passthrough 配信する（Issue #80）。呼び出し元 IP・転送先ホストは
+  // world-state store（＝解決口）へ観測ごとに問い合わせて id を引く。
+  const proxyTarget = resolveProxyTarget();
+  const targetHost = parseProxyTargetHost(proxyTarget);
+  let onObserve: ((observation: RpcObservation) => void) | undefined;
+  if (targetHost) {
+    onObserve = createOperationObserver({
+      targetHost,
+      resolver: store,
+      broadcast: (events) => server.broadcastDiff(events),
+    });
+  } else {
+    // 転送先 URL からホストを取り出せない場合は操作エッジを配信できない。
+    // 黙って無効化せず理由を残す（CLAUDE.md「エラーを握りつぶさない」）。
+    console.warn(
+      `[collector] could not parse host from proxy target ${proxyTarget}; ` +
+        `operation edges will not be broadcast`,
+    );
+  }
+  await startLoggingProxy(resolveProxyPort(), proxyTarget, onObserve);
 
   // A 層: Docker のインフラ観測を周期ポーリングして配信する。
   startPollingLoop(adapter, store, server);

@@ -5,9 +5,11 @@ import type {
   BlockEntity,
   ChainType,
   DiffEvent,
+  NodeEntity,
   PeerEdge,
   TransactionEntity,
   WalletEntity,
+  WorkbenchEntity,
   WorldStateEntity,
   WorldStateSnapshot,
 } from "@chainviz/shared";
@@ -115,6 +117,30 @@ export class WorldStateStore {
     return diff;
   }
 
+  /**
+   * 指定 IP を持つワークベンチエンティティを返す（無ければ undefined）。
+   * ロギングプロキシが観測した呼び出し元 IP（RpcObservation.callerIp）を
+   * ワークベンチのエンティティ id へ解決するために使う（Issue #80）。
+   */
+  findWorkbenchByIp(ip: string): WorkbenchEntity | undefined {
+    for (const entity of this.entities.values()) {
+      if (entity.kind === "workbench" && entity.ip === ip) return entity;
+    }
+    return undefined;
+  }
+
+  /**
+   * 指定 IP を持つノードエンティティを返す（無ければ undefined）。
+   * ロギングプロキシの転送先（CHAINVIZ_PROXY_TARGET のホスト）を、その IP を
+   * 持つノードのエンティティ id へ解決するために使う（Issue #80）。
+   */
+  findNodeByIp(ip: string): NodeEntity | undefined {
+    for (const entity of this.entities.values()) {
+      if (entity.kind === "node" && entity.ip === ip) return entity;
+    }
+    return undefined;
+  }
+
   private applyEvent(event: DiffEvent): void {
     switch (event.type) {
       case "entityAdded":
@@ -149,6 +175,12 @@ export class WorldStateStore {
               e.networkId === event.networkId
             ),
         );
+        break;
+      case "operationObserved":
+        // 揮発性の観測イベント。RPC 呼び出しは「観測された瞬間の出来事」であり
+        // 永続的な接続状態ではないため、store の状態には畳み込まない
+        // （スナップショットにも含めない）。broadcastDiff で passthrough 配信
+        // されるだけで、ここでは意図的に何もしない（Issue #80）。
         break;
     }
   }
