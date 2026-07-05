@@ -36,8 +36,6 @@
   - テストは `WebSocketServer.address()` / `http.Server.address()` の返す
     `family`・`address` を検証する形にし、既存テストの実ソケット + `internalWss`
     ヘルパーの作りを踏襲している（新しいモック機構は導入していない）。
-</content>
-</invoke>
 
 ### 2026-07-06 Issue #99 レビュー(reviewer)
 
