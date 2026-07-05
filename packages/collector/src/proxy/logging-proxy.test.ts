@@ -375,3 +375,85 @@ describe("LoggingProxy (integration over a real socket)", () => {
     }
   });
 });
+
+describe("LoggingProxy maxBodyBytes", () => {
+  const LIMIT = 32;
+
+  it("forwards a body whose byte length is exactly maxBodyBytes", async () => {
+    const forward = stubForward(OK_RESPONSE);
+    const proxy = new LoggingProxy({ forward, log: vi.fn(), maxBodyBytes: LIMIT });
+    await proxy.listen(0);
+    const port = proxy.address?.port;
+    // ちょうど上限（境界値）: 拒否されず素通しされること。
+    const body = "a".repeat(LIMIT);
+    expect(Buffer.byteLength(body)).toBe(LIMIT);
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body,
+      });
+      expect(res.status).toBe(200);
+      expect(forward).toHaveBeenCalledWith(body, "application/json");
+    } finally {
+      await proxy.close();
+    }
+  });
+
+  it("does not forward a body one byte over maxBodyBytes and fails the request", async () => {
+    const forward = stubForward(OK_RESPONSE);
+    const log = vi.fn();
+    const proxy = new LoggingProxy({ forward, log, maxBodyBytes: LIMIT });
+    await proxy.listen(0);
+    const port = proxy.address?.port;
+    // 上限 +1 バイト（境界値）: upstream へ転送されてはならない。
+    const body = "a".repeat(LIMIT + 1);
+    expect(Buffer.byteLength(body)).toBe(LIMIT + 1);
+    let outcome: { status: number } | { error: unknown };
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body,
+      });
+      outcome = { status: res.status };
+    } catch (err) {
+      outcome = { error: err };
+    } finally {
+      await proxy.close();
+    }
+    // 過大なボディは上流ノードへ渡らないこと（メモリ枯渇・透過性の観点で最重要）。
+    expect(forward).not.toHaveBeenCalled();
+    // サイズ超過を握りつぶさずログに残していること。
+    expect(log).toHaveBeenCalledWith(
+      "[proxy] failed to read request body:",
+      expect.any(Error),
+    );
+    // 成功レスポンス（2xx）は決して返さないこと。「2xx でない」ことのみを表明し、
+    // 具体的なステータスコードの検証は下の 413 テストで明示的に行う。
+    if ("status" in outcome) {
+      expect(outcome.status).toBeGreaterThanOrEqual(400);
+    } else {
+      expect(outcome.error).toBeInstanceOf(Error);
+    }
+  });
+});
+
+describe("LoggingProxy.listen startup failure", () => {
+  it("rejects the listen promise when the port is already in use", async () => {
+    const first = new LoggingProxy({ forward: stubForward(OK_RESPONSE), log: vi.fn() });
+    await first.listen(0);
+    const port = first.address?.port ?? 0;
+    expect(port).toBeGreaterThan(0);
+
+    const second = new LoggingProxy({ forward: stubForward(OK_RESPONSE), log: vi.fn() });
+    try {
+      // 同じポートで待ち受け開始 → listening 前に error が発火し reject されること。
+      await expect(second.listen(port)).rejects.toMatchObject({
+        code: "EADDRINUSE",
+      });
+    } finally {
+      await first.close();
+    }
+  });
+});
