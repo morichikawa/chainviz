@@ -1,4 +1,8 @@
-import type { BlockEntity } from "@chainviz/shared";
+import type {
+  BlockEntity,
+  TransactionEntity,
+  WalletEntity,
+} from "@chainviz/shared";
 import { useCallback, useMemo, useState } from "react";
 import { Canvas } from "../canvas/Canvas.js";
 import { CanvasToolbar } from "../canvas/CanvasToolbar.js";
@@ -9,7 +13,11 @@ import { useNotifications } from "../notifications/useNotifications.js";
 import { attachPulsesToEdges } from "../entities/blockPulse.js";
 import { entitiesToFlowNodes } from "../entities/infraNode.js";
 import { peerEdgesToFlowEdges } from "../entities/peerEdge.js";
+import { ownershipEdgesToFlowEdges } from "../entities/ownershipEdge.js";
+import { indexTransactions } from "../entities/transaction.js";
 import { useBlockPulses } from "../entities/useBlockPulses.js";
+import { useTxLifecycle } from "../entities/useTxLifecycle.js";
+import { walletsToFlowNodes } from "../entities/walletNode.js";
 import { GlossaryProvider } from "../glossary/GlossaryProvider.js";
 import { glossary as defaultGlossary } from "../glossary/data.js";
 import type { Glossary } from "../glossary/types.js";
@@ -76,29 +84,85 @@ function AppShell({
 
   const { state, status, actions } = useCommands(clientFactory, notify, t);
 
-  const nodes = useMemo(
-    () => entitiesToFlowNodes(listEntities(state), layout),
-    [state, layout],
+  const entities = useMemo(() => listEntities(state), [state]);
+
+  const infraNodes = useMemo(
+    () => entitiesToFlowNodes(entities, layout),
+    [entities, layout],
+  );
+
+  // 現存するインフラノードの id 集合（ピア接続・所有エッジの端点存在判定に使う）。
+  const infraNodeIds = useMemo(
+    () => new Set(infraNodes.map((n) => n.id)),
+    [infraNodes],
   );
 
   // B層のピア接続。端点が両方カードとして存在する紐だけを描く。
-  const edges = useMemo(
-    () => peerEdgesToFlowEdges(listEdges(state), nodes.map((n) => n.id)),
-    [state, nodes],
+  const peerEdges = useMemo(
+    () => peerEdgesToFlowEdges(listEdges(state), infraNodeIds),
+    [state, infraNodeIds],
   );
 
   // ブロックの受信時刻差から伝播パルスを算出し、エッジ上へ走らせる。
   const blocks = useMemo(
     () =>
-      listEntities(state).filter(
+      entities.filter(
         (entity): entity is BlockEntity => entity.kind === "block",
       ),
-    [state],
+    [entities],
   );
-  const activePulses = useBlockPulses(blocks, edges);
-  const edgesWithPulses = useMemo(
-    () => attachPulsesToEdges(edges, activePulses),
-    [edges, activePulses],
+  const activePulses = useBlockPulses(blocks, peerEdges);
+  const peerEdgesWithPulses = useMemo(
+    () => attachPulsesToEdges(peerEdges, activePulses),
+    [peerEdges, activePulses],
+  );
+
+  // C層: ウォレット・トランザクション。
+  const wallets = useMemo(
+    () =>
+      entities.filter(
+        (entity): entity is WalletEntity => entity.kind === "wallet",
+      ),
+    [entities],
+  );
+  const transactions = useMemo(
+    () =>
+      entities.filter(
+        (entity): entity is TransactionEntity => entity.kind === "transaction",
+      ),
+    [entities],
+  );
+  const txByHash = useMemo(
+    () => indexTransactions(transactions),
+    [transactions],
+  );
+  // tx が pending → 確定へ変わった瞬間を検知し、確定フラッシュ演出中の集合を得る。
+  const settling = useTxLifecycle(transactions);
+
+  const walletNodes = useMemo(
+    () =>
+      walletsToFlowNodes(wallets, {
+        layout,
+        txByHash,
+        settling,
+        presentInfraIds: infraNodeIds,
+      }),
+    [wallets, layout, txByHash, settling, infraNodeIds],
+  );
+
+  // ワークベンチ → ウォレットの所有エッジ（点線・別色で B層のピア接続と区別）。
+  const ownershipEdges = useMemo(
+    () => ownershipEdgesToFlowEdges(wallets, infraNodeIds),
+    [wallets, infraNodeIds],
+  );
+
+  const nodes = useMemo(
+    () => [...infraNodes, ...walletNodes],
+    [infraNodes, walletNodes],
+  );
+  const edges = useMemo(
+    () => [...peerEdgesWithPulses, ...ownershipEdges],
+    [peerEdgesWithPulses, ownershipEdges],
   );
 
   const persist = useCallback(
@@ -126,11 +190,7 @@ function AppShell({
           {nodes.length === 0 ? (
             <p className="app__empty">{t("canvas.empty")}</p>
           ) : (
-            <Canvas
-              nodes={nodes}
-              edges={edgesWithPulses}
-              onPersistPosition={persist}
-            />
+            <Canvas nodes={nodes} edges={edges} onPersistPosition={persist} />
           )}
           <ToastStack notifications={notifications} onDismiss={dismiss} />
         </main>
