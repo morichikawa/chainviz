@@ -277,3 +277,15 @@ mempool:
     再接続クライアントには store のスナップショットで復元する。
 - WebSocket の再接続・スナップショット再送のプロトコル詳細
 - ロギングプロキシの具体的な実装形態（別コンテナか collector 内蔵か）
+  - 部分的に確定（Issue #78）: 別コンテナではなく **collector プロセス内蔵**
+    とし、collector をホスト上で動かしてホストのポート 4001 で待ち受ける
+    （collector 本体の WebSocket サーバーは 4000 番、プロキシは 4001 番）。
+    ワークベンチコンテナからは `extra_hosts` の `host.docker.internal:host-gateway`
+    でホストへ到達し、`ETH_RPC_URL=http://host.docker.internal:4001` を指す。
+    プロキシは受け取った RPC をログに残しつつ reth1 の RPC へ転送する
+    （ホスト上のプロキシプロセスから reth1 への具体的な到達アドレスは
+    Issue #79 で確定する。`reth1` というホスト名は Docker 内蔵 DNS で
+    コンテナ内からしか解決できないため、ホスト上のプロキシは reth1 の
+    コンテナ IP を用いる点に注意）。プロキシ本体の実装は collector 側
+    （Issue #79）の担当で、
+    `profiles/ethereum` は接続先を向けるところまでを担う。
