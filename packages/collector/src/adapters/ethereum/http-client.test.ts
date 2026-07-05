@@ -3,6 +3,9 @@ import { createFetchHttpClient } from "./http-client.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
+  // stubGlobal("fetch") は restoreAllMocks では戻らないため明示的に外す。
+  // 外さないと後続テストが漏れた fetch スタブを掴んでしまう。
+  vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 
