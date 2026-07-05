@@ -1,6 +1,32 @@
-import type { NodeEntity, PeerEdge, WorkbenchEntity } from "@chainviz/shared";
+import type {
+  NodeEntity,
+  PeerEdge,
+  WalletEntity,
+  WorkbenchEntity,
+} from "@chainviz/shared";
 import { describe, expect, it } from "vitest";
-import { computeDiff, computeEdgeDiff, edgeKey, entityId } from "./diff.js";
+import {
+  computeDiff,
+  computeEdgeDiff,
+  computeWalletDiff,
+  edgeKey,
+  entityId,
+  type WalletObservation,
+} from "./diff.js";
+
+function wallet(overrides: Partial<WalletEntity> = {}): WalletEntity {
+  return {
+    kind: "wallet",
+    address: "0xabc",
+    chainType: "ethereum",
+    balance: "100",
+    nonce: 1,
+    isSmartAccount: false,
+    ownerWorkbenchId: "chainviz-ethereum/workbench",
+    recentTxHashes: [],
+    ...overrides,
+  };
+}
 
 function node(overrides: Partial<NodeEntity> = {}): NodeEntity {
   return {
@@ -310,5 +336,100 @@ describe("computeEdgeDiff", () => {
       { type: "edgeAdded", edge: edge() },
     ]);
     expect(computeEdgeDiff([edge(), edge()], [edge()])).toEqual([]);
+  });
+});
+
+describe("computeWalletDiff", () => {
+  const observed = (
+    overrides: Partial<WalletObservation> = {},
+  ): WalletObservation => ({
+    address: "0xabc",
+    ownerWorkbenchId: "chainviz-ethereum/workbench",
+    balance: "100",
+    nonce: 1,
+    ...overrides,
+  });
+
+  it("adds a new wallet when balance and nonce are available", () => {
+    const events = computeWalletDiff([], [observed()], "ethereum");
+    expect(events).toEqual([{ type: "entityAdded", entity: wallet() }]);
+  });
+
+  it("defers adding a new wallet while balance is not yet fetched", () => {
+    // 残高がまだ取れていない新規ウォレットは、暫定の 0 を見せないよう追加を保留。
+    const events = computeWalletDiff(
+      [],
+      [observed({ balance: undefined, nonce: undefined })],
+      "ethereum",
+    );
+    expect(events).toEqual([]);
+  });
+
+  it("defers adding when only nonce is missing", () => {
+    const events = computeWalletDiff(
+      [],
+      [observed({ nonce: undefined })],
+      "ethereum",
+    );
+    expect(events).toEqual([]);
+  });
+
+  it("emits an update only for the changed fields", () => {
+    const prev = [wallet({ balance: "100", nonce: 1 })];
+    const events = computeWalletDiff(
+      prev,
+      [observed({ balance: "250", nonce: 2 })],
+      "ethereum",
+    );
+    expect(events).toEqual([
+      { type: "entityUpdated", id: "0xabc", patch: { balance: "250", nonce: 2 } },
+    ]);
+  });
+
+  it("emits nothing when the wallet is unchanged", () => {
+    const prev = [wallet({ balance: "100", nonce: 1 })];
+    expect(computeWalletDiff(prev, [observed()], "ethereum")).toEqual([]);
+  });
+
+  it("keeps the existing balance/nonce when the observation omits them", () => {
+    // RPC が一時的に取れなかったケース。既存値を維持し差分は出さない。
+    const prev = [wallet({ balance: "100", nonce: 1 })];
+    const events = computeWalletDiff(
+      prev,
+      [observed({ balance: undefined, nonce: undefined })],
+      "ethereum",
+    );
+    expect(events).toEqual([]);
+  });
+
+  it("orphans a wallet (owner -> null) when its workbench disappears, not removes it", () => {
+    const prev = [wallet({ ownerWorkbenchId: "chainviz-ethereum/workbench" })];
+    const events = computeWalletDiff(prev, [], "ethereum");
+    expect(events).toEqual([
+      { type: "entityUpdated", id: "0xabc", patch: { ownerWorkbenchId: null } },
+    ]);
+    // 削除イベントは決して出さない（チェーン側の状態なので残す）。
+    expect(events.some((e) => e.type === "entityRemoved")).toBe(false);
+  });
+
+  it("does not re-orphan an already orphaned wallet", () => {
+    const prev = [wallet({ ownerWorkbenchId: null })];
+    expect(computeWalletDiff(prev, [], "ethereum")).toEqual([]);
+  });
+
+  it("re-attaches an orphaned wallet when a workbench claims it again", () => {
+    const prev = [wallet({ ownerWorkbenchId: null })];
+    const events = computeWalletDiff(
+      prev,
+      [observed({ ownerWorkbenchId: "chainviz-ethereum/reborn" })],
+      "ethereum",
+    );
+    expect(events).toEqual([
+      {
+        type: "entityUpdated",
+        id: "0xabc",
+        patch: { ownerWorkbenchId: "chainviz-ethereum/reborn" },
+      },
+    ]);
   });
 });

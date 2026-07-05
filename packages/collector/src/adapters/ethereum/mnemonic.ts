@@ -30,3 +30,20 @@ export function readProfileMnemonic(profileDir: string): string | undefined {
     return undefined;
   }
 }
+
+/**
+ * mnemonic を取得できなかったときに起動ログへ出す警告文を返す。有効な
+ * mnemonic があれば undefined（警告不要）。readProfileMnemonic は
+ * values.env が無い・読めない・mnemonic 未定義のいずれでも undefined を
+ * 返し、加えて EL_AND_CL_MNEMONIC="" のように空文字列が設定されている
+ * ケースもある。ウォレット層（C 層）を無効化する側（wallet-tracker /
+ * adapters/ethereum/index）はいずれも falsy 判定（!this.mnemonic）で
+ * 無効化するため、警告の判定もそれに揃える。そうしないと空文字列の
+ * ときに警告なしでウォレット層が黙って無効化されてしまう。
+ */
+export function walletTrackingDisabledWarning(
+  mnemonic: string | undefined,
+): string | undefined {
+  if (mnemonic) return undefined;
+  return "mnemonic not found in profile values.env; wallet tracking disabled";
+}

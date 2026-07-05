@@ -28,6 +28,10 @@ import type {
   LabeledContainer,
 } from "../../docker/operations.js";
 import { readProfileMnemonic } from "./mnemonic.js";
+import {
+  WALLET_INDEX_LABEL,
+  workbenchWalletIndex,
+} from "./wallet-derivation.js";
 
 export { parseMnemonic } from "./mnemonic.js";
 
@@ -87,6 +91,36 @@ type ResolvedConfig = Required<EthereumNodeLifecycleConfig>;
 interface ManagedContainer {
   stableId: string;
   containerId: string;
+}
+
+/**
+ * collector が作成したワークベンチ 1 件。ManagedContainer に加えて、その
+ * ワークベンチが主に使うウォレットの導出インデックスを保持する。CONCEPT.md の
+ * 「1 ワークベンチ = 1 ユーザー = 1 つの主たる鍵」に沿い、ワークベンチごとに
+ * 異なるインデックス（= 異なるアドレス）を割り当てて、誰の操作かを区別できる
+ * ようにする。
+ */
+interface ManagedWorkbench extends ManagedContainer {
+  walletIndex: number;
+}
+
+/**
+ * ワークベンチのウォレット導出インデックスの採番開始値。0 は compose 由来の
+ * （collector が採番しない）ワークベンチが使うため予約し、collector が作成する
+ * ワークベンチは 1 から採番する。profiles/ethereum は 0〜7 の 8 アカウントを
+ * プリマインしているので、1〜7 は残高付き、8 以降は残高 0 の有効なアドレスに
+ * なる（残高 0 でも WalletEntity としては正しく表示される）。
+ */
+const WALLET_INDEX_START = 1;
+
+/**
+ * 既に使われている導出インデックス集合を避けて、最小の空きインデックスを返す。
+ * WALLET_INDEX_START から順に探す。
+ */
+export function allocateWalletIndex(taken: ReadonlySet<number>): number {
+  for (let i = WALLET_INDEX_START; ; i++) {
+    if (!taken.has(i)) return i;
+  }
 }
 
 /**
@@ -150,7 +184,7 @@ function slug(value: string): string {
 export class EthereumNodeLifecycle implements NodeLifecycle {
   private readonly cfg: ResolvedConfig;
   private readonly nodes: ManagedNode[] = [];
-  private readonly workbenches: ManagedContainer[] = [];
+  private readonly workbenches: ManagedWorkbench[] = [];
   private workbenchSeq = 0;
 
   constructor(
@@ -194,7 +228,10 @@ export class EthereumNodeLifecycle implements NodeLifecycle {
       const { service, role, managedContainer } = managed;
 
       if (role === "workbench") {
-        this.workbenches.push(managedContainer);
+        this.workbenches.push({
+          ...managedContainer,
+          walletIndex: workbenchWalletIndex(container.labels),
+        });
         continue;
       }
 
@@ -356,10 +393,16 @@ export class EthereumNodeLifecycle implements NodeLifecycle {
 
   async addWorkbench(label: string): Promise<void> {
     const service = this.uniqueWorkbenchService(label);
-    const created = await this.ops.createAndStart(this.workbenchSpec(service));
+    const walletIndex = allocateWalletIndex(
+      new Set(this.workbenches.map((w) => w.walletIndex)),
+    );
+    const created = await this.ops.createAndStart(
+      this.workbenchSpec(service, walletIndex),
+    );
     this.workbenches.push({
       stableId: `${this.cfg.composeProject}/${service}`,
       containerId: created.id,
+      walletIndex,
     });
   }
 
@@ -429,7 +472,7 @@ export class EthereumNodeLifecycle implements NodeLifecycle {
     };
   }
 
-  private workbenchSpec(service: string): ContainerSpec {
+  private workbenchSpec(service: string, walletIndex: number): ContainerSpec {
     const env: Record<string, string> = { ETH_RPC_URL: this.cfg.ethRpcUrl };
     const mnemonic = this.readMnemonic();
     if (mnemonic) env.EL_AND_CL_MNEMONIC = mnemonic;
@@ -438,7 +481,7 @@ export class EthereumNodeLifecycle implements NodeLifecycle {
       image: this.cfg.foundryImage,
       entrypoint: ["/bin/sh", "-c", "sleep infinity"],
       env,
-      labels: this.workbenchLabels(service),
+      labels: this.workbenchLabels(service, walletIndex),
       networkName: this.cfg.networkName,
     };
   }
@@ -455,12 +498,16 @@ export class EthereumNodeLifecycle implements NodeLifecycle {
     };
   }
 
-  private workbenchLabels(service: string): Record<string, string> {
+  private workbenchLabels(
+    service: string,
+    walletIndex: number,
+  ): Record<string, string> {
     return {
       [COMPOSE_PROJECT_LABEL]: this.cfg.composeProject,
       [COMPOSE_SERVICE_LABEL]: service,
       [MANAGED_LABEL]: "true",
       [ROLE_LABEL]: "workbench",
+      [WALLET_INDEX_LABEL]: String(walletIndex),
     };
   }
 

@@ -34,6 +34,10 @@ import {
 import { createFetchHttpClient, type HttpClient } from "./http-client.js";
 import { toPeerEdges, type BeaconNodePeers } from "./peers.js";
 import { beaconTargets, executionTargets } from "./targets.js";
+import {
+  deriveWalletAddress,
+  workbenchWalletIndex,
+} from "./wallet-derivation.js";
 
 /** ピアポーリングの既定間隔。 */
 export const PEER_POLL_INTERVAL_MS = 3000;
@@ -45,6 +49,14 @@ export interface EthereumAdapterDeps {
   peerPollIntervalMs?: number;
   /** テスト用の時刻ソース。既定は Date.now。 */
   now?: () => number;
+  /**
+   * ワークベンチのウォレットアドレス導出に使う mnemonic（values.env 由来）。
+   * 与えられた場合、A 層で WorkbenchEntity.walletIds に主たるウォレットの
+   * アドレスを載せる。未指定なら walletIds は空のまま。
+   */
+  mnemonic?: string;
+  /** mnemonic + index からアドレスを導出する関数（テスト差し替え用）。 */
+  deriveAddress?: (mnemonic: string, index: number) => string;
 }
 
 /**
@@ -72,6 +84,8 @@ export class EthereumAdapter implements ChainAdapter {
   private readonly ethWs: EthWsClient;
   private readonly peerPollIntervalMs: number;
   private readonly now: () => number;
+  private readonly mnemonic?: string;
+  private readonly deriveAddress: (mnemonic: string, index: number) => string;
   private readonly blockTracker = new BlockPropagationTracker();
 
   private peerTimer?: ReturnType<typeof setTimeout>;
@@ -86,6 +100,8 @@ export class EthereumAdapter implements ChainAdapter {
     this.ethWs = deps.ethWsClient ?? createWsEthClient();
     this.peerPollIntervalMs = deps.peerPollIntervalMs ?? PEER_POLL_INTERVAL_MS;
     this.now = deps.now ?? (() => Date.now());
+    this.mnemonic = deps.mnemonic;
+    this.deriveAddress = deps.deriveAddress ?? deriveWalletAddress;
   }
 
   /** A 層: Docker をポーリングし、コンテナを NodeEntity / WorkbenchEntity へ正規化する。 */
@@ -113,7 +129,7 @@ export class EthereumAdapter implements ChainAdapter {
         ...infra,
         kind: "workbench",
         label: classification.label,
-        walletIds: [],
+        walletIds: this.workbenchWalletIds(obs),
       };
     }
 
@@ -127,6 +143,19 @@ export class EthereumAdapter implements ChainAdapter {
       blockHeight: 0,
       headBlockHash: "",
     };
+  }
+
+  /**
+   * ワークベンチが主に使うウォレットのアドレスを walletIds として返す。導出
+   * インデックスはコンテナのラベル（無ければ既定 0）から決め、mnemonic と
+   * 合わせて WalletTracker と同じアドレスを再現する。これにより A 層のポーリング
+   * ごとに walletIds が安定し（毎回同じアドレス）、C 層の WalletEntity と
+   * 突き合わせられる。mnemonic 未設定なら空配列。
+   */
+  private workbenchWalletIds(obs: ContainerObservation): string[] {
+    if (!this.mnemonic) return [];
+    const index = workbenchWalletIndex(obs.labels);
+    return [this.deriveAddress(this.mnemonic, index)];
   }
 
   // --- B 層: ピア接続 ---

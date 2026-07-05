@@ -6,10 +6,18 @@ import type {
   ChainType,
   DiffEvent,
   PeerEdge,
+  WalletEntity,
   WorldStateEntity,
   WorldStateSnapshot,
 } from "@chainviz/shared";
-import { computeDiff, computeEdgeDiff, edgeKey, entityId } from "./diff.js";
+import {
+  computeDiff,
+  computeEdgeDiff,
+  computeWalletDiff,
+  edgeKey,
+  entityId,
+  type WalletObservation,
+} from "./diff.js";
 
 /** node / workbench（InfraEntity 系）かどうか。 */
 function isInfraEntity(entity: WorldStateEntity): boolean {
@@ -66,6 +74,22 @@ export class WorldStateStore {
     const existing = this.entities.get(block.hash);
     const prev = existing ? [existing] : [];
     const diff = computeDiff(prev, [block]);
+    for (const event of diff) this.applyEvent(event);
+    this.timestamp = Date.now();
+    return diff;
+  }
+
+  /**
+   * C 層のウォレット観測（WalletObservation の集合）を取り込む。差分は wallet
+   * エンティティだけを対象にし、他層のエンティティは触らない。観測に現れなく
+   * なったウォレットは削除せず ownerWorkbenchId を null にして残す（CONCEPT.md
+   * の決定。computeWalletDiff 参照）。返り値は適用した差分イベント。
+   */
+  applyWallets(observed: WalletObservation[]): DiffEvent[] {
+    const prevWallets = [...this.entities.values()].filter(
+      (e): e is WalletEntity => e.kind === "wallet",
+    );
+    const diff = computeWalletDiff(prevWallets, observed, this.chainType);
     for (const event of diff) this.applyEvent(event);
     this.timestamp = Date.now();
     return diff;

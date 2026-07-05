@@ -12,6 +12,9 @@ const COMPOSE_SERVICE_LABEL = "com.docker.compose.service";
 /** reth の WebSocket JSON-RPC のデフォルトポート（eth_subscribe 用）。 */
 export const EXECUTION_WS_PORT = 8546;
 
+/** reth の HTTP JSON-RPC のデフォルトポート（eth_getBalance 等の単発問い合わせ用）。 */
+export const EXECUTION_RPC_PORT = 8545;
+
 /** Consensus Layer（ビーコン）クライアントとして扱う識別子。 */
 const CONSENSUS_CLIENTS = ["lighthouse", "prysm", "teku", "nimbus"];
 
@@ -128,6 +131,27 @@ export function beaconStableIdForExecution(
     if (serviceNodeKey(service) === key) return obs.stableId;
   }
   return undefined;
+}
+
+/**
+ * ウォレットの残高・nonce を問い合わせるための Execution ノードの HTTP JSON-RPC
+ * URL を観測値から列挙する。残高・nonce はチェーン全体の状態でありどの
+ * Execution ノードに聞いても同じなので、呼び出し側は先頭から順に到達できた
+ * ものを 1 つ使えばよい。execution クライアントであり IP が取れるコンテナだけを
+ * 対象にする。
+ */
+export function executionRpcUrls(
+  observations: ContainerObservation[],
+): string[] {
+  const urls: string[] = [];
+  for (const obs of observations) {
+    if (!obs.ip) continue;
+    const { kind, clientType } = classifyContainer(obs);
+    if (kind !== "node") continue;
+    if (!EXECUTION_CLIENTS.includes(clientType)) continue;
+    urls.push(`http://${obs.ip}:${EXECUTION_RPC_PORT}`);
+  }
+  return urls;
 }
 
 /**

@@ -5,7 +5,12 @@ import Docker from "dockerode";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { EthereumAdapter } from "./adapters/ethereum/index.js";
+import {
+  readProfileMnemonic,
+  walletTrackingDisabledWarning,
+} from "./adapters/ethereum/mnemonic.js";
 import { EthereumNodeLifecycle } from "./adapters/ethereum/node-lifecycle.js";
+import { WalletTracker } from "./adapters/ethereum/wallet-tracker.js";
 import { CommandHandler } from "./commands/handler.js";
 import { createDockerClient } from "./docker/dockerode-client.js";
 import { createDockerOperations } from "./docker/dockerode-operations.js";
@@ -143,12 +148,21 @@ export function startPollingLoop(
 export async function main(port: number = DEFAULT_PORT): Promise<void> {
   const docker = new Docker();
   const poller = new DockerPoller(createDockerClient(docker));
-  const adapter = new EthereumAdapter(poller);
+  const profileDir = resolveProfileDir();
+  // ワークベンチのウォレットアドレス導出に使う mnemonic を values.env から読む。
+  // genesis のプリマイン鍵とワークベンチの鍵の共通の出所（Issue #77）。
+  const mnemonic = readProfileMnemonic(profileDir);
+  // values.env が無い/読めない/EL_AND_CL_MNEMONIC 未定義のいずれかで mnemonic を
+  // 取得できないと、ウォレット層（C 層）が黙って無効化される。原因を追跡できる
+  // よう起動時に明示的に警告する（エラーを握りつぶさない）。
+  const walletWarning = walletTrackingDisabledWarning(mnemonic);
+  if (walletWarning) console.warn(`[collector] ${walletWarning}`);
+  const adapter = new EthereumAdapter(poller, { mnemonic });
   const store = new WorldStateStore("ethereum");
 
   // 操作コマンド（ノード/ワークベンチの追加・削除）の処理を配線する。
   const lifecycle = new EthereumNodeLifecycle(createDockerOperations(docker), {
-    profileDir: resolveProfileDir(),
+    profileDir,
   });
   // com.chainviz.managed ラベルから、前回起動時に addNode/addWorkbench で
   // 作成した既存コンテナを回収し、レジストリ（this.nodes/this.workbenches）を
@@ -176,6 +190,14 @@ export async function main(port: number = DEFAULT_PORT): Promise<void> {
       server.broadcastDiff(diff);
     })
     .catch((err) => console.error("[collector] block subscription failed:", err));
+
+  // C 層: ワークベンチが持つウォレットの残高・nonce を周期ポーリングし、
+  // WalletEntity としてワールドステート store 経由でフロントへ配信する（Issue #77）。
+  const walletTracker = new WalletTracker(poller, mnemonic);
+  walletTracker.subscribe((wallets) => {
+    const diff = store.applyWallets(wallets);
+    server.broadcastDiff(diff);
+  });
 }
 
 // 直接実行されたときだけサーバーを起動する（import 時は副作用なし）。

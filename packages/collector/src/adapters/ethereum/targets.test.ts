@@ -4,6 +4,7 @@ import {
   beaconStableIdForExecution,
   beaconTargets,
   EXECUTION_WS_PORT,
+  executionRpcUrls,
   executionTargets,
 } from "./targets.js";
 
@@ -415,5 +416,31 @@ describe("beaconStableIdForExecution", () => {
     expect(
       beaconStableIdForExecution(obs(), [beaconOther, beacon1]),
     ).toBe("other-project/beacon1");
+  });
+});
+
+describe("executionRpcUrls", () => {
+  it("builds an HTTP JSON-RPC URL for each execution node", () => {
+    expect(executionRpcUrls([obs()])).toEqual(["http://172.28.1.1:8545"]);
+  });
+
+  it("ignores beacon and workbench containers", () => {
+    expect(executionRpcUrls([beacon1, workbench])).toEqual([]);
+  });
+
+  it("lists every reachable execution node", () => {
+    const reth2 = obs({
+      stableId: "chainviz-ethereum/reth2",
+      labels: { "com.docker.compose.service": "reth2" },
+      ip: "172.28.1.2",
+    });
+    expect(executionRpcUrls([obs(), reth2])).toEqual([
+      "http://172.28.1.1:8545",
+      "http://172.28.1.2:8545",
+    ]);
+  });
+
+  it("skips execution containers without an IP", () => {
+    expect(executionRpcUrls([obs({ ip: "" })])).toEqual([]);
   });
 });

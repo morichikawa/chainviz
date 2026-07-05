@@ -393,4 +393,81 @@ describe("WorldStateStore.applyBlock", () => {
       store.getSnapshot().entities.filter((e) => e.kind === "block"),
     ).toHaveLength(1);
   });
+
+  describe("applyWallets", () => {
+    const observation = {
+      address: "0xabc",
+      ownerWorkbenchId: "chainviz-ethereum/workbench",
+      balance: "100",
+      nonce: 1,
+    };
+
+    it("adds a wallet entity and reflects it in the snapshot", () => {
+      const store = new WorldStateStore("ethereum");
+      const diff = store.applyWallets([observation]);
+      expect(diff).toHaveLength(1);
+      const wallets = store
+        .getSnapshot()
+        .entities.filter((e) => e.kind === "wallet");
+      expect(wallets).toEqual([
+        {
+          kind: "wallet",
+          address: "0xabc",
+          chainType: "ethereum",
+          balance: "100",
+          nonce: 1,
+          isSmartAccount: false,
+          ownerWorkbenchId: "chainviz-ethereum/workbench",
+          recentTxHashes: [],
+        },
+      ]);
+    });
+
+    it("updates balance/nonce on a subsequent poll", () => {
+      const store = new WorldStateStore();
+      store.applyWallets([observation]);
+      const diff = store.applyWallets([
+        { ...observation, balance: "250", nonce: 2 },
+      ]);
+      expect(diff).toEqual([
+        {
+          type: "entityUpdated",
+          id: "0xabc",
+          patch: { balance: "250", nonce: 2 },
+        },
+      ]);
+    });
+
+    it("orphans the wallet (owner -> null) instead of removing it when the workbench is gone", () => {
+      const store = new WorldStateStore();
+      store.applyWallets([observation]);
+      const diff = store.applyWallets([]);
+      expect(diff).toEqual([
+        {
+          type: "entityUpdated",
+          id: "0xabc",
+          patch: { ownerWorkbenchId: null },
+        },
+      ]);
+      const wallet = store
+        .getSnapshot()
+        .entities.find((e) => e.kind === "wallet");
+      expect(wallet).toMatchObject({
+        address: "0xabc",
+        ownerWorkbenchId: null,
+        balance: "100",
+      });
+    });
+
+    it("does not touch node/workbench entities added by applyInfra", () => {
+      const store = new WorldStateStore();
+      store.applyInfra([node()]);
+      store.applyWallets([observation]);
+      // ウォレット観測が空でも、ノードは applyWallets では消えない。
+      store.applyWallets([]);
+      expect(
+        store.getSnapshot().entities.filter((e) => e.kind === "node"),
+      ).toHaveLength(1);
+    });
+  });
 });
