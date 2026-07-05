@@ -216,10 +216,25 @@ interface ChainAdapter {
   chainType: ChainType;
   pollInfra(): Promise<Partial<WorldStateSnapshot>>; // A層
   subscribePeers(onUpdate: (edges: PeerEdge[]) => void): void; // B層
-  subscribeChainEvents(onEvent: (e: DiffEvent) => void): void; // C層
-  // D層はチェーンごとに任意（Ethereum のみ実装）
+  subscribeBlocks(onBlock: (block: BlockEntity) => void): Promise<void>; // B層
+  subscribeTransactions(onTx: (tx: TransactionEntity) => void): Promise<void>; // C層
+  // D層の購読口は Phase 4 の設計時に追加する（チェーンごとに任意）
 }
 ```
+
+当初は C/D 層の入口として層をまたぐ汎用の
+`subscribeChainEvents(onEvent: (e: DiffEvent) => void)` を置いていたが、
+実装では層ごとに関心を分けるため**層ごとの型付きコールバック**へ発展させた。
+型もそれに合わせ、未使用となった汎用口は削除している（先回り実装をしない）:
+
+- `subscribeBlocks` — B層。各 Execution ノードの `eth_subscribe(newHeads)` を
+  購読し、ブロック受信時刻を束ねて渡す。
+- `subscribeTransactions` — C層。`newPendingTransactions`（pending 検知）と
+  `newHeads`（ブロック取り込み検知）を購読し、状態変化した tx を渡す。
+
+いずれも `BlockEntity` / `TransactionEntity` を返し、ワールドステートへの反映
+（差分計算・エンティティ更新）は store 側が担う。チェーン固有の RPC メソッド名は
+アダプタ配下に閉じ込め、これらのコールバックにはチェーン非依存の型だけを流す。
 
 `ChainAdapter` を実装し、`profiles/<chainName>/` を追加するだけで
 新チェーンに対応する。既存プロファイルのコードは変更しない

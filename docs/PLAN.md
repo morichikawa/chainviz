@@ -246,7 +246,7 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
 
 **collector**:
 
-- [ ] reth WSでnewPendingTransactions/newHeadsを購読しtxライフサイクル
+- [x] reth WSでnewPendingTransactions/newHeadsを購読しtxライフサイクル
       (pending→included)を追跡する
       [#76](https://github.com/morichikawa/chainviz/issues/76)
 - [ ] ワークベンチのウォレット残高・nonceをポーリングしWalletEntityとして
