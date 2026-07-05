@@ -3,8 +3,9 @@ import type { ContainerObservation } from "../../docker/types.js";
 import {
   beaconStableIdForExecution,
   beaconTargets,
-  EXECUTION_HTTP_PORT,
+  EXECUTION_RPC_PORT,
   EXECUTION_WS_PORT,
+  executionRpcUrls,
   executionTargets,
 } from "./targets.js";
 
@@ -141,7 +142,7 @@ describe("executionTargets", () => {
       {
         stableId: "chainviz-ethereum/reth1",
         wsUrl: `ws://172.28.1.1:${EXECUTION_WS_PORT}`,
-        rpcUrl: `http://172.28.1.1:${EXECUTION_HTTP_PORT}`,
+        rpcUrl: `http://172.28.1.1:${EXECUTION_RPC_PORT}`,
         // 対応する beacon が観測値に無いので自身の stableId にフォールバック。
         receivedAtKey: "chainviz-ethereum/reth1",
       },
@@ -219,7 +220,7 @@ describe("executionTargets", () => {
       {
         stableId: "chainviz-ethereum/reth1",
         wsUrl: `ws://172.28.1.5:${EXECUTION_WS_PORT}`,
-        rpcUrl: `http://172.28.1.5:${EXECUTION_HTTP_PORT}`,
+        rpcUrl: `http://172.28.1.5:${EXECUTION_RPC_PORT}`,
         receivedAtKey: "chainviz-ethereum/reth1",
       },
     ]);
@@ -283,7 +284,7 @@ describe("executionTargets", () => {
       {
         stableId: "chainviz-ethereum/geth1",
         wsUrl: `ws://172.28.1.3:${EXECUTION_WS_PORT}`,
-        rpcUrl: `http://172.28.1.3:${EXECUTION_HTTP_PORT}`,
+        rpcUrl: `http://172.28.1.3:${EXECUTION_RPC_PORT}`,
         receivedAtKey: "chainviz-ethereum/beacon1",
       },
     ]);
@@ -419,5 +420,31 @@ describe("beaconStableIdForExecution", () => {
     expect(
       beaconStableIdForExecution(obs(), [beaconOther, beacon1]),
     ).toBe("other-project/beacon1");
+  });
+});
+
+describe("executionRpcUrls", () => {
+  it("builds an HTTP JSON-RPC URL for each execution node", () => {
+    expect(executionRpcUrls([obs()])).toEqual(["http://172.28.1.1:8545"]);
+  });
+
+  it("ignores beacon and workbench containers", () => {
+    expect(executionRpcUrls([beacon1, workbench])).toEqual([]);
+  });
+
+  it("lists every reachable execution node", () => {
+    const reth2 = obs({
+      stableId: "chainviz-ethereum/reth2",
+      labels: { "com.docker.compose.service": "reth2" },
+      ip: "172.28.1.2",
+    });
+    expect(executionRpcUrls([obs(), reth2])).toEqual([
+      "http://172.28.1.1:8545",
+      "http://172.28.1.2:8545",
+    ]);
+  });
+
+  it("skips execution containers without an IP", () => {
+    expect(executionRpcUrls([obs({ ip: "" })])).toEqual([]);
   });
 });

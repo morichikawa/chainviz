@@ -28,6 +28,8 @@ import { BlockPropagationTracker } from "./blocks.js";
 import { classifyContainer } from "./classify.js";
 import {
   createFetchEthRpcClient,
+  getBlockByHash,
+  getTransactionByHash,
   type EthRpcClient,
 } from "./eth-rpc-client.js";
 import {
@@ -40,6 +42,10 @@ import { createFetchHttpClient, type HttpClient } from "./http-client.js";
 import { toPeerEdges, type BeaconNodePeers } from "./peers.js";
 import { beaconTargets, executionTargets } from "./targets.js";
 import { TransactionLifecycleTracker } from "./transactions.js";
+import {
+  deriveWalletAddress,
+  workbenchWalletIndex,
+} from "./wallet-derivation.js";
 
 /** ピアポーリングの既定間隔。 */
 export const PEER_POLL_INTERVAL_MS = 3000;
@@ -53,6 +59,14 @@ export interface EthereumAdapterDeps {
   peerPollIntervalMs?: number;
   /** テスト用の時刻ソース。既定は Date.now。 */
   now?: () => number;
+  /**
+   * ワークベンチのウォレットアドレス導出に使う mnemonic（values.env 由来）。
+   * 与えられた場合、A 層で WorkbenchEntity.walletIds に主たるウォレットの
+   * アドレスを載せる。未指定なら walletIds は空のまま。
+   */
+  mnemonic?: string;
+  /** mnemonic + index からアドレスを導出する関数（テスト差し替え用）。 */
+  deriveAddress?: (mnemonic: string, index: number) => string;
 }
 
 /**
@@ -81,6 +95,8 @@ export class EthereumAdapter implements ChainAdapter {
   private readonly ethRpc: EthRpcClient;
   private readonly peerPollIntervalMs: number;
   private readonly now: () => number;
+  private readonly mnemonic?: string;
+  private readonly deriveAddress: (mnemonic: string, index: number) => string;
   private readonly blockTracker = new BlockPropagationTracker();
   private readonly txTracker = new TransactionLifecycleTracker();
 
@@ -102,6 +118,8 @@ export class EthereumAdapter implements ChainAdapter {
     this.ethRpc = deps.ethRpcClient ?? createFetchEthRpcClient();
     this.peerPollIntervalMs = deps.peerPollIntervalMs ?? PEER_POLL_INTERVAL_MS;
     this.now = deps.now ?? (() => Date.now());
+    this.mnemonic = deps.mnemonic;
+    this.deriveAddress = deps.deriveAddress ?? deriveWalletAddress;
   }
 
   /** A 層: Docker をポーリングし、コンテナを NodeEntity / WorkbenchEntity へ正規化する。 */
@@ -129,7 +147,7 @@ export class EthereumAdapter implements ChainAdapter {
         ...infra,
         kind: "workbench",
         label: classification.label,
-        walletIds: [],
+        walletIds: this.workbenchWalletIds(obs),
       };
     }
 
@@ -143,6 +161,19 @@ export class EthereumAdapter implements ChainAdapter {
       blockHeight: 0,
       headBlockHash: "",
     };
+  }
+
+  /**
+   * ワークベンチが主に使うウォレットのアドレスを walletIds として返す。導出
+   * インデックスはコンテナのラベル（無ければ既定 0）から決め、mnemonic と
+   * 合わせて WalletTracker と同じアドレスを再現する。これにより A 層のポーリング
+   * ごとに walletIds が安定し（毎回同じアドレス）、C 層の WalletEntity と
+   * 突き合わせられる。mnemonic 未設定なら空配列。
+   */
+  private workbenchWalletIds(obs: ContainerObservation): string[] {
+    if (!this.mnemonic) return [];
+    const index = workbenchWalletIndex(obs.labels);
+    return [this.deriveAddress(this.mnemonic, index)];
   }
 
   // --- B 層: ピア接続 ---
@@ -289,7 +320,7 @@ export class EthereumAdapter implements ChainAdapter {
     onTx: (tx: TransactionEntity) => void,
   ): Promise<void> {
     try {
-      const detail = await this.ethRpc.getTransactionByHash(rpcUrl, hash);
+      const detail = await getTransactionByHash(this.ethRpc, rpcUrl, hash);
       if (!detail) return;
       const entity = this.txTracker.recordPending(detail);
       if (entity) onTx(entity);
@@ -310,7 +341,7 @@ export class EthereumAdapter implements ChainAdapter {
   ): Promise<void> {
     if (!this.markBlockProcessed(blockHash)) return;
     try {
-      const block = await this.ethRpc.getBlockByHash(rpcUrl, blockHash);
+      const block = await getBlockByHash(this.ethRpc, rpcUrl, blockHash);
       if (!block) {
         // ブロックがまだ取得できない（伝播遅延など）。処理済みマークを外し、
         // 同一ブロックを通知する後続ノードからの newHeads で再試行できるように

@@ -1,8 +1,16 @@
-// reth の HTTP JSON-RPC（POST）へ eth_getTransactionByHash /
-// eth_getBlockByHash を投げる薄いクライアント。newPendingTransactions で得た
-// tx ハッシュの詳細（from/to）や、ブロックに含まれる tx 一覧を取得するために
-// 使う。fetch 依存と JSON-RPC メソッド名という Ethereum 固有の語彙はこの
-// ファイル（ChainAdapter 実装の内側）に閉じ込める。
+// Execution Layer クライアント（reth 等）へ HTTP JSON-RPC で問い合わせる部分。
+// fetch への依存と JSON-RPC の語彙（eth_getBalance / eth_getTransactionByHash 等）は
+// このファイル（ChainAdapter 実装の内側）に閉じ込め、上位ロジックは
+// EthRpcClient インターフェース（汎用トランスポート）と、その上に載る
+// ドメイン固有ヘルパー関数だけに依存して実ノードなしでテストできるようにする。
+
+export interface EthRpcClient {
+  /**
+   * 指定 URL へ JSON-RPC の単発リクエストを送り、result を返す。HTTP エラー・
+   * JSON-RPC エラー・タイムアウトは例外として投げる。
+   */
+  call<T>(url: string, method: string, params: unknown[]): Promise<T>;
+}
 
 /** eth_getTransactionByHash / ブロック内 tx から取り出す最小限の tx 情報。 */
 export interface RpcTransaction {
@@ -16,23 +24,6 @@ export interface RpcTransaction {
 export interface RpcBlock {
   hash: string;
   transactions: RpcTransaction[];
-}
-
-export interface EthRpcClient {
-  /**
-   * eth_getTransactionByHash で tx の詳細を取得する。未知のハッシュ（まだ
-   * 伝播していない等）では null を返す。
-   */
-  getTransactionByHash(
-    rpcUrl: string,
-    hash: string,
-  ): Promise<RpcTransaction | null>;
-
-  /**
-   * eth_getBlockByHash(fullTx=true) でブロックを取得し、含まれる tx 本体を
-   * 返す。未知のブロックでは null を返す。
-   */
-  getBlockByHash(rpcUrl: string, blockHash: string): Promise<RpcBlock | null>;
 }
 
 interface JsonRpcResponse<T> {
@@ -51,6 +42,69 @@ interface RawBlock {
   transactions?: unknown;
 }
 
+/** グローバル fetch を用いた EthRpcClient 実装。 */
+export function createFetchEthRpcClient(timeoutMs = 3000): EthRpcClient {
+  return {
+    async call<T>(url: string, method: string, params: unknown[]): Promise<T> {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+          signal: controller.signal,
+        });
+        if (!res.ok) {
+          throw new Error(`RPC ${method} on ${url} failed with status ${res.status}`);
+        }
+        const body = (await res.json()) as JsonRpcResponse<T>;
+        if (body.error) {
+          throw new Error(
+            `RPC ${method} on ${url} returned error ${body.error.code}: ${body.error.message}`,
+          );
+        }
+        if (body.result === undefined) {
+          throw new Error(`RPC ${method} on ${url} returned no result`);
+        }
+        return body.result;
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+  };
+}
+
+/**
+ * eth_getBalance の結果（16 進 wei）を 10 進の wei 文字列にして返す。
+ * WalletEntity.balance は wei を文字列で保持する（精度落ち防止）ため、
+ * BigInt を経由して桁落ちなく変換する。
+ */
+export async function fetchBalanceWei(
+  rpc: EthRpcClient,
+  url: string,
+  address: string,
+): Promise<string> {
+  const hex = await rpc.call<string>(url, "eth_getBalance", [address, "latest"]);
+  return BigInt(hex).toString(10);
+}
+
+/**
+ * eth_getTransactionCount（latest）の結果（16 進）を数値の nonce にして返す。
+ * nonce は tx 通し番号でありアカウント寿命内は安全に number に収まる。
+ */
+export async function fetchNonce(
+  rpc: EthRpcClient,
+  url: string,
+  address: string,
+): Promise<number> {
+  const hex = await rpc.call<string>(url, "eth_getTransactionCount", [
+    address,
+    "latest",
+  ]);
+  return Number(BigInt(hex));
+}
+
 /** 生の JSON-RPC tx オブジェクトを RpcTransaction へ正規化する（不正なら null）。 */
 function normalizeTransaction(raw: unknown): RpcTransaction | null {
   if (typeof raw !== "object" || raw === null) return null;
@@ -61,58 +115,38 @@ function normalizeTransaction(raw: unknown): RpcTransaction | null {
 }
 
 /**
- * fetch を用いた EthRpcClient 実装。個々の呼び出しは timeoutMs で打ち切る
- * （応答が無い reth にぶら下がり続けないため）。JSON-RPC エラー・HTTP エラーは
- * 例外として送出し、呼び出し側（アダプタ）でログ・握り込みを判断させる。
+ * eth_getTransactionByHash で tx の詳細を取得する。未知のハッシュ（まだ
+ * 伝播していない等）では null を返す。JSON-RPC では未知の tx は result=null で
+ * 返るため、正規化して null を返す。
  */
-export function createFetchEthRpcClient(timeoutMs = 3000): EthRpcClient {
-  async function call<T>(
-    rpcUrl: string,
-    method: string,
-    params: unknown[],
-  ): Promise<T> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const res = await fetch(rpcUrl, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-        signal: controller.signal,
-      });
-      if (!res.ok) {
-        throw new Error(`POST ${rpcUrl} ${method} failed with status ${res.status}`);
-      }
-      const body = (await res.json()) as JsonRpcResponse<T>;
-      if (body.error) {
-        throw new Error(
-          `${method} returned JSON-RPC error ${body.error.code}: ${body.error.message}`,
-        );
-      }
-      return body.result as T;
-    } finally {
-      clearTimeout(timer);
-    }
-  }
+export async function getTransactionByHash(
+  rpc: EthRpcClient,
+  rpcUrl: string,
+  hash: string,
+): Promise<RpcTransaction | null> {
+  const raw = await rpc.call<unknown>(rpcUrl, "eth_getTransactionByHash", [hash]);
+  return normalizeTransaction(raw);
+}
 
-  return {
-    async getTransactionByHash(rpcUrl, hash) {
-      const raw = await call<unknown>(rpcUrl, "eth_getTransactionByHash", [hash]);
-      return normalizeTransaction(raw);
-    },
-    async getBlockByHash(rpcUrl, blockHash) {
-      const raw = await call<RawBlock | null>(rpcUrl, "eth_getBlockByHash", [
-        blockHash,
-        true,
-      ]);
-      if (typeof raw !== "object" || raw === null) return null;
-      if (typeof raw.hash !== "string") return null;
-      const txs = Array.isArray(raw.transactions)
-        ? raw.transactions
-            .map((t) => normalizeTransaction(t))
-            .filter((t): t is RpcTransaction => t !== null)
-        : [];
-      return { hash: raw.hash, transactions: txs };
-    },
-  };
+/**
+ * eth_getBlockByHash(fullTx=true) でブロックを取得し、含まれる tx 本体を
+ * 返す。未知のブロックでは null を返す。
+ */
+export async function getBlockByHash(
+  rpc: EthRpcClient,
+  rpcUrl: string,
+  blockHash: string,
+): Promise<RpcBlock | null> {
+  const raw = await rpc.call<RawBlock | null>(rpcUrl, "eth_getBlockByHash", [
+    blockHash,
+    true,
+  ]);
+  if (typeof raw !== "object" || raw === null) return null;
+  if (typeof raw.hash !== "string") return null;
+  const txs = Array.isArray(raw.transactions)
+    ? raw.transactions
+        .map((t) => normalizeTransaction(t))
+        .filter((t): t is RpcTransaction => t !== null)
+    : [];
+  return { hash: raw.hash, transactions: txs };
 }

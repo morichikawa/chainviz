@@ -13,11 +13,13 @@ const COMPOSE_SERVICE_LABEL = "com.docker.compose.service";
 export const EXECUTION_WS_PORT = 8546;
 
 /**
- * reth の HTTP JSON-RPC のデフォルトポート。newPendingTransactions で得た
- * tx ハッシュの詳細（from/to）や、ブロックに含まれる tx 一覧を
- * eth_getTransactionByHash / eth_getBlockByHash で追加取得するために使う。
+ * reth の HTTP JSON-RPC のデフォルトポート。ウォレット残高・nonce の単発
+ * 問い合わせ（eth_getBalance / eth_getTransactionCount）や、
+ * newPendingTransactions で得た tx ハッシュの詳細（from/to）・ブロックに
+ * 含まれる tx 一覧（eth_getTransactionByHash / eth_getBlockByHash）を追加取得
+ * するために使う。
  */
-export const EXECUTION_HTTP_PORT = 8545;
+export const EXECUTION_RPC_PORT = 8545;
 
 /** Consensus Layer（ビーコン）クライアントとして扱う識別子。 */
 const CONSENSUS_CLIENTS = ["lighthouse", "prysm", "teku", "nimbus"];
@@ -144,6 +146,27 @@ export function beaconStableIdForExecution(
 }
 
 /**
+ * ウォレットの残高・nonce を問い合わせるための Execution ノードの HTTP JSON-RPC
+ * URL を観測値から列挙する。残高・nonce はチェーン全体の状態でありどの
+ * Execution ノードに聞いても同じなので、呼び出し側は先頭から順に到達できた
+ * ものを 1 つ使えばよい。execution クライアントであり IP が取れるコンテナだけを
+ * 対象にする。
+ */
+export function executionRpcUrls(
+  observations: ContainerObservation[],
+): string[] {
+  const urls: string[] = [];
+  for (const obs of observations) {
+    if (!obs.ip) continue;
+    const { kind, clientType } = classifyContainer(obs);
+    if (kind !== "node") continue;
+    if (!EXECUTION_CLIENTS.includes(clientType)) continue;
+    urls.push(`http://${obs.ip}:${EXECUTION_RPC_PORT}`);
+  }
+  return urls;
+}
+
+/**
  * ブロック受信時刻の購読対象になる Execution ノードを観測値から抽出する。
  * execution クライアントであり IP が取れるコンテナだけを対象にする。
  * receivedAt のキーには、同じ論理ノードの beacon の stableId を割り当てる
@@ -162,7 +185,7 @@ export function executionTargets(
     targets.push({
       stableId: obs.stableId,
       wsUrl: `ws://${obs.ip}:${EXECUTION_WS_PORT}`,
-      rpcUrl: `http://${obs.ip}:${EXECUTION_HTTP_PORT}`,
+      rpcUrl: `http://${obs.ip}:${EXECUTION_RPC_PORT}`,
       receivedAtKey: beaconStableId ?? obs.stableId,
     });
   }

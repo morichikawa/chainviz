@@ -8,12 +8,15 @@ import type {
   DockerOperations,
   LabeledContainer,
 } from "../../docker/operations.js";
+import { walletTrackingDisabledWarning } from "./mnemonic.js";
 import {
   allocateNodeIndex,
+  allocateWalletIndex,
   EthereumNodeLifecycle,
   parseMnemonic,
   parseNodeIndex,
 } from "./node-lifecycle.js";
+import { WALLET_INDEX_LABEL } from "./wallet-derivation.js";
 
 /** 作成した spec を記録し、削除された ID を記録するフェイク operations。 */
 function fakeOps(
@@ -105,6 +108,30 @@ describe("parseMnemonic", () => {
   });
 });
 
+describe("walletTrackingDisabledWarning", () => {
+  it("returns a warning message when the mnemonic is undefined", () => {
+    expect(walletTrackingDisabledWarning(undefined)).toMatch(
+      /wallet tracking disabled/,
+    );
+  });
+
+  it("returns undefined when a mnemonic is present", () => {
+    expect(
+      walletTrackingDisabledWarning("sleep moment list remain"),
+    ).toBeUndefined();
+  });
+
+  it("returns a warning for an empty-string mnemonic", () => {
+    // parseMnemonic は EL_AND_CL_MNEMONIC="" を空文字列として返す。ウォレット
+    // 層を無効化する側（wallet-tracker / adapters/ethereum/index）はいずれも
+    // falsy 判定（!this.mnemonic）で無効化するため、空文字列でも追跡は無効
+    // 化される。黙って無効化されないよう、警告の判定も falsy に揃える。
+    expect(walletTrackingDisabledWarning("")).toMatch(
+      /wallet tracking disabled/,
+    );
+  });
+});
+
 describe("allocateNodeIndex", () => {
   it("starts at 3 when 1 and 2 are used", () => {
     const used = new Set(["172.28.1.1", "172.28.1.2", "172.28.2.1", "172.28.2.2"]);
@@ -154,6 +181,20 @@ describe("allocateNodeIndex", () => {
     // 3 taken as index, 4 blocked by execution IP, 5 blocked by consensus IP.
     const used = new Set(["172.28.1.4", "172.28.2.5"]);
     expect(allocateNodeIndex(used, new Set([3]))).toBe(6);
+  });
+});
+
+describe("allocateWalletIndex", () => {
+  it("starts at 1 (reserving 0 for the compose workbench)", () => {
+    expect(allocateWalletIndex(new Set())).toBe(1);
+  });
+
+  it("returns the smallest free index", () => {
+    expect(allocateWalletIndex(new Set([1, 2]))).toBe(3);
+  });
+
+  it("fills a gap left by a removed workbench", () => {
+    expect(allocateWalletIndex(new Set([1, 3]))).toBe(2);
   });
 });
 
@@ -229,6 +270,27 @@ describe("EthereumNodeLifecycle.recoverManagedContainers", () => {
 
     await lifecycle.removeWorkbench("chainviz-ethereum/Alice");
     expect(ops.removed).toEqual(["wb-cid"]);
+  });
+
+  it("restores the recovered workbench's wallet index so later allocations avoid it", async () => {
+    // ラベルに index=1 を持つワークベンチを回収した後の addWorkbench は、
+    // 1 を再利用せず次の空き（2）を割り当てる。
+    const recovered: LabeledContainer = {
+      id: "wb-cid",
+      labels: {
+        "com.docker.compose.project": "chainviz-ethereum",
+        "com.docker.compose.service": "Alice",
+        "com.chainviz.managed": "true",
+        "com.chainviz.role": "workbench",
+        [WALLET_INDEX_LABEL]: "1",
+      },
+    };
+    const ops = fakeOps({ managedContainers: [recovered] });
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+    await lifecycle.recoverManagedContainers();
+
+    await lifecycle.addWorkbench("Bob");
+    expect(ops.created[0]?.labels?.[WALLET_INDEX_LABEL]).toBe("2");
   });
 
   it("allocates the next free index after recovering an existing node", async () => {
@@ -675,6 +737,27 @@ describe("EthereumNodeLifecycle workbench commands", () => {
     expect(wb.entrypoint).toEqual(["/bin/sh", "-c", "sleep infinity"]);
     expect(wb.labels?.["com.docker.compose.service"]).toBe("Alice");
     expect(wb.env?.ETH_RPC_URL).toBe("http://172.28.1.1:8545");
+  });
+
+  it("assigns distinct wallet derivation indexes starting at 1", async () => {
+    // 0 は compose 由来のワークベンチ用に予約し、collector が作成する
+    // ワークベンチには 1, 2, ... を割り当てて別々のアドレスにする。
+    const ops = fakeOps();
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+    await lifecycle.addWorkbench("Alice");
+    await lifecycle.addWorkbench("Bob");
+    const indexes = ops.created.map((s) => s.labels?.[WALLET_INDEX_LABEL]);
+    expect(indexes).toEqual(["1", "2"]);
+  });
+
+  it("reuses a freed wallet index after a workbench is removed", async () => {
+    const ops = fakeOps();
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+    await lifecycle.addWorkbench("Alice"); // index 1
+    await lifecycle.addWorkbench("Bob"); // index 2
+    await lifecycle.removeWorkbench("chainviz-ethereum/Alice"); // frees index 1
+    await lifecycle.addWorkbench("Carol"); // reuses index 1
+    expect(ops.created[2]?.labels?.[WALLET_INDEX_LABEL]).toBe("1");
   });
 
   it("disambiguates duplicate workbench labels", async () => {

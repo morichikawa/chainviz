@@ -108,6 +108,27 @@ describe("EthereumAdapter.pollInfra", () => {
     expect(wb.process.name).toBe("sh");
   });
 
+  it("sets walletIds from the derived address when a mnemonic is configured", async () => {
+    // mnemonic を渡すと、ワークベンチのラベル index（無ければ 0）から導出した
+    // アドレスが walletIds に載る。deriveAddress を差し替えて決定的に検証する。
+    const adapter = new EthereumAdapter(
+      new DockerPoller(clientFrom([workbenchFixture])),
+      { mnemonic: "test mnemonic", deriveAddress: (_m, i) => `0xindex${i}` },
+    );
+    const partial = await adapter.pollInfra();
+    const wb = partial.entities?.[0] as WorkbenchEntity;
+    expect(wb.walletIds).toEqual(["0xindex0"]);
+  });
+
+  it("keeps walletIds empty when no mnemonic is configured", async () => {
+    const adapter = new EthereumAdapter(
+      new DockerPoller(clientFrom([workbenchFixture])),
+    );
+    const partial = await adapter.pollInfra();
+    const wb = partial.entities?.[0] as WorkbenchEntity;
+    expect(wb.walletIds).toEqual([]);
+  });
+
   it("normalizes a mixed set of containers", async () => {
     const adapter = new EthereumAdapter(
       new DockerPoller(clientFrom([rethFixture, workbenchFixture])),

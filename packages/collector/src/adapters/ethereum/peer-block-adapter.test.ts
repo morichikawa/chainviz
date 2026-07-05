@@ -182,13 +182,18 @@ function stubRpcClient(data: {
   const txCalls: string[] = [];
   const blockCalls: string[] = [];
   const client: EthRpcClient = {
-    async getTransactionByHash(_rpcUrl, hash) {
-      txCalls.push(hash);
-      return data.txs?.[hash] ?? null;
-    },
-    async getBlockByHash(_rpcUrl, blockHash) {
-      blockCalls.push(blockHash);
-      return data.blocks?.[blockHash] ?? null;
+    async call<T>(_url: string, method: string, params: unknown[]): Promise<T> {
+      if (method === "eth_getTransactionByHash") {
+        const hash = params[0] as string;
+        txCalls.push(hash);
+        return (data.txs?.[hash] ?? null) as T;
+      }
+      if (method === "eth_getBlockByHash") {
+        const blockHash = params[0] as string;
+        blockCalls.push(blockHash);
+        return (data.blocks?.[blockHash] ?? null) as T;
+      }
+      throw new Error(`unexpected RPC method ${method}`);
     },
   };
   return { client, txCalls, blockCalls };
@@ -768,11 +773,11 @@ describe("EthereumAdapter.subscribeTransactions", () => {
     };
     let blockAttempts = 0;
     const rpc: EthRpcClient = {
-      getTransactionByHash: async () => null,
-      // 1 回目の取得は null（まだ伝播していない）、2 回目以降は成功。
-      getBlockByHash: async () => {
+      async call<T>(_url: string, method: string): Promise<T> {
+        if (method === "eth_getTransactionByHash") return null as T;
+        // 1 回目の取得は null（まだ伝播していない）、2 回目以降は成功。
         blockAttempts += 1;
-        return blockAttempts === 1 ? null : block;
+        return (blockAttempts === 1 ? null : block) as T;
       },
     };
     const adapter = new EthereumAdapter(poller, {
@@ -820,11 +825,11 @@ describe("EthereumAdapter.subscribeTransactions", () => {
     };
     let blockAttempts = 0;
     const rpc: EthRpcClient = {
-      getTransactionByHash: async () => null,
-      getBlockByHash: async () => {
+      async call<T>(_url: string, method: string): Promise<T> {
+        if (method === "eth_getTransactionByHash") return null as T;
         blockAttempts += 1;
         if (blockAttempts === 1) throw new Error("rpc timeout");
-        return block;
+        return block as T;
       },
     };
     const adapter = new EthereumAdapter(poller, {
@@ -854,10 +859,12 @@ describe("EthereumAdapter.subscribeTransactions", () => {
     );
     const ws = controllableWsClient();
     const rpc: EthRpcClient = {
-      getTransactionByHash: async () => {
-        throw new Error("rpc down");
+      async call<T>(_url: string, method: string): Promise<T> {
+        if (method === "eth_getTransactionByHash") {
+          throw new Error("rpc down");
+        }
+        return null as T;
       },
-      getBlockByHash: async () => null,
     };
     const adapter = new EthereumAdapter(poller, {
       ethWsClient: ws.client,
