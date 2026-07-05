@@ -20,7 +20,6 @@
 // 合わせて reth<n> / beacon<n>（n>=3）とし、reth と beacon で同じ n を共有する
 // ことで両者が同じ論理ノードとして対応付く。
 
-import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { NodeLifecycle } from "../../commands/lifecycle.js";
 import type {
@@ -28,6 +27,9 @@ import type {
   DockerOperations,
   LabeledContainer,
 } from "../../docker/operations.js";
+import { readProfileMnemonic } from "./mnemonic.js";
+
+export { parseMnemonic } from "./mnemonic.js";
 
 const COMPOSE_PROJECT_LABEL = "com.docker.compose.project";
 const COMPOSE_SERVICE_LABEL = "com.docker.compose.service";
@@ -116,18 +118,6 @@ export function parseNodeIndex(service: string): number | undefined {
   if (!match) return undefined;
   const index = Number.parseInt(match[1] as string, 10);
   return Number.isFinite(index) ? index : undefined;
-}
-
-/**
- * values.env から EL_AND_CL_MNEMONIC の値を取り出す。ワークベンチが
- * cast --mnemonic で使うため。見つからなければ undefined。
- */
-export function parseMnemonic(valuesEnv: string): string | undefined {
-  const match = valuesEnv.match(
-    /^\s*export\s+EL_AND_CL_MNEMONIC=(?:"([^"]*)"|'([^']*)'|(\S+))/m,
-  );
-  if (!match) return undefined;
-  return match[1] ?? match[2] ?? match[3];
 }
 
 /**
@@ -496,14 +486,6 @@ export class EthereumNodeLifecycle implements NodeLifecycle {
   }
 
   private readMnemonic(): string | undefined {
-    try {
-      const content = readFileSync(
-        path.join(this.cfg.profileDir, "values.env"),
-        "utf8",
-      );
-      return parseMnemonic(content);
-    } catch {
-      return undefined;
-    }
+    return readProfileMnemonic(this.cfg.profileDir);
   }
 }
