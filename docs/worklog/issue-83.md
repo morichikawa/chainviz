@@ -163,3 +163,92 @@
     次に store.ts を触る機会があれば直すとよい。
   - 実際の描画(パルスがマゼンタで走って消えること・ピア/所有エッジとの
     見分け)は静的確認の範囲外。chainviz-qa の実機検証に委ねる。
+
+### 2026-07-05 Issue #83 QA検証記録
+- 担当: qa
+- ブランチ: issue-83-operation-edge-render
+- 結果: 合格。完了条件「workbench から cast を実行すると、workbench から
+  reth1 へのエッジ上にパルスが流れる様子が見える」を満たすことを実機で確認した。
+- 実施内容:
+  - 静的ゲート: `pnpm lint` / `pnpm build` / `pnpm test` を全パッケージで実行し
+    全て成功（frontend 411件・collector 498件、lint/build もエラーなし）。
+  - モックデータでのブラウザ確認: `pnpm dev`（モッククライアント）で frontend を
+    起動し、Playwright（Chromium headless）で描画を確認した。live 差分 tick ごとに
+    `workbench-alice → reth-node-1` の `eth_sendRawTransaction` 観測が発生し、
+    操作エッジ（マゼンタの点線）上を発光パルスが流れることをスクリーンショットで
+    確認した。方向は source=ワークベンチ → target=ノードで正しい。
+  - 実 Docker + 実 collector での end-to-end 確認:
+    - `profiles/ethereum` を `docker compose up -d` し、reth1 でブロックが進行する
+      ことを確認（block 0 → 1 → … と増加）。
+    - ビルド済み collector（`dist/index.js`）を起動（WebSocket 4123 / ロギング
+      プロキシ 4001）。
+    - workbench コンテナから `cast block-number` / `cast chain-id` / 実 tx を送る
+      `cast send`（account0 = ワークベンチウォレット 0x2BB7…、mnemonic はプロファイル
+      共有）を実行。WebSocket テストクライアントで、実 collector が
+      `operationObserved`（`fromWorkbenchId: chainviz-ethereum/workbench`,
+      `toNodeId: chainviz-ethereum/reth1`, `operation: eth_blockNumber` 等,
+      `observedAt`）を frontend が消費する形そのままで配信することを確認した。
+      端点解決（呼び出し元 IP 172.28.0.2 → ワークベンチ、転送先 172.28.1.1 → reth1）
+      も期待通り動作した。
+    - `VITE_COLLECTOR_URL=ws://127.0.0.1:4123` で frontend を実 collector に接続し
+      （ヘッダのバッジが「接続済み」= 非モック）、workbench から `cast send` を
+      繰り返し実行。Playwright で、ワークベンチ → reth1 の操作エッジ上をマゼンタの
+      パルスが実際に流れる様子をスクリーンショットで確認した（観測窓 30 秒で
+      パルス出現を 27 回検出）。実 tx により当該ウォレットの nonce が 1 に増加した
+      ことも画面上で確認した。
+  - 色・見た目の区別: 操作エッジ = マゼンタ（`--op-edge` = rgb(255,93,177) /
+    #ff5db1、点線 3/4）、C層の所有エッジ = 琥珀（#e0a94f、点線 6/4）、B層のピア
+    エッジ = ネットワーク色パレット（モックの networkId 1337 は #f5b544）で、
+    操作エッジのマゼンタは所有・ピアのどちらとも別系統として同一画面上で明確に
+    見分けられることを確認した。
+- 注意点:
+  - 実環境の検証後、起動した collector プロセス・vite dev サーバ・Docker スタック
+    （`docker compose down -v`）はすべて停止・破棄済み。リスニングポート
+    4123/4001/5178/5179 の残留が無いことを確認した。
+  - `operationObserved` はどの JSON-RPC メソッドでも操作エッジを生成する（method →
+    operation）。read 系（eth_blockNumber 等）でもパルスが流れるため、`cast send`
+    に限らず任意の cast 実行でエッジ描画を確認できる。
+
+### 2026-07-05 Issue #83 QA報告の訂正（P2Pエッジ色の記述について）
+- 担当: qa
+- ブランチ: issue-83-operation-edge-render
+- 経緯: 上の「QA検証記録」で、色の区別を説明する際に「B層のピアエッジ =
+  ネットワーク色パレット（モックの networkId 1337 は #f5b544）」と書いた。
+  この記述について、CONCEPT/ARCHITECTURE では P2P エッジが「青緑系」だった
+  はずでは、という疑義が出たため、実装と画像を再確認して訂正する。
+- 訂正の対象と、何が誤解を招いたか:
+  - 実測値「networkId 1337 は #f5b544（アンバー）」という記述自体は正しい。
+    しかし「青緑系」という当時流布していた前提を否定も肯定もせず実測値だけを
+    並べたため、あたかも P2P エッジの色が特定の1色に固定されているかのように
+    読めてしまった。P2P エッジ色が固定であるという含意を与えた点が不適切だった。
+- 正しい実態（`packages/frontend/src/entities/peerEdge.ts` を再確認）:
+  - P2P（B層ピア）エッジの色は固定ではない。`networkIdColor()` が `networkId`
+    文字列のハッシュを 6 色パレット長で割った剰余で決定的に1色を選ぶ。
+  - パレット `NETWORK_COLORS` は次の6色:
+    `#7db8ff`(青) / `#38d39f`(青緑) / `#f5b544`(アンバー) / `#d59bff`(紫) /
+    `#ff8f6b`(オレンジ) / `#5ad1e8`(シアン)。「青緑」はこの6色のうちの1色で
+    あって、P2P エッジ共通の色ではない。
+  - 今回のテスト環境の `networkId`(1337) はハッシュの結果、たまたまアンバー
+    `#f5b544` が選ばれていた。別の `networkId` なら別の色になる。
+  - CONCEPT.md / ARCHITECTURE.md にも「青緑系」という具体的な色指定は無い。
+    CONCEPT.md には「どのチェーン（ネットワーク）に所属しているかをエッジの
+    色やグループ枠で表現」とあるのみで、具体的な色相は実装（ハッシュ配色）に
+    委ねられている。「青緑系」はどこかの時点で生まれた思い込みだった。
+- あわせて確認した別の論点（P2P エッジと所有エッジの色の近さ）:
+  - `canvas-full.png` を実際に見ると、上部の P2P エッジ（reth-1↔reth-2・
+    実線・アンバー `#f5b544`）と、下部の C層所有エッジ（workbench/EOA 間・
+    点線・アンバー `--own-edge` `#e0a94f`）は色相がかなり近く、実質的には
+    線種（実線／点線）でしか区別できていない。
+  - ただしこれは Issue #83 の不具合ではない。#83 の操作エッジはマゼンタ
+    `--op-edge` `#ff5db1` で、P2P・所有のどちらとも明確に別系統として
+    見分けられており（`e2e-pulse.png` / `canvas-full.png` で確認済み）、
+    #83 の完了条件「操作エッジをエッジ+パルスで区別可能に描画する」は
+    満たされている。
+  - P2P エッジ（アンバー）と所有エッジ（アンバー）の色の近さは、#22-24 の
+    P2P 色パレット設計と #82 の所有エッジ色設計に由来する既存の特性であり、
+    今回たまたま networkId 1337 が P2P パレットのアンバーを引き当てたことで
+    顕在化した。改善の余地がある論点だが、#83 の責任範囲外。必要であれば
+    別 Issue（P2P パレットと所有エッジ色の色相分離）として扱うのが適切。
+- 合格判定: Issue #83 の合格判定は覆らない。操作エッジの色区別という #83 の
+  完了条件は満たされている。今回の訂正は QA 報告文の記述精度の是正であり、
+  実装・検証結果そのものの変更ではない。
