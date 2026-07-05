@@ -252,7 +252,7 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
 - [ ] ワークベンチのウォレット残高・nonceをポーリングしWalletEntityとして
       反映する
       [#77](https://github.com/morichikawa/chainviz/issues/77)
-- [ ] ワークベンチ→ノードのRPC呼び出しを観測するロギングプロキシを実装する
+- [x] ワークベンチ→ノードのRPC呼び出しを観測するロギングプロキシを実装する
       [#79](https://github.com/morichikawa/chainviz/issues/79)
 - [ ] ロギングプロキシが観測したRPC呼び出しを操作エッジとしてworld-state
       に配信する
