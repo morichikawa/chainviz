@@ -437,6 +437,32 @@ describe("LoggingProxy maxBodyBytes", () => {
       expect(outcome.error).toBeInstanceOf(Error);
     }
   });
+
+  it("returns a 413 response body (not a socket reset) when the body is too large", async () => {
+    const forward = stubForward(OK_RESPONSE);
+    const proxy = new LoggingProxy({ forward, log: vi.fn(), maxBodyBytes: LIMIT });
+    await proxy.listen(0);
+    const port = proxy.address?.port;
+    // 上限 +1 バイト（境界値）: 接続リセットではなく 413 レスポンスが届くこと。
+    const body = "a".repeat(LIMIT + 1);
+    expect(Buffer.byteLength(body)).toBe(LIMIT + 1);
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body,
+      });
+      // クライアントは接続エラーではなく明示的な 413 を受け取ること。
+      expect(res.status).toBe(413);
+      expect(await res.json()).toEqual({
+        error: "logging proxy: request body too large",
+      });
+      // 過大なボディは上流ノードへ渡らないこと。
+      expect(forward).not.toHaveBeenCalled();
+    } finally {
+      await proxy.close();
+    }
+  });
 });
 
 describe("LoggingProxy.listen startup failure", () => {

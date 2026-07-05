@@ -64,6 +64,20 @@ const defaultLog: ProxyLogger = (message, detail) =>
 const DEFAULT_MAX_BODY_BYTES = 5 * 1024 * 1024;
 
 /**
+ * リクエストボディが上限バイト数を超えたときに投げるエラー。
+ * ハンドラ側でクライアントへ返すべき HTTP ステータス（413 Payload Too Large）を
+ * 保持し、他の読み取りエラー（400 相当）と区別できるようにする。
+ */
+export class RequestBodyTooLargeError extends Error {
+  /** クライアントへ返す HTTP ステータス（413 Payload Too Large）。 */
+  readonly statusCode = 413;
+  constructor(maxBodyBytes: number) {
+    super(`request body exceeds size limit of ${maxBodyBytes} bytes`);
+    this.name = "RequestBodyTooLargeError";
+  }
+}
+
+/**
  * fetch を用いた転送関数を作る。転送先 URL（実ノードの JSON-RPC）へ POST し、
  * レスポンスのステータス・content-type・ボディをそのまま返す。
  */
@@ -276,8 +290,22 @@ export class LoggingProxy {
       rawBody = await this.readBody(req);
     } catch (err) {
       this.log("[proxy] failed to read request body:", err);
-      res.writeHead(400, { "content-type": "application/json" });
-      res.end(JSON.stringify({ error: "logging proxy: invalid request body" }));
+      // 過大ボディ（413）と不正なボディ（400）を区別してクライアントへ返す。
+      // ボディを最後まで読み切っていないため、この接続は keep-alive で再利用
+      // できない。Connection: close を明示し、レスポンス送出後に確実に閉じる。
+      const status =
+        err instanceof RequestBodyTooLargeError ? err.statusCode : 400;
+      const message =
+        err instanceof RequestBodyTooLargeError
+          ? "logging proxy: request body too large"
+          : "logging proxy: invalid request body";
+      if (!res.headersSent) {
+        res.writeHead(status, {
+          "content-type": "application/json",
+          connection: "close",
+        });
+        res.end(JSON.stringify({ error: message }));
+      }
       return;
     }
 
@@ -302,23 +330,31 @@ export class LoggingProxy {
     return new Promise((resolve, reject) => {
       const chunks: Buffer[] = [];
       let size = 0;
+      let settled = false;
       req.on("data", (chunk: Buffer) => {
+        if (settled) return;
         size += chunk.length;
         if (size > this.maxBodyBytes) {
-          // 過大なボディはメモリ枯渇を招くため、ソケットを破棄して読み取りを
-          // 打ち切る。
-          req.destroy();
-          reject(
-            new Error(
-              `request body exceeds size limit of ${this.maxBodyBytes} bytes`,
-            ),
-          );
+          // ソケットを破棄（req.destroy）するとレスポンス送出前に接続が
+          // リセットされ、クライアントに 413 が届かない。読み取りだけ止め
+          // （pause）、残りのボディは読まずにハンドラ側でレスポンスを返す。
+          settled = true;
+          req.pause();
+          reject(new RequestBodyTooLargeError(this.maxBodyBytes));
           return;
         }
         chunks.push(chunk);
       });
-      req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-      req.on("error", (err) => reject(err));
+      req.on("end", () => {
+        if (settled) return;
+        settled = true;
+        resolve(Buffer.concat(chunks).toString("utf8"));
+      });
+      req.on("error", (err) => {
+        if (settled) return;
+        settled = true;
+        reject(err);
+      });
     });
   }
 
