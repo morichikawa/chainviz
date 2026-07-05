@@ -519,4 +519,55 @@ describe("operationObserved (volatile, not folded into world state)", () => {
       extractOperations([{ type: "entityRemoved", id: "n1" }]),
     ).toEqual([]);
   });
+
+  it("extractOperations returns an empty array for an empty event list", () => {
+    expect(extractOperations([])).toEqual([]);
+  });
+
+  it("extractOperations does not pick up any non-operation DiffEvent kind", () => {
+    // entityAdded / entityUpdated / entityRemoved / edgeAdded / edgeRemoved は
+    // 操作イベントではないので一切拾わない。
+    const ops = extractOperations([
+      { type: "entityAdded", entity: node("n1") },
+      { type: "entityUpdated", id: "n1", patch: { blockHeight: 9 } },
+      { type: "entityRemoved", id: "n1" },
+      {
+        type: "edgeAdded",
+        edge: { kind: "peer", fromNodeId: "n1", toNodeId: "n2", networkId: "1" },
+      },
+      { type: "edgeRemoved", fromNodeId: "n1", toNodeId: "n2", networkId: "1" },
+    ]);
+    expect(ops).toEqual([]);
+  });
+
+  it("extractOperations preserves order and count with interleaved events", () => {
+    const op1 = opEdge;
+    const op2: OperationEdge = { ...opEdge, operation: "eth_call" };
+    const op3: OperationEdge = { ...opEdge, toNodeId: "reth-node-2" };
+    const ops = extractOperations([
+      { type: "operationObserved", edge: op1 },
+      { type: "entityAdded", entity: node("n1") },
+      { type: "operationObserved", edge: op2 },
+      {
+        type: "edgeAdded",
+        edge: { kind: "peer", fromNodeId: "n1", toNodeId: "n2", networkId: "1" },
+      },
+      { type: "operationObserved", edge: op3 },
+    ]);
+    expect(ops).toEqual([op1, op2, op3]);
+  });
+
+  it("applyDiff ignores operationObserved even when mixed with real state changes", () => {
+    const next = applyDiff(emptyWorldState, [
+      { type: "entityAdded", entity: node("n1") },
+      { type: "operationObserved", edge: opEdge },
+      {
+        type: "edgeAdded",
+        edge: { kind: "peer", fromNodeId: "n1", toNodeId: "n2", networkId: "1" },
+      },
+    ]);
+    // entity / edge は反映されるが、operationObserved は畳み込まれない。
+    expect(Object.keys(next.entities)).toEqual(["n1"]);
+    expect(next.edges).toHaveLength(1);
+  });
 });
