@@ -28,6 +28,23 @@ wait_for_port() {
   exec 3>&- 2>/dev/null || true
 }
 
+# 二重起動ガード。既にdev-up.sh経由で起動中のプロセスがあれば、新規に
+# 起動して古いPIDファイルを上書きする(旧プロセスが孤児化し、EADDRINUSEで
+# 新プロセスは即死したのにwait_for_portは旧プロセスのポートを見て
+# 「成功」と誤報告してしまう)前に検出して止める。
+check_not_already_running() {
+  local name="$1"
+  local pidfile="$PID_DIR/$name.pid"
+  if [ -f "$pidfile" ]; then
+    local pid
+    pid="$(cat "$pidfile")"
+    if kill -0 "$pid" 2>/dev/null; then
+      echo "エラー: $name は既にpid $pid で起動中です。先に pnpm dev:down を実行してください。" >&2
+      return 1
+    fi
+  fi
+}
+
 echo "==> [1/4] profiles/ethereum のDockerスタックを確認"
 cd "$PROFILE_DIR"
 if [ -z "$(docker compose ps -q 2>/dev/null)" ]; then
@@ -45,6 +62,8 @@ else
   echo "==> [2/4] ビルド済みのcollectorを再利用します(再ビルドしたい場合は pnpm build を先に実行してください)"
 fi
 
+check_not_already_running collector || exit 1
+
 echo "==> [3/4] collectorを起動します(port $COLLECTOR_PORT, proxy $PROXY_PORT)"
 CHAINVIZ_COLLECTOR_PORT="$COLLECTOR_PORT" CHAINVIZ_PROXY_PORT="$PROXY_PORT" \
   nohup node "$ROOT_DIR/packages/collector/dist/index.js" >"$PID_DIR/collector.log" 2>&1 &
@@ -53,6 +72,8 @@ wait_for_port "$COLLECTOR_PORT" "collector" || {
   echo "collectorのログ: $PID_DIR/collector.log"
   exit 1
 }
+
+check_not_already_running frontend || exit 1
 
 echo "==> [4/4] frontend(vite dev server)を起動します(port $FRONTEND_PORT)"
 VITE_COLLECTOR_URL="ws://127.0.0.1:$COLLECTOR_PORT" \

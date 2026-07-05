@@ -9,6 +9,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROFILE_DIR="$ROOT_DIR/profiles/ethereum"
 PID_DIR="$ROOT_DIR/.dev-pids"
 
+FAILED=0
+
 stop_process() {
   local name="$1"
   local pidfile="$PID_DIR/$name.pid"
@@ -32,6 +34,14 @@ stop_process() {
   if kill -0 "$pid" 2>/dev/null; then
     echo "    応答が無いため強制終了します"
     kill -9 "$pid" 2>/dev/null || true
+    sleep 1
+  fi
+  # SIGKILL後も生存していれば(EPERM・Dステート等)、成功を装わずpidファイルを
+  # 残したままエラー報告する(CLAUDE.md「失敗を握りつぶさない」)。
+  if kill -0 "$pid" 2>/dev/null; then
+    echo "エラー: $name (pid $pid) を停止できませんでした。手動で確認してください(ps -p $pid)。" >&2
+    FAILED=1
+    return 1
   fi
   rm -f "$pidfile"
 }
@@ -50,3 +60,5 @@ if [ "${1:-}" = "--docker" ]; then
 else
   echo "==> Dockerスタックはそのままにしています(停止するには: $0 --docker [-v])"
 fi
+
+exit "$FAILED"
