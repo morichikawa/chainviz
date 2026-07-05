@@ -97,3 +97,39 @@
   - コミット粒度: 対応2件がそれぞれ独立した docs コミットに分かれており適切。
 - 結論: 指摘事項はすべて解消。実装・テスト・docs の整合に問題なし。
   次工程(chainviz-qa の実機検証)へ進んでよい。
+
+### 2026-07-06 Issue #99 実機検証(qa)
+
+- 担当: qa
+- ブランチ: issue-99-wsl2-listen-host
+- 結論: 合格。docs/PLAN.md に Issue #99 に対応するチェックボックスは無く
+  (WSL2 環境向けのバグ修正であり計画ステップ外)、チェック対象は無い。
+- 実施内容と結果:
+  - 全パッケージで `pnpm lint` / `pnpm build` / `pnpm test` を実行し、すべて
+    通過(shared 6・e2e 34・collector 500・frontend 411、lint/build エラー無し)。
+  - ビルド済み dist の `CollectorServer` と `LoggingProxy` を実際に 4000 / 4001
+    で起動し、`ss -tlnp` と `lsof -nP -iTCP -sTCP:LISTEN` の両方で bind アドレス
+    ファミリを確認した。
+    - 4000(WebSocket): `0.0.0.0:4000` / lsof で `IPv4`。
+    - 4001(ロギングプロキシ): `0.0.0.0:4001` / lsof で `IPv4`。
+    - いずれも修正前の IPv6(`::`) ではなく IPv4(`0.0.0.0`) で待ち受けている
+      ことを実測で確認。
+  - `ws://127.0.0.1:4000`(IPv4 loopback)へ接続し、接続直後に `type: "snapshot"`
+    のメッセージを受信できることを確認。payload は
+    `chainType` / `timestamp` / `entities` / `edges` の想定スキーマ(ARCHITECTURE
+    §3)どおり。修正による既存 WS 疎通・スナップショット配信の破壊は無い。
+  - ロギングプロキシ(4001)へ JSON-RPC(`eth_chainId`)を POST し、以下の2経路
+    いずれも HTTP 200 で透過転送されることを確認:
+    - `127.0.0.1:4001`(loopback)。
+    - Docker bridge ゲートウェイ `172.17.0.1:4001`(ワークベンチコンテナが
+      `host.docker.internal:4001` で解決する宛先と同一インターフェース)。
+    - どちらの呼び出しも `[proxy] rpc call from <ip>: eth_chainId []` として
+      観測ログに記録され、観測機能も維持されていることを確認した。
+  - `0.0.0.0` bind によりプロキシは loopback だけでなく Docker bridge
+    インターフェース上でも到達可能であり、コンテナ→プロキシのネットワーク
+    ホップが壊れていないことをホスト側から実証した。ワークベンチコンテナから
+    reth ノードまで通す `cast` の完全な E2E は稼働ノードを要するため範囲外
+    (本修正の目的である bind アドレスファミリと既存経路への影響確認は充足)。
+  - 補足: WSL2 + VS Code Remote 環境でのブラウザ側の実接続確認はユーザー環境
+    での作業であり本検証の範囲外(依頼どおり)。本マシン内での IPv4 bind の
+    実測と既存機能への無影響の確認をもって合格とする。
