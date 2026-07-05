@@ -31,6 +31,32 @@ export interface PeerEdge {
   networkId: string;
 }
 
+/**
+ * ワークベンチ → ノードの 1 回の呼び出し（操作）を表すエッジ。
+ * PeerEdge のような永続的な接続状態ではなく「観測された瞬間の出来事」なので、
+ * WorldStateSnapshot には含めない。DiffEvent の operationObserved でのみ流れ、
+ * store の状態にも畳み込まない（描画側が受信時にアニメーションとして消費する）。
+ */
+export interface OperationEdge {
+  kind: "operation";
+  /** 呼び出し元ワークベンチのエンティティ id。 */
+  fromWorkbenchId: string;
+  /** 呼び出し先ノードのエンティティ id。 */
+  toNodeId: string;
+  /**
+   * 呼び出しの種類。値はワークベンチ⇔ノード間プロトコル依存の生の文字列
+   * （JSON-RPC のメソッド名など）をそのまま入れる。チェーン固有の値の解釈・
+   * 表示（分類・和訳など）は、この型では行わずフロントのチェーンプロファイル
+   * 表現セット側の責務とする。
+   */
+  operation: string;
+  /** ロギングプロキシが呼び出しを観測した時刻（epoch ms）。 */
+  observedAt: number;
+}
+
+/** キャンバス上でエッジ（紐）として描画されるものの総称。kind で判別する。 */
+export type WorldStateEdge = PeerEdge | OperationEdge;
+
 export interface WalletEntity {
   kind: "wallet";
   address: string;
@@ -86,5 +112,9 @@ export interface WorldStateSnapshot {
   chainType: ChainType;
   timestamp: number;
   entities: WorldStateEntity[];
+  /**
+   * 永続的なピア接続のみ。揮発性の OperationEdge は接続時点の再現対象では
+   * ないため、意図的にスナップショットへ含めない。
+   */
   edges: PeerEdge[];
 }

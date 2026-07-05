@@ -3,9 +3,25 @@ import type {
   NodeEntity,
   PeerEdge,
   TransactionEntity,
+  WorkbenchEntity,
 } from "@chainviz/shared";
 import { describe, expect, it } from "vitest";
 import { WorldStateStore } from "./store.js";
+
+function workbench(overrides: Partial<WorkbenchEntity> = {}): WorkbenchEntity {
+  return {
+    kind: "workbench",
+    id: "chainviz-ethereum/workbench1",
+    containerName: "workbench1",
+    ip: "172.28.2.5",
+    ports: [],
+    resources: { cpuPercent: 1, memMB: 10 },
+    process: { name: "workbench" },
+    label: "workbench1",
+    walletIds: [],
+    ...overrides,
+  };
+}
 
 function node(overrides: Partial<NodeEntity> = {}): NodeEntity {
   return {
@@ -546,5 +562,39 @@ describe("WorldStateStore.applyTransaction", () => {
       snapshot.entities.filter((e) => e.kind === "transaction"),
     ).toHaveLength(1);
     expect(snapshot.edges).toHaveLength(1);
+  });
+
+  describe("endpoint resolution (Issue #80)", () => {
+    it("resolves a workbench by ip", () => {
+      const store = new WorldStateStore();
+      const wb = workbench({ id: "w-1", ip: "172.28.2.5" });
+      store.applyInfra([wb, node()]);
+      expect(store.findWorkbenchByIp("172.28.2.5")).toEqual(wb);
+    });
+
+    it("returns undefined when no workbench has the ip", () => {
+      const store = new WorldStateStore();
+      store.applyInfra([workbench({ ip: "172.28.2.5" })]);
+      expect(store.findWorkbenchByIp("10.0.0.1")).toBeUndefined();
+    });
+
+    it("does not resolve a node ip as a workbench", () => {
+      const store = new WorldStateStore();
+      store.applyInfra([node({ ip: "172.28.1.1" })]);
+      expect(store.findWorkbenchByIp("172.28.1.1")).toBeUndefined();
+    });
+
+    it("resolves a node by ip", () => {
+      const store = new WorldStateStore();
+      const n = node({ id: "n-1", ip: "172.28.1.1" });
+      store.applyInfra([n, workbench()]);
+      expect(store.findNodeByIp("172.28.1.1")).toEqual(n);
+    });
+
+    it("returns undefined when no node has the ip", () => {
+      const store = new WorldStateStore();
+      store.applyInfra([node({ ip: "172.28.1.1" })]);
+      expect(store.findNodeByIp("172.28.9.9")).toBeUndefined();
+    });
   });
 });

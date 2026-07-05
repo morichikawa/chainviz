@@ -106,6 +106,21 @@ interface PeerEdge {
   networkId: string;
 }
 
+// ワークベンチ → ノードの 1 回の呼び出し（操作）を表すエッジ。
+// PeerEdge のような永続的な接続状態ではなく「観測された瞬間の出来事」
+// （揮発性）なので、スナップショットには含めず、差分イベント
+// operationObserved でのみ流れる（後述）。
+interface OperationEdge {
+  kind: "operation";
+  fromWorkbenchId: string; // 呼び出し元ワークベンチのエンティティ id
+  toNodeId: string; // 呼び出し先ノードのエンティティ id
+  operation: string; // 呼び出しの種類（JSON-RPC メソッド名などの生の文字列）
+  observedAt: number; // ロギングプロキシが観測した時刻（epoch ms）
+}
+
+// キャンバス上でエッジ（紐）として描画されるものの総称
+type WorldStateEdge = PeerEdge | OperationEdge;
+
 interface WalletEntity {
   kind: "wallet";
   address: string;
@@ -163,12 +178,25 @@ type DiffEvent =
       fromNodeId: string;
       toNodeId: string;
       networkId: string; // エッジの同一性キーは from/to/networkId の 3 つ組
-    };
+    }
+  | { type: "operationObserved"; edge: OperationEdge };
 ```
 
 エンティティ削除時の扱いは CONCEPT.md の決定に従う: `NodeEntity` /
 `WorkbenchEntity` は `entityRemoved` で消えるが、`WalletEntity` は
 残し `ownerWorkbenchId` を `null` に更新する（`entityUpdated` を送る）。
+
+エッジ系イベントは性質の違いで 2 系統に分かれる:
+
+- `edgeAdded` / `edgeRemoved` — 永続的なピア接続（`PeerEdge`）の状態遷移。
+  store の状態（スナップショットの `edges`）に畳み込まれる
+- `operationObserved` — ワークベンチ → ノードの呼び出し（`OperationEdge`）の
+  1 回きりの観測イベント（揮発性）。store の状態には畳み込まれず、
+  スナップショットにも現れない。対応する削除イベントも存在せず、フロントは
+  受信時にエッジ＋パルスのアニメーションとして消費し、自身のタイミングで
+  消す（CONCEPT.md「操作がエッジになる」参照）。`OperationEdge.operation` の
+  値はチェーン依存の生の文字列であり、その解釈・表示はフロントの
+  チェーンプロファイル表現セットの責務とする
 
 ## 3. Collector ⇔ フロントの WebSocket プロトコル
 
@@ -299,3 +327,16 @@ mempool:
     値）、中継先の既定は既定ワークベンチが叩くノードの JSON-RPC
     エンドポイント。いずれも環境変数 `CHAINVIZ_PROXY_PORT` /
     `CHAINVIZ_PROXY_TARGET` で上書きできる。
+  - 確定（Issue #80）: プロキシが観測した RPC 呼び出し（`RpcObservation`）を
+    `OperationEdge` へマッピングし、`operationObserved` イベントとして
+    WebSocket で全クライアントへ passthrough 配信する。マッピングは
+    `proxy/operation-observer.ts` に閉じ込め、`method` → `operation`・
+    `timestamp` → `observedAt`、呼び出し元 IP（`callerIp`）は world-state
+    store の `findWorkbenchByIp` で `fromWorkbenchId` に、中継先ホスト
+    （`CHAINVIZ_PROXY_TARGET` の host 部）は `findNodeByIp` で `toNodeId` に
+    解決する。解決は観測ごとに現在の store 状態へ問い合わせるため、後から
+    追加されたワークベンチ/ノードにも追従する（固定の解決結果を埋め込まない）。
+    どちらかの端点が解決できない観測は配信せず、どちらが引けなかったかを
+    ログに残す（黙って握りつぶさない）。`operationObserved` は揮発性のため
+    store の状態には畳み込まず（`WorldStateStore.applyEvent` は反映しない）、
+    `broadcastDiff` 経由で配信のみ行う。
