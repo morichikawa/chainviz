@@ -48,3 +48,59 @@
     確認済み)。どのワークベンチにも一致しないIP(ホストからの直叩き等)の
     扱いは#80で決めるが、黙って捨てず最低限ログに残すこと
 
+**注記**: 上記(2026-07-05 に向けた shared 型設計の検討)で提案していた「永続的な集約 OperationEdge(callCount 等の蓄積)+ 揮発イベント」の2段構え案は、実装着手時に単純化した(下記エントリ参照)。集約エッジは完了条件(呼び出し元・呼び出し先・種類が分かる)に対して過剰な先回り実装と判断し、揮発イベント(`operationObserved`)のみを採用している。`edgeAdded`/`edgeRemoved` の kind 判別可能な再設計も、この単純化により不要になった。
+
+### 2026-07-05 Issue #80 操作エッジの共有型定義（reviewer）
+
+- 担当: reviewer
+- ブランチ: issue-80-operation-edges
+- 内容:
+  - `packages/shared/src/world-state/entities.ts` に `OperationEdge` と
+    `WorldStateEdge = PeerEdge | OperationEdge` を追加した
+  - `packages/shared/src/events/index.ts` の `DiffEvent` に
+    `{ type: "operationObserved"; edge: OperationEdge }` を追加した
+  - 対応するユニットテストを `entities.test.ts` に追加し、
+    `events/index.test.ts` を新規作成した（判別ユニオンの絞り込みを
+    コンパイル時 + 実行時に検証）
+  - `docs/ARCHITECTURE.md` §2（ワールドステートのスキーマ・差分イベント）を
+    更新した
+  - `pnpm lint && pnpm build && pnpm test` を全パッケージで実行し通過を確認
+    （shared 6 / collector 483 / frontend 353 / e2e 34）
+- 決定事項（設計の理由）:
+  - **`operationObserved` は揮発性イベント**。RPC 呼び出しは「観測された
+    瞬間の出来事」であり、`PeerEdge` のような永続的な接続状態とは性質が
+    異なる。そのため store の状態に畳み込まず、`WorldStateSnapshot` にも
+    含めない（接続直後のスナップショットで過去の呼び出しを再現する意味が
+    ない）。対応する削除イベントも設けない。フロントは受信時にエッジ＋
+    パルスのアニメーションとして消費し、自身のタイミングで消す
+    （CONCEPT.md「操作がエッジになる」）
+  - **`edgeAdded` / `edgeRemoved` は再設計しない**。操作エッジは永続状態に
+    ならないため追加/削除の対象にならず、既存の 2 イベントは `PeerEdge`
+    専用のままでよい。kind 判別可能な形への再設計は不要と判断した
+    （既存の collector/frontend の store 実装を壊さずに済む）
+  - **`operation: string` は生の文字列**（JSON-RPC メソッド名など）を
+    そのまま入れる。フィールド名・スキーマ自体はチェーン非依存の語彙で
+    保ち、値がチェーン依存になるのは `NodeEntity.clientType`（"reth" 等）と
+    同じ既存パターン。値の解釈・分類・表示はフロントのチェーンプロファイル
+    表現セット（`packages/frontend/src/chain-profiles/<chainName>/`）の責務
+  - **`params` / JSON-RPC `id` は含めない**。完了条件（呼び出し元
+    workbench・呼び出し先 node・呼び出しの種類）に不要であり、チェーン
+    依存の生ペイロードをワールドステートに持ち込まない。将来 D 層で必要に
+    なった時点で追加を検討する（先回り実装をしない）
+  - **一意 id フィールドは持たせない**。イベントであって状態ではないため
+    同一性キーによる突き合わせが発生しない。フロントの描画用キーは
+    ブロックパルスと同様にフロント側でローカル生成すればよい
+- 次の担当（collector）への注意点:
+  - ロギングプロキシの `RpcObservation`（`packages/collector/src/proxy/
+    logging-proxy.ts`）からのマッピングは
+    `method` → `operation`、`timestamp` → `observedAt`。
+    `callerIp` → `fromWorkbenchId` の解決（IP からワークベンチエンティティの
+    id を引く）と、プロキシの転送先ノードから `toNodeId` を決めるのは
+    collector 側の配線の責務
+  - 呼び出し元 IP がどのワークベンチにも解決できない観測をどう扱うか
+    （読み捨てるか、ログに残すか）は配線実装時に決めて記録すること。
+    黙って握りつぶさない（CLAUDE.md「品質ゲート」参照）
+  - collector の `WorldStateStore.applyEvent` は `operationObserved` を
+    状態に畳み込んではならない（passthrough で配信のみ）。frontend の
+    `applyDiff` は現状 default 節で未知イベントを無視するため型追加だけ
+    では挙動が変わらない。パルス描画側で消費する実装が別途必要
