@@ -45,6 +45,9 @@ check_not_already_running() {
   fi
 }
 
+check_not_already_running collector || exit 1
+check_not_already_running frontend || exit 1
+
 echo "==> [1/4] profiles/ethereum のDockerスタックを確認"
 cd "$PROFILE_DIR"
 if [ -z "$(docker compose ps -q 2>/dev/null)" ]; then
@@ -62,8 +65,6 @@ else
   echo "==> [2/4] ビルド済みのcollectorを再利用します(再ビルドしたい場合は pnpm build を先に実行してください)"
 fi
 
-check_not_already_running collector || exit 1
-
 echo "==> [3/4] collectorを起動します(port $COLLECTOR_PORT, proxy $PROXY_PORT)"
 CHAINVIZ_COLLECTOR_PORT="$COLLECTOR_PORT" CHAINVIZ_PROXY_PORT="$PROXY_PORT" \
   nohup node "$ROOT_DIR/packages/collector/dist/index.js" >"$PID_DIR/collector.log" 2>&1 &
@@ -72,8 +73,6 @@ wait_for_port "$COLLECTOR_PORT" "collector" || {
   echo "collectorのログ: $PID_DIR/collector.log"
   exit 1
 }
-
-check_not_already_running frontend || exit 1
 
 echo "==> [4/4] frontend(vite dev server)を起動します(port $FRONTEND_PORT)"
 VITE_COLLECTOR_URL="ws://127.0.0.1:$COLLECTOR_PORT" \

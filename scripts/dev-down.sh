@@ -51,11 +51,13 @@ stop_process collector
 
 if [ "${1:-}" = "--docker" ]; then
   echo "==> profiles/ethereum のDockerスタックを停止します"
-  cd "$PROFILE_DIR"
-  if [ "${2:-}" = "-v" ]; then
-    docker compose down -v
+  if ! cd "$PROFILE_DIR"; then
+    echo "エラー: $PROFILE_DIR に移動できませんでした。" >&2
+    FAILED=1
+  elif [ "${2:-}" = "-v" ]; then
+    docker compose down -v || FAILED=1
   else
-    docker compose down
+    docker compose down || FAILED=1
   fi
 else
   echo "==> Dockerスタックはそのままにしています(停止するには: $0 --docker [-v])"
