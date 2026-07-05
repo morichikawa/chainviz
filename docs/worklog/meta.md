@@ -294,3 +294,37 @@
     (libnspr4 等)が未導入だったため、scratchpad に展開済みの共有
     ライブラリを `LD_LIBRARY_PATH` で参照して chrome-headless-shell を
     起動した(スクリプト本体の検証には影響しない環境依存の補足)。
+
+### 2026-07-05 chainviz-detectiveエージェント追加のレビュー(reviewer 合格)
+
+- 担当: reviewer
+- ブランチ: chore-add-detective-agent(コミット 602ff6b)
+- 内容:
+  - `.claude/agents/chainviz-detective.md`(新規)と CLAUDE.md「開発体制」
+    チーム一覧への追記(計1コミット)をレビューした。結果は合格。
+  - frontmatter: name はファイル名と一致。tools(Read, Bash, Grep, Glob)は
+    「コードを書かない」役割の chainviz-qa / chainviz-reviewer と同一構成。
+    model: fable は chainviz-reviewer に前例あり。description は既存の
+    慣例(使いどき→役割の線引き→「コードは書かない・直さない」で締める)
+    に沿っている。
+  - 役割の線引き: qa(完了条件との照合・E2E検証)・reviewer(静的レビュー)
+    との相互参照が description と本文の両方に明記され、重複・矛盾なし。
+    「原因特定後は直すべき担当へ引き継ぐ」「環境要因ならコード側に原因を
+    求めず正直に報告する」という切り分けも既存の責務分担と整合する。
+  - CLAUDE.md 追記: 他メンバーと同じ体裁(太字ペルソナ名 = エージェント名:
+    役割説明+役割の線引き)・粒度で、リスト末尾への追加。既存記述への
+    変更はない。「使い方の目安」に detective が無い点は、i18n も同様に
+    記載が無いため慣例の範囲内と判断。
+  - 命名: 姓「究明」が原因究明の役割そのものを表し、CLAUDE.md の
+    「役割そのものが名は体を表す」方式に適合。名「徹」の由来も本文で
+    説明されている。
+  - `pnpm lint` 合格(ドキュメント・エージェント定義のみの変更で
+    ロジック変更なしのため、ユニットテスト追加義務の対象外)。
+    コミットは1件で単一の関心事に収まっており粒度も適切。
+- 決定事項・注意点(非ブロッキング):
+  - 本文の記録先の表現「`docs/worklog/issue-<番号>.md`(無ければ
+    `docs/worklog/meta.md`)」は、「issueファイルが未作成なら meta.md へ」
+    とも読める。WORKLOG.md のルールは「対応する Issue があればファイルを
+    新規作成、Issue に紐付かない作業のみ meta.md」なので、いずれ
+    「(対応する Issue が無ければ meta.md、あればファイルを新規作成)」の
+    ように明確化するとよい。今回のマージは妨げない。
