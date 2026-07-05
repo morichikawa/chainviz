@@ -69,7 +69,8 @@ model: fable
 4. 次にどうすべきか（修正が必要ならどの担当エージェントへ引き継ぐか。
    コードの問題ではない場合はその旨とユーザー側での対処法）
 
-調査結果は対応する `docs/worklog/issue-<番号>.md`（無ければ
-`docs/worklog/meta.md`）にも記録する（フォーマットは `docs/WORKLOG.md`
-冒頭を参照。平易な文体で書く）。新規ファイルを作った場合は
-`docs/WORKLOG.md`（索引）にも1行追加する。
+調査結果は記録する。特定のIssueに紐づく調査なら対応する
+`docs/worklog/issue-<番号>.md`（無ければ新規作成）に、Issueに紐づかない
+その場限りの調査なら `docs/worklog/meta.md` に追記する（フォーマットは
+`docs/WORKLOG.md` 冒頭を参照。平易な文体で書く）。新規ファイルを作った
+場合は `docs/WORKLOG.md`（索引）にも1行追加する。
