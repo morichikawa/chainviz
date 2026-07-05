@@ -363,3 +363,31 @@
   `host.docker.internal`(Docker bridge の IPv4)経由で叩くため、`127.0.0.1`
   bind は不可で `0.0.0.0` が必要。`ws://localhost:4000` へ URL を変える案は
   ブラウザ・OS の名前解決順序に依存するため採らない。
+
+### 2026-07-06 PLAN.mdバックログへのIssue #102追加のレビュー(reviewer 合格)
+
+- 担当: reviewer
+- ブランチ: docs-plan-add-102-backlog(コミット bf33761)
+- 内容:
+  - `docs/PLAN.md` のバックログセクションへIssue #102(ノード/ワークベンチ
+    追加時に仮の半透明カードと即時フィードバックを表示する)を1行追加する
+    docsのみの変更をレビューした。結果は合格。
+  - `gh issue view 102` で照合: 状態はOPENで `[ ]`(未チェック)と一致。
+    PLAN.mdの行の文言はIssueタイトルと完全一致。ラベルはfrontendで、
+    フロント側の視覚フィードバック改善という内容とも整合。特定の
+    ステップに紐づかないユーザー要望起点の課題であり、バックログ配置は
+    既存の #86/#95 と一貫している。リンク先URLも正しい。
+  - Issue本文は既存の `pendingRef`(useCommands.ts)の拡張方針を示して
+    おり、コマンドはcollector経由のままなので境界原則(フロントは
+    Docker/ノードに直接触れない)との矛盾はない。チェーン固有語彙の
+    漏れもない。
+  - 変更は `docs/PLAN.md` のみ3行の追加で、コミットは1件
+    (Conventional Commits形式の `docs:`)。「1変更=1コミット」
+    「チェックボックス1行=Issue 1つ」の規約に適合。
+  - `pnpm lint` / `pnpm build` / `pnpm test`(shared 6件・e2e 34件・
+    collector 500件・frontend 411件)がすべて通ることを確認した。
+- 決定事項・注意点:
+  - QA(chainviz-qa)はdocsのみの変更のため省略可とする依頼元の判断を
+    了承(過去のPLAN.mdバックログ補完レビューと同じ理由。実行環境の
+    動作に影響する変更が無く、検証対象が存在しない)。
+  - push・PR作成・マージに進んでよい。

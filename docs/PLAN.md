@@ -324,6 +324,9 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
 - [x] WSL2環境でcollectorのWebSocket/ロギングプロキシがVS Codeのポート
       転送経由で繋がらない
       [#99](https://github.com/morichikawa/chainviz/issues/99)
+- [ ] ノード/ワークベンチ追加時に仮の半透明カードと即時フィードバックを
+      表示する
+      [#102](https://github.com/morichikawa/chainviz/issues/102)
 - [ ] compose起動ノードの削除ボタンを押すと必ずエラーになる(UIで防げて
       いない)
       [#103](https://github.com/morichikawa/chainviz/issues/103)
