@@ -243,7 +243,7 @@ E2Eテストが混入しない
 
 ## バックログ（特定のステップに紐づかない、後日着手する課題）
 
-- [ ] ダークモードのUI視認性を改善する
+- [x] ダークモードのUI視認性を改善する
       [#32](https://github.com/morichikawa/chainviz/issues/32)
 - [x] beaconのみ再起動するとEL/CLが乖離しチェーンが完全停止する
       [#43](https://github.com/morichikawa/chainviz/issues/43)
