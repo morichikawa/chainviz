@@ -12,7 +12,13 @@ const COMPOSE_SERVICE_LABEL = "com.docker.compose.service";
 /** reth の WebSocket JSON-RPC のデフォルトポート（eth_subscribe 用）。 */
 export const EXECUTION_WS_PORT = 8546;
 
-/** reth の HTTP JSON-RPC のデフォルトポート（eth_getBalance 等の単発問い合わせ用）。 */
+/**
+ * reth の HTTP JSON-RPC のデフォルトポート。ウォレット残高・nonce の単発
+ * 問い合わせ（eth_getBalance / eth_getTransactionCount）や、
+ * newPendingTransactions で得た tx ハッシュの詳細（from/to）・ブロックに
+ * 含まれる tx 一覧（eth_getTransactionByHash / eth_getBlockByHash）を追加取得
+ * するために使う。
+ */
 export const EXECUTION_RPC_PORT = 8545;
 
 /** Consensus Layer（ビーコン）クライアントとして扱う識別子。 */
@@ -37,6 +43,12 @@ export interface ExecutionTarget {
   stableId: string;
   /** eth_subscribe を張る WebSocket URL。 */
   wsUrl: string;
+  /**
+   * eth_getTransactionByHash / eth_getBlockByHash を叩く HTTP JSON-RPC URL。
+   * newPendingTransactions で得た tx の詳細や、ブロックに含まれる tx 一覧を
+   * 追加取得するために使う（C 層の tx ライフサイクル追跡用）。
+   */
+  rpcUrl: string;
   /**
    * BlockEntity.receivedAt に記録する際のキーに使う安定識別子。
    * 同じ論理ノードを構成する beacon（consensus）コンテナの stableId を
@@ -173,6 +185,7 @@ export function executionTargets(
     targets.push({
       stableId: obs.stableId,
       wsUrl: `ws://${obs.ip}:${EXECUTION_WS_PORT}`,
+      rpcUrl: `http://${obs.ip}:${EXECUTION_RPC_PORT}`,
       receivedAtKey: beaconStableId ?? obs.stableId,
     });
   }

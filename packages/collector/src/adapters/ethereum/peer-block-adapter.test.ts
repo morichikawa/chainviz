@@ -1,4 +1,8 @@
-import type { BlockEntity, PeerEdge } from "@chainviz/shared";
+import type {
+  BlockEntity,
+  PeerEdge,
+  TransactionEntity,
+} from "@chainviz/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DockerPoller } from "../../docker/poller.js";
 import type {
@@ -7,10 +11,11 @@ import type {
   DockerStatsResult,
   DockerTopResult,
 } from "../../docker/types.js";
+import type { EthRpcClient, RpcBlock, RpcTransaction } from "./eth-rpc-client.js";
 import type {
   EthWsClient,
   NewHeadHeader,
-  NewHeadsSubscription,
+  Subscription,
 } from "./eth-ws-client.js";
 import type { HttpClient } from "./http-client.js";
 import { EthereumAdapter } from "./index.js";
@@ -116,19 +121,26 @@ function beaconHttp(
   };
 }
 
-/** 手動でヘッダを発火できる制御可能な EthWsClient。 */
+/** 手動でヘッダ・pending tx を発火できる制御可能な EthWsClient。 */
 function controllableWsClient(): {
   client: EthWsClient;
   emit: (wsUrl: string, header: NewHeadHeader) => void;
+  emitPending: (wsUrl: string, hash: string) => void;
   closed: string[];
   subscribedUrls: string[];
+  pendingSubscribedUrls: string[];
 } {
-  const handlers = new Map<string, (h: NewHeadHeader) => void>();
+  // 同じ wsUrl に newHeads が複数回購読される（B 層と C 層）ので配列で保持する。
+  const headHandlers = new Map<string, ((h: NewHeadHeader) => void)[]>();
+  const pendingHandlers = new Map<string, (hash: string) => void>();
   const closed: string[] = [];
   const subscribedUrls: string[] = [];
+  const pendingSubscribedUrls: string[] = [];
   const client: EthWsClient = {
-    subscribeNewHeads(wsUrl, onHeader): NewHeadsSubscription {
-      handlers.set(wsUrl, onHeader);
+    subscribeNewHeads(wsUrl, onHeader): Subscription {
+      const list = headHandlers.get(wsUrl) ?? [];
+      list.push(onHeader);
+      headHandlers.set(wsUrl, list);
       subscribedUrls.push(wsUrl);
       return {
         close(): void {
@@ -136,13 +148,62 @@ function controllableWsClient(): {
         },
       };
     },
+    subscribePendingTransactions(wsUrl, onTxHash): Subscription {
+      pendingHandlers.set(wsUrl, onTxHash);
+      pendingSubscribedUrls.push(wsUrl);
+      return {
+        close(): void {
+          closed.push(`pending:${wsUrl}`);
+        },
+      };
+    },
   };
   return {
     client,
-    emit: (wsUrl, header) => handlers.get(wsUrl)?.(header),
+    emit: (wsUrl, header) => {
+      for (const handler of headHandlers.get(wsUrl) ?? []) handler(header);
+    },
+    emitPending: (wsUrl, hash) => pendingHandlers.get(wsUrl)?.(hash),
     closed,
     subscribedUrls,
+    pendingSubscribedUrls,
   };
+}
+
+/** eth_getTransactionByHash / eth_getBlockByHash を固定データで返すスタブ。 */
+function stubRpcClient(data: {
+  txs?: Record<string, RpcTransaction | null>;
+  blocks?: Record<string, RpcBlock | null>;
+}): {
+  client: EthRpcClient;
+  txCalls: string[];
+  blockCalls: string[];
+} {
+  const txCalls: string[] = [];
+  const blockCalls: string[] = [];
+  const client: EthRpcClient = {
+    async call<T>(_url: string, method: string, params: unknown[]): Promise<T> {
+      if (method === "eth_getTransactionByHash") {
+        const hash = params[0] as string;
+        txCalls.push(hash);
+        return (data.txs?.[hash] ?? null) as T;
+      }
+      if (method === "eth_getBlockByHash") {
+        const blockHash = params[0] as string;
+        blockCalls.push(blockHash);
+        return (data.blocks?.[blockHash] ?? null) as T;
+      }
+      throw new Error(`unexpected RPC method ${method}`);
+    },
+  };
+  return { client, txCalls, blockCalls };
+}
+
+/** 非同期ハンドラ（handlePendingTx / handleBlockInclusion）の解決を待つ。 */
+async function flushAsync(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
 }
 
 function header(overrides: Partial<NewHeadHeader> = {}): NewHeadHeader {
@@ -508,6 +569,347 @@ describe("EthereumAdapter.subscribeBlocks", () => {
     const ws = controllableWsClient();
     const adapter = new EthereumAdapter(poller, { ethWsClient: ws.client });
     await adapter.subscribeBlocks(() => {});
+    expect(ws.subscribedUrls).toEqual([]);
+  });
+});
+
+describe("EthereumAdapter.subscribeTransactions", () => {
+  it("subscribes to pending txs and newHeads on every execution node", async () => {
+    const poller = new DockerPoller(
+      clientFrom([
+        rethFixture("reth1", "172.28.1.1"),
+        rethFixture("reth2", "172.28.1.2"),
+        beaconFixture("beacon1", "172.28.2.1"),
+      ]),
+    );
+    const ws = controllableWsClient();
+    const rpc = stubRpcClient({});
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      ethRpcClient: rpc.client,
+    });
+
+    await adapter.subscribeTransactions(() => {});
+    expect(ws.pendingSubscribedUrls).toEqual([
+      "ws://172.28.1.1:8546",
+      "ws://172.28.1.2:8546",
+    ]);
+    // 各 execution ノードに inclusion 用の newHeads も張る（beacon は対象外）。
+    expect(ws.subscribedUrls).toEqual([
+      "ws://172.28.1.1:8546",
+      "ws://172.28.1.2:8546",
+    ]);
+  });
+
+  it("emits a pending tx after fetching its from/to via RPC", async () => {
+    const poller = new DockerPoller(
+      clientFrom([rethFixture("reth1", "172.28.1.1")]),
+    );
+    const ws = controllableWsClient();
+    const rpc = stubRpcClient({
+      txs: { "0xt1": { hash: "0xt1", from: "0xa", to: "0xb" } },
+    });
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      ethRpcClient: rpc.client,
+    });
+    const txs: TransactionEntity[] = [];
+
+    await adapter.subscribeTransactions((t) => txs.push(t));
+    ws.emitPending("ws://172.28.1.1:8546", "0xt1");
+    await flushAsync();
+
+    expect(rpc.txCalls).toEqual(["0xt1"]);
+    expect(txs).toEqual<TransactionEntity[]>([
+      {
+        kind: "transaction",
+        hash: "0xt1",
+        from: "0xa",
+        to: "0xb",
+        status: "pending",
+      },
+    ]);
+  });
+
+  it("does not emit when the pending tx detail is not yet available", async () => {
+    const poller = new DockerPoller(
+      clientFrom([rethFixture("reth1", "172.28.1.1")]),
+    );
+    const ws = controllableWsClient();
+    const rpc = stubRpcClient({ txs: { "0xt1": null } });
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      ethRpcClient: rpc.client,
+    });
+    const txs: TransactionEntity[] = [];
+
+    await adapter.subscribeTransactions((t) => txs.push(t));
+    ws.emitPending("ws://172.28.1.1:8546", "0xt1");
+    await flushAsync();
+
+    expect(txs).toEqual([]);
+  });
+
+  it("promotes a pending tx to included when a block containing it arrives", async () => {
+    const poller = new DockerPoller(
+      clientFrom([rethFixture("reth1", "172.28.1.1")]),
+    );
+    const ws = controllableWsClient();
+    const rpc = stubRpcClient({
+      txs: { "0xt1": { hash: "0xt1", from: "0xa", to: "0xb" } },
+      blocks: {
+        "0xblock1": {
+          hash: "0xblock1",
+          transactions: [{ hash: "0xt1", from: "0xa", to: "0xb" }],
+        },
+      },
+    });
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      ethRpcClient: rpc.client,
+    });
+    const txs: TransactionEntity[] = [];
+
+    await adapter.subscribeTransactions((t) => txs.push(t));
+    ws.emitPending("ws://172.28.1.1:8546", "0xt1");
+    await flushAsync();
+    ws.emit("ws://172.28.1.1:8546", header());
+    await flushAsync();
+
+    expect(txs).toHaveLength(2);
+    expect(txs[0].status).toBe("pending");
+    expect(txs[1]).toEqual<TransactionEntity>({
+      kind: "transaction",
+      hash: "0xt1",
+      from: "0xa",
+      to: "0xb",
+      status: "included",
+      blockHash: "0xblock1",
+    });
+  });
+
+  it("adds a tx seen only in a block (pending missed) directly as included", async () => {
+    const poller = new DockerPoller(
+      clientFrom([rethFixture("reth1", "172.28.1.1")]),
+    );
+    const ws = controllableWsClient();
+    const rpc = stubRpcClient({
+      blocks: {
+        "0xblock1": {
+          hash: "0xblock1",
+          transactions: [{ hash: "0xt9", from: "0xc", to: null }],
+        },
+      },
+    });
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      ethRpcClient: rpc.client,
+    });
+    const txs: TransactionEntity[] = [];
+
+    await adapter.subscribeTransactions((t) => txs.push(t));
+    ws.emit("ws://172.28.1.1:8546", header());
+    await flushAsync();
+
+    expect(txs).toEqual<TransactionEntity[]>([
+      {
+        kind: "transaction",
+        hash: "0xt9",
+        from: "0xc",
+        to: null,
+        status: "included",
+        blockHash: "0xblock1",
+      },
+    ]);
+  });
+
+  it("fetches each block only once even when several nodes announce it", async () => {
+    const poller = new DockerPoller(
+      clientFrom([
+        rethFixture("reth1", "172.28.1.1"),
+        rethFixture("reth2", "172.28.1.2"),
+      ]),
+    );
+    const ws = controllableWsClient();
+    const rpc = stubRpcClient({
+      blocks: {
+        "0xblock1": {
+          hash: "0xblock1",
+          transactions: [{ hash: "0xt1", from: "0xa", to: "0xb" }],
+        },
+      },
+    });
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      ethRpcClient: rpc.client,
+    });
+    const txs: TransactionEntity[] = [];
+
+    await adapter.subscribeTransactions((t) => txs.push(t));
+    ws.emit("ws://172.28.1.1:8546", header());
+    ws.emit("ws://172.28.1.2:8546", header());
+    await flushAsync();
+
+    // 同一ブロックは 2 ノードから届くが getBlockByHash は 1 回だけ。
+    expect(rpc.blockCalls).toEqual(["0xblock1"]);
+    expect(txs).toHaveLength(1);
+  });
+
+  it("retries block inclusion on a later node's notification when the first fetch returns null", async () => {
+    // 回帰テスト: 1 ノード目の getBlockByHash が null（伝播遅延）を返しても
+    // processedBlocks に残らず、同一ブロックを通知する 2 ノード目の newHeads で
+    // included へ回復できること。以前は初回で処理済みにしてしまい、後続通知が
+    // 弾かれて tx が pending のまま固まる不具合があった。
+    const poller = new DockerPoller(
+      clientFrom([
+        rethFixture("reth1", "172.28.1.1"),
+        rethFixture("reth2", "172.28.1.2"),
+      ]),
+    );
+    const ws = controllableWsClient();
+    const block: RpcBlock = {
+      hash: "0xblock1",
+      transactions: [{ hash: "0xt1", from: "0xa", to: "0xb" }],
+    };
+    let blockAttempts = 0;
+    const rpc: EthRpcClient = {
+      async call<T>(_url: string, method: string): Promise<T> {
+        if (method === "eth_getTransactionByHash") return null as T;
+        // 1 回目の取得は null（まだ伝播していない）、2 回目以降は成功。
+        blockAttempts += 1;
+        return (blockAttempts === 1 ? null : block) as T;
+      },
+    };
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      ethRpcClient: rpc,
+    });
+    const txs: TransactionEntity[] = [];
+
+    await adapter.subscribeTransactions((t) => txs.push(t));
+    // reth1 が先に通知するが取得は null。ここで固まらないことを確認する。
+    ws.emit("ws://172.28.1.1:8546", header());
+    await flushAsync();
+    expect(txs).toEqual([]);
+
+    // reth2 が同一ブロックを通知すると再試行され、included になる。
+    ws.emit("ws://172.28.1.2:8546", header());
+    await flushAsync();
+
+    expect(blockAttempts).toBe(2);
+    expect(txs).toHaveLength(1);
+    expect(txs[0]).toEqual<TransactionEntity>({
+      kind: "transaction",
+      hash: "0xt1",
+      from: "0xa",
+      to: "0xb",
+      status: "included",
+      blockHash: "0xblock1",
+    });
+  });
+
+  it("retries block inclusion on a later node's notification when the first fetch throws", async () => {
+    // 回帰テスト（例外版）: 1 ノード目の getBlockByHash が例外を投げても
+    // processedBlocks に残らず、後続ノードの通知で回復できること。
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const poller = new DockerPoller(
+      clientFrom([
+        rethFixture("reth1", "172.28.1.1"),
+        rethFixture("reth2", "172.28.1.2"),
+      ]),
+    );
+    const ws = controllableWsClient();
+    const block: RpcBlock = {
+      hash: "0xblock1",
+      transactions: [{ hash: "0xt1", from: "0xa", to: "0xb" }],
+    };
+    let blockAttempts = 0;
+    const rpc: EthRpcClient = {
+      async call<T>(_url: string, method: string): Promise<T> {
+        if (method === "eth_getTransactionByHash") return null as T;
+        blockAttempts += 1;
+        if (blockAttempts === 1) throw new Error("rpc timeout");
+        return block as T;
+      },
+    };
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      ethRpcClient: rpc,
+    });
+    const txs: TransactionEntity[] = [];
+
+    await adapter.subscribeTransactions((t) => txs.push(t));
+    ws.emit("ws://172.28.1.1:8546", header());
+    await flushAsync();
+    expect(txs).toEqual([]);
+
+    ws.emit("ws://172.28.1.2:8546", header());
+    await flushAsync();
+
+    expect(blockAttempts).toBe(2);
+    expect(txs).toHaveLength(1);
+    expect(txs[0].status).toBe("included");
+    vi.restoreAllMocks();
+  });
+
+  it("keeps looping after a failed RPC fetch (error is swallowed and logged)", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const poller = new DockerPoller(
+      clientFrom([rethFixture("reth1", "172.28.1.1")]),
+    );
+    const ws = controllableWsClient();
+    const rpc: EthRpcClient = {
+      async call<T>(_url: string, method: string): Promise<T> {
+        if (method === "eth_getTransactionByHash") {
+          throw new Error("rpc down");
+        }
+        return null as T;
+      },
+    };
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      ethRpcClient: rpc,
+    });
+    const txs: TransactionEntity[] = [];
+
+    await adapter.subscribeTransactions((t) => txs.push(t));
+    ws.emitPending("ws://172.28.1.1:8546", "0xt1");
+    await flushAsync();
+
+    // 失敗しても例外は外に漏れず、onTx も呼ばれない。
+    expect(txs).toEqual([]);
+    vi.restoreAllMocks();
+  });
+
+  it("closes pending and inclusion subscriptions on dispose", async () => {
+    const poller = new DockerPoller(
+      clientFrom([rethFixture("reth1", "172.28.1.1")]),
+    );
+    const ws = controllableWsClient();
+    const rpc = stubRpcClient({});
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      ethRpcClient: rpc.client,
+    });
+
+    await adapter.subscribeTransactions(() => {});
+    adapter.dispose();
+    expect(ws.closed).toContain("pending:ws://172.28.1.1:8546");
+    expect(ws.closed).toContain("ws://172.28.1.1:8546");
+  });
+
+  it("does not subscribe when there are no execution nodes", async () => {
+    const poller = new DockerPoller(
+      clientFrom([beaconFixture("beacon1", "172.28.2.1")]),
+    );
+    const ws = controllableWsClient();
+    const rpc = stubRpcClient({});
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      ethRpcClient: rpc.client,
+    });
+    await adapter.subscribeTransactions(() => {});
+    expect(ws.pendingSubscribedUrls).toEqual([]);
     expect(ws.subscribedUrls).toEqual([]);
   });
 });

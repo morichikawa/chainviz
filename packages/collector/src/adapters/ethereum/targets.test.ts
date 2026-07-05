@@ -3,6 +3,7 @@ import type { ContainerObservation } from "../../docker/types.js";
 import {
   beaconStableIdForExecution,
   beaconTargets,
+  EXECUTION_RPC_PORT,
   EXECUTION_WS_PORT,
   executionRpcUrls,
   executionTargets,
@@ -141,6 +142,7 @@ describe("executionTargets", () => {
       {
         stableId: "chainviz-ethereum/reth1",
         wsUrl: `ws://172.28.1.1:${EXECUTION_WS_PORT}`,
+        rpcUrl: `http://172.28.1.1:${EXECUTION_RPC_PORT}`,
         // 対応する beacon が観測値に無いので自身の stableId にフォールバック。
         receivedAtKey: "chainviz-ethereum/reth1",
       },
@@ -218,6 +220,7 @@ describe("executionTargets", () => {
       {
         stableId: "chainviz-ethereum/reth1",
         wsUrl: `ws://172.28.1.5:${EXECUTION_WS_PORT}`,
+        rpcUrl: `http://172.28.1.5:${EXECUTION_RPC_PORT}`,
         receivedAtKey: "chainviz-ethereum/reth1",
       },
     ]);
@@ -281,6 +284,7 @@ describe("executionTargets", () => {
       {
         stableId: "chainviz-ethereum/geth1",
         wsUrl: `ws://172.28.1.3:${EXECUTION_WS_PORT}`,
+        rpcUrl: `http://172.28.1.3:${EXECUTION_RPC_PORT}`,
         receivedAtKey: "chainviz-ethereum/beacon1",
       },
     ]);

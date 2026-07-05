@@ -14,26 +14,40 @@ import {
 } from "@xyflow/react";
 import { useCallback, useEffect, useState } from "react";
 import { InfraNodeCard } from "../entities/InfraNodeCard.js";
-import type { InfraFlowNode } from "../entities/infraNode.js";
 import { PeerPropagationEdge } from "../entities/PeerPropagationEdge.js";
-import { PEER_EDGE_TYPE, type PeerFlowEdge } from "../entities/peerEdge.js";
+import { PEER_EDGE_TYPE } from "../entities/peerEdge.js";
+import { WalletCard } from "../entities/WalletCard.js";
+import { WALLET_NODE_TYPE } from "../entities/walletNode.js";
+import { OwnershipEdge } from "../entities/OwnershipEdge.js";
+import { OWNERSHIP_EDGE_TYPE } from "../entities/ownershipEdge.js";
+import {
+  type CanvasFlowEdge,
+  type CanvasFlowNode,
+  canvasNodeLayoutKey,
+} from "../entities/canvasNode.js";
 import type { Position } from "../layout/layoutStore.js";
 
 // nodeTypes / edgeTypes は再レンダーごとに作り直すと React Flow が警告するため外に出す。
-const nodeTypes: NodeTypes = { infra: InfraNodeCard };
-const edgeTypes: EdgeTypes = { [PEER_EDGE_TYPE]: PeerPropagationEdge };
+const nodeTypes: NodeTypes = {
+  infra: InfraNodeCard,
+  [WALLET_NODE_TYPE]: WalletCard,
+};
+const edgeTypes: EdgeTypes = {
+  [PEER_EDGE_TYPE]: PeerPropagationEdge,
+  [OWNERSHIP_EDGE_TYPE]: OwnershipEdge,
+};
 
 export interface CanvasProps {
-  nodes: InfraFlowNode[];
-  /** ノード間の P2P ピア接続（B層の紐）。 */
-  edges?: PeerFlowEdge[];
-  /** ドラッグ完了時に安定 ID（containerName）と位置を保存するコールバック。 */
+  nodes: CanvasFlowNode[];
+  /** キャンバス上のエッジ（B層ピア接続 + C層所有エッジ）。 */
+  edges?: CanvasFlowEdge[];
+  /** ドラッグ完了時に安定 ID（containerName / address）と位置を保存する。 */
   onPersistPosition: (stableId: string, position: Position) => void;
 }
 
 function CanvasInner({ nodes, edges = [], onPersistPosition }: CanvasProps) {
-  const [rfNodes, setRfNodes] = useState<InfraFlowNode[]>(nodes);
-  const [rfEdges, setRfEdges] = useState<PeerFlowEdge[]>(edges);
+  const [rfNodes, setRfNodes] = useState<CanvasFlowNode[]>(nodes);
+  const [rfEdges, setRfEdges] = useState<CanvasFlowEdge[]>(edges);
 
   // ワールドステート更新で親が nodes を再計算したら反映する。
   useEffect(() => {
@@ -45,18 +59,20 @@ function CanvasInner({ nodes, edges = [], onPersistPosition }: CanvasProps) {
     setRfEdges(edges);
   }, [edges]);
 
-  const onNodesChange = useCallback((changes: NodeChange<InfraFlowNode>[]) => {
+  const onNodesChange = useCallback((changes: NodeChange<CanvasFlowNode>[]) => {
     setRfNodes((current) => applyNodeChanges(changes, current));
   }, []);
 
-  const onEdgesChange = useCallback((changes: EdgeChange<PeerFlowEdge>[]) => {
+  const onEdgesChange = useCallback((changes: EdgeChange<CanvasFlowEdge>[]) => {
     setRfEdges((current) => applyEdgeChanges(changes, current));
   }, []);
 
   const onNodeDragStop = useCallback(
     (_event: unknown, node: Node) => {
-      const data = node.data as InfraFlowNode["data"];
-      onPersistPosition(data.entity.containerName, node.position);
+      onPersistPosition(
+        canvasNodeLayoutKey(node as CanvasFlowNode),
+        node.position,
+      );
     },
     [onPersistPosition],
   );

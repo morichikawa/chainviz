@@ -6,6 +6,7 @@ import type {
   ChainType,
   DiffEvent,
   PeerEdge,
+  TransactionEntity,
   WalletEntity,
   WorldStateEntity,
   WorldStateSnapshot,
@@ -71,9 +72,28 @@ export class WorldStateStore {
    * （他のエンティティは触らない）。返り値は適用した差分イベント。
    */
   applyBlock(block: BlockEntity): DiffEvent[] {
-    const existing = this.entities.get(block.hash);
+    return this.applyHashKeyed(block);
+  }
+
+  /**
+   * C 層の tx ライフサイクル（TransactionEntity）を取り込む。tx はハッシュを
+   * キーとするエンティティなので、既存の同一 tx との差分だけを計算する
+   * （pending → included の遷移は entityUpdated として出る）。返り値は適用した
+   * 差分イベント。
+   */
+  applyTransaction(tx: TransactionEntity): DiffEvent[] {
+    return this.applyHashKeyed(tx);
+  }
+
+  /**
+   * ハッシュをキーに持つ単一エンティティ（block / transaction）を取り込む
+   * 共通処理。既存の同一ハッシュのエンティティとだけ差分を取り、他のエンティ
+   * ティやエッジには触れない。
+   */
+  private applyHashKeyed(entity: BlockEntity | TransactionEntity): DiffEvent[] {
+    const existing = this.entities.get(entity.hash);
     const prev = existing ? [existing] : [];
-    const diff = computeDiff(prev, [block]);
+    const diff = computeDiff(prev, [entity]);
     for (const event of diff) this.applyEvent(event);
     this.timestamp = Date.now();
     return diff;

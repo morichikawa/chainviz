@@ -15,6 +15,11 @@ import { CommandHandler } from "./commands/handler.js";
 import { createDockerClient } from "./docker/dockerode-client.js";
 import { createDockerOperations } from "./docker/dockerode-operations.js";
 import { DockerPoller } from "./docker/poller.js";
+import {
+  createFetchForwarder,
+  LoggingProxy,
+  type RpcObservation,
+} from "./proxy/logging-proxy.js";
 import { CollectorServer } from "./server/websocket-server.js";
 import { WorldStateStore } from "./world-state/store.js";
 
@@ -23,6 +28,20 @@ export const POLL_INTERVAL_MS = 3000;
 
 /** WebSocket サーバーの既定ポート。 */
 export const DEFAULT_PORT = 4000;
+
+/**
+ * ワークベンチ RPC 観測用ロギングプロキシの既定ポート。collector 本体の
+ * WebSocket サーバー（4000）と衝突しないよう 4001 を使う（Issue #79）。
+ */
+export const DEFAULT_PROXY_PORT = 4001;
+
+/**
+ * ロギングプロキシの転送先（実ノードの JSON-RPC）。ワークベンチは現状
+ * reth1 を叩く（profiles/ethereum の docker-compose.yml）ため、その内部 IP
+ * を既定にする。collector はノード群と同じホスト上で動くので、Docker bridge
+ * 上のコンテナ IP へ直接到達できる。環境変数で上書きできる。
+ */
+export const DEFAULT_PROXY_TARGET = "http://172.28.1.1:8545";
 
 /**
  * 待ち受けポートを解決する。環境変数 CHAINVIZ_COLLECTOR_PORT が有効な
@@ -36,6 +55,30 @@ export function resolvePort(env: NodeJS.ProcessEnv = process.env): number {
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isInteger(parsed) || parsed < 0) return DEFAULT_PORT;
   return parsed;
+}
+
+/**
+ * ロギングプロキシの待受ポートを解決する。環境変数 CHAINVIZ_PROXY_PORT が
+ * 有効な非負整数なら優先し、未設定・不正値なら DEFAULT_PROXY_PORT を使う。
+ */
+export function resolveProxyPort(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.CHAINVIZ_PROXY_PORT;
+  if (raw === undefined || raw.trim() === "") return DEFAULT_PROXY_PORT;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isInteger(parsed) || parsed < 0) return DEFAULT_PROXY_PORT;
+  return parsed;
+}
+
+/**
+ * ロギングプロキシの転送先 URL を解決する。環境変数
+ * CHAINVIZ_PROXY_TARGET があれば優先し、なければ DEFAULT_PROXY_TARGET を使う。
+ */
+export function resolveProxyTarget(
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const raw = env.CHAINVIZ_PROXY_TARGET;
+  if (raw === undefined || raw.trim() === "") return DEFAULT_PROXY_TARGET;
+  return raw.trim();
 }
 
 /**
@@ -145,6 +188,29 @@ export function startPollingLoop(
   };
 }
 
+/**
+ * ワークベンチ RPC 観測用ロギングプロキシを起動する。ワークベンチからの
+ * JSON-RPC を受けて実ノードへ透過転送しつつ、呼び出しを観測データとして
+ * 発行する。現時点では観測データはログに残すだけで、world-state への
+ * 組み込みは別 Issue（#80）で対応する。onObserve に処理を差し込めるよう
+ * にしてある。
+ */
+export async function startLoggingProxy(
+  port: number = DEFAULT_PROXY_PORT,
+  target: string = DEFAULT_PROXY_TARGET,
+  onObserve?: (observation: RpcObservation) => void,
+): Promise<LoggingProxy> {
+  const proxy = new LoggingProxy({
+    forward: createFetchForwarder(target),
+    onObserve,
+  });
+  await proxy.listen(port);
+  console.log(
+    `[collector] logging proxy listening on port ${port} -> ${target}`,
+  );
+  return proxy;
+}
+
 export async function main(port: number = DEFAULT_PORT): Promise<void> {
   const docker = new Docker();
   const poller = new DockerPoller(createDockerClient(docker));
@@ -175,6 +241,10 @@ export async function main(port: number = DEFAULT_PORT): Promise<void> {
   await server.listen(port);
   console.log(`[collector] WebSocket server listening on port ${port}`);
 
+  // ワークベンチ → ノードの JSON-RPC 呼び出しを観測するロギングプロキシを
+  // 起動する（Issue #79）。ワークベンチはこのプロキシ経由で reth を叩く。
+  await startLoggingProxy(resolveProxyPort(), resolveProxyTarget());
+
   // A 層: Docker のインフラ観測を周期ポーリングして配信する。
   startPollingLoop(adapter, store, server);
 
@@ -190,6 +260,17 @@ export async function main(port: number = DEFAULT_PORT): Promise<void> {
       server.broadcastDiff(diff);
     })
     .catch((err) => console.error("[collector] block subscription failed:", err));
+
+  // C 層: tx ライフサイクル（mempool 投入 → ブロック取り込み）を購読し、
+  // TransactionEntity の差分をワールドステート store 経由でフロントへ配信する。
+  adapter
+    .subscribeTransactions((tx) => {
+      const diff = store.applyTransaction(tx);
+      server.broadcastDiff(diff);
+    })
+    .catch((err) =>
+      console.error("[collector] transaction subscription failed:", err),
+    );
 
   // C 層: ワークベンチが持つウォレットの残高・nonce を周期ポーリングし、
   // WalletEntity としてワールドステート store 経由でフロントへ配信する（Issue #77）。

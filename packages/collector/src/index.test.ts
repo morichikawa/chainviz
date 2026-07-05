@@ -4,8 +4,13 @@ import type { EthereumAdapter } from "./adapters/ethereum/index.js";
 import type { CollectorServer } from "./server/websocket-server.js";
 import {
   DEFAULT_PORT,
+  DEFAULT_PROXY_PORT,
+  DEFAULT_PROXY_TARGET,
   installProcessSafetyNet,
   resolvePort,
+  resolveProxyPort,
+  resolveProxyTarget,
+  startLoggingProxy,
   startPollingLoop,
 } from "./index.js";
 import { WorldStateStore } from "./world-state/store.js";
@@ -191,6 +196,103 @@ describe("resolvePort", () => {
   it("falls back to DEFAULT_PORT for non-numeric or negative values", () => {
     expect(resolvePort({ CHAINVIZ_COLLECTOR_PORT: "abc" })).toBe(DEFAULT_PORT);
     expect(resolvePort({ CHAINVIZ_COLLECTOR_PORT: "-5" })).toBe(DEFAULT_PORT);
+  });
+});
+
+describe("resolveProxyPort", () => {
+  it("returns DEFAULT_PROXY_PORT when the env var is unset or blank", () => {
+    expect(resolveProxyPort({})).toBe(DEFAULT_PROXY_PORT);
+    expect(resolveProxyPort({ CHAINVIZ_PROXY_PORT: "  " })).toBe(
+      DEFAULT_PROXY_PORT,
+    );
+  });
+
+  it("parses a valid non-negative integer port", () => {
+    expect(resolveProxyPort({ CHAINVIZ_PROXY_PORT: "4321" })).toBe(4321);
+    expect(resolveProxyPort({ CHAINVIZ_PROXY_PORT: "0" })).toBe(0);
+  });
+
+  it("falls back to DEFAULT_PROXY_PORT for non-numeric or negative values", () => {
+    expect(resolveProxyPort({ CHAINVIZ_PROXY_PORT: "abc" })).toBe(
+      DEFAULT_PROXY_PORT,
+    );
+    expect(resolveProxyPort({ CHAINVIZ_PROXY_PORT: "-1" })).toBe(
+      DEFAULT_PROXY_PORT,
+    );
+  });
+
+  it("defaults to 4001 to avoid colliding with the WebSocket port 4000", () => {
+    expect(DEFAULT_PROXY_PORT).toBe(4001);
+    expect(DEFAULT_PORT).toBe(4000);
+  });
+});
+
+describe("resolveProxyTarget", () => {
+  it("returns DEFAULT_PROXY_TARGET when the env var is unset or blank", () => {
+    expect(resolveProxyTarget({})).toBe(DEFAULT_PROXY_TARGET);
+    expect(resolveProxyTarget({ CHAINVIZ_PROXY_TARGET: "   " })).toBe(
+      DEFAULT_PROXY_TARGET,
+    );
+  });
+
+  it("returns the trimmed override URL when set", () => {
+    expect(
+      resolveProxyTarget({ CHAINVIZ_PROXY_TARGET: " http://reth1:8545 " }),
+    ).toBe("http://reth1:8545");
+  });
+});
+
+describe("startLoggingProxy", () => {
+  it("listens on the given port and transparently forwards observed calls", async () => {
+    // 転送先の実ノード役をローカルの HTTP サーバーで代用する。
+    const { createServer } = await import("node:http");
+    const received: string[] = [];
+    const upstream = createServer((req, res) => {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        received.push(body);
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ jsonrpc: "2.0", id: 1, result: "0x539" }));
+      });
+    });
+    await new Promise<void>((resolve) => upstream.listen(0, resolve));
+    const upstreamPort = (upstream.address() as { port: number }).port;
+
+    const observed: string[] = [];
+    const proxy = await startLoggingProxy(
+      0,
+      `http://127.0.0.1:${upstreamPort}`,
+      (o) => observed.push(o.method),
+    );
+    const proxyPort = proxy.address?.port;
+    expect(proxyPort).toBeGreaterThan(0);
+    try {
+      const requestBody = JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "eth_chainId",
+        params: [],
+      });
+      const res = await fetch(`http://127.0.0.1:${proxyPort}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: requestBody,
+      });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        jsonrpc: "2.0",
+        id: 1,
+        result: "0x539",
+      });
+      // 転送先はリクエストボディを改変なしで受け取る。
+      expect(received).toEqual([requestBody]);
+      // 観測データが onObserve に渡る。
+      expect(observed).toEqual(["eth_chainId"]);
+    } finally {
+      await proxy.close();
+      await new Promise<void>((resolve) => upstream.close(() => resolve()));
+    }
   });
 });
 

@@ -1,7 +1,8 @@
 // Execution Layer クライアント（reth 等）へ HTTP JSON-RPC で問い合わせる部分。
-// fetch への依存と JSON-RPC の語彙（eth_getBalance / eth_getTransactionCount）は
+// fetch への依存と JSON-RPC の語彙（eth_getBalance / eth_getTransactionByHash 等）は
 // このファイル（ChainAdapter 実装の内側）に閉じ込め、上位ロジックは
-// EthRpcClient インターフェースだけに依存して実ノードなしでテストできるようにする。
+// EthRpcClient インターフェース（汎用トランスポート）と、その上に載る
+// ドメイン固有ヘルパー関数だけに依存して実ノードなしでテストできるようにする。
 
 export interface EthRpcClient {
   /**
@@ -11,9 +12,34 @@ export interface EthRpcClient {
   call<T>(url: string, method: string, params: unknown[]): Promise<T>;
 }
 
+/** eth_getTransactionByHash / ブロック内 tx から取り出す最小限の tx 情報。 */
+export interface RpcTransaction {
+  hash: string;
+  from: string;
+  /** コントラクト作成 tx では to は null。 */
+  to: string | null;
+}
+
+/** eth_getBlockByHash(fullTx=true) から取り出すブロック（tx 本体を含む）。 */
+export interface RpcBlock {
+  hash: string;
+  transactions: RpcTransaction[];
+}
+
 interface JsonRpcResponse<T> {
   result?: T;
   error?: { code: number; message: string };
+}
+
+interface RawTransaction {
+  hash?: unknown;
+  from?: unknown;
+  to?: unknown;
+}
+
+interface RawBlock {
+  hash?: unknown;
+  transactions?: unknown;
 }
 
 /** グローバル fetch を用いた EthRpcClient 実装。 */
@@ -77,4 +103,50 @@ export async function fetchNonce(
     "latest",
   ]);
   return Number(BigInt(hex));
+}
+
+/** 生の JSON-RPC tx オブジェクトを RpcTransaction へ正規化する（不正なら null）。 */
+function normalizeTransaction(raw: unknown): RpcTransaction | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const tx = raw as RawTransaction;
+  if (typeof tx.hash !== "string" || typeof tx.from !== "string") return null;
+  const to = typeof tx.to === "string" ? tx.to : null;
+  return { hash: tx.hash, from: tx.from, to };
+}
+
+/**
+ * eth_getTransactionByHash で tx の詳細を取得する。未知のハッシュ（まだ
+ * 伝播していない等）では null を返す。JSON-RPC では未知の tx は result=null で
+ * 返るため、正規化して null を返す。
+ */
+export async function getTransactionByHash(
+  rpc: EthRpcClient,
+  rpcUrl: string,
+  hash: string,
+): Promise<RpcTransaction | null> {
+  const raw = await rpc.call<unknown>(rpcUrl, "eth_getTransactionByHash", [hash]);
+  return normalizeTransaction(raw);
+}
+
+/**
+ * eth_getBlockByHash(fullTx=true) でブロックを取得し、含まれる tx 本体を
+ * 返す。未知のブロックでは null を返す。
+ */
+export async function getBlockByHash(
+  rpc: EthRpcClient,
+  rpcUrl: string,
+  blockHash: string,
+): Promise<RpcBlock | null> {
+  const raw = await rpc.call<RawBlock | null>(rpcUrl, "eth_getBlockByHash", [
+    blockHash,
+    true,
+  ]);
+  if (typeof raw !== "object" || raw === null) return null;
+  if (typeof raw.hash !== "string") return null;
+  const txs = Array.isArray(raw.transactions)
+    ? raw.transactions
+        .map((t) => normalizeTransaction(t))
+        .filter((t): t is RpcTransaction => t !== null)
+    : [];
+  return { hash: raw.hash, transactions: txs };
 }

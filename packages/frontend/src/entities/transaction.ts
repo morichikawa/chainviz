@@ -1,0 +1,82 @@
+import type {
+  TransactionEntity,
+  WalletEntity,
+  WorldStateEntity,
+} from "@chainviz/shared";
+
+/**
+ * C層のトランザクション表示に使う純粋なデータ変換群。React / タイマー側の
+ * 責務（実時間スケジューリング）は `useTxLifecycle.ts` に置き、ここは
+ * 「ワールドステートのエンティティ → 表示用データ」の変換だけを持つ
+ * （テスト容易性のため）。
+ */
+
+export type TxStatus = TransactionEntity["status"];
+
+/** ウォレットカードに載せる直近 tx の既定表示件数。 */
+export const DEFAULT_RECENT_TX_LIMIT = 6;
+
+/** 16 進文字列（アドレス・ハッシュ）を先頭 + 末尾に短縮して表示する。 */
+export function shortHex(hex: string, lead = 6, tail = 4): string {
+  if (!hex.startsWith("0x")) return hex;
+  // "0x" + lead 桁 + "…" + tail 桁 に収まらない短い値はそのまま返す。
+  if (hex.length <= 2 + lead + tail + 1) return hex;
+  return `${hex.slice(0, 2 + lead)}…${hex.slice(-tail)}`;
+}
+
+/** ワールドステートのエンティティ列から tx を hash キーの Map に索引する。 */
+export function indexTransactions(
+  entities: Iterable<WorldStateEntity>,
+): Map<string, TransactionEntity> {
+  const map = new Map<string, TransactionEntity>();
+  for (const entity of entities) {
+    if (entity.kind === "transaction") map.set(entity.hash, entity);
+  }
+  return map;
+}
+
+/**
+ * ウォレットの `recentTxHashes` を実在する TransactionEntity へ解決する。
+ * 索引に無いハッシュ（まだ届いていない / 既に掃除された tx）は除外し、
+ * 先頭 `limit` 件だけ返す（新しい順で並んでいる前提）。
+ */
+export function resolveWalletTransactions(
+  wallet: WalletEntity,
+  txByHash: ReadonlyMap<string, TransactionEntity>,
+  limit = DEFAULT_RECENT_TX_LIMIT,
+): TransactionEntity[] {
+  const result: TransactionEntity[] = [];
+  for (const hash of wallet.recentTxHashes) {
+    const tx = txByHash.get(hash);
+    if (tx) result.push(tx);
+    if (result.length >= limit) break;
+  }
+  return result;
+}
+
+/** tx 群を hash -> 現在の status の Map にする（遷移検知の入力）。 */
+export function txStatusMap(
+  txs: Iterable<TransactionEntity>,
+): Map<string, TxStatus> {
+  const map = new Map<string, TxStatus>();
+  for (const tx of txs) map.set(tx.hash, tx.status);
+  return map;
+}
+
+/**
+ * 前回と今回の status Map を比べ、`pending` から確定（`included` / `failed`）へ
+ * 遷移した tx の hash を返す。ここが「mempool 投入 → ブロック取り込み」の
+ * 確定の瞬間で、確定フラッシュ演出のトリガーになる。新規に現れた tx や
+ * status が変わらない tx は含めない。
+ */
+export function detectTxSettlements(
+  prev: ReadonlyMap<string, TxStatus>,
+  next: ReadonlyMap<string, TxStatus>,
+): string[] {
+  const settled: string[] = [];
+  for (const [hash, status] of next) {
+    if (prev.get(hash) !== "pending") continue;
+    if (status === "included" || status === "failed") settled.push(hash);
+  }
+  return settled;
+}

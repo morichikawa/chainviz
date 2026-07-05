@@ -246,13 +246,13 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
 
 **collector**:
 
-- [ ] reth WSでnewPendingTransactions/newHeadsを購読しtxライフサイクル
+- [x] reth WSでnewPendingTransactions/newHeadsを購読しtxライフサイクル
       (pending→included)を追跡する
       [#76](https://github.com/morichikawa/chainviz/issues/76)
 - [x] ワークベンチのウォレット残高・nonceをポーリングしWalletEntityとして
       反映する
       [#77](https://github.com/morichikawa/chainviz/issues/77)
-- [ ] ワークベンチ→ノードのRPC呼び出しを観測するロギングプロキシを実装する
+- [x] ワークベンチ→ノードのRPC呼び出しを観測するロギングプロキシを実装する
       [#79](https://github.com/morichikawa/chainviz/issues/79)
 - [ ] ロギングプロキシが観測したRPC呼び出しを操作エッジとしてworld-state
       に配信する
@@ -265,14 +265,14 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
 
 **frontend**:
 
-- [ ] txライフサイクル(mempool投入→ブロック取り込み)のアニメーションを
+- [x] txライフサイクル(mempool投入→ブロック取り込み)のアニメーションを
       実装する
       [#81](https://github.com/morichikawa/chainviz/issues/81)
-- [ ] ウォレットのカード表示と所有エッジを実装する
+- [x] ウォレットのカード表示と所有エッジを実装する
       [#82](https://github.com/morichikawa/chainviz/issues/82)
 - [ ] ワークベンチ→ノードのRPC呼び出しエッジを描画する
       [#83](https://github.com/morichikawa/chainviz/issues/83)
-- [ ] C層向け用語データ(mempool・tx・nonce・EOA等)をglossaryに追加する
+- [x] C層向け用語データ(mempool・tx・nonce・EOA等)をglossaryに追加する
       [#84](https://github.com/morichikawa/chainviz/issues/84)
 
 **成果物**: 動くPhase 3デモ
