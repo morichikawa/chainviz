@@ -11,7 +11,9 @@
     "test": "pnpm -r test",
     "test:e2e": "pnpm --filter @chainviz/e2e test:e2e",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "dev:up": "scripts/dev-up.sh",
+    "dev:down": "scripts/dev-down.sh"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

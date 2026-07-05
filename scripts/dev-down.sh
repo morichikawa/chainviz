@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# scripts/dev-up.sh が起動したcollector・frontendを停止する。
+# Dockerスタックはデフォルトでは止めない(チェーンの進行状態を保持するため)。
+# 明示的に --docker を渡した場合のみ docker compose down する(-v で
+# genesis/chainデータごと破棄。docker compose自体の挙動に合わせる)。
+set -uo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PROFILE_DIR="$ROOT_DIR/profiles/ethereum"
+PID_DIR="$ROOT_DIR/.dev-pids"
+
+stop_process() {
+  local name="$1"
+  local pidfile="$PID_DIR/$name.pid"
+  if [ ! -f "$pidfile" ]; then
+    echo "==> $name: 記録された起動プロセスがありません(dev-up.sh経由で起動していない?)"
+    return 0
+  fi
+  local pid
+  pid="$(cat "$pidfile")"
+  if ! kill -0 "$pid" 2>/dev/null; then
+    echo "==> $name: プロセス(pid $pid)は既に終了しています"
+    rm -f "$pidfile"
+    return 0
+  fi
+  echo "==> $name (pid $pid) を停止します"
+  kill "$pid" 2>/dev/null || true
+  for _ in 1 2 3 4 5; do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 1
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    echo "    応答が無いため強制終了します"
+    kill -9 "$pid" 2>/dev/null || true
+  fi
+  rm -f "$pidfile"
+}
+
+stop_process frontend
+stop_process collector
+
+if [ "${1:-}" = "--docker" ]; then
+  echo "==> profiles/ethereum のDockerスタックを停止します"
+  cd "$PROFILE_DIR"
+  if [ "${2:-}" = "-v" ]; then
+    docker compose down -v
+  else
+    docker compose down
+  fi
+else
+  echo "==> Dockerスタックはそのままにしています(停止するには: $0 --docker [-v])"
+fi
