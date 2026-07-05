@@ -232,9 +232,57 @@ E2Eテストが混入しない
 - [x] 再接続シナリオ(切断→再接続後のスナップショット整合性)を追加する
       [#59](https://github.com/morichikawa/chainviz/issues/59)
 
-## ステップ 7 以降（概要のみ。詳細は着手時にこのドキュメントへ追記）
+## ステップ 7: Phase3実装 — C層（生きているチェーン）
 
-- [ ] Phase 3（C層: tx ライフサイクル、ワークベンチ操作の可視化、ウォレット）
+GitHub: [milestone](https://github.com/morichikawa/chainviz/milestone/6)
+
+CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリアルタイム反映。
+ブロック伝播パルス、txライフサイクル表示(C層完成)。tx投入はワークベンチ
+から行い、ワークベンチ→ノードのRPC呼び出しもエッジとして描画する。
+ワークベンチが持つウォレット(アドレス・残高・nonce)もこのタイミングで
+可視化に加える」。コントラクト呼び出し・イベントログの詳細な可視化は
+このステップの範囲外とし、必要になった時点で別途スコープする(先回り
+実装をしない)。
+
+**collector**:
+
+- [ ] reth WSでnewPendingTransactions/newHeadsを購読しtxライフサイクル
+      (pending→included)を追跡する
+      [#76](https://github.com/morichikawa/chainviz/issues/76)
+- [ ] ワークベンチのウォレット残高・nonceをポーリングしWalletEntityとして
+      反映する
+      [#77](https://github.com/morichikawa/chainviz/issues/77)
+- [ ] ワークベンチ→ノードのRPC呼び出しを観測するロギングプロキシを実装する
+      [#79](https://github.com/morichikawa/chainviz/issues/79)
+- [ ] ロギングプロキシが観測したRPC呼び出しを操作エッジとしてworld-state
+      に配信する
+      [#80](https://github.com/morichikawa/chainviz/issues/80)
+
+**node-env**:
+
+- [ ] ワークベンチの接続先をロギングプロキシ経由に変更する
+      [#78](https://github.com/morichikawa/chainviz/issues/78)
+
+**frontend**:
+
+- [ ] txライフサイクル(mempool投入→ブロック取り込み)のアニメーションを
+      実装する
+      [#81](https://github.com/morichikawa/chainviz/issues/81)
+- [ ] ウォレットのカード表示と所有エッジを実装する
+      [#82](https://github.com/morichikawa/chainviz/issues/82)
+- [ ] ワークベンチ→ノードのRPC呼び出しエッジを描画する
+      [#83](https://github.com/morichikawa/chainviz/issues/83)
+- [ ] C層向け用語データ(mempool・tx・nonce・EOA等)をglossaryに追加する
+      [#84](https://github.com/morichikawa/chainviz/issues/84)
+
+**成果物**: 動くPhase 3デモ
+**完了条件**: CONCEPT.md「ロードマップ」Phase 3の記述どおりに動作する
+(txがmempoolに入りブロックに取り込まれる様子がリアルタイムに見え、
+ワークベンチからノードへのRPC呼び出しがエッジとして描画され、
+ワークベンチが持つウォレットの残高・nonceが可視化される)
+
+## ステップ 8 以降（概要のみ。詳細は着手時にこのドキュメントへ追記）
+
 - [ ] Phase 4（D層: ノード内部）
 - [ ] Phase 5（AA 可視化）
 - [ ] Phase 6（Bitcoin プロファイル追加）
