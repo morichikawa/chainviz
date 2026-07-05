@@ -249,3 +249,48 @@
     1つ以上で判定される点、CONTRIBUTING.md の genesis 記述ドリフト、
     wait_for_port の固定リトライへの前提コメント)は未対応のまま。
     いずれも本ブランチのマージを妨げないが、別途整理が望ましい。
+
+### 2026-07-05 devスクリプト(dev-up/dev-down)の実機検証(qa 合格)
+
+- 担当: qa
+- ブランチ: chore-dev-up-down-scripts(コミット 8223054)
+- 内容:
+  - 稼働中の共有 `profiles/ethereum` スタックを壊さないため、別ポート
+    (collector 14000 / proxy 14001 / frontend 15173)を環境変数で指定し、
+    `--docker` オプションは実行しない方針で検証した。
+  - `pnpm dev:up`(別ポート指定)を実行し、以下を確認した。
+    - Docker スタックは「既に起動中のスタックを再利用します」と表示され、
+      `docker compose up -d` は呼ばれなかった(再利用ロジックが機能)。
+    - collector は 14000、ロギングプロキシは 14001、frontend(vite)は
+      15173 で起動し、いずれのポートも LISTEN 状態になった。
+    - collector の WebSocket(ws://127.0.0.1:14000)へ接続すると、
+      chainType=ethereum の snapshot が届き、entities に7ノード
+      (beacon1/2・reth1/2・validator1/2・workbench)が含まれていた。
+    - Playwright(chrome-headless-shell)で http://localhost:15173 を開き、
+      接続バッジが「接続済み」(`.status-badge--connected`)になること、
+      infra-card が7枚描画されること、コンソールエラーが無いことを確認した。
+  - 二重起動ガード: 起動中に同ポートで `pnpm dev:up` を再実行すると、
+    「collector は既にpid ... で起動中です」と表示され exit 1 で即座に
+    停止した。PIDファイル・既存プロセスはいずれも変化せず、新プロセスを
+    起動して旧プロセスを孤児化させることはなかった。
+  - `pnpm dev:down`: collector・frontend の両プロセスが終了し、
+    14000/14001/15173 が解放され、PIDファイルも削除された。Docker
+    スタックには触れず(「Dockerスタックはそのままにしています」表示)、
+    実行前後で7コンテナが Up のまま維持された。プロセス未起動状態で
+    再実行しても「記録された起動プロセスがありません」と表示され exit 0
+    で冪等に完了した。
+  - CONTRIBUTING.md の「手動で動かして触ってみる」節の記述(既定ポート、
+    Docker 再利用の挙動、dev:down が既定で Docker を残す点、環境変数での
+    ポート変更)は、いずれも実挙動と一致していた。
+  - `pnpm lint && pnpm build && pnpm test` を全パッケージで実行し、すべて
+    通過した(lint exit 0 / build exit 0 / test は collector 498件・
+    frontend 411件ほか全件 pass、exit 0)。
+- 決定事項・注意点:
+  - `docs/PLAN.md` の完了条件・依頼された確認項目をすべて満たしており
+    合格と判定。push・PR 作成・マージに進んでよい。
+  - 検証で起動した collector/frontend は `pnpm dev:down` で後始末済み。
+    共有 Docker スタックには一切変更を加えていない。
+  - 検証環境に Playwright のブラウザ実行用システムライブラリ
+    (libnspr4 等)が未導入だったため、scratchpad に展開済みの共有
+    ライブラリを `LD_LIBRARY_PATH` で参照して chrome-headless-shell を
+    起動した(スクリプト本体の検証には影響しない環境依存の補足)。
