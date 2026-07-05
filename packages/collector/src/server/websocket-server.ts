@@ -35,7 +35,14 @@ export class CollectorServer {
   /** 指定ポートで待ち受ける。listening まで待つ。 */
   listen(port: number): Promise<void> {
     return new Promise((resolve, reject) => {
-      const wss = new WebSocketServer({ port });
+      // host を "0.0.0.0"（IPv4 の全アドレス）に明示指定する。指定を省くと
+      // ws / Node は IPv6 の "::" に bind し、WSL2 の localhost 転送は WSL 側
+      // listener のアドレスファミリをそのまま Windows 側リレーへ写すため、
+      // Windows の localhost（127.0.0.1 = IPv4）からの接続が届かなくなる。
+      // ブラウザが ws://127.0.0.1:4000（IPv4）へ繋ぐと確定的に拒否される
+      // ため、IPv4 で待ち受けて Windows 側リレーを 127.0.0.1 に立てる
+      // （Issue #99。実測で "0.0.0.0" 指定時に IPv4 bind されることを確認）。
+      const wss = new WebSocketServer({ port, host: "0.0.0.0" });
       wss.on("connection", (ws) => this.onConnection(ws));
 
       // 起動時のエラー（ポート衝突など）は listen() を reject する。
