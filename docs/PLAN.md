@@ -260,7 +260,7 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
 
 **node-env**:
 
-- [ ] ワークベンチの接続先をロギングプロキシ経由に変更する
+- [x] ワークベンチの接続先をロギングプロキシ経由に変更する
       [#78](https://github.com/morichikawa/chainviz/issues/78)
 
 **frontend**:
