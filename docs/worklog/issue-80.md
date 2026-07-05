@@ -237,3 +237,51 @@
     operationObserved を配信する）に合わせて更新する
 - コミット分割は未実施。「collector 配線実装+テスト」「docs 更新」の
   2コミット案は関心事の分離として妥当
+
+### 2026-07-05 Issue #80 実機検証（qa）
+
+- 担当: qa
+- ブランチ: issue-80-operation-edges
+- 内容: `docs/PLAN.md` の Issue #80 完了条件「workbench からの RPC 呼び出しが、
+  フロントで受信する WebSocket 差分イベントとして観測できる（呼び出し元
+  workbench・呼び出し先 node・呼び出しの種類が分かる形）」を、実際に Docker
+  環境と collector を起動して検証した。結果は**合格**。
+- 検証手順と結果:
+  1. `profiles/ethereum` を `docker compose up -d` で起動。初回は既存の
+     genesis ボリュームが残っており beacon が weak subjectivity で起動失敗した
+     ため、`docker compose down -v` でボリュームを破棄してから作り直したところ
+     チェーンが進行した（この失敗は Issue #56 で既知の genesis 再利用の問題で
+     あり Issue #80 とは無関係）。block が 5〜35 と進行することを RPC で確認。
+  2. collector（`node packages/collector/dist/index.js`）を起動。
+     `WebSocket server listening on port 4000` /
+     `logging proxy listening on port 4001 -> http://172.28.1.1:8545` を確認。
+     ワークベンチの `ETH_RPC_URL` は `http://host.docker.internal:4001`（#78 で
+     ロギングプロキシ経由に変更済み）であることを実物で確認。
+  3. WebSocket クライアント（`ws://localhost:4000`）を接続し、接続時
+     スナップショットに operation 系が一切含まれないこと
+     （`"kind":"operation"` / `operationObserved` を含まない）を確認。
+     スナップショット上のワークベンチ id は `chainviz-ethereum/workbench`
+     （ip 172.28.0.2）、reth1 は `chainviz-ethereum/reth1`（ip 172.28.1.1）。
+  4. ワークベンチから `cast chain-id` / `cast block-number` /
+     `cast balance` / `cast send --value 1ether ...` を実行。いずれもプロキシ
+     経由で正常応答（chain-id 1337、tx が block 127 に取り込まれた）。
+  5. その間 WebSocket に `operationObserved` イベントが配信されることを確認。
+     読み取り系 3 件（eth_chainId / eth_blockNumber / eth_getBalance）に加え、
+     `cast send` では eth_getTransactionCount・eth_feeHistory・eth_estimateGas・
+     **eth_sendRawTransaction**・eth_getTransactionReceipt 等の一連の RPC が
+     すべて operationObserved として流れた。
+  6. 各イベントの `edge`（OperationEdge）を確認。
+     `fromWorkbenchId="chainviz-ethereum/workbench"`（呼び出し元 IP 172.28.0.2
+     から正しく解決）、`toNodeId="chainviz-ethereum/reth1"`（プロキシ転送先
+     172.28.1.1 から正しく解決）、`operation` は呼び出した JSON-RPC メソッド名
+     そのまま、`observedAt` は epoch ms が入っていることを確認。
+  7. 揮発性の確認: 一連の cast 呼び出しの後に新規 WebSocket 接続を張り、その
+     接続時スナップショットの `edges` が peer エッジ 1 件のみで operation 系を
+     一切含まないことを確認。store に畳み込まれていない（passthrough 配信のみ）
+     ことを実機で確認した。
+- lint/build/test: `pnpm lint && pnpm build && pnpm test` を全パッケージで実行し
+  通過（shared 6 / collector 498（うち operation-observer.test.ts 10）/
+  frontend 353 / e2e 34）。
+- 判定: 完了条件を満たしている。差し戻しなし。
+- 後片付け: 検証後に `docker compose down -v` でスタックを破棄し collector を
+  停止した。
