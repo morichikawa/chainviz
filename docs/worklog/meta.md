@@ -120,3 +120,177 @@
   - 合格。push・PR作成・マージへ進んでよい。
   - QA(chainviz-qa)はdocsのみの変更のため省略可と判断(前回レビューと
     同じ理由)。
+
+### 2026-07-05 開発用一括起動/停止スクリプト(dev-up/dev-down)のレビュー(差し戻し)
+
+- 担当: reviewer
+- ブランチ: chore-dev-up-down-scripts(コミット 9d846e0, 548eeb9)
+- 内容:
+  - `scripts/dev-up.sh` / `scripts/dev-down.sh`、`package.json` の
+    `dev:up`/`dev:down`、`.gitignore` の `.dev-pids/` 追加、
+    `docs/CONTRIBUTING.md` の使い方追記をレビューした。
+  - `pnpm lint && pnpm build && pnpm test` は全パッケージで通ることを確認
+    (collector 498件・frontend 411件ほか全パス)。
+  - 環境変数名(`CHAINVIZ_COLLECTOR_PORT`/`CHAINVIZ_PROXY_PORT`/
+    `VITE_COLLECTOR_URL`)が collector/frontend の実装と一致していること、
+    collector が WebSocket listen をポーリング開始より先に行うため
+    コールドスタートでも `wait_for_port` が成立することを確認した。
+  - `.gitignore` 追加は適切。シェルスクリプトは `packages/*` のロジック
+    ではないため vitest 対象外とする判断は妥当。境界原則(フロントは
+    collector 経由のみ)にも違反なし。コミット粒度(本体+配線 / docs の
+    2コミット)も適切。
+- 差し戻し理由(要修正):
+  - (1) `dev-up.sh` に二重起動ガードがない。起動済みの状態でもう一度
+    実行すると、新しい collector は EADDRINUSE で即死するのに
+    `wait_for_port` は旧インスタンスのポートを見て成功し、「起動しました」
+    と偽の成功を報告する。さらに pid ファイルが死んだ PID で上書きされ、
+    ログも truncate されるため、以後 `dev-down.sh` では旧インスタンスを
+    停止できず孤児プロセス化する。起動前に pid ファイル+`kill -0` で
+    稼働中インスタンスを検出したら exit 1 するガードが必要。
+  - (2) `dev-down.sh` が `kill -9` 後の生存確認をせず、失敗しても
+    pid ファイルを削除して exit 0 する。SIGKILL 後に `kill -0` で再確認し、
+    まだ生きていれば pid ファイルを残してエラーを報告し非0で終了すること。
+- 推奨(必須ではない):
+  - frontend の記録 PID は pnpm ラッパーのもの。SIGKILL フォールバック時は
+    pnpm だけが死んで vite が孤児化しポートを握り続ける可能性がある。
+    `setsid` で起動してプロセスグループごと `kill -- -$pid` するのが堅い。
+  - Docker 再利用判定が「running コンテナが1つでもあるか」だけで、
+    一部コンテナだけ exited のスタックを修復せず再利用する。E2E ハーネス
+    (docker.ts)はチェーン進行の健全性で判定し不健全なら up -d する。
+    genesis は Issue #56 で冪等化済みなので、全サービスが running で
+    なければ up -d する形に寄せられる。
+  - `wait_for_port` の 30回×1秒という固定リトライは「ローカルプロセスの
+    listen 開始待ち」でありチェーン進行状態に依存しないため許容だが、
+    その前提を示すコメントを1行添えるとよい。
+- 決定事項・注意点:
+  - CONTRIBUTING.md の既存記述「稼働中に up -d すると genesis が作り
+    直され P2P に失敗する」は Issue #56(genesis 冪等化)以前の理由で、
+    docker.ts のコメントとは食い違っている(このブランチ起因ではない
+    既存の docs ドリフト。別途整理が望ましい)。
+  - この作業には対応する GitHub Issue が無く、ブランチ名も
+    `issue-<番号>-<スラッグ>` 規約に沿っていない。ユーザー要望起点の
+    PLAN 外作業だが、追跡のため Issue を作成して紐付けるか、規約の
+    例外とする判断を統括が明示すること。
+
+### 2026-07-05 devスクリプト差し戻し対応の再レビュー(再差し戻し)
+
+- 担当: reviewer
+- ブランチ: chore-dev-up-down-scripts(コミット 4945f6c, 3c26d69)
+- 内容:
+  - 前回差し戻し2件への対応を確認した。
+    - (1) 二重起動ガード: `check_not_already_running` はpidファイル+
+      `kill -0` で稼働中インスタンスを検出し、collector/frontend
+      それぞれの起動直前に `|| exit 1` で呼ばれている。ロジックは正しい。
+      pidファイルが空・不正な場合は「起動していない」扱いになり後で
+      上書きされるので安全。解消済み。
+    - (2) SIGKILL失敗の握りつぶし: `kill -9` 後に `sleep 1` を挟んで
+      `kill -0` で再確認し、生存していればpidファイルを残してstderrに
+      エラーを出し `FAILED=1` + `return 1` する。`dev-down.sh` には
+      `set -e` が無いため、frontendの停止に失敗してもcollectorの停止
+      処理は続行され、末尾の `exit "$FAILED"` で非0終了する。伝播も
+      正しい。解消済み。
+  - `pnpm lint && pnpm build && pnpm test` は全パッケージで通ることを
+    確認(collector 498件・frontend 411件ほか全パス)。
+  - コミット粒度は4件(feat: スクリプト本体+配線 / docs: CONTRIBUTING /
+    fix: 差し戻し対応 / docs: 指摘記録)で、それぞれ単一の関心事に
+    収まっている。問題なし。
+- 差し戻し理由(要修正):
+  - 修正コミット(4945f6c)で `dev-down.sh` 末尾に追加された
+    `exit "$FAILED"` が、`--docker` 指定時の `docker compose down` の
+    失敗を隠す退行を生んでいる。修正前はスクリプト最後のコマンドとして
+    `docker compose down` の終了コードがそのまま伝播していたが、修正後は
+    downが失敗しても `FAILED` は 0 のままなので exit 0 になる
+    (CLAUDE.md「失敗しているのにok相当を返さない」に抵触。今回の修正が
+    直そうとしたのと同じ種類の問題)。`docker compose down || FAILED=1`
+    のように失敗を `FAILED` へ反映すること。`cd "$PROFILE_DIR"` の失敗も
+    同様に続行してしまうため、あわせて `cd ... || exit 1` 等にするとよい。
+- 推奨(必須ではない):
+  - frontendの二重起動ガードがcollector起動後に走るため、「frontendだけ
+    起動中」のケースでは新collectorを起動してから exit 1 する部分起動が
+    起きる。pidファイルは書かれているので案内どおり `pnpm dev:down` で
+    回収でき実害は小さいが、2つのガードを起動処理の前にまとめて実行する
+    方が部分起動自体を避けられる。
+- 決定事項・注意点:
+  - 上記1点のみ修正のうえ再レビューに出すこと。修正は数行で済む見込み。
+  - Issue化せず`chore-`ブランチで進める判断(WORKLOG分割PR #92等と同様の
+    開発ツール整備扱い)は統括の明示判断として了承した。
+
+### 2026-07-05 devスクリプト再々レビュー(合格)
+
+- 担当: reviewer
+- ブランチ: chore-dev-up-down-scripts(コミット 5297303)
+- 内容:
+  - 前回差し戻し(dev-down.sh の `--docker` 実行時に `docker compose down`
+    の失敗が `FAILED` に反映されず exit 0 になる退行)への対応を確認した。
+    - `docker compose down` / `down -v` の双方に `|| FAILED=1` が付き、
+      末尾の `exit "$FAILED"` へ正しく伝播する。`dev-down.sh` は
+      `set -e` 無し(`set -uo pipefail`)なので、失敗後も後続処理は
+      続行しつつ最終終了コードだけ非0になる設計として一貫している。
+    - `cd "$PROFILE_DIR"` の失敗も if 分岐で捕捉し、stderr にエラーを
+      出して `FAILED=1` とし、誤ったディレクトリで compose を実行しない
+      よう down 自体をスキップする。妥当。
+  - 前回推奨だった二重起動ガードの前倒しも確認した。
+    `check_not_already_running collector/frontend` がスクリプト冒頭
+    (Docker確認・ビルドより前)に移動し、「frontendだけ起動中」のケースで
+    collector を部分起動してから exit する問題が解消された。ガードは
+    絶対パスの pidファイルのみ参照し cwd に依存せず、`mkdir -p $PID_DIR`
+    より後に実行されるため、順序変更による副作用は無い。
+  - `pnpm lint && pnpm build && pnpm test` は全パッケージで通ることを
+    確認(shared 6件・collector 498件・frontend 411件・e2e unit 34件)。
+  - コミット粒度: 今回の追加は 5297303 の1件。dev-down.sh の握りつぶし
+    修正(必須指摘)と dev-up.sh のガード順序整理(推奨指摘)が同居して
+    おり、厳密には fix と refactor を分けるのが理想だが、前回の差し戻し
+    対応コミット(4945f6c、同じく2指摘を1コミットで対応)を許容した判断
+    との一貫性から「レビュー指摘対応一式」として許容する。
+- 決定事項・注意点:
+  - 静的レビューとしては合格。残タスクは chainviz-qa による実機確認
+    (二重起動ガード・`--docker` での停止/復旧)と push・PR作成。
+  - 前回までに記録した非ブロッキング事項(Docker再利用判定が running
+    1つ以上で判定される点、CONTRIBUTING.md の genesis 記述ドリフト、
+    wait_for_port の固定リトライへの前提コメント)は未対応のまま。
+    いずれも本ブランチのマージを妨げないが、別途整理が望ましい。
+
+### 2026-07-05 devスクリプト(dev-up/dev-down)の実機検証(qa 合格)
+
+- 担当: qa
+- ブランチ: chore-dev-up-down-scripts(コミット 8223054)
+- 内容:
+  - 稼働中の共有 `profiles/ethereum` スタックを壊さないため、別ポート
+    (collector 14000 / proxy 14001 / frontend 15173)を環境変数で指定し、
+    `--docker` オプションは実行しない方針で検証した。
+  - `pnpm dev:up`(別ポート指定)を実行し、以下を確認した。
+    - Docker スタックは「既に起動中のスタックを再利用します」と表示され、
+      `docker compose up -d` は呼ばれなかった(再利用ロジックが機能)。
+    - collector は 14000、ロギングプロキシは 14001、frontend(vite)は
+      15173 で起動し、いずれのポートも LISTEN 状態になった。
+    - collector の WebSocket(ws://127.0.0.1:14000)へ接続すると、
+      chainType=ethereum の snapshot が届き、entities に7ノード
+      (beacon1/2・reth1/2・validator1/2・workbench)が含まれていた。
+    - Playwright(chrome-headless-shell)で http://localhost:15173 を開き、
+      接続バッジが「接続済み」(`.status-badge--connected`)になること、
+      infra-card が7枚描画されること、コンソールエラーが無いことを確認した。
+  - 二重起動ガード: 起動中に同ポートで `pnpm dev:up` を再実行すると、
+    「collector は既にpid ... で起動中です」と表示され exit 1 で即座に
+    停止した。PIDファイル・既存プロセスはいずれも変化せず、新プロセスを
+    起動して旧プロセスを孤児化させることはなかった。
+  - `pnpm dev:down`: collector・frontend の両プロセスが終了し、
+    14000/14001/15173 が解放され、PIDファイルも削除された。Docker
+    スタックには触れず(「Dockerスタックはそのままにしています」表示)、
+    実行前後で7コンテナが Up のまま維持された。プロセス未起動状態で
+    再実行しても「記録された起動プロセスがありません」と表示され exit 0
+    で冪等に完了した。
+  - CONTRIBUTING.md の「手動で動かして触ってみる」節の記述(既定ポート、
+    Docker 再利用の挙動、dev:down が既定で Docker を残す点、環境変数での
+    ポート変更)は、いずれも実挙動と一致していた。
+  - `pnpm lint && pnpm build && pnpm test` を全パッケージで実行し、すべて
+    通過した(lint exit 0 / build exit 0 / test は collector 498件・
+    frontend 411件ほか全件 pass、exit 0)。
+- 決定事項・注意点:
+  - `docs/PLAN.md` の完了条件・依頼された確認項目をすべて満たしており
+    合格と判定。push・PR 作成・マージに進んでよい。
+  - 検証で起動した collector/frontend は `pnpm dev:down` で後始末済み。
+    共有 Docker スタックには一切変更を加えていない。
+  - 検証環境に Playwright のブラウザ実行用システムライブラリ
+    (libnspr4 等)が未導入だったため、scratchpad に展開済みの共有
+    ライブラリを `LD_LIBRARY_PATH` で参照して chrome-headless-shell を
+    起動した(スクリプト本体の検証には影響しない環境依存の補足)。
