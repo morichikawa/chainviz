@@ -96,7 +96,7 @@ describe("useWorldState hasReceivedSnapshot (Issue #123 regression)", () => {
     const { result } = renderHook(() => useWorldState(factory));
 
     act(() => {
-      captured?.onStatusChange("connected");
+      captured?.onStatusChange?.("connected");
     });
 
     expect(result.current.status).toBe("connected");
@@ -113,12 +113,12 @@ describe("useWorldState hasReceivedSnapshot (Issue #123 regression)", () => {
     const { result } = renderHook(() => useWorldState(factory));
 
     act(() => {
-      captured?.onStatusChange("connected");
+      captured?.onStatusChange?.("connected");
     });
     expect(result.current.hasReceivedSnapshot).toBe(false);
 
     act(() => {
-      captured?.onSnapshot(emptySnapshot);
+      captured?.onSnapshot?.(emptySnapshot);
     });
     expect(result.current.hasReceivedSnapshot).toBe(true);
   });
@@ -133,13 +133,13 @@ describe("useWorldState hasReceivedSnapshot (Issue #123 regression)", () => {
     const { result } = renderHook(() => useWorldState(factory));
 
     act(() => {
-      captured?.onStatusChange("connected");
-      captured?.onSnapshot(emptySnapshot);
+      captured?.onStatusChange?.("connected");
+      captured?.onSnapshot?.(emptySnapshot);
     });
     expect(result.current.hasReceivedSnapshot).toBe(true);
 
     act(() => {
-      captured?.onStatusChange("disconnected");
+      captured?.onStatusChange?.("disconnected");
     });
     expect(result.current.hasReceivedSnapshot).toBe(true);
   });
