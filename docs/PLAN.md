@@ -327,7 +327,7 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
 - [ ] ノード/ワークベンチ追加時に仮の半透明カードと即時フィードバックを
       表示する
       [#102](https://github.com/morichikawa/chainviz/issues/102)
-- [ ] compose起動ノードの削除ボタンを押すと必ずエラーになる(UIで防げて
+- [x] compose起動ノードの削除ボタンを押すと必ずエラーになる(UIで防げて
       いない)
       [#103](https://github.com/morichikawa/chainviz/issues/103)
 - [ ] reth(EL)同士のP2P接続がPeerEdgeとして描画されない

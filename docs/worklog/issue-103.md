@@ -136,3 +136,35 @@
   - labels.ts の定数値自体は変更していない（既存の文字列リテラルを
     import に置き換えただけ）ため、この変更単独で既存の Docker ラベル
     運用・回収ロジックの挙動は変わらない。
+
+### 2026-07-06 Issue #103 frontend側: removableに応じた削除ボタンの出し分け
+
+- 担当: frontend
+- ブランチ: issue-103-removable-node-flag
+- 内容: 設計フェーズ・collector側の実装を受けて、frontend側の対応を行った。
+  - `packages/frontend/src/entities/InfraNodeCard.tsx`: 削除(×)ボタンを
+    `entity.removable === true` のときだけ描画するよう変更した(それ以外は
+    ボタン自体を描画しない非表示方式)。`InfraEntity`(`NodeEntity` /
+    `WorkbenchEntity` 共通の基底型)に定義済みの `removable?: boolean` を
+    参照するだけで、node/workbench 両方の kind に対応できる。
+  - `packages/frontend/src/entities/InfraNodeCard.test.tsx`: 既存の
+    フィクスチャ(`node` / `workbench`)に `removable: true` を追加し、
+    既存のボタン存在前提のテストが引き続き通ることを確認した。加えて
+    `removable` が `false` / `undefined` のときにボタンが描画されない
+    ことを検証する新規テストを4件追加した(node/workbench それぞれの
+    false ケース、node の undefined ケース、true のとき描画される
+    ことの確認)。
+  - `pnpm lint && pnpm build && pnpm test` を全パッケージに対して実行し、
+    通過を確認した(collector 503件、shared 8件、frontend 415件、e2e 34件、
+    いずれも成功)。
+  - `docs/PLAN.md` の Issue #103 チェックボックスにチェックを付け、
+    GitHub Issue #103 をクローズした(collector側の作業記録で保留と
+    されていた分をここで対応)。
+- 決定事項・注意点:
+  - グレーアウト表示や削除不可の理由表示は設計フェーズの決定どおり今回の
+    スコープ外。将来必要になれば `InfraPopover` 側への拡張で対応する
+    想定(設計フェーズの記録を参照)。
+  - `removable` が `undefined`(旧スナップショット・collector未対応の
+    ワールドステートなど)の場合も「削除不可」の安全側として扱われる
+    (`=== true` の厳密比較のため)。これは shared 側の設計方針
+    (「省略時は false と同義」)と一致している。
