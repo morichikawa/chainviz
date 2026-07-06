@@ -200,3 +200,56 @@
 - 実装のバグは見つからなかった。既存実装は enode 形式の揺れ・部分失敗・
   networkId 分離のいずれについても安全側に倒れており、追加テストはその
   挙動を回帰として固定するもの
+
+### 2026-07-06 EL ピアエッジ実装の静的レビュー（reviewer）
+
+- 担当: reviewer
+- ブランチ: issue-106-el-peer-edges
+- 内容: 設計・実装・テスト強化まで完了した EL ピアエッジ対応を静的に
+  レビューし、合格とした
+- 確認したこと:
+  - **境界の遵守**: `enode` / `admin_nodeInfo` / `admin_peers` / devp2p の
+    語彙はすべて `packages/collector/src/adapters/ethereum/` 配下
+    （ChainAdapter 実装の内側）に閉じている。ワールドステートに出るのは
+    stableId と networkId 文字列のみ。`packages/frontend` と
+    `packages/shared` に差分が無いことを `git diff --stat` で確認した
+  - **フロント変更不要の裏取り**: `packages/frontend/src/entities/peerEdge.ts`
+    の `networkIdColor`（networkId のハッシュから決定的に色を導出）と
+    グルーピング（`data.networkId` 単位）を読み、新しい
+    `<project>-execution` に自動追従することを確認した
+  - **識別子解決の安全側設計**: `enodePublicKey` は先頭アンカー付きの
+    厳密な正規表現（128 桁 16 進 + `@` 区切り必須）で、形式が合わなければ
+    undefined。`id` フォールバックも 16 進以外を拒否して小文字へ正規化。
+    解決できない識別子はエッジにならないだけで誤エッジは生まれない。
+    `fetchExecutionPeerIdentity` は識別子が取れない場合に例外を投げて
+    呼び出し側で当該ノードだけ落とす（黙って空を返さない）
+  - **CL 側の回帰なし**: `fetchConsensusPeerNodes` は既存の
+    `pollPeersOnce` 本体の純粋な切り出しで、Beacon API の呼び出し・
+    失敗ハンドリング・networkId（`<project>-consensus`）とも挙動変更なし。
+    既存の CL 側テスト（beacon 2 台で 1 エッジ、validator 除外など）が
+    そのまま通ることも確認した
+  - **テストの実効性（ミューテーション確認）**: 実装を一時的に壊して
+    テストが検出できることを確認し、直後に revert した。
+    (1) `enodePublicKey` の `.toLowerCase()` を除去 → 8 件失敗、
+    (2) `pollPeersOnce` から EL 側エッジの連結を除去 → 4 件失敗。
+    いずれも追加テストが実装の破壊を検出できる有意味なテストだった
+  - **品質ゲート**: ルートから `pnpm lint && pnpm build && pnpm test` が
+    全パッケージで通ること（shared 6 / e2e 34 / collector 550 /
+    frontend 411 件すべて成功）
+  - **docs との整合**: `docs/ARCHITECTURE.md` の `subscribePeers` 節の
+    追記（CL/EL の 2 ネットワーク観測・networkId 分離・EL エッジに
+    パルスを乗せない旨）が実装と一致。`docs/PLAN.md` のチェックと
+    Issue #106 リンクも適切
+  - **コミット粒度**: `git log main..HEAD` の 9 コミットが正規化ロジック・
+    targets 追加・peers 一般化・fetch ヘルパー・配線・テスト強化・docs で
+    関心事ごとに分かれており適切
+- 非ブロッキングの指摘（フォローアップ推奨、本 Issue の差し戻し対象外）:
+  - CL 側 `fetchConsensusPeerNodes` の `catch` はログ無しで握りつぶす
+    既存挙動のままで、EL 側（ログあり）と非対称。既存挙動の維持は
+    実装記録に明記されておりスコープ外だが、CLAUDE.md の運用ルール
+    （意図的な握りつぶしには理由コメントを残す）に照らすと、CL 側にも
+    ログまたは理由コメントを足すフォローアップが望ましい
+  - `packages/frontend/src/entities/peerEdge.ts` のコメント
+    「現状の Ethereum プロファイル1つでは networkId は1種類だが」が
+    本変更で 2 種類になり陳腐化した。フロント担当のついでの修正で
+    十分な軽微な齟齬
