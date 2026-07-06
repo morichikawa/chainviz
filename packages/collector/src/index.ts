@@ -227,7 +227,12 @@ export async function main(port: number = DEFAULT_PORT): Promise<void> {
   // よう起動時に明示的に警告する（エラーを握りつぶさない）。
   const walletWarning = walletTrackingDisabledWarning(mnemonic);
   if (walletWarning) console.warn(`[collector] ${walletWarning}`);
-  const adapter = new EthereumAdapter(poller, { mnemonic });
+  // ワークベンチの rpcTargetNodeId 解決（Issue #123）に使う転送先ホストを、
+  // ロギングプロキシと同じ resolveProxyTarget() から導出する。プロキシの
+  // 実際の待受設定と常に一致させるため、ここでは決め打ちにしない。
+  const proxyTarget = resolveProxyTarget();
+  const rpcTargetHost = parseProxyTargetHost(proxyTarget);
+  const adapter = new EthereumAdapter(poller, { mnemonic, rpcTargetHost });
   const store = new WorldStateStore("ethereum");
 
   // 操作コマンド（ノード/ワークベンチの追加・削除）の処理を配線する。
@@ -250,12 +255,12 @@ export async function main(port: number = DEFAULT_PORT): Promise<void> {
   // 観測データは OperationEdge へ解決し、operationObserved イベントとして
   // フロントへ passthrough 配信する（Issue #80）。呼び出し元 IP・転送先ホストは
   // world-state store（＝解決口）へ観測ごとに問い合わせて id を引く。
-  const proxyTarget = resolveProxyTarget();
-  const targetHost = parseProxyTargetHost(proxyTarget);
+  // 転送先ホスト（rpcTargetHost）は上で adapter に渡したものと同じ値を使う
+  // （EthereumAdapter の rpcTargetNodeId 解決と対象が食い違わないようにする）。
   let onObserve: ((observation: RpcObservation) => void) | undefined;
-  if (targetHost) {
+  if (rpcTargetHost) {
     onObserve = createOperationObserver({
-      targetHost,
+      targetHost: rpcTargetHost,
       resolver: store,
       broadcast: (events) => server.broadcastDiff(events),
     });
