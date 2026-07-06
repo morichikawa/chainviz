@@ -157,8 +157,24 @@ describe("InfraNodeCard remove button visibility (removable)", () => {
     expect(screen.queryByTestId("infra-card-remove-workbench-1")).toBeNull();
   });
 
+  it("does not render a remove button for a workbench when removable is undefined (旧スナップショット想定)", () => {
+    // node 側だけでなく workbench 側でも undefined を false 相当に扱うこと。
+    const withoutRemovable: WorkbenchEntity = { ...workbench };
+    delete withoutRemovable.removable;
+    renderCard(withoutRemovable);
+    expect(screen.queryByTestId("infra-card-remove-workbench-1")).toBeNull();
+  });
+
   it("renders a remove button when removable is true (addNodeで追加した想定)", () => {
     renderCard({ ...node, removable: true });
     expect(screen.queryByTestId("infra-card-remove-reth-follower-1")).not.toBeNull();
+  });
+
+  it("does not render a remove button when removable is a truthy non-boolean via a stale snapshot", () => {
+    // === true の厳密比較なので、シリアライズ経由で万一 "true" 文字列などが
+    // 紛れ込んでも UI はボタンを出さない（削除不可の安全側）。型を欺いて確認する。
+    const corrupted = { ...node, removable: "true" } as unknown as NodeEntity;
+    renderCard(corrupted);
+    expect(screen.queryByTestId("infra-card-remove-reth-follower-1")).toBeNull();
   });
 });
