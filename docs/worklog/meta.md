@@ -687,3 +687,41 @@
 - 判定: 合格。docs/ + .claude/agents/ のみの変更のため、CLAUDE.md の
   明記済み例外により chainviz-qa の省略は妥当。push / PR / マージは
   統括に委ねる。
+
+### 2026-07-06 PLAN.mdバックログへのIssue #129追加のレビュー(reviewer 合格)
+
+- 担当: reviewer
+- ブランチ: docs-plan-add-129-backlog(コミット 8e3a5c7)
+- 内容:
+  - `docs/PLAN.md` のバックログセクションへIssue #129(動的追加ワーク
+    ベンチのRPCがロギングプロキシを経由せずreth1に直結している)を
+    1項目追加するdocsのみの変更をレビューした。結果は合格。
+  - `gh issue view 129` で照合: 状態はOPENで `[ ]`(未チェック)と一致。
+    PLAN.mdの行の文言はIssueタイトルに補足「(操作エッジが描画されない)」
+    を添えたもので、補足内容はIssue本文の記述と一致しており正確。
+    リンク先URLも正しい。milestoneは未設定で、特定のステップに
+    紐づかないバックログ配置(既存の #102/#103/#126 と同様)と整合。
+  - Issue本文の技術的主張をコードと突き合わせて確認:
+    `packages/collector/src/adapters/ethereum/node-lifecycle.ts` の
+    `DEFAULTS.ethRpcUrl` が `http://172.28.1.1:8545` で、この IP は
+    `profiles/ethereum/docker-compose.yml` の reth1 の
+    `ipv4_address`(172.28.1.1)と一致。一方、静的ワークベンチの
+    `ETH_RPC_URL` は `http://host.docker.internal:4001`(ロギング
+    プロキシ)であり、「動的追加のみプロキシを経由しない」という
+    ギャップの説明は実装と一致している。
+  - ラベルは collector。修正箇所が `node-lifecycle.ts`(collector側の
+    RPC接続先決定ロジック)であることと整合し妥当。
+  - 変更は `docs/PLAN.md` のみ3行の追加で、コミットは1件
+    (Conventional Commits形式の `docs:`)。「1変更=1コミット」
+    「チェックボックス1行=Issue 1つ」の規約に適合。
+  - `pnpm lint` / `pnpm build` / `pnpm test`(shared 10件・e2e 34件・
+    collector 584件・frontend 539件)がすべて通ることを確認した。
+- 決定事項・注意点:
+  - Issue本文が参照する `docs/worklog/issue-123.md` は未マージの
+    ブランチ `issue-123-ux-design-node-addition` 上にのみ存在する。
+    #123 のマージ後に参照が解決される前提であり、本変更の合否には
+    影響しない(差し戻し理由としない)。
+  - QA(chainviz-qa)はdocsのみの変更のため省略可とする依頼元の判断を
+    了承(CLAUDE.mdに明記された例外に該当。実行環境の動作に影響する
+    変更が無く、検証対象が存在しない)。
+  - push・PR作成・マージは統括の判断に委ねる。
