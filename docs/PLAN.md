@@ -318,7 +318,7 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
       [#68](https://github.com/morichikawa/chainviz/issues/68)
 - [ ] txライフサイクルにfailedステータスを実装する
       [#86](https://github.com/morichikawa/chainviz/issues/86)
-- [ ] P2Pエッジと所有エッジの色相が近く(ともにアンバー系)、線種でしか
+- [x] P2Pエッジと所有エッジの色相が近く(ともにアンバー系)、線種でしか
       区別できない環境がある。色相を分離する
       [#95](https://github.com/morichikawa/chainviz/issues/95)
 - [x] WSL2環境でcollectorのWebSocket/ロギングプロキシがVS Codeのポート
