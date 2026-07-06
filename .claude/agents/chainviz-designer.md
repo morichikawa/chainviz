@@ -80,3 +80,6 @@ model: fable
 紐付かない場合は`docs/worklog/meta.md`）にも記録する（フォーマットは
 `docs/WORKLOG.md`冒頭を参照。平易な文体で書く）。新規ファイルを作った
 場合は`docs/WORKLOG.md`（索引）にも1行追加する。
+
+`git push` / PR作成 / mainへのマージ / Issueのクローズは自分で行わない。
+これらは呼び出し元（統括）の判断・実行に委ねる。
