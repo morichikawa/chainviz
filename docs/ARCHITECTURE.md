@@ -97,12 +97,29 @@ interface NodeEntity extends InfraEntity {
   syncStatus: "syncing" | "synced";
   blockHeight: number;
   headBlockHash: string;
+  // P2P ネットワーク上の役割。"bootnode" = 新規参加ノードが最初に接続する
+  // 入口役、"peer" = それ以外の通常ピア。bootnode はチェーン非依存の P2P
+  // 一般語彙として使う（Bitcoin の seed node 等も同系概念）。collector は
+  // Docker ラベル `com.chainviz.p2p-role`（値 "bootnode" のときのみ
+  // bootnode、それ以外は peer）から導出する（Issue #65 の「ラベルを単一の
+  // 真実の情報源とする」方針。Ethereum プロファイルでは compose で
+  // reth1/beacon1 にラベルを付与する）。省略時は「不明」（旧スナップ
+  // ショット互換）で、フロントは p2pRole === "bootnode" の判定のみ行い、
+  // 見つからなければブートノード前提の表示を出さない（Issue #123 / #124）
+  p2pRole?: "bootnode" | "peer";
 }
 
 interface WorkbenchEntity extends InfraEntity {
   kind: "workbench";
   label: string; // "Alice" 等、ユーザーが付ける表示名
   walletIds: string[]; // 所有ウォレット（基本は 1 件。CONCEPT.md 案B）
+  // このワークベンチの RPC 呼び出しが最終的に届くノードのエンティティ id。
+  // collector が実効的な RPC 到達先ホスト（ロギングプロキシの転送先
+  // CHAINVIZ_PROXY_TARGET の host 部）をノードの ip と突き合わせて解決する
+  // （operationObserved の toNodeId 解決と同じ考え方）。解決できない場合と
+  // 旧スナップショットでは省略（null は使わず「無い」を省略に一本化）。
+  // フロントは常設の「操作先」エッジ・カード詳細の表示に使う（Issue #123）
+  rpcTargetNodeId?: string;
 }
 
 interface PeerEdge {
