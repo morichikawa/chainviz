@@ -945,3 +945,45 @@
     了承(CLAUDE.mdに明記された例外に該当。実行環境の動作に影響する
     変更が無く、検証対象が存在しない)。
   - push・PR作成・マージは統括の判断に委ねる。
+
+### 2026-07-07 PLAN.mdバックログへのIssue #139追加のレビュー(reviewer 合格)
+
+- 担当: reviewer
+- ブランチ: docs-plan-add-139-backlog(コミット be5415e)
+- 内容:
+  - `docs/PLAN.md` のバックログセクションへIssue #139(PC停止等で
+    チェーンが長時間停止すると、beacon再起動がweak subjectivity period
+    エラーで失敗する)を1項目追加するdocsのみの変更をレビューした。
+    結果は合格。
+  - `gh issue view 139` で照合: 状態はOPENで `[ ]`(未チェック)と一致。
+    PLAN.mdの行の文言はIssueタイトルそのままで正確。リンク先URLも
+    正しい。既存のバックログ項目(#125/#129/#135)と同じ配置・書式で
+    整合している。
+  - Issue本文の内容を確認: lighthouseの実際のエラーメッセージ
+    ("The current head state is outside the weak subjectivity period")
+    が引用されており、現状の回避策(`down -v` によるチェーンデータ
+    全削除)とその問題点(ブロック履歴の喪失)、対応方針の3案
+    (A: エラー検知して確認の上で自動再初期化、B: `--ignore-ws-check`
+    の付与、C: 停止期間に応じた自動判定)、完了条件が明記されている。
+    案の選定をchainviz-designerの検討に委ねる旨、閾値を設ける場合は
+    CLAUDE.mdの「環境状態依存の固定値の禁止」原則に従い根拠を明記する
+    旨の注意書きも適切。
+  - ラベルは node-env。原因がprofiles/ethereumのgenesisタイムスタンプ
+    固定とlighthouseの起動オプションにあるため妥当(案Aが
+    `scripts/dev-up.sh` に触れる可能性はあるが、主たる担当領域として
+    node-envで整合)。
+  - 変更は `docs/PLAN.md` のみ3行の追加で、コミットは1件
+    (Conventional Commits形式の `docs:`)。「1変更=1コミット」
+    「チェックボックス1行=Issue 1つ」の規約に適合。
+  - `pnpm lint` / `pnpm build` / `pnpm test`(shared 13件・e2e 34件・
+    collector 638件・frontend 761件)がすべて通ることを確認した。
+- 決定事項・注意点:
+  - 統括が実際にPC停止後の `docker compose up -d` でbeacon1の起動失敗を
+    確認済みとのこと。実際の再現・修正後の動作検証は #139 実装時のQA
+    (chainviz-qa)の担当となる。
+  - Issue本文の「具体的な閾値は未調査」(weak subjectivity periodの長さ)
+    は実装着手時に要調査。lighthouseのデフォルトではvalidator数・
+    バランスに依存して算出されるため、設計時に実測すること。
+  - QA(chainviz-qa)はdocsのみの変更のため省略可とする依頼元の判断を
+    了承(CLAUDE.mdに明記された例外に該当)。
+  - push・PR作成・マージは統括の判断に委ねる。
