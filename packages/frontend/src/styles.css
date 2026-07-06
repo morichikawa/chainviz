@@ -174,6 +174,27 @@ body {
   border-color: var(--accent);
 }
 
+/* --- 追加コマンド送信直後のローディング表示（Issue #102） --- */
+/* ボタン自体は disabled にしない（連打を禁止する仕様ではないため）。
+   スピナー + 補足文言だけで「受け付けた」ことを示す。chainviz-spin
+   キーフレームはゴーストカード（.ghost-card__spinner）と共有する。 */
+.canvas-toolbar__button--pending {
+  border-color: var(--accent);
+  color: var(--muted);
+}
+
+.canvas-toolbar__spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  vertical-align: -1px;
+  animation: chainviz-spin 0.7s linear infinite;
+}
+
 /* --- インフラカード --- */
 .infra-card {
   position: relative;

@@ -3,11 +3,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CommandActionsProvider } from "../commands/CommandActionsContext.js";
 import type { CommandActions } from "../commands/useCommands.js";
 import { LanguageProvider } from "../i18n/LanguageProvider.js";
-import { CanvasToolbar } from "./CanvasToolbar.js";
+import { CanvasToolbar, type CanvasToolbarProps } from "./CanvasToolbar.js";
 
 afterEach(cleanup);
 
-function renderToolbar(actions: Partial<CommandActions> = {}) {
+function renderToolbar(
+  actions: Partial<CommandActions> = {},
+  props: CanvasToolbarProps = {},
+) {
   const full: CommandActions = {
     addNode: vi.fn(),
     addWorkbench: vi.fn(),
@@ -18,7 +21,7 @@ function renderToolbar(actions: Partial<CommandActions> = {}) {
   render(
     <LanguageProvider initialLanguage="ja">
       <CommandActionsProvider actions={full}>
-        <CanvasToolbar />
+        <CanvasToolbar {...props} />
       </CommandActionsProvider>
     </LanguageProvider>,
   );
@@ -92,5 +95,54 @@ describe("CanvasToolbar", () => {
     fireEvent.click(screen.getByRole("button", { name: /ワークベンチを追加/ }));
     expect(actions.removeNode).not.toHaveBeenCalled();
     expect(actions.removeWorkbench).not.toHaveBeenCalled();
+  });
+
+  describe("pending feedback (Issue #102)", () => {
+    it("shows no pending indication by default", () => {
+      renderToolbar();
+      const addNodeButton = screen.getByRole("button", { name: /ノードを追加/ });
+      expect(addNodeButton.className).not.toContain("--pending");
+      expect(addNodeButton.getAttribute("aria-busy")).toBe("false");
+    });
+
+    it("marks the add-node button as pending/busy while pendingAddNode is true", () => {
+      renderToolbar({}, { pendingAddNode: true });
+      const addNodeButton = screen.getByRole("button", { name: /ノードを追加/ });
+      expect(addNodeButton.className).toContain("canvas-toolbar__button--pending");
+      expect(addNodeButton.getAttribute("aria-busy")).toBe("true");
+    });
+
+    it("marks the add-workbench button as pending/busy while pendingAddWorkbench is true", () => {
+      renderToolbar({}, { pendingAddWorkbench: true });
+      const addWorkbenchButton = screen.getByRole("button", {
+        name: /ワークベンチを追加/,
+      });
+      expect(addWorkbenchButton.className).toContain(
+        "canvas-toolbar__button--pending",
+      );
+      expect(addWorkbenchButton.getAttribute("aria-busy")).toBe("true");
+    });
+
+    it("keeps the two buttons' pending state independent of each other", () => {
+      renderToolbar({}, { pendingAddNode: true, pendingAddWorkbench: false });
+      const addNodeButton = screen.getByRole("button", { name: /ノードを追加/ });
+      const addWorkbenchButton = screen.getByRole("button", {
+        name: /ワークベンチを追加/,
+      });
+      expect(addNodeButton.className).toContain("--pending");
+      expect(addWorkbenchButton.className).not.toContain("--pending");
+    });
+
+    it("still dispatches addNode when clicked while pending (no disabled attribute)", () => {
+      const actions = renderToolbar({}, { pendingAddNode: true });
+      const addNodeButton = screen.getByRole(
+        "button",
+        { name: /ノードを追加/ },
+      ) as HTMLButtonElement;
+      expect(addNodeButton.disabled).toBe(false);
+      fireEvent.click(addNodeButton);
+      fireEvent.click(addNodeButton);
+      expect(actions.addNode).toHaveBeenCalledTimes(2);
+    });
   });
 });
