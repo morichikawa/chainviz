@@ -68,6 +68,46 @@ const workbenchFixture: Fixture = {
   top: { Titles: ["CMD"], Processes: [["sh -c sleep infinity"]] },
 };
 
+/** addNode が起動した reth（com.chainviz.managed=true）を模したフィクスチャ。 */
+const managedRethFixture: Fixture = {
+  summary: {
+    Id: "id-reth3",
+    Names: ["/chainviz-ethereum-reth3"],
+    Image: "ghcr.io/paradigmxyz/reth:latest",
+    State: "running",
+    Labels: {
+      "com.docker.compose.project": "chainviz-ethereum",
+      "com.docker.compose.service": "reth3",
+      "com.chainviz.managed": "true",
+      "com.chainviz.role": "execution",
+    },
+    Ports: [{ PrivatePort: 8545, PublicPort: 8545, Type: "tcp" }],
+    NetworkSettings: { Networks: { chain: { IPAddress: "172.28.1.3" } } },
+  },
+  top: {
+    Titles: ["PID", "CMD"],
+    Processes: [["1", "/usr/local/bin/reth node"]],
+  },
+};
+
+/** addWorkbench が起動した foundry（com.chainviz.managed=true）を模したフィクスチャ。 */
+const managedWorkbenchFixture: Fixture = {
+  summary: {
+    Id: "id-wb-managed",
+    Names: ["/chainviz-ethereum-workbench-alice-1"],
+    Image: "ghcr.io/foundry-rs/foundry:latest",
+    State: "running",
+    Labels: {
+      "com.docker.compose.project": "chainviz-ethereum",
+      "com.docker.compose.service": "workbench-alice",
+      "com.chainviz.managed": "true",
+      "com.chainviz.role": "workbench",
+    },
+    NetworkSettings: { Networks: { chain: { IPAddress: "172.28.3.2" } } },
+  },
+  top: { Titles: ["CMD"], Processes: [["sh -c sleep infinity"]] },
+};
+
 describe("EthereumAdapter.pollInfra", () => {
   it("normalizes a reth container into a NodeEntity with a stable id", async () => {
     const adapter = new EthereumAdapter(
@@ -92,6 +132,9 @@ describe("EthereumAdapter.pollInfra", () => {
     expect(node.syncStatus).toBe("syncing");
     expect(node.blockHeight).toBe(0);
     expect(node.headBlockHash).toBe("");
+    // compose 起動ノードには com.chainviz.managed ラベルが無いため削除不可
+    // (Issue #103)。
+    expect(node.removable).toBe(false);
   });
 
   it("normalizes a foundry container into a WorkbenchEntity", async () => {
@@ -106,6 +149,8 @@ describe("EthereumAdapter.pollInfra", () => {
     expect(wb.label).toBe("workbench");
     expect(wb.walletIds).toEqual([]);
     expect(wb.process.name).toBe("sh");
+    // compose 起動ワークベンチにも managed ラベルが無いため削除不可。
+    expect(wb.removable).toBe(false);
   });
 
   it("sets walletIds from the derived address when a mnemonic is configured", async () => {
@@ -193,6 +238,45 @@ describe("EthereumAdapter.pollInfra", () => {
     const node = partial.entities?.[0] as NodeEntity;
     expect(node.id).toBe("raw-container-id");
     expect(node.containerName).toBe("");
+  });
+
+  it("marks a node as removable when the container carries the managed label (Issue #103)", async () => {
+    const adapter = new EthereumAdapter(
+      new DockerPoller(clientFrom([managedRethFixture])),
+    );
+    const partial = await adapter.pollInfra();
+    const node = partial.entities?.[0] as NodeEntity;
+    expect(node.removable).toBe(true);
+  });
+
+  it("marks a workbench as removable when the container carries the managed label (Issue #103)", async () => {
+    const adapter = new EthereumAdapter(
+      new DockerPoller(clientFrom([managedWorkbenchFixture])),
+    );
+    const partial = await adapter.pollInfra();
+    const wb = partial.entities?.[0] as WorkbenchEntity;
+    expect(wb.removable).toBe(true);
+  });
+
+  it("does not mark a container as removable when the managed label has an unexpected value", async () => {
+    // ラベル自体は存在するが値が "true" 以外（例: 手動で付けた誤ったラベル）
+    // の場合は削除不可の安全側に倒す。
+    const fixture: Fixture = {
+      ...managedRethFixture,
+      summary: {
+        ...managedRethFixture.summary,
+        Labels: {
+          ...managedRethFixture.summary.Labels,
+          "com.chainviz.managed": "false",
+        },
+      },
+    };
+    const adapter = new EthereumAdapter(
+      new DockerPoller(clientFrom([fixture])),
+    );
+    const partial = await adapter.pollInfra();
+    const node = partial.entities?.[0] as NodeEntity;
+    expect(node.removable).toBe(false);
   });
 
   it("rejects when the underlying poller fails to list containers", async () => {
