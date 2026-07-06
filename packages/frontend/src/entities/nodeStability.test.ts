@@ -98,6 +98,61 @@ describe("stabilizeNodes", () => {
     const previous = [node("a", "va")];
     expect(stabilizeNodes([], previous, isSame)).toEqual([]);
   });
+
+  it("handles add, remove, and update all happening in the same tick", () => {
+    // previous: a, b, c → next: a(同じ), b(変更), d(新規)。c は削除。
+    const previous = [node("a", "va"), node("b", "vb"), node("c", "vc")];
+    const next = [node("a", "va"), node("b", "vb-changed"), node("d", "vd")];
+    const result = stabilizeNodes(next, previous, isSame);
+    expect(result).toHaveLength(3);
+    expect(result[0]).toBe(previous[0]); // 変わっていない a は再利用
+    expect(result[1]).toBe(next[1]); // 変更された b は新しい参照
+    expect(result[2]).toBe(next[2]); // 新規 d は新しい参照
+    expect(result.map((n) => n.id)).toEqual(["a", "b", "d"]);
+    // 集合が変わったので配列自体は前回と別参照。
+    expect(result).not.toBe(previous);
+  });
+
+  it("does not return the previous array when an id was swapped even though the length is equal", () => {
+    // 長さは同じ(2件)だが b→c の入れ替えが起きているケース。identical フラグが
+    // 長さだけで早合点して previous を返してしまわないことの確認。
+    const previous = [node("a", "va"), node("b", "vb")];
+    const next = [node("a", "va"), node("c", "vc")];
+    const result = stabilizeNodes(next, previous, isSame);
+    expect(result).not.toBe(previous);
+    expect(result[0]).toBe(previous[0]);
+    expect(result[1]).toBe(next[1]);
+    expect(result.map((n) => n.id)).toEqual(["a", "c"]);
+  });
+
+  it("returns a fresh object when a node changes even if positioned in the middle of a longer array", () => {
+    const previous = [node("a", "va"), node("b", "vb")];
+    const next = [node("a", "va"), node("b", "vb-changed"), node("c", "vc")];
+    const result = stabilizeNodes(next, previous, isSame);
+    expect(result[0]).toBe(previous[0]);
+    expect(result[1]).toBe(next[1]);
+    expect(result[2]).toBe(next[2]);
+  });
+
+  it("reuses the previous reference for an unchanged node that moved to a new array index", () => {
+    // b は内容不変だが index が 1→0 に動く。参照は再利用しつつ、並びが
+    // 変わったので配列は新参照になる(古い並びを誤って使い回さない)。
+    const previous = [node("a", "va"), node("b", "vb")];
+    const next = [node("b", "vb"), node("a", "va")];
+    const result = stabilizeNodes(next, previous, isSame);
+    expect(result[0]).toBe(previous[1]);
+    expect(result[1]).toBe(previous[0]);
+    expect(result).not.toBe(previous);
+  });
+
+  it("returns a fresh array (not previous) when the only change is a removal", () => {
+    // 長さが減るケース。identical は長さ比較で false になる。
+    const previous = [node("a", "va"), node("b", "vb")];
+    const next = [node("a", "va")];
+    const result = stabilizeNodes(next, previous, isSame);
+    expect(result).not.toBe(previous);
+    expect(result[0]).toBe(previous[0]);
+  });
 });
 
 describe("sameByReference", () => {

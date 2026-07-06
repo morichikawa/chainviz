@@ -1,6 +1,10 @@
 import type { NodeEntity, WalletEntity } from "@chainviz/shared";
 import { describe, expect, it } from "vitest";
-import { canvasNodeLayoutKey, preserveMeasuredDimensions } from "./canvasNode.js";
+import {
+  type CanvasFlowNode,
+  canvasNodeLayoutKey,
+  preserveMeasuredDimensions,
+} from "./canvasNode.js";
 import { createGhostNode } from "./ghostNode.js";
 import type { InfraFlowNode } from "./infraNode.js";
 import type { WalletFlowNode } from "./walletNode.js";
@@ -156,5 +160,105 @@ describe("preserveMeasuredDimensions", () => {
     const result = preserveMeasuredDimensions(next, previous);
     expect(result.find((n) => n.id === "a")?.measured).toEqual({ width: 10, height: 10 });
     expect(result.find((n) => n.id === "b")?.measured).toEqual({ width: 20, height: 20 });
+  });
+
+  it("preserves the order of the next array", () => {
+    const previous = [
+      infraNode({ id: "a", measured: { width: 10, height: 10 } }),
+      infraNode({ id: "b", measured: { width: 20, height: 20 } }),
+      infraNode({ id: "c", measured: { width: 30, height: 30 } }),
+    ];
+    const next = [infraNode({ id: "c" }), infraNode({ id: "a" }), infraNode({ id: "b" })];
+    const result = preserveMeasuredDimensions(next, previous);
+    expect(result.map((n) => n.id)).toEqual(["c", "a", "b"]);
+  });
+
+  it("attaches measured only to nodes with a previous match, leaving new ones untouched", () => {
+    const previous = [infraNode({ id: "a", measured: { width: 10, height: 10 } })];
+    const next = [infraNode({ id: "a" }), infraNode({ id: "new" })];
+    const result = preserveMeasuredDimensions(next, previous);
+    expect(result[0].measured).toEqual({ width: 10, height: 10 });
+    expect(result[1]).toBe(next[1]);
+    expect(result[1].measured).toBeUndefined();
+  });
+
+  it("overwrites a partially-populated next.measured with the full previous measured", () => {
+    // next 側が width だけ持ち height を欠く(未計測扱い)場合、直前の完全な
+    // measured で丸ごと置き換える。
+    const previous = [infraNode({ measured: { width: 200, height: 77 } })];
+    const next = [infraNode({ measured: { width: 5, height: undefined } })];
+    const result = preserveMeasuredDimensions(next, previous);
+    expect(result[0].measured).toEqual({ width: 200, height: 77 });
+    expect(result[0]).not.toBe(next[0]);
+  });
+
+  it("carries a stale measured over when the same id is removed and re-added in one tick", () => {
+    // 純粋関数としては id でしか突き合わせられないため、同じ id で作り直された
+    // ノードには直前の measured を引き継ぐ(呼び出し側の rfNodes に旧ノードが
+    // 残っている限りの挙動を明文化する。実運用では削除→再追加は別 tick に
+    // 分かれ、その時点の previous には当該 id が無いため引き継がれない)。
+    const previous = [infraNode({ id: "reth-1", measured: { width: 111, height: 222 } })];
+    // 内容が別物(別コンテナ)でも id が同じなら measured を引き継いでしまう。
+    const readded = infraNode({ id: "reth-1" });
+    const result = preserveMeasuredDimensions([readded], previous);
+    expect(result[0].measured).toEqual({ width: 111, height: 222 });
+  });
+
+  it("matches by id even when the node type changed for the same id (unusual but must not throw)", () => {
+    // 通常 id はカード種別ごとに衝突しない(containerName / address / commandId)が、
+    // 万一同一 id で type が変わっても id ベースの突き合わせは安全に動く。
+    const previous: CanvasFlowNode[] = [
+      { ...infraNode({ id: "shared", measured: { width: 40, height: 50 } }) },
+    ];
+    const walletNext: WalletFlowNode = {
+      id: "shared",
+      type: "wallet",
+      position: { x: 0, y: 0 },
+      data: {
+        entity: wallet,
+        transactions: [],
+        settlingHashes: [],
+        ownerPresent: false,
+      },
+    };
+    const result = preserveMeasuredDimensions<CanvasFlowNode>([walletNext], previous);
+    expect(result[0].type).toBe("wallet");
+    expect(result[0].measured).toEqual({ width: 40, height: 50 });
+  });
+
+  it("preserves measured across a mixed array of infra and wallet cards, keyed by id", () => {
+    const walletMeasured = { width: 300, height: 120 };
+    const previous: CanvasFlowNode[] = [
+      infraNode({ id: "reth-1", measured: { width: 200, height: 77 } }),
+      {
+        id: "0xabc",
+        type: "wallet",
+        position: { x: 0, y: 0 },
+        measured: walletMeasured,
+        data: {
+          entity: wallet,
+          transactions: [],
+          settlingHashes: [],
+          ownerPresent: false,
+        },
+      },
+    ];
+    const next: CanvasFlowNode[] = [
+      infraNode({ id: "reth-1" }),
+      {
+        id: "0xabc",
+        type: "wallet",
+        position: { x: 0, y: 0 },
+        data: {
+          entity: wallet,
+          transactions: [],
+          settlingHashes: [],
+          ownerPresent: false,
+        },
+      },
+    ];
+    const result = preserveMeasuredDimensions<CanvasFlowNode>(next, previous);
+    expect(result[0].measured).toEqual({ width: 200, height: 77 });
+    expect(result[1].measured).toEqual(walletMeasured);
   });
 });
