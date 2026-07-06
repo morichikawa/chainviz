@@ -5,8 +5,7 @@
 // 漏らさない（CLAUDE.md「ChainAdapter 境界」）。
 
 import type { ContainerObservation } from "../../docker/types.js";
-
-const COMPOSE_SERVICE_LABEL = "com.docker.compose.service";
+import { COMPOSE_SERVICE_LABEL } from "./labels.js";
 
 /** Ethereum の実行/合意クライアントとして認識する識別子。 */
 const KNOWN_CLIENTS = ["reth", "lighthouse", "geth", "besu", "nethermind", "erigon", "prysm", "teku", "nimbus"];

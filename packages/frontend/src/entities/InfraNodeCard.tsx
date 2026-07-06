@@ -61,18 +61,21 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
           </GlossaryTerm>
         </span>
         {/* React Flow のドラッグ開始を拾わないよう nodrag を付け、ポインタ
-            ダウンの伝播も止める。 */}
-        <button
-          type="button"
-          className="infra-card__remove nodrag"
-          aria-label={t("action.remove")}
-          title={t("action.remove")}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={onRemove}
-          data-testid={`infra-card-remove-${entity.id}`}
-        >
-          ×
-        </button>
+            ダウンの伝播も止める。removable が true のときだけ表示し、
+            compose起動時など削除できないコンテナには出さない。 */}
+        {entity.removable === true && (
+          <button
+            type="button"
+            className="infra-card__remove nodrag"
+            aria-label={t("action.remove")}
+            title={t("action.remove")}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={onRemove}
+            data-testid={`infra-card-remove-${entity.id}`}
+          >
+            ×
+          </button>
+        )}
       </div>
       <div className="infra-card__name">{entity.containerName}</div>
       <div className="infra-card__subtitle">{subtitle}</div>

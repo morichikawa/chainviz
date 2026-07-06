@@ -47,6 +47,45 @@ describe("networkIdColor", () => {
   });
 });
 
+describe("NETWORK_COLORS palette separation (Issue #95)", () => {
+  // C層の所有エッジ色（styles.css の --own-edge）。P2P パレットとは別の
+  // 意味を持つエッジなので、この値と混同されやすい色をパレットに含めない。
+  // CSS 変数を直接 import できないため、regression 用にリテラルで固定する。
+  const OWN_EDGE_HEX = "#e0a94f";
+
+  function hexToRgb(hex: string): [number, number, number] {
+    const n = Number.parseInt(hex.replace("#", ""), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+
+  // 簡易的な知覚色差（正確な CIEDE2000 ではなく sRGB のユークリッド距離）。
+  // 用途は「パレット色と所有エッジ色が明らかに違う」ことの下限保証であり、
+  // 厳密な色差モデルまでは要らないため簡便な指標で十分。
+  function roughColorDistance(a: string, b: string): number {
+    const [r1, g1, b1] = hexToRgb(a);
+    const [r2, g2, b2] = hexToRgb(b);
+    return Math.sqrt((r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2);
+  }
+
+  it("no longer includes the amber tone that used to collide with --own-edge", () => {
+    // 旧パレットの #f5b544 は所有エッジの #e0a94f とほぼ同一色相で、
+    // 検証環境(networkId "1337")で実際に判別困難になっていた。
+    expect(NETWORK_COLORS).not.toContain("#f5b544");
+  });
+
+  it("keeps every palette color clearly distinct from the ownership edge color", () => {
+    for (const color of NETWORK_COLORS) {
+      // しきい値40は「琥珀 #e0a94f と旧 #f5b544 の距離(約27)」より明確に大きく、
+      // かつ現パレットの各色の距離(最小でも約49)は余裕を持って上回る。
+      expect(roughColorDistance(color, OWN_EDGE_HEX)).toBeGreaterThan(40);
+    }
+  });
+
+  it("has no duplicate colors in the palette", () => {
+    expect(new Set(NETWORK_COLORS).size).toBe(NETWORK_COLORS.length);
+  });
+});
+
 describe("networkClassToken", () => {
   it("keeps safe characters and replaces the rest", () => {
     expect(networkClassToken("1337")).toBe("1337");

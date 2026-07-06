@@ -26,6 +26,7 @@ import {
 } from "./beacon-api.js";
 import { BlockPropagationTracker } from "./blocks.js";
 import { classifyContainer } from "./classify.js";
+import { MANAGED_LABEL } from "./labels.js";
 import {
   fetchConnectedExecutionPeerIdentities,
   fetchExecutionPeerIdentity,
@@ -150,6 +151,11 @@ export class EthereumAdapter implements ChainAdapter {
       ports: obs.ports,
       resources: obs.resources,
       process: pickPrimaryProcess(obs.processes, classification.clientType),
+      // collector が addNode/addWorkbench で作成したコンテナだけ削除操作を
+      // 許可する（Issue #103）。判定は起動時に回収するレジストリではなく
+      // Docker の managed ラベルそのものから行う（Issue #65 で確定した
+      // 「ラベルを単一の真実の情報源とする」方針との整合を保つ）。
+      removable: obs.labels[MANAGED_LABEL] === "true",
     };
 
     if (classification.kind === "workbench") {
