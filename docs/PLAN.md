@@ -348,6 +348,9 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
 - [ ] pnpm dev:down --dockerがaddNode/addWorkbenchで動的追加したコンテナを
       削除しない
       [#126](https://github.com/morichikawa/chainviz/issues/126)
+- [ ] 動的追加ワークベンチのRPCがロギングプロキシを経由せずreth1に直結して
+      いる(操作エッジが描画されない)
+      [#129](https://github.com/morichikawa/chainviz/issues/129)
 
 ## 運用ルール（全ステップ共通）
 
