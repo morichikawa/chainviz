@@ -332,7 +332,7 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
       [#103](https://github.com/morichikawa/chainviz/issues/103)
 - [x] reth(EL)同士のP2P接続がPeerEdgeとして描画されない
       [#106](https://github.com/morichikawa/chainviz/issues/106)
-- [ ] 仮カード(ゴーストノード)の配置indexが、削除を挟むと重なることがある
+- [x] 仮カード(ゴーストノード)の配置indexが、削除を挟むと重なることがある
       [#113](https://github.com/morichikawa/chainviz/issues/113)
 - [x] 定期更新のたびにノードカードが一瞬ちらつく(React Flowの再計測サイクル)
       [#119](https://github.com/morichikawa/chainviz/issues/119)

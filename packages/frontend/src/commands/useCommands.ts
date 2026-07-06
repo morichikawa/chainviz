@@ -78,13 +78,23 @@ export function useCommands(
   // ため、ゴースト生成に使う「現在のワールドステート / ゴースト件数」は ref 経由で
   // 読む（notifyRef / tRef と同じ、レンダーのたびに最新値へ同期するパターン）。
   const stateRef = useRef<WorldState>(emptyWorldState);
-  // ゴーストの並び位置に使う通し番号。ghosts state（React の再レンダーを経て
-  // 反映される）を直接参照すると、同一イベントハンドラ内で addNode を連続で
-  // 呼んだ場合に render が挟まらず同じ長さを読んでしまい、複数のゴーストが
-  // 同じグリッド位置に重なってしまう。ref のインクリメントは呼び出し即座に
-  // 反映されるため、連打・連続呼び出しでも重複しない。ゴーストが消えても
-  // 巻き戻さない（位置がずれるだけで実害はなく、以後常に新しいセルへ置ける）。
-  const ghostSeqRef = useRef(0);
+  // ゴーストの並び位置に使う「次に払い出すインデックス」。ghosts state
+  // （React の再レンダーを経て反映される）を直接参照すると、同一イベント
+  // ハンドラ内で addNode を連続で呼んだ場合に render が挟まらず同じ長さを
+  // 読んでしまい、複数のゴーストが同じグリッド位置に重なってしまう。ref の
+  // インクリメントは呼び出し即座に反映されるため、連打・連続呼び出しでも
+  // 重複しない。
+  //
+  // この ref は一度払い出した値より小さい値を二度と払い出さない、単調増加の
+  // カウンタとして扱う（過去に発行済みの仮カードの位置を巻き戻して再利用
+  // することはない）。dispatch 側では、現在の infraCount を「最低でもこの値
+  // 以上のインデックスにする」という下限としてのみ使い、この ref 自体の値と
+  // 単純に合算はしない。合算方式のままだと、addNode の合間に既存インフラが
+  // 削除されて infraCount が下がった直後に発行したゴーストの計算結果が、
+  // 既に表示中の別の仮カードのインデックスと一致してしまう不具合があった
+  // （Issue #113: entityAdded で infraCount=1 → addNode（index=1+0=1）→
+  // entityRemoved で infraCount=0 → addNode（index=0+1=1 で前段と衝突））。
+  const ghostIndexRef = useRef(0);
 
   const handleCommandResult = useCallback<CommandResultHandler>(
     (commandId, ok, error) => {
@@ -183,13 +193,16 @@ export function useCommands(
       const infraCount = Object.values(stateRef.current.entities).filter(
         (entity) => entity.kind === "node" || entity.kind === "workbench",
       ).length;
+      // 既存の node/workbench カードと衝突しないよう infraCount を下限にしつつ、
+      // 一度払い出した値より下がらないよう ghostIndexRef 自身の値も下限にする。
+      const index = Math.max(ghostIndexRef.current, infraCount);
+      ghostIndexRef.current = index + 1;
       const ghost = createGhostNode({
         commandId,
         kind,
         label,
-        index: infraCount + ghostSeqRef.current,
+        index,
       });
-      ghostSeqRef.current += 1;
       setGhosts((current) => [...current, ghost]);
     },
     [sendCommand],
