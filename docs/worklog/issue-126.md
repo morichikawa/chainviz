@@ -133,3 +133,38 @@
   5. コミット粒度は3コミット(実装 / docs / レビュー指摘対応のfix)で
      1変更1コミットを維持。Conventional Commits形式も遵守。
 - 判定: 合格。push/PR作成/マージは統括に委ねる。
+
+### 2026-07-06 Issue #126 QA検証(chainviz-qa、合格)
+- 担当: qa
+- 検証方針: 本物の `profiles/ethereum`(共有プロジェクト名 `chainviz-ethereum`、
+  メインworktreeで稼働中)には一切触れず、実装担当の記録に倣って独立した
+  プロジェクト名・独立subnetの合成docker-composeで検証した。検証対象の
+  `scripts/dev-down.sh` は改変せず、sha256一致を確認したうえで一時ディレクトリ
+  (scratchpad配下)に `scripts/dev-down.sh` と `profiles/ethereum/docker-compose.yml`
+  だけを持つ合成ルート構造を作り、そのコピーを実行した(スクリプトが
+  `ROOT_DIR/profiles/ethereum` を決め打ちで参照するため、合成composeに向けるには
+  この方式を採った)。
+  - 合成compose: `name: chainviz-qa126-synth`、subnet `172.31.77.0/24`、
+    alpine `sleep infinity` の7サービス(reth1/reth2/beacon1/beacon2/
+    validator1/validator2/workbench)で本物のサービス構成を模した。
+  - 動的追加コンテナ(addNode/addWorkbench相当)は本物と同じラベル体系
+    (`com.chainviz.managed=true`、`com.docker.compose.project=chainviz-qa126-synth`、
+    `com.chainviz.role=execution/consensus/workbench`)を付けて合成ネットワークに
+    接続した(qa126-reth3 / qa126-beacon3 / qa126-my-workbench の3つ)。
+- 確認結果:
+  1. 汚れた状態(compose定義7 + 動的追加3 = 10コンテナ)に対し
+     `dev-down.sh --docker` を実行 → 動的追加3コンテナが `docker compose down` の
+     前に検出・削除され、続く `docker compose down` が7コンテナと合成ネットワークを
+     エラーなく削除。exit code 0。実行後、当該プロジェクトのコンテナ0件・
+     `com.chainviz.managed=true` の残存なし・合成ネットワークも消滅を確認。
+     完了条件「動的追加コンテナがいくつ残っていても dev:down --docker で本来の
+     構成まで完全にきれいになる」を満たす。
+  2. 回帰確認: 動的追加コンテナが無い通常状態(compose定義7コンテナのみ)で
+     `dev-down.sh --docker` を実行 → 「動的追加コンテナは残っていません」と表示し、
+     従来どおり7コンテナ+ネットワークを削除。exit code 0でクリーン。既存の
+     削除動作は壊れていない。
+  3. 全工程を通じて本物の `chainviz-ethereum` プロジェクト(7 running + genesis exited、
+     `chainviz-ethereum_chain` ネットワーク)が無傷であることを検証前後で確認した。
+  - 検証で起動した合成compose・動的コンテナ・ネットワーク・一時ディレクトリは
+    すべて片付け済み。
+- 判定: 合格。完了条件を満たしている。push/PR作成/マージ/Issueクローズは統括に委ねる。
