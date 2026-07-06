@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import type { EthRpcClient } from "./eth-rpc-client.js";
 import {
   enodePublicKey,
+  fetchConnectedExecutionPeerIdentities,
+  fetchExecutionPeerIdentity,
   normalizeAdminNodeInfo,
   normalizeAdminPeers,
 } from "./el-peers.js";
@@ -99,5 +102,68 @@ describe("normalizeAdminPeers", () => {
 
   it("returns an empty list for an empty peers array", () => {
     expect(normalizeAdminPeers([])).toEqual([]);
+  });
+});
+
+/** call() を method ごとに固定レスポンス/例外へ差し込める最小の EthRpcClient。 */
+function stubRpc(byMethod: Record<string, unknown>): EthRpcClient {
+  return {
+    async call<T>(_url: string, method: string): Promise<T> {
+      if (!(method in byMethod)) {
+        throw new Error(`unexpected method ${method}`);
+      }
+      const value = byMethod[method];
+      if (value instanceof Error) throw value;
+      return value as T;
+    },
+  };
+}
+
+describe("fetchExecutionPeerIdentity", () => {
+  it("calls admin_nodeInfo and normalizes the result", async () => {
+    const rpc = stubRpc({ admin_nodeInfo: { enode: ENODE } });
+    await expect(
+      fetchExecutionPeerIdentity(rpc, "http://172.28.1.1:8545"),
+    ).resolves.toBe(PUBKEY_LOWER);
+  });
+
+  it("propagates a transport-level failure (e.g. admin API disabled)", async () => {
+    const rpc = stubRpc({ admin_nodeInfo: new Error("method not found") });
+    await expect(
+      fetchExecutionPeerIdentity(rpc, "http://172.28.1.1:8545"),
+    ).rejects.toThrow("method not found");
+  });
+
+  it("throws when admin_nodeInfo yields no usable enode/id", async () => {
+    const rpc = stubRpc({ admin_nodeInfo: {} });
+    await expect(
+      fetchExecutionPeerIdentity(rpc, "http://172.28.1.1:8545"),
+    ).rejects.toThrow(/did not yield a usable enode\/id/);
+  });
+});
+
+describe("fetchConnectedExecutionPeerIdentities", () => {
+  it("calls admin_peers and normalizes the resulting identities", async () => {
+    const other = "cd".repeat(64);
+    const rpc = stubRpc({
+      admin_peers: [{ enode: `enode://${other}@172.28.1.2:30303` }],
+    });
+    await expect(
+      fetchConnectedExecutionPeerIdentities(rpc, "http://172.28.1.1:8545"),
+    ).resolves.toEqual([other]);
+  });
+
+  it("propagates a transport-level failure", async () => {
+    const rpc = stubRpc({ admin_peers: new Error("timeout") });
+    await expect(
+      fetchConnectedExecutionPeerIdentities(rpc, "http://172.28.1.1:8545"),
+    ).rejects.toThrow("timeout");
+  });
+
+  it("returns an empty list when there are no peers", async () => {
+    const rpc = stubRpc({ admin_peers: [] });
+    await expect(
+      fetchConnectedExecutionPeerIdentities(rpc, "http://172.28.1.1:8545"),
+    ).resolves.toEqual([]);
   });
 });
