@@ -21,6 +21,10 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
   const subtitle =
     entity.kind === "node" ? entity.clientType : entity.label;
   const synced = entity.kind === "node" ? entity.syncStatus === "synced" : true;
+  // ブートノードの明示（Issue #124 C）。collector が正規化できなかった
+  // 旧スナップショット・別チェーンでは p2pRole が省略されるため、その場合は
+  // バッジを出さないフォールバックに倒す（通常ピア前提の表示にしない）。
+  const isBootnode = entity.kind === "node" && entity.p2pRole === "bootnode";
 
   const onRemove = () => {
     if (entity.kind === "node") actions.removeNode(entity.id);
@@ -60,6 +64,14 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
             {kindLabel}
           </GlossaryTerm>
         </span>
+        {isBootnode && (
+          <span
+            className="infra-card__badge--bootnode"
+            data-testid={`infra-card-bootnode-${entity.id}`}
+          >
+            <GlossaryTerm termKey="bootnode">{t("role.bootnode")}</GlossaryTerm>
+          </span>
+        )}
         {/* React Flow のドラッグ開始を拾わないよう nodrag を付け、ポインタ
             ダウンの伝播も止める。removable が true のときだけ表示し、
             compose起動時など削除できないコンテナには出さない。 */}
