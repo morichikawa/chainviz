@@ -1,9 +1,28 @@
+import type { NodeEntity } from "@chainviz/shared";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CommandActionsProvider } from "../commands/CommandActionsContext.js";
 import type { CommandActions } from "../commands/useCommands.js";
 import { LanguageProvider } from "../i18n/LanguageProvider.js";
 import { CanvasToolbar, type CanvasToolbarProps } from "./CanvasToolbar.js";
+
+function node(overrides: Partial<NodeEntity> = {}): NodeEntity {
+  return {
+    kind: "node",
+    id: "reth-1",
+    containerName: "chainviz-reth-1",
+    ip: "172.20.0.2",
+    ports: [8545],
+    resources: { cpuPercent: 1, memMB: 100 },
+    process: { name: "reth node" },
+    chainType: "ethereum",
+    clientType: "reth",
+    syncStatus: "synced",
+    blockHeight: 1,
+    headBlockHash: "0x0",
+    ...overrides,
+  };
+}
 
 afterEach(cleanup);
 
@@ -143,6 +162,70 @@ describe("CanvasToolbar", () => {
       fireEvent.click(addNodeButton);
       fireEvent.click(addNodeButton);
       expect(actions.addNode).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("pre-click hint tooltips (Issue #123 §4-1)", () => {
+    it("shows no tooltip before hovering/focusing either button", () => {
+      renderToolbar();
+      expect(screen.queryByRole("tooltip")).toBeNull();
+    });
+
+    it("shows the generic add-node hint on hover when no bootnode is resolvable", () => {
+      renderToolbar();
+      const addNodeButton = screen.getByRole("button", { name: /ノードを追加/ });
+      fireEvent.mouseEnter(addNodeButton.parentElement as HTMLElement);
+      expect(screen.getByRole("tooltip").textContent).toBe(
+        "フォロワーノード(reth + beacon のペア、カード2枚)を起動し、既存ネットワークのブートノードを入口に参加させます",
+      );
+    });
+
+    it("shows the specific add-node hint (with bootnode container names) when resolvable", () => {
+      const elBoot = node({ id: "reth-1", containerName: "chainviz-reth-1", p2pRole: "bootnode" });
+      const clBoot = node({
+        id: "lh-1",
+        containerName: "chainviz-lighthouse-1",
+        clientType: "lighthouse",
+        p2pRole: "bootnode",
+      });
+      renderToolbar({}, { entities: [elBoot, clBoot] });
+      const addNodeButton = screen.getByRole("button", { name: /ノードを追加/ });
+      fireEvent.mouseEnter(addNodeButton.parentElement as HTMLElement);
+      const tooltip = screen.getByRole("tooltip");
+      expect(tooltip.textContent).toContain("chainviz-reth-1");
+      expect(tooltip.textContent).toContain("chainviz-lighthouse-1");
+    });
+
+    it("shows the generic add-workbench hint on focus when no RPC target is resolvable", () => {
+      renderToolbar();
+      const addWorkbenchButton = screen.getByRole("button", {
+        name: /ワークベンチを追加/,
+      });
+      fireEvent.focus(addWorkbenchButton);
+      expect(screen.getByRole("tooltip").textContent).toBe(
+        "Foundry(cast / forge)入りの操作用マシンを起動します。専用のウォレット(鍵)が1つ割り当てられます",
+      );
+    });
+
+    it("hides the tooltip again on mouse leave / blur", () => {
+      renderToolbar();
+      const addNodeButton = screen.getByRole("button", { name: /ノードを追加/ });
+      const wrapper = addNodeButton.parentElement as HTMLElement;
+      fireEvent.mouseEnter(wrapper);
+      expect(screen.getByRole("tooltip")).toBeTruthy();
+      fireEvent.mouseLeave(wrapper);
+      expect(screen.queryByRole("tooltip")).toBeNull();
+    });
+
+    it("defaults to an empty entity list (generic hints) when entities is omitted", () => {
+      renderToolbar();
+      const addWorkbenchButton = screen.getByRole("button", {
+        name: /ワークベンチを追加/,
+      });
+      fireEvent.mouseEnter(addWorkbenchButton.parentElement as HTMLElement);
+      expect(screen.getByRole("tooltip").textContent).toContain(
+        "専用のウォレット(鍵)が1つ割り当てられます",
+      );
     });
   });
 });

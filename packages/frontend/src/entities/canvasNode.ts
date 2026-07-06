@@ -1,22 +1,29 @@
+import type { ConnectingFlowEdge } from "./connectingEdge.js";
 import { GHOST_NODE_TYPE, type GhostFlowNode } from "./ghostNode.js";
 import type { InfraFlowNode } from "./infraNode.js";
 import type { OperationFlowEdge } from "./operationEdge.js";
+import type { OperationTargetFlowEdge } from "./operationTargetEdge.js";
 import type { OwnershipFlowEdge } from "./ownershipEdge.js";
 import type { PeerFlowEdge } from "./peerEdge.js";
+import type { PendingConnectionFlowEdge } from "./pendingConnectionEdge.js";
 import type { WalletFlowNode } from "./walletNode.js";
 
 /**
  * キャンバスに載る全カード種別（A層のインフラカード + C層のウォレットカード +
  * 追加コマンド送信直後の仮カード）と全エッジ種別（B層のピア接続 + C層の所有
- * エッジ + ワークベンチ → ノードの操作エッジ）の合併型。Canvas はこの合併型で
- * ノード/エッジを受け取り、種別ごとに nodeTypes / edgeTypes へ振り分ける。
+ * エッジ + ワークベンチ → ノードの操作エッジ + Issue #123 の予告/確立中/常設
+ * 操作先エッジ）の合併型。Canvas はこの合併型でノード/エッジを受け取り、
+ * 種別ごとに nodeTypes / edgeTypes へ振り分ける。
  */
 export type CanvasFlowNode = InfraFlowNode | WalletFlowNode | GhostFlowNode;
 
 export type CanvasFlowEdge =
   | PeerFlowEdge
   | OwnershipFlowEdge
-  | OperationFlowEdge;
+  | OperationFlowEdge
+  | PendingConnectionFlowEdge
+  | ConnectingFlowEdge
+  | OperationTargetFlowEdge;
 
 /**
  * ノードの位置永続化に使う安定 ID を返す。インフラカードは containerName、

@@ -1,6 +1,12 @@
+import type { WorldStateEntity } from "@chainviz/shared";
 import { type FormEvent, useState } from "react";
 import { useCommandActions } from "../commands/CommandActionsContext.js";
+import {
+  resolveAddNodeHint,
+  resolveAddWorkbenchHint,
+} from "../commands/commandMessages.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
+import { ActionHint } from "./ActionHint.js";
 
 export interface CanvasToolbarProps {
   /**
@@ -13,6 +19,13 @@ export interface CanvasToolbarProps {
   pendingAddNode?: boolean;
   /** addWorkbench 版。意味は pendingAddNode と同じ。 */
   pendingAddWorkbench?: boolean;
+  /**
+   * 現在のワールドステートのエンティティ（Issue #123 UX設計 §4-1）。
+   * ボタンのホバー/フォーカス予告ツールチップに出す接続先（ブートノード /
+   * RPC 接続先）の解決に使う。省略時は空配列扱いとなり、どちらのツール
+   * チップも generic な文言にフォールバックする。
+   */
+  entities?: WorldStateEntity[];
 }
 
 /**
@@ -23,6 +36,7 @@ export interface CanvasToolbarProps {
 export function CanvasToolbar({
   pendingAddNode = false,
   pendingAddWorkbench = false,
+  entities = [],
 }: CanvasToolbarProps = {}) {
   const { t } = useLanguage();
   const actions = useCommandActions();
@@ -34,24 +48,31 @@ export function CanvasToolbar({
     setLabel("");
   };
 
+  // 押下前の予告ツールチップ（Issue #123 UX設計 §4-1）。接続先を解決できなければ
+  // resolveAddNodeHint / resolveAddWorkbenchHint 自身が generic な文言へ倒す。
+  const addNodeHint = resolveAddNodeHint(entities, t);
+  const addWorkbenchHint = resolveAddWorkbenchHint(entities, t);
+
   return (
     <div className="canvas-toolbar">
-      <button
-        type="button"
-        className={
-          pendingAddNode
-            ? "canvas-toolbar__button canvas-toolbar__button--pending"
-            : "canvas-toolbar__button"
-        }
-        aria-busy={pendingAddNode}
-        onClick={() => actions.addNode()}
-      >
-        {pendingAddNode && (
-          <span className="canvas-toolbar__spinner" aria-hidden="true" />
-        )}
-        + {t("action.addNode")}
-        {pendingAddNode ? ` (${t("action.addNode.pending")})` : ""}
-      </button>
+      <ActionHint hint={addNodeHint}>
+        <button
+          type="button"
+          className={
+            pendingAddNode
+              ? "canvas-toolbar__button canvas-toolbar__button--pending"
+              : "canvas-toolbar__button"
+          }
+          aria-busy={pendingAddNode}
+          onClick={() => actions.addNode()}
+        >
+          {pendingAddNode && (
+            <span className="canvas-toolbar__spinner" aria-hidden="true" />
+          )}
+          + {t("action.addNode")}
+          {pendingAddNode ? ` (${t("action.addNode.pending")})` : ""}
+        </button>
+      </ActionHint>
       <form className="canvas-toolbar__workbench" onSubmit={onAddWorkbench}>
         <input
           type="text"
@@ -61,21 +82,23 @@ export function CanvasToolbar({
           aria-label={t("action.workbenchLabelPlaceholder")}
           onChange={(event) => setLabel(event.target.value)}
         />
-        <button
-          type="submit"
-          className={
-            pendingAddWorkbench
-              ? "canvas-toolbar__button canvas-toolbar__button--pending"
-              : "canvas-toolbar__button"
-          }
-          aria-busy={pendingAddWorkbench}
-        >
-          {pendingAddWorkbench && (
-            <span className="canvas-toolbar__spinner" aria-hidden="true" />
-          )}
-          + {t("action.addWorkbench")}
-          {pendingAddWorkbench ? ` (${t("action.addWorkbench.pending")})` : ""}
-        </button>
+        <ActionHint hint={addWorkbenchHint}>
+          <button
+            type="submit"
+            className={
+              pendingAddWorkbench
+                ? "canvas-toolbar__button canvas-toolbar__button--pending"
+                : "canvas-toolbar__button"
+            }
+            aria-busy={pendingAddWorkbench}
+          >
+            {pendingAddWorkbench && (
+              <span className="canvas-toolbar__spinner" aria-hidden="true" />
+            )}
+            + {t("action.addWorkbench")}
+            {pendingAddWorkbench ? ` (${t("action.addWorkbench.pending")})` : ""}
+          </button>
+        </ActionHint>
       </form>
     </div>
   );

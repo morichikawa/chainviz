@@ -27,6 +27,18 @@ export interface UseWorldStateResult {
   state: WorldState;
   status: ConnectionStatus;
   /**
+   * 最初のスナップショットを受信済みか。`status === "connected"` は
+   * WebSocketの接続確立（onopen相当）で立つ一方、スナップショットは
+   * その後の別メッセージで届くため、実クライアントでは両者の間に
+   * 「connected だが entities は空」というレンダーが必ず1回挟まる
+   * （モッククライアントは接続とスナップショット配信が同期的なため
+   * この間隙が無く、テストで見落としやすい）。「基準となる初期集合が
+   * まだ確立していない空」と「接続済みで本当に0件」を区別する必要が
+   * ある呼び出し側（useNewArrivalHighlightのready等）は、
+   * `status === "connected"` ではなくこちらを使うこと。
+   */
+  hasReceivedSnapshot: boolean;
+  /**
    * 揮発性の操作観測イベント（ワークベンチ → ノードの RPC 呼び出し）の直近列。
    * ワールドステートには畳み込まず、描画側（useOperationPulses）が seq をキーに
    * 未処理分を消費してパルスアニメーションを走らせる。
@@ -60,6 +72,7 @@ export function useWorldState(
 ): UseWorldStateResult {
   const [state, setState] = useState<WorldState>(emptyWorldState);
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
+  const [hasReceivedSnapshot, setHasReceivedSnapshot] = useState(false);
   const [operations, setOperations] = useState<OperationSignal[]>([]);
   const clientRef = useRef<ChainvizClient | null>(null);
   const resultRef = useRef<CommandResultHandler | undefined>(onCommandResult);
@@ -69,7 +82,10 @@ export function useWorldState(
 
   useEffect(() => {
     const client = createClient({
-      onSnapshot: (snapshot) => setState(applySnapshot(snapshot)),
+      onSnapshot: (snapshot) => {
+        setState(applySnapshot(snapshot));
+        setHasReceivedSnapshot(true);
+      },
       onDiff: (events) => {
         setState((current) => applyDiff(current, events));
         // operationObserved は揮発性なのでワールドステートへ畳み込まず、
@@ -104,5 +120,5 @@ export function useWorldState(
     [],
   );
 
-  return { state, status, operations, sendCommand };
+  return { state, status, hasReceivedSnapshot, operations, sendCommand };
 }

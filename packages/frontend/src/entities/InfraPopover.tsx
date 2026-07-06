@@ -22,8 +22,18 @@ function Field({ label, value }: { label: string; value: string }) {
 /**
  * カードのホバーで出る詳細ポップオーバー。IP・ポート・プロセス・リソース
  * （CPU/メモリ）・クライアント種別などを表示する（CONCEPT.md「体験イメージ」）。
+ *
+ * `rpcTargetContainerName` はワークベンチの RPC 接続先が解決できた場合に
+ * 「操作先ノード」欄を追加する（Issue #123 UX設計 §4-4）。解決できない場合
+ * （collector 未対応・削除されたノードなど）は欄自体を出さない（§4-5）。
  */
-export function InfraPopover({ entity }: { entity: InfraEntity }) {
+export function InfraPopover({
+  entity,
+  rpcTargetContainerName,
+}: {
+  entity: InfraEntity;
+  rpcTargetContainerName?: string;
+}) {
   const { t } = useLanguage();
   const ports = entity.ports.length > 0 ? entity.ports.join(", ") : "-";
   const process =
@@ -81,7 +91,12 @@ export function InfraPopover({ entity }: { entity: InfraEntity }) {
         </>
       )}
       {entity.kind === "workbench" && (
-        <Field label={t("card.workbench")} value={entity.label} />
+        <>
+          <Field label={t("card.workbench")} value={entity.label} />
+          {rpcTargetContainerName && (
+            <Field label={t("field.rpcTarget")} value={rpcTargetContainerName} />
+          )}
+        </>
       )}
     </div>
   );

@@ -1,4 +1,9 @@
-import type { Command } from "@chainviz/shared";
+import type { Command, WorldStateEntity } from "@chainviz/shared";
+import {
+  resolveBootNodes,
+  resolveRpcTargetNode,
+} from "../entities/connectionTargets.js";
+import { format } from "../i18n/i18n.js";
 import type { MessageKey } from "../i18n/messages.js";
 
 /** ワークベンチ名の入力が空だったときに使う既定ラベル。 */
@@ -36,4 +41,40 @@ export function describeCommandError(
   const base = command ? t(ERROR_KEY[command.action]) : t("command.error.unknown");
   const detail = error?.trim();
   return detail ? `${base}: ${detail}` : base;
+}
+
+/**
+ * 「+ ノードを追加」ボタンの押下前ツールチップ文言を組み立てる（Issue #123
+ * UX設計 §4-1）。EL/CL 両方のブートノードを解決できた場合のみ具体的な
+ * containerName を含む文言にし、片方でも解決できなければ generic な文言へ
+ * フォールバックする（§4-5。半端に一方だけ埋めた文言は誤解を招くため）。
+ */
+export function resolveAddNodeHint(
+  entities: WorldStateEntity[],
+  t: (key: MessageKey) => string,
+): string {
+  const bootNodes = resolveBootNodes(entities);
+  if (!bootNodes.execution || !bootNodes.consensus) {
+    return t("action.addNode.hint.generic");
+  }
+  return format(t("action.addNode.hint"), {
+    elBoot: bootNodes.execution.containerName,
+    clBoot: bootNodes.consensus.containerName,
+  });
+}
+
+/**
+ * 「+ ワークベンチを追加」ボタンの押下前ツールチップ文言を組み立てる
+ * （Issue #123 UX設計 §4-1）。RPC 接続先を解決できなければ generic な文言へ
+ * フォールバックする（§4-5）。
+ */
+export function resolveAddWorkbenchHint(
+  entities: WorldStateEntity[],
+  t: (key: MessageKey) => string,
+): string {
+  const rpcTarget = resolveRpcTargetNode(entities);
+  if (!rpcTarget) return t("action.addWorkbench.hint.generic");
+  return format(t("action.addWorkbench.hint"), {
+    rpcTarget: rpcTarget.containerName,
+  });
 }

@@ -5,6 +5,7 @@ import {
   GHOST_TIMEOUT_MS,
   createGhostNode,
   removeGhostByCommandId,
+  removeGhostForArrivedEntity,
   removeOldestGhostByKind,
 } from "./ghostNode.js";
 
@@ -117,6 +118,65 @@ describe("createGhostNode", () => {
     expect(Number.isFinite(GHOST_TIMEOUT_MS)).toBe(true);
     expect(GHOST_TIMEOUT_MS).toBeGreaterThan(0);
   });
+
+  describe("layer / connection target (Issue #123)", () => {
+    it("suffixes the id with the layer so an execution/consensus pair sharing a commandId don't collide", () => {
+      const execution = createGhostNode({
+        commandId: "cmd-1",
+        kind: "node",
+        label: "ethereum",
+        index: 0,
+        layer: "execution",
+      });
+      const consensus = createGhostNode({
+        commandId: "cmd-1",
+        kind: "node",
+        label: "ethereum",
+        index: 1,
+        layer: "consensus",
+      });
+      expect(execution.id).toBe("ghost-cmd-1-execution");
+      expect(consensus.id).toBe("ghost-cmd-1-consensus");
+      expect(execution.id).not.toBe(consensus.id);
+    });
+
+    it("keeps the legacy unsuffixed id for a workbench ghost (no layer)", () => {
+      const ghost = createGhostNode({
+        commandId: "cmd-2",
+        kind: "workbench",
+        label: "Carol",
+        index: 0,
+      });
+      expect(ghost.id).toBe("ghost-cmd-2");
+      expect(ghost.data.layer).toBeUndefined();
+    });
+
+    it("carries the resolved connection target through to data", () => {
+      const ghost = createGhostNode({
+        commandId: "cmd-3",
+        kind: "node",
+        label: "ethereum",
+        index: 0,
+        layer: "execution",
+        targetContainerName: "chainviz-ethereum-reth1",
+        targetNodeId: "reth-1",
+      });
+      expect(ghost.data.targetContainerName).toBe("chainviz-ethereum-reth1");
+      expect(ghost.data.targetNodeId).toBe("reth-1");
+    });
+
+    it("omits the connection target fields when unresolved (Issue #123 §4-5 fallback)", () => {
+      const ghost = createGhostNode({
+        commandId: "cmd-4",
+        kind: "node",
+        label: "ethereum",
+        index: 0,
+        layer: "consensus",
+      });
+      expect(ghost.data.targetContainerName).toBeUndefined();
+      expect(ghost.data.targetNodeId).toBeUndefined();
+    });
+  });
 });
 
 describe("removeGhostByCommandId", () => {
@@ -213,5 +273,135 @@ describe("removeOldestGhostByKind", () => {
     const result = removeOldestGhostByKind(input, "node");
     expect(result).not.toBe(input);
     expect(input).toEqual([a]);
+  });
+});
+
+describe("removeGhostForArrivedEntity (Issue #123)", () => {
+  it("removes the oldest execution-layer ghost when a reth entity arrives", () => {
+    const execution = createGhostNode({
+      commandId: "cmd-1",
+      kind: "node",
+      label: "ethereum",
+      index: 0,
+      layer: "execution",
+    });
+    const consensus = createGhostNode({
+      commandId: "cmd-1",
+      kind: "node",
+      label: "ethereum",
+      index: 1,
+      layer: "consensus",
+    });
+    const result = removeGhostForArrivedEntity([execution, consensus], {
+      kind: "node",
+      clientType: "reth",
+    });
+    expect(result).toEqual([consensus]);
+  });
+
+  it("removes the oldest consensus-layer ghost when a lighthouse entity arrives", () => {
+    const execution = createGhostNode({
+      commandId: "cmd-1",
+      kind: "node",
+      label: "ethereum",
+      index: 0,
+      layer: "execution",
+    });
+    const consensus = createGhostNode({
+      commandId: "cmd-1",
+      kind: "node",
+      label: "ethereum",
+      index: 1,
+      layer: "consensus",
+    });
+    const result = removeGhostForArrivedEntity([execution, consensus], {
+      kind: "node",
+      clientType: "lighthouse",
+    });
+    expect(result).toEqual([execution]);
+  });
+
+  it("removes the oldest workbench ghost when a workbench entity arrives (no layer)", () => {
+    const wb1 = createGhostNode({ commandId: "1", kind: "workbench", label: "a", index: 0 });
+    const wb2 = createGhostNode({ commandId: "2", kind: "workbench", label: "b", index: 1 });
+    expect(
+      removeGhostForArrivedEntity([wb1, wb2], { kind: "workbench" }),
+    ).toEqual([wb2]);
+  });
+
+  it("falls back to kind-only FIFO when no ghost has a matching layer (legacy/generic ghosts)", () => {
+    const legacyGhost = createGhostNode({
+      commandId: "1",
+      kind: "node",
+      label: "ethereum",
+      index: 0,
+      // layer 省略: 旧スナップショット・層不明の生成物を模す。
+    });
+    const result = removeGhostForArrivedEntity([legacyGhost], {
+      kind: "node",
+      clientType: "reth",
+    });
+    expect(result).toEqual([]);
+  });
+
+  it("falls back to kind-only FIFO when clientType is missing", () => {
+    const execution = createGhostNode({
+      commandId: "1",
+      kind: "node",
+      label: "ethereum",
+      index: 0,
+      layer: "execution",
+    });
+    const result = removeGhostForArrivedEntity([execution], { kind: "node" });
+    expect(result).toEqual([]);
+  });
+
+  it("does not touch ghosts of the other layer/kind when nothing matches", () => {
+    const workbench = createGhostNode({
+      commandId: "1",
+      kind: "workbench",
+      label: "a",
+      index: 0,
+    });
+    const result = removeGhostForArrivedEntity([workbench], {
+      kind: "node",
+      clientType: "reth",
+    });
+    expect(result).toEqual([workbench]);
+  });
+
+  it("returns the array unchanged when there are no ghosts", () => {
+    expect(removeGhostForArrivedEntity([], { kind: "node", clientType: "reth" })).toEqual(
+      [],
+    );
+  });
+
+  it("removes the oldest consensus ghost across two pending pairs without touching an earlier execution ghost (cross-pair interleave)", () => {
+    // 2回の addNode で4枚のゴースト(exec-A, cons-A, exec-B, cons-B)が保留中。
+    // ペアAの beacon が先に実体化した場合、配列上は exec-A の方が先にあるが、
+    // 層一致で最も古い consensus ゴースト(cons-A)を消す。別ペアの execution を
+    // 誤って巻き込まない(ペアの取り違え・交錯が起きないことの確認)。
+    const execA = createGhostNode({ commandId: "A", kind: "node", label: "e", index: 0, layer: "execution" });
+    const consA = createGhostNode({ commandId: "A", kind: "node", label: "e", index: 1, layer: "consensus" });
+    const execB = createGhostNode({ commandId: "B", kind: "node", label: "e", index: 2, layer: "execution" });
+    const consB = createGhostNode({ commandId: "B", kind: "node", label: "e", index: 3, layer: "consensus" });
+    const result = removeGhostForArrivedEntity([execA, consA, execB, consB], {
+      kind: "node",
+      clientType: "lighthouse",
+    });
+    expect(result).toEqual([execA, execB, consB]);
+  });
+
+  it("matches by layer over array position when a consensus ghost precedes the execution ghost", () => {
+    // 何らかの理由でゴーストの並びが consensus 先行になっていても、reth の到着は
+    // (先頭の consensus ではなく)execution ゴーストを消す。純粋な先頭 FIFO では
+    // なく「層一致を優先し、その中で最古」という順序であることの確認。
+    const cons = createGhostNode({ commandId: "A", kind: "node", label: "e", index: 0, layer: "consensus" });
+    const exec = createGhostNode({ commandId: "A", kind: "node", label: "e", index: 1, layer: "execution" });
+    const result = removeGhostForArrivedEntity([cons, exec], {
+      kind: "node",
+      clientType: "reth",
+    });
+    expect(result).toEqual([cons]);
   });
 });

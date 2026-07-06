@@ -40,7 +40,11 @@ const workbench: WorkbenchEntity = {
   removable: true,
 };
 
-function renderCard(entity: InfraEntity, actions: Partial<CommandActions> = {}) {
+function renderCard(
+  entity: InfraEntity,
+  actions: Partial<CommandActions> = {},
+  extraData: { rpcTargetContainerName?: string; isNew?: boolean } = {},
+) {
   const full: CommandActions = {
     addNode: vi.fn(),
     addWorkbench: vi.fn(),
@@ -48,7 +52,7 @@ function renderCard(entity: InfraEntity, actions: Partial<CommandActions> = {}) 
     removeWorkbench: vi.fn(),
     ...actions,
   };
-  const props = { data: { entity } } as unknown as Parameters<
+  const props = { data: { entity, ...extraData } } as unknown as Parameters<
     typeof InfraNodeCard
   >[0];
   render(
@@ -243,5 +247,49 @@ describe("InfraNodeCard bootnode badge (Issue #124 C)", () => {
     expect(
       screen.queryByTestId("infra-card-bootnode-reth-follower-1"),
     ).toBeNull();
+  });
+});
+
+describe("InfraNodeCard new-arrival highlight (Issue #123 §4-4)", () => {
+  it("does not add the highlight class by default", () => {
+    renderCard(node);
+    expect(
+      screen.getByTestId("infra-card-reth-follower-1").className,
+    ).not.toContain("infra-card--new");
+  });
+
+  it("adds the highlight class when data.isNew is true", () => {
+    renderCard(node, {}, { isNew: true });
+    expect(screen.getByTestId("infra-card-reth-follower-1").className).toContain(
+      "infra-card--new",
+    );
+  });
+
+  it("does not add the highlight class when data.isNew is explicitly false", () => {
+    renderCard(node, {}, { isNew: false });
+    expect(
+      screen.getByTestId("infra-card-reth-follower-1").className,
+    ).not.toContain("infra-card--new");
+  });
+});
+
+describe("InfraNodeCard RPC target popover field (Issue #123 §4-4)", () => {
+  it("shows the RPC target field on hover when rpcTargetContainerName resolves", () => {
+    renderCard(workbench, {}, { rpcTargetContainerName: "chainviz-reth-1" });
+    fireEvent.mouseEnter(screen.getByTestId("infra-card-workbench-1"));
+    expect(screen.getByText("操作先ノード")).toBeTruthy();
+    expect(screen.getByText("chainviz-reth-1")).toBeTruthy();
+  });
+
+  it("does not show the RPC target field when it cannot be resolved (Issue #123 §4-5 fallback)", () => {
+    renderCard(workbench);
+    fireEvent.mouseEnter(screen.getByTestId("infra-card-workbench-1"));
+    expect(screen.queryByText("操作先ノード")).toBeNull();
+  });
+
+  it("does not show the RPC target field for a node card (workbench-only field)", () => {
+    renderCard(node, {}, { rpcTargetContainerName: "chainviz-reth-1" });
+    fireEvent.mouseEnter(screen.getByTestId("infra-card-reth-follower-1"));
+    expect(screen.queryByText("操作先ノード")).toBeNull();
   });
 });

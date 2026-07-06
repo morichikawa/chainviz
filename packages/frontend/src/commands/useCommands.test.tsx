@@ -96,6 +96,11 @@ function nodeEntity(id: string): NodeEntity {
   };
 }
 
+/** clientType を差し替えられる node ヘルパー（Issue #123: beacon/lighthouse 到着の再現用）。 */
+function nodeEntityWithClientType(id: string, clientType: string): NodeEntity {
+  return { ...nodeEntity(id), clientType };
+}
+
 function workbenchEntity(id: string, label = "Carol"): WorkbenchEntity {
   return {
     kind: "workbench",
@@ -237,29 +242,39 @@ describe("useCommands", () => {
   });
 });
 
-describe("useCommands ghost nodes (Issue #102)", () => {
+describe("useCommands ghost nodes (Issue #102 / #123)", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it("shows a ghost node immediately when addNode is dispatched", () => {
+  it("shows an execution + consensus ghost pair when addNode is dispatched (reth + beacon, Issue #123)", () => {
     const { result } = setup();
     expect(result.current.ghosts).toHaveLength(0);
 
     act(() => result.current.actions.addNode());
 
-    expect(result.current.ghosts).toHaveLength(1);
-    expect(result.current.ghosts[0].data.kind).toBe("node");
+    expect(result.current.ghosts).toHaveLength(2);
+    const kinds = result.current.ghosts.map((g) => g.data.kind);
+    expect(kinds).toEqual(["node", "node"]);
+    const layers = result.current.ghosts.map((g) => g.data.layer).sort();
+    expect(layers).toEqual(["consensus", "execution"]);
+    // 両方とも同じ label（chainProfile）を持つが、id・位置は別々。
     expect(result.current.ghosts[0].data.label).toBe("ethereum");
+    expect(result.current.ghosts[1].data.label).toBe("ethereum");
+    expect(result.current.ghosts[0].id).not.toBe(result.current.ghosts[1].id);
+    expect(result.current.ghosts[0].position).not.toEqual(
+      result.current.ghosts[1].position,
+    );
   });
 
-  it("shows a ghost node immediately when addWorkbench is dispatched, using the resolved label", () => {
+  it("shows a single ghost node immediately when addWorkbench is dispatched, using the resolved label", () => {
     const { result } = setup();
     act(() => result.current.actions.addWorkbench("  Bob  "));
 
     expect(result.current.ghosts).toHaveLength(1);
     expect(result.current.ghosts[0].data.kind).toBe("workbench");
     expect(result.current.ghosts[0].data.label).toBe("Bob");
+    expect(result.current.ghosts[0].data.layer).toBeUndefined();
   });
 
   it("does not create a ghost for removeNode / removeWorkbench", () => {
@@ -269,79 +284,79 @@ describe("useCommands ghost nodes (Issue #102)", () => {
     expect(result.current.ghosts).toHaveLength(0);
   });
 
-  it("places multiple concurrently pending ghosts at distinct positions", () => {
+  it("places every concurrently pending ghost (across two addNode calls) at a distinct position", () => {
     const { result } = setup();
     act(() => {
       result.current.actions.addNode();
       result.current.actions.addNode();
     });
 
-    expect(result.current.ghosts).toHaveLength(2);
-    expect(result.current.ghosts[0].position).not.toEqual(
-      result.current.ghosts[1].position,
+    expect(result.current.ghosts).toHaveLength(4);
+    const positions = result.current.ghosts.map(
+      (g) => `${g.position.x},${g.position.y}`,
     );
-    expect(result.current.ghosts[0].id).not.toBe(result.current.ghosts[1].id);
+    expect(new Set(positions).size).toBe(4);
+    const ids = result.current.ghosts.map((g) => g.id);
+    expect(new Set(ids).size).toBe(4);
   });
+});
 
-  it("removes the ghost when the command fails, without touching a differently-kinded ghost", () => {
-    const { result, resolve } = setup();
-    act(() => {
-      result.current.actions.addNode();
-      result.current.actions.addWorkbench("Bob");
-    });
-    expect(result.current.ghosts).toHaveLength(2);
-
-    // 1番目に送った addNode が失敗。
-    resolve(0, false, "boom");
-
-    expect(result.current.ghosts).toHaveLength(1);
-    expect(result.current.ghosts[0].data.kind).toBe("workbench");
-  });
-
-  it("keeps the ghost around on command success (it waits for the real entity via diff)", () => {
-    const { result, resolve } = setup();
+describe("useCommands ghost nodes: layer-aware arrival matching (Issue #123)", () => {
+  it("removes only the execution ghost when a reth entity arrives, leaving the consensus ghost", () => {
+    const { result, diff } = setup();
     act(() => result.current.actions.addNode());
-    resolve(0, true);
-    expect(result.current.ghosts).toHaveLength(1);
-  });
-
-  it("removes the oldest matching ghost once the real entity arrives via diff", () => {
-    const { result, diff } = setup();
-    act(() => {
-      result.current.actions.addNode();
-      result.current.actions.addNode();
-    });
     expect(result.current.ghosts).toHaveLength(2);
-    const firstGhostId = result.current.ghosts[0].id;
-    const secondGhostId = result.current.ghosts[1].id;
 
-    diff([{ type: "entityAdded", entity: nodeEntity("reth-1") }]);
+    diff([{ type: "entityAdded", entity: nodeEntityWithClientType("reth-1", "reth") }]);
 
-    // 先に送った方（FIFO）が消え、後から送った方は残る。
     expect(result.current.ghosts).toHaveLength(1);
-    expect(result.current.ghosts[0].id).toBe(secondGhostId);
-    expect(result.current.ghosts.some((g) => g.id === firstGhostId)).toBe(false);
+    expect(result.current.ghosts[0].data.layer).toBe("consensus");
   });
 
-  it("only removes a ghost of the matching kind when an entity arrives", () => {
+  it("removes only the consensus ghost when a lighthouse entity arrives, leaving the execution ghost", () => {
+    const { result, diff } = setup();
+    act(() => result.current.actions.addNode());
+    expect(result.current.ghosts).toHaveLength(2);
+
+    diff([
+      { type: "entityAdded", entity: nodeEntityWithClientType("lighthouse-1", "lighthouse") },
+    ]);
+
+    expect(result.current.ghosts).toHaveLength(1);
+    expect(result.current.ghosts[0].data.layer).toBe("execution");
+  });
+
+  it("clears both ghosts of the pair once both the reth and beacon entities have arrived", () => {
+    const { result, diff } = setup();
+    act(() => result.current.actions.addNode());
+    expect(result.current.ghosts).toHaveLength(2);
+
+    diff([{ type: "entityAdded", entity: nodeEntityWithClientType("reth-1", "reth") }]);
+    diff([
+      { type: "entityAdded", entity: nodeEntityWithClientType("lighthouse-1", "lighthouse") },
+    ]);
+
+    expect(result.current.ghosts).toHaveLength(0);
+  });
+
+  it("removes the workbench ghost on workbench arrival without touching pending node ghosts", () => {
     const { result, diff } = setup();
     act(() => {
       result.current.actions.addNode();
       result.current.actions.addWorkbench("Bob");
     });
-    expect(result.current.ghosts).toHaveLength(2);
+    expect(result.current.ghosts).toHaveLength(3);
 
-    // workbench の実体が届いても addNode のゴーストは残る。
     diff([{ type: "entityAdded", entity: workbenchEntity("wb-1") }]);
 
-    expect(result.current.ghosts).toHaveLength(1);
-    expect(result.current.ghosts[0].data.kind).toBe("node");
+    expect(result.current.ghosts).toHaveLength(2);
+    expect(result.current.ghosts.every((g) => g.data.kind === "node")).toBe(true);
   });
 
   it("ignores diff events unrelated to node/workbench entities (e.g. wallet)", () => {
     const { result, diff } = setup();
     act(() => result.current.actions.addNode());
-    expect(result.current.ghosts).toHaveLength(1);
+    expect(result.current.ghosts).toHaveLength(2);
 
     diff([
       {
@@ -359,126 +374,107 @@ describe("useCommands ghost nodes (Issue #102)", () => {
       },
     ]);
 
-    expect(result.current.ghosts).toHaveLength(1);
+    expect(result.current.ghosts).toHaveLength(2);
   });
 
   it("does not remove a ghost for an entity that was already present before the command (re-sent snapshot)", () => {
     const { result, diff } = setup();
-    // addNode より前から存在していたノードの再通知（entityUpdated など）は
-    // 「新規到着」ではないので無視されるべき。まず一度 entityAdded で登録し、
-    // それを「既知」とした状態で addNode → 同じ id の update が来ても消えない
-    // ことを確認する。
-    diff([{ type: "entityAdded", entity: nodeEntity("existing-1") }]);
+    diff([{ type: "entityAdded", entity: nodeEntityWithClientType("existing-1", "reth") }]);
     act(() => result.current.actions.addNode());
-    expect(result.current.ghosts).toHaveLength(1);
+    expect(result.current.ghosts).toHaveLength(2);
 
     diff([
       { type: "entityUpdated", id: "existing-1", patch: { blockHeight: 5 } },
     ]);
-    expect(result.current.ghosts).toHaveLength(1);
+    expect(result.current.ghosts).toHaveLength(2);
   });
 
-  it("removes a ghost automatically after the safety-net timeout if nothing else resolves it", () => {
-    vi.useFakeTimers();
-    const { result } = setup();
-    act(() => result.current.actions.addNode());
-    expect(result.current.ghosts).toHaveLength(1);
-
-    act(() => {
-      vi.advanceTimersByTime(GHOST_TIMEOUT_MS);
-    });
-
-    expect(result.current.ghosts).toHaveLength(0);
-  });
-
-  it("does not fire the safety-net timeout once the ghost was already resolved by a diff", () => {
-    vi.useFakeTimers();
+  it("falls back to kind-only FIFO when the arriving node's category has no matching-layer ghost pending", () => {
+    // consensus 側だけが先に実体化済みで、もう1件 reth が届いた場合。
+    // 一致する execution レイヤーのゴーストがあればそれを消費する（正常系）。
     const { result, diff } = setup();
     act(() => result.current.actions.addNode());
-    diff([{ type: "entityAdded", entity: nodeEntity("reth-1") }]);
-    expect(result.current.ghosts).toHaveLength(0);
-
-    // タイマーが残っていて後から誤発火しても、既に空の配列に対する no-op なので
-    // 例外は起きず、ghosts は空のまま。
-    act(() => {
-      vi.advanceTimersByTime(GHOST_TIMEOUT_MS);
-    });
-    expect(result.current.ghosts).toHaveLength(0);
-  });
-
-  it("does not throw when unmounted while ghosts are still pending (timers are cleaned up)", () => {
-    vi.useFakeTimers();
-    const { result, unmount } = setup();
-    act(() => result.current.actions.addNode());
+    expect(result.current.ghosts).toHaveLength(2);
+    diff([{ type: "entityAdded", entity: nodeEntityWithClientType("lighthouse-1", "lighthouse") }]);
     expect(result.current.ghosts).toHaveLength(1);
+    expect(result.current.ghosts[0].data.layer).toBe("execution");
 
-    expect(() => {
-      unmount();
-      vi.advanceTimersByTime(GHOST_TIMEOUT_MS);
-    }).not.toThrow();
+    // 想定外に別の reth が重ねて届いても、残っている execution ゴーストが消費される。
+    diff([{ type: "entityAdded", entity: nodeEntityWithClientType("reth-2", "reth") }]);
+    expect(result.current.ghosts).toHaveLength(0);
   });
 });
 
-describe("useCommands ghost nodes: FIFO under bursts and interleaving (Issue #102)", () => {
-  it("removes the correct oldest ghosts (FIFO) when several arrive in one diff after a 3-click burst", () => {
-    const { result, diff } = setup();
+describe("useCommands ghost nodes: failure clears the whole addNode pair (Issue #123)", () => {
+  it("removes both the execution and consensus ghosts when the shared addNode command fails", () => {
+    const { result, resolve } = setup();
     act(() => {
-      result.current.actions.addNode();
-      result.current.actions.addNode();
-      result.current.actions.addNode();
-    });
-    expect(result.current.ghosts).toHaveLength(3);
-    const survivorId = result.current.ghosts[2].id;
-
-    // 2 件の実体が 1 通の diff でまとめて届く。
-    diff([
-      { type: "entityAdded", entity: nodeEntity("reth-1") },
-      { type: "entityAdded", entity: nodeEntity("reth-2") },
-    ]);
-
-    // 先に送った 2 枚が消え、最後の 1 枚だけ残る。
-    expect(result.current.ghosts).toHaveLength(1);
-    expect(result.current.ghosts[0].id).toBe(survivorId);
-  });
-
-  it("keeps FIFO per-kind when node/workbench ghosts are interleaved", () => {
-    const { result, diff } = setup();
-    act(() => {
-      result.current.actions.addNode(); // node #1
-      result.current.actions.addWorkbench("Alice"); // wb #1
-      result.current.actions.addNode(); // node #2
-      result.current.actions.addWorkbench("Bob"); // wb #2
-    });
-    expect(result.current.ghosts).toHaveLength(4);
-    const secondNodeId = result.current.ghosts[2].id;
-    const secondWbId = result.current.ghosts[3].id;
-
-    diff([{ type: "entityAdded", entity: nodeEntity("reth-1") }]);
-    diff([{ type: "entityAdded", entity: workbenchEntity("wb-1") }]);
-
-    // 各種別の先頭（node #1 / wb #1）だけが消え、2 番目同士が残る。
-    const remainingIds = result.current.ghosts.map((g) => g.id).sort();
-    expect(result.current.ghosts).toHaveLength(2);
-    expect(remainingIds).toEqual([secondNodeId, secondWbId].sort());
-  });
-
-  it("removes one of each kind when a single diff carries both a node and a workbench", () => {
-    const { result, diff } = setup();
-    act(() => {
-      result.current.actions.addNode();
       result.current.actions.addNode();
       result.current.actions.addWorkbench("Bob");
     });
     expect(result.current.ghosts).toHaveLength(3);
 
+    // 1番目に送った addNode が失敗（reth/beacon 両ゴーストが同じ commandId を共有する）。
+    resolve(0, false, "boom");
+
+    expect(result.current.ghosts).toHaveLength(1);
+    expect(result.current.ghosts[0].data.kind).toBe("workbench");
+  });
+
+  it("keeps both ghosts of the pair around on command success (they wait for the real entities via diff)", () => {
+    const { result, resolve } = setup();
+    act(() => result.current.actions.addNode());
+    resolve(0, true);
+    expect(result.current.ghosts).toHaveLength(2);
+  });
+});
+
+describe("useCommands ghost nodes: FIFO under bursts and interleaving (Issue #102 / #123)", () => {
+  it("removes the correct oldest ghost per layer when two addNode bursts are followed by matching arrivals", () => {
+    const { result, diff } = setup();
+    act(() => {
+      result.current.actions.addNode();
+      result.current.actions.addNode();
+    });
+    expect(result.current.ghosts).toHaveLength(4);
+    const survivingExecutionId = result.current.ghosts.filter(
+      (g) => g.data.layer === "execution",
+    )[1].id;
+    const survivingConsensusId = result.current.ghosts.filter(
+      (g) => g.data.layer === "consensus",
+    )[1].id;
+
+    // 1組分の実体（reth + beacon）が1通の diff でまとめて届く。
     diff([
-      { type: "entityAdded", entity: nodeEntity("reth-1") },
-      { type: "entityAdded", entity: workbenchEntity("wb-1") },
+      { type: "entityAdded", entity: nodeEntityWithClientType("reth-1", "reth") },
+      { type: "entityAdded", entity: nodeEntityWithClientType("lighthouse-1", "lighthouse") },
     ]);
 
-    // node が 1 枚、workbench が 0 枚残る。
-    const kinds = result.current.ghosts.map((g) => g.data.kind);
-    expect(kinds).toEqual(["node"]);
+    expect(result.current.ghosts).toHaveLength(2);
+    const remainingIds = result.current.ghosts.map((g) => g.id).sort();
+    expect(remainingIds).toEqual([survivingExecutionId, survivingConsensusId].sort());
+  });
+
+  it("keeps FIFO per-kind when node/workbench ghosts are interleaved", () => {
+    const { result, diff } = setup();
+    act(() => {
+      result.current.actions.addNode(); // node pair #1
+      result.current.actions.addWorkbench("Alice"); // wb #1
+      result.current.actions.addNode(); // node pair #2
+      result.current.actions.addWorkbench("Bob"); // wb #2
+    });
+    expect(result.current.ghosts).toHaveLength(6);
+    const secondWbId = result.current.ghosts.filter(
+      (g) => g.data.kind === "workbench",
+    )[1].id;
+
+    diff([{ type: "entityAdded", entity: workbenchEntity("wb-1") }]);
+
+    const remainingKinds = result.current.ghosts.map((g) => g.data.kind);
+    expect(remainingKinds).toEqual(["node", "node", "node", "node", "workbench"]);
+    expect(result.current.ghosts.find((g) => g.data.kind === "workbench")?.id).toBe(
+      secondWbId,
+    );
   });
 
   it("does not remove a node ghost when only a workbench entity arrives (no cross-kind mixups)", () => {
@@ -486,77 +482,122 @@ describe("useCommands ghost nodes: FIFO under bursts and interleaving (Issue #10
     act(() => {
       result.current.actions.addNode();
       result.current.actions.addWorkbench("Bob");
-      result.current.actions.addNode();
     });
     expect(result.current.ghosts).toHaveLength(3);
 
-    // workbench が 2 回連続で届いても（2 通目は対応するゴーストが無い）、node の
-    // ゴーストには一切触れない。
     diff([{ type: "entityAdded", entity: workbenchEntity("wb-1") }]);
-    diff([{ type: "entityAdded", entity: workbenchEntity("wb-2") }]);
 
     const kinds = result.current.ghosts.map((g) => g.data.kind).sort();
     expect(kinds).toEqual(["node", "node"]);
   });
 });
 
-describe("useCommands ghost nodes: failure/arrival races (Issue #102)", () => {
-  it("does not throw when the real entity arrives after the ghost was already removed by a failure", () => {
+describe("useCommands ghost nodes: connection target resolution (Issue #123)", () => {
+  function bootReth(id: string): NodeEntity {
+    return { ...nodeEntityWithClientType(id, "reth"), p2pRole: "bootnode" };
+  }
+  function bootLighthouse(id: string): NodeEntity {
+    return { ...nodeEntityWithClientType(id, "lighthouse"), p2pRole: "bootnode" };
+  }
+
+  it("resolves the execution/consensus bootnode container names when p2pRole is known", () => {
+    const { result, diff } = setup();
+    diff([
+      { type: "entityAdded", entity: bootReth("reth-1") },
+      { type: "entityAdded", entity: bootLighthouse("lighthouse-1") },
+    ]);
+
+    act(() => result.current.actions.addNode());
+
+    const execution = result.current.ghosts.find((g) => g.data.layer === "execution");
+    const consensus = result.current.ghosts.find((g) => g.data.layer === "consensus");
+    expect(execution?.data.targetContainerName).toBe("chainviz-reth-1");
+    expect(execution?.data.targetNodeId).toBe("reth-1");
+    expect(consensus?.data.targetContainerName).toBe("chainviz-lighthouse-1");
+    expect(consensus?.data.targetNodeId).toBe("lighthouse-1");
+  });
+
+  it("omits the connection target fields when no bootnode can be resolved (Issue #123 §4-5 fallback)", () => {
+    const { result } = setup();
+    act(() => result.current.actions.addNode());
+
+    for (const ghost of result.current.ghosts) {
+      expect(ghost.data.targetContainerName).toBeUndefined();
+      expect(ghost.data.targetNodeId).toBeUndefined();
+    }
+  });
+
+  it("resolves the workbench ghost's RPC target from an existing workbench's rpcTargetNodeId", () => {
+    const { result, diff } = setup();
+    const target = nodeEntityWithClientType("reth-1", "reth");
+    diff([
+      { type: "entityAdded", entity: target },
+      {
+        type: "entityAdded",
+        entity: { ...workbenchEntity("wb-existing"), rpcTargetNodeId: "reth-1" },
+      },
+    ]);
+
+    act(() => result.current.actions.addWorkbench("Carol"));
+
+    const ghost = result.current.ghosts.find((g) => g.data.kind === "workbench");
+    expect(ghost?.data.targetContainerName).toBe("chainviz-reth-1");
+    expect(ghost?.data.targetNodeId).toBe("reth-1");
+  });
+
+  it("omits the workbench ghost's RPC target when no existing workbench resolves one", () => {
+    const { result } = setup();
+    act(() => result.current.actions.addWorkbench("Carol"));
+
+    const ghost = result.current.ghosts.find((g) => g.data.kind === "workbench");
+    expect(ghost?.data.targetContainerName).toBeUndefined();
+    expect(ghost?.data.targetNodeId).toBeUndefined();
+  });
+});
+
+describe("useCommands ghost nodes: failure/arrival races (Issue #102 / #123)", () => {
+  it("does not throw when the real entity arrives after the pair was already removed by a failure", () => {
     const { result, resolve, diff } = setup();
     act(() => result.current.actions.addNode());
     resolve(0, false, "boom");
     expect(result.current.ghosts).toHaveLength(0);
 
-    // 失敗で消えた後に（別ノードの）実体が届いても、消すゴーストが無いだけで例外にならない。
     expect(() =>
-      diff([{ type: "entityAdded", entity: nodeEntity("reth-1") }]),
+      diff([{ type: "entityAdded", entity: nodeEntityWithClientType("reth-1", "reth") }]),
     ).not.toThrow();
     expect(result.current.ghosts).toHaveLength(0);
   });
 
-  it("does not double-remove when a late failure arrives after the ghost was consumed by a diff", () => {
+  it("does not double-remove when a late failure arrives after both ghosts were consumed by diffs", () => {
     const { result, notify, resolve, diff } = setup();
     act(() => result.current.actions.addNode());
-    diff([{ type: "entityAdded", entity: nodeEntity("reth-1") }]);
+    diff([
+      { type: "entityAdded", entity: nodeEntityWithClientType("reth-1", "reth") },
+      { type: "entityAdded", entity: nodeEntityWithClientType("lighthouse-1", "lighthouse") },
+    ]);
     expect(result.current.ghosts).toHaveLength(0);
 
-    // 実体到着でゴーストは消費済み。その後に遅れて失敗が届いても no-op（例外なし）。
-    // pending には残っているので通知はされる（現行仕様の明文化）。
     expect(() => resolve(0, false, "late failure")).not.toThrow();
     expect(result.current.ghosts).toHaveLength(0);
     expect(notify).toHaveBeenCalledTimes(1);
   });
 
-  it("clears both ghosts when one fails by commandId and an entity arrives for the other (same kind)", () => {
+  it("still resolves independently when a failure and an arrival hit within the same act()", () => {
     const { result, resolve, diff } = setup();
     act(() => {
-      result.current.actions.addNode(); // cmd index 0
-      result.current.actions.addNode(); // cmd index 1
+      result.current.actions.addNode(); // cmd0
+      result.current.actions.addNode(); // cmd1
     });
-    expect(result.current.ghosts).toHaveLength(2);
-
-    // 1 枚は失敗で commandId 直指定で消え、もう 1 枚は実体到着（FIFO 近似）で消える。
-    resolve(0, false, "boom");
-    diff([{ type: "entityAdded", entity: nodeEntity("reth-1") }]);
-
-    expect(result.current.ghosts).toHaveLength(0);
-  });
-
-  it("still removes exactly one ghost when a failure and an arrival hit within the same act()", () => {
-    const { result, resolve, diff } = setup();
-    act(() => {
-      result.current.actions.addNode();
-      result.current.actions.addNode();
-    });
-    expect(result.current.ghosts).toHaveLength(2);
+    expect(result.current.ghosts).toHaveLength(4);
 
     act(() => {
-      resolve(1, false, "boom");
-      diff([{ type: "entityAdded", entity: nodeEntity("reth-1") }]);
+      resolve(1, false, "boom"); // cmd1 の2枚が失敗で消える
+      diff([{ type: "entityAdded", entity: nodeEntityWithClientType("reth-1", "reth") }]); // cmd0 の execution が消える
     });
 
-    // 失敗(cmd1)で 1 枚、到着で最古(cmd0)が 1 枚消え、合計 0 枚。二重消去の破綻はない。
-    expect(result.current.ghosts).toHaveLength(0);
+    // cmd0 の consensus ゴーストだけが残る。
+    expect(result.current.ghosts).toHaveLength(1);
+    expect(result.current.ghosts[0].data.layer).toBe("consensus");
   });
 });
 
@@ -568,80 +609,73 @@ describe("useCommands ghost nodes: safety-net timer independence (Issue #102)", 
   it("expires each ghost on its own schedule (staggered creation)", () => {
     vi.useFakeTimers();
     const { result } = setup();
-    act(() => result.current.actions.addNode());
+    act(() => result.current.actions.addWorkbench("Alice"));
 
-    // 30 秒後に 2 枚目を追加。
+    // 30 秒後に2枚目を追加。
     act(() => vi.advanceTimersByTime(GHOST_TIMEOUT_MS / 2));
-    act(() => result.current.actions.addNode());
+    act(() => result.current.actions.addWorkbench("Bob"));
     expect(result.current.ghosts).toHaveLength(2);
 
-    // さらに 30 秒（=1 枚目は 60 秒到達、2 枚目はまだ 30 秒）。1 枚目だけ消える。
+    // さらに30秒（=1枚目は60秒到達、2枚目はまだ30秒）。1枚目だけ消える。
     act(() => vi.advanceTimersByTime(GHOST_TIMEOUT_MS / 2));
     expect(result.current.ghosts).toHaveLength(1);
 
-    // さらに 30 秒で 2 枚目も 60 秒到達。
+    // さらに30秒で2枚目も60秒到達。
     act(() => vi.advanceTimersByTime(GHOST_TIMEOUT_MS / 2));
     expect(result.current.ghosts).toHaveLength(0);
   });
 
-  it("leaves the surviving ghost's timer intact when another ghost is resolved early", () => {
+  it("leaves the surviving ghosts' timers intact when one ghost of a pair is resolved early", () => {
     vi.useFakeTimers();
     const { result, diff } = setup();
-    act(() => {
-      result.current.actions.addNode();
-      result.current.actions.addNode();
-    });
-    // 1 枚を実体到着で早期に解決。
-    diff([{ type: "entityAdded", entity: nodeEntity("reth-1") }]);
+    act(() => result.current.actions.addNode());
+    diff([{ type: "entityAdded", entity: nodeEntityWithClientType("reth-1", "reth") }]);
     expect(result.current.ghosts).toHaveLength(1);
 
-    // 残った 1 枚は自身の安全網で最終的に消える。
+    // 残った consensus ゴーストは自身の安全網で最終的に消える。
     act(() => vi.advanceTimersByTime(GHOST_TIMEOUT_MS));
     expect(result.current.ghosts).toHaveLength(0);
   });
 
-  it("does not resurrect or double-fire after a ghost is resolved by failure then time advances", () => {
+  it("does not resurrect or double-fire after a pair is resolved by failure then time advances", () => {
     vi.useFakeTimers();
     const { result, notify, resolve } = setup();
     act(() => result.current.actions.addNode());
     resolve(0, false, "boom");
     expect(result.current.ghosts).toHaveLength(0);
 
-    // 失敗で消した後にタイムアウト時刻を跨いでも、ゴーストは 0 のまま・追加通知も無い。
     act(() => vi.advanceTimersByTime(GHOST_TIMEOUT_MS * 2));
     expect(result.current.ghosts).toHaveLength(0);
     expect(notify).toHaveBeenCalledTimes(1);
   });
 });
 
-describe("useCommands ghost nodes: disconnect / reconnect (Issue #102)", () => {
-  it("removes a pending ghost once a reconnect snapshot contains the real entity", () => {
+describe("useCommands ghost nodes: disconnect / reconnect (Issue #102 / #123)", () => {
+  it("removes both ghosts of a pair once a reconnect snapshot contains both real entities", () => {
     const { result, setStatus, snapshot } = setup();
     act(() => result.current.actions.addNode());
-    expect(result.current.ghosts).toHaveLength(1);
+    expect(result.current.ghosts).toHaveLength(2);
 
-    // 切断 → 再接続。再接続時のスナップショットに実体が含まれていれば、
-    // それを新規到着とみなして仮カードを消す。
     setStatus("disconnected");
     setStatus("connected");
-    snapshot([nodeEntity("reth-1")]);
+    snapshot([
+      nodeEntityWithClientType("reth-1", "reth"),
+      nodeEntityWithClientType("lighthouse-1", "lighthouse"),
+    ]);
 
     expect(result.current.ghosts).toHaveLength(0);
   });
 
-  it("keeps a pending ghost across a reconnect whose snapshot lacks the entity (no spurious removal)", () => {
+  it("keeps pending ghosts across a reconnect whose snapshot lacks the entities (no spurious removal)", () => {
     const { result, setStatus, snapshot } = setup();
     act(() => result.current.actions.addNode());
-    expect(result.current.ghosts).toHaveLength(1);
+    expect(result.current.ghosts).toHaveLength(2);
 
-    // 実体がまだ立ち上がっておらず、再接続スナップショットが空のケース。
     setStatus("disconnected");
     setStatus("connected");
     snapshot([]);
 
-    // ゴーストは（安全網タイムアウトまで）残り続ける。空スナップショットで
-    // 誤って消えたりしない。
-    expect(result.current.ghosts).toHaveLength(1);
+    expect(result.current.ghosts).toHaveLength(2);
   });
 
   it("does not remove a ghost twice when the entity appears in both the reconnect snapshot and a later diff", () => {
@@ -650,168 +684,88 @@ describe("useCommands ghost nodes: disconnect / reconnect (Issue #102)", () => {
       result.current.actions.addNode();
       result.current.actions.addNode();
     });
-    expect(result.current.ghosts).toHaveLength(2);
+    expect(result.current.ghosts).toHaveLength(4);
 
-    // 再接続スナップショットに reth-1 が含まれる → 最古のゴーストを 1 枚消す。
-    snapshot([nodeEntity("reth-1")]);
-    expect(result.current.ghosts).toHaveLength(1);
+    // 再接続スナップショットに reth-1 が含まれる → 最古の execution ゴーストを1枚消す。
+    snapshot([nodeEntityWithClientType("reth-1", "reth")]);
+    expect(result.current.ghosts).toHaveLength(3);
 
-    // その後、同じ reth-1 が update として再送されても「既知」なので 2 枚目は消えない。
+    // 同じ reth-1 が update として再送されても「既知」なので変化しない。
     diff([{ type: "entityUpdated", id: "reth-1", patch: { blockHeight: 3 } }]);
-    expect(result.current.ghosts).toHaveLength(1);
-  });
-
-  it("removes a ghost when a fresh entity id appears in the reconnect snapshot even if a prior entity was already seen", () => {
-    const { result, diff, snapshot } = setup();
-    // 初回スナップショット相当で既存ノードを 1 件認知。
-    diff([{ type: "entityAdded", entity: nodeEntity("existing-1") }]);
-    act(() => result.current.actions.addNode());
-    expect(result.current.ghosts).toHaveLength(1);
-
-    // 再接続スナップショットに既存ノード + 新規ノードが含まれる。新規 id の
-    // 到着分だけがゴーストを消す。
-    snapshot([nodeEntity("existing-1"), nodeEntity("reth-2")]);
-    expect(result.current.ghosts).toHaveLength(0);
+    expect(result.current.ghosts).toHaveLength(3);
   });
 });
 
-describe("useCommands ghost nodes: placement index survives infra removal between adds (Issue #113)", () => {
+/**
+ * Issue #113 の配置 index 計算（Math.max(ghostIndexRef, infraCount) の単調増加
+ * カウンタ）に対する境界値の確認。addNode は1回で2つの index を消費するように
+ * なった(Issue #123)が、単調増加・重複しないという不変条件自体は変わらない。
+ */
+function positionKey(node: GhostFlowNode): string {
+  return `${node.position.x},${node.position.y}`;
+}
+
+describe("useCommands ghost nodes: placement index survives infra removal between adds (Issue #113 / #123)", () => {
   it("does not place a new ghost on the same grid cell as a still-pending ghost after an existing infra entity is removed in between", () => {
     const { result, diff } = setup();
 
     // 1. 既存 node を登録（infraCount=1）。
     diff([{ type: "entityAdded", entity: nodeEntity("existing-1") }]);
 
-    // 2. addNode → 仮カードが1枚 (旧実装では index = infraCount(1) + seq(0) = 1)。
-    act(() => result.current.actions.addNode());
+    // 2. addWorkbench → 仮カードが1枚。
+    act(() => result.current.actions.addWorkbench("Alice"));
     expect(result.current.ghosts).toHaveLength(1);
     const firstGhostPosition = result.current.ghosts[0].position;
 
-    // 3. 既存 node を削除（infraCount=0）。まだ手順2の仮カードは実体化していない
-    //    ため残ったまま。
+    // 3. 既存 node を削除（infraCount=0）。まだ手順2の仮カードは実体化していない。
     diff([{ type: "entityRemoved", id: "existing-1" }]);
 
-    // 4. addNode → 仮カードが2枚目 (旧実装では index = infraCount(0) + seq(1) = 1
-    //    となり、手順2の仮カードと同一グリッドセルに重なっていた)。
-    act(() => result.current.actions.addNode());
+    // 4. addWorkbench → 仮カードが2枚目。旧実装ではここで手順2の仮カードと同一
+    //    グリッドセルに重なっていた。
+    act(() => result.current.actions.addWorkbench("Bob"));
     expect(result.current.ghosts).toHaveLength(2);
 
     const secondGhostPosition = result.current.ghosts[1].position;
     expect(secondGhostPosition).not.toEqual(firstGhostPosition);
-    // 全ての仮カードが互いに異なるグリッドセルにあること（既存カード削除の
-    // 有無に関わらず、仮カード同士は常に別セルに置かれる）。
-    const positions = result.current.ghosts.map((g) => `${g.position.x},${g.position.y}`);
+    const positions = result.current.ghosts.map(positionKey);
     expect(new Set(positions).size).toBe(positions.length);
   });
 
-  it("keeps ghost placement monotonic across repeated removal of existing infra between adds", () => {
+  it("keeps placement monotonic across repeated removal of existing infra between adds", () => {
     const { result, diff } = setup();
 
-    // 既存 node を2件登録（infraCount=2）。
     diff([{ type: "entityAdded", entity: nodeEntity("existing-1") }]);
     diff([{ type: "entityAdded", entity: nodeEntity("existing-2") }]);
 
-    act(() => result.current.actions.addNode()); // ghost #1 (infraCount=2)
+    act(() => result.current.actions.addWorkbench("A")); // ghost #1 (infraCount=2)
     diff([{ type: "entityRemoved", id: "existing-1" }]); // infraCount=1
-    act(() => result.current.actions.addNode()); // ghost #2
+    act(() => result.current.actions.addWorkbench("B")); // ghost #2
     diff([{ type: "entityRemoved", id: "existing-2" }]); // infraCount=0
-    act(() => result.current.actions.addNode()); // ghost #3
+    act(() => result.current.actions.addWorkbench("C")); // ghost #3
 
-    // どの仮カードも entityAdded による実体化を経ていないため、3枚とも残っている。
     expect(result.current.ghosts).toHaveLength(3);
-    const positions = result.current.ghosts.map((g) => `${g.position.x},${g.position.y}`);
-    expect(new Set(positions).size).toBe(positions.length);
-  });
-});
-
-/**
- * Issue #113 の配置 index 計算（Math.max(ghostIndexRef, infraCount) の単調増加
- * カウンタ）に対する異常系・境界値の追加検証。位置の一致/不一致は実装が使う
- * defaultGridPosition で直接確認し、「index が巻き戻らない」「infraCount の
- * 急増で前方へ押し出される」「node/workbench 混在でも独立して別セルに置く」
- * といった不変条件を固定する。
- */
-function positionKey(node: GhostFlowNode): string {
-  return `${node.position.x},${node.position.y}`;
-}
-
-describe("useCommands ghost nodes: placement index edge cases (Issue #113)", () => {
-  it("assigns a fresh grid cell to a re-added ghost even after a middle ghost was removed by failure", () => {
-    const { result, resolve } = setup();
-    act(() => {
-      result.current.actions.addNode(); // cmd0 / index 0
-      result.current.actions.addNode(); // cmd1 / index 1
-      result.current.actions.addNode(); // cmd2 / index 2
-    });
-    expect(result.current.ghosts).toHaveLength(3);
-
-    // 途中（2番目に送った）の仮カードだけが失敗で消える。
-    resolve(1, false, "boom");
-    expect(result.current.ghosts).toHaveLength(2);
-
-    // 再度 addNode。空いた index 1 のセルを再利用せず、単調増加で index 3 へ。
-    act(() => result.current.actions.addNode()); // cmd3 / index 3
-    expect(result.current.ghosts).toHaveLength(3);
-
-    const newGhost = result.current.ghosts[2];
-    expect(newGhost.position).toEqual(defaultGridPosition(3));
-    // 消えた仮カードの旧セル（index 1）を再利用していないこと。
-    expect(newGhost.position).not.toEqual(defaultGridPosition(1));
     const positions = result.current.ghosts.map(positionKey);
     expect(new Set(positions).size).toBe(positions.length);
   });
 
-  it("keeps placement monotonic when a ghost is confirmed then its entity is removed before re-adding", () => {
-    const { result, diff } = setup();
-    act(() => {
-      result.current.actions.addNode(); // A / index 0
-      result.current.actions.addNode(); // B / index 1
-    });
-    const ghostBPosition = result.current.ghosts[1].position; // index 1
-
-    // A が実体到着で確定（FIFO で最古の A が消える）。B は残る。
-    diff([{ type: "entityAdded", entity: nodeEntity("reth-1") }]);
-    expect(result.current.ghosts).toHaveLength(1);
-
-    // 確定した実体がその後削除され infraCount が 0 に戻る。
-    diff([{ type: "entityRemoved", id: "reth-1" }]);
-
-    // 再度 addNode。infraCount が下がっても index は巻き戻らず、まだ表示中の B と
-    // 衝突しない index 2 へ。
-    act(() => result.current.actions.addNode()); // C / index 2
-    expect(result.current.ghosts).toHaveLength(2);
-
-    const cPosition = result.current.ghosts[1].position;
-    expect(cPosition).toEqual(defaultGridPosition(2));
-    expect(cPosition).not.toEqual(ghostBPosition);
-  });
-
-  it("places interleaved node and workbench ghosts on independent, monotonically increasing cells", () => {
+  it("consumes two consecutive grid slots atomically for a single addNode pair", () => {
     const { result } = setup();
-    act(() => {
-      result.current.actions.addNode(); // index 0 (node)
-      result.current.actions.addWorkbench("Alice"); // index 1 (workbench)
-      result.current.actions.addNode(); // index 2 (node)
-      result.current.actions.addWorkbench("Bob"); // index 3 (workbench)
-    });
-    expect(result.current.ghosts).toHaveLength(4);
-
-    // node/workbench は同一の単調カウンタを共有し、種別に関わらず別セルへ。
+    act(() => result.current.actions.addNode());
     expect(result.current.ghosts.map((g) => g.position)).toEqual(
-      [0, 1, 2, 3].map((i) => defaultGridPosition(i)),
+      [0, 1].map((i) => defaultGridPosition(i)),
     );
-    const positions = result.current.ghosts.map(positionKey);
-    expect(new Set(positions).size).toBe(4);
+
+    // 続く addWorkbench は index 2 へ押し出される（addNode が2つ消費した分だけ前進）。
+    act(() => result.current.actions.addWorkbench("Alice"));
+    expect(result.current.ghosts[2].position).toEqual(defaultGridPosition(2));
   });
 
   it("pushes a new ghost forward past a burst of infra added by other clients (Math.max lower bound)", () => {
     const { result, diff } = setup();
 
-    // node の到着では消えない workbench の仮カードを1枚出しておく（index 0）。
     act(() => result.current.actions.addWorkbench("Bob"));
     const workbenchPosition = result.current.ghosts[0].position;
 
-    // 他クライアントからの一括追加で node が一気に5件増える（infraCount=5）。
     diff([
       { type: "entityAdded", entity: nodeEntity("reth-1") },
       { type: "entityAdded", entity: nodeEntity("reth-2") },
@@ -819,45 +773,18 @@ describe("useCommands ghost nodes: placement index edge cases (Issue #113)", () 
       { type: "entityAdded", entity: nodeEntity("reth-4") },
       { type: "entityAdded", entity: nodeEntity("reth-5") },
     ]);
-    // node の仮カードは無いので workbench の仮カードは消費されず残る。
     expect(result.current.ghosts).toHaveLength(1);
 
-    // addNode。ghostIndexRef(1) より infraCount(5) が大きいので index は 5 へ
-    // 押し出され、既存 infra カード（grid index 0..4）と重ならない。
-    act(() => result.current.actions.addNode());
+    act(() => result.current.actions.addWorkbench("Carol"));
     expect(result.current.ghosts).toHaveLength(2);
 
-    const nodeGhost = result.current.ghosts[1];
-    expect(nodeGhost.position).toEqual(defaultGridPosition(5));
-    expect(nodeGhost.position).not.toEqual(workbenchPosition);
-    const infraCells = [0, 1, 2, 3, 4].map((i) => `${defaultGridPosition(i).x},${defaultGridPosition(i).y}`);
-    expect(infraCells).not.toContain(positionKey(nodeGhost));
-  });
-
-  it("assigns distinct forward cells to two ghosts created in the same tick when infra already exists", () => {
-    const { result, diff } = setup();
-
-    // 既存 node を3件登録（infraCount=3）。仮カードは無いので消費されない。
-    diff([
-      { type: "entityAdded", entity: nodeEntity("existing-1") },
-      { type: "entityAdded", entity: nodeEntity("existing-2") },
-      { type: "entityAdded", entity: nodeEntity("existing-3") },
-    ]);
-
-    // 同一イベントハンドラ内での連続 addNode。render を挟まなくても両者の index が
-    // 進み、かつ infraCount(3) を下限に前方へ置かれる（index 3, 4）。
-    act(() => {
-      result.current.actions.addNode();
-      result.current.actions.addNode();
-    });
-    expect(result.current.ghosts).toHaveLength(2);
-    expect(result.current.ghosts[0].position).toEqual(defaultGridPosition(3));
-    expect(result.current.ghosts[1].position).toEqual(defaultGridPosition(4));
-
-    const infraCells = [0, 1, 2].map((i) => `${defaultGridPosition(i).x},${defaultGridPosition(i).y}`);
-    for (const ghost of result.current.ghosts) {
-      expect(infraCells).not.toContain(positionKey(ghost));
-    }
+    const newGhost = result.current.ghosts[1];
+    expect(newGhost.position).toEqual(defaultGridPosition(5));
+    expect(newGhost.position).not.toEqual(workbenchPosition);
+    const infraCells = [0, 1, 2, 3, 4].map(
+      (i) => `${defaultGridPosition(i).x},${defaultGridPosition(i).y}`,
+    );
+    expect(infraCells).not.toContain(positionKey(newGhost));
   });
 
   it("never assigns two concurrently-pending ghosts the same cell through a long interleaving", () => {
@@ -867,63 +794,29 @@ describe("useCommands ghost nodes: placement index edge cases (Issue #113)", () 
       expect(new Set(positions).size).toBe(positions.length);
     };
 
-    act(() => result.current.actions.addNode()); // cmd0 node / index 0
+    act(() => result.current.actions.addNode()); // cmd0: 2 node ghosts, index 0-1
     assertDistinct();
-    act(() => result.current.actions.addWorkbench("Alice")); // cmd1 wb / index 1
-    assertDistinct();
-
-    // node の実体到着で最古の node 仮カード（cmd0）が消える。
-    diff([{ type: "entityAdded", entity: nodeEntity("reth-1") }]);
+    act(() => result.current.actions.addWorkbench("Alice")); // cmd1 wb, index 2
     assertDistinct();
 
-    act(() => result.current.actions.addNode()); // cmd2 node / index 2
+    diff([{ type: "entityAdded", entity: nodeEntityWithClientType("reth-1", "reth") }]);
     assertDistinct();
 
-    // 実体が削除され infraCount が下がる。
+    act(() => result.current.actions.addNode()); // cmd2: index 3-4
+    assertDistinct();
+
     diff([{ type: "entityRemoved", id: "reth-1" }]);
     assertDistinct();
 
-    // 直近に送った addNode（cmd2）が失敗して消える。
-    resolve(2, false, "boom");
+    resolve(2, false, "boom"); // cmd2 の2枚が失敗で消える
     assertDistinct();
 
-    act(() => result.current.actions.addWorkbench("Bob")); // cmd3 wb / index 3
+    act(() => result.current.actions.addWorkbench("Bob")); // cmd3 wb, index 5
     assertDistinct();
-    act(() => result.current.actions.addNode()); // cmd4 node / index 4
+    act(() => result.current.actions.addNode()); // cmd4: index 6-7
     assertDistinct();
 
-    // 最終的に残る仮カードは wb(cmd1,index1), wb(cmd3,index3), node(cmd4,index4)。
-    expect(result.current.ghosts.map((g) => g.position)).toEqual(
-      [1, 3, 4].map((i) => defaultGridPosition(i)),
-    );
-  });
-
-  it("does not collide a workbench ghost with a still-pending node ghost after infra was removed in between", () => {
-    const { result, diff } = setup();
-
-    // 既存 node を1件登録（infraCount=1）。
-    diff([{ type: "entityAdded", entity: nodeEntity("existing-1") }]);
-
-    // addNode → 仮カードを1枚。旧 infraCount+seq 方式では index = 1 + 0 = 1。
-    act(() => result.current.actions.addNode());
-    expect(result.current.ghosts).toHaveLength(1);
-    const nodeGhostPosition = result.current.ghosts[0].position;
-
-    // 既存 node を削除（infraCount=0）。手順前の node 仮カードは実体化していない
-    // ため残る。
-    diff([{ type: "entityRemoved", id: "existing-1" }]);
-
-    // 続けて addWorkbench → 別種の仮カード。旧方式では index = 0 + 1 = 1 となり、
-    // まだ表示中の node 仮カード（index 1）と同一グリッドセルに重なっていた。
-    // 単調カウンタ方式では index 2 へ押し出され重ならない。
-    act(() => result.current.actions.addWorkbench("Bob"));
-    expect(result.current.ghosts).toHaveLength(2);
-
-    const workbenchGhost = result.current.ghosts[1];
-    expect(workbenchGhost.data.kind).toBe("workbench");
-    expect(workbenchGhost.position).toEqual(defaultGridPosition(2));
-    expect(workbenchGhost.position).not.toEqual(nodeGhostPosition);
-    const positions = result.current.ghosts.map(positionKey);
-    expect(new Set(positions).size).toBe(positions.length);
+    // 最終的に残る仮カード: consensus(cmd0), wb(cmd1), wb(cmd3), execution+consensus(cmd4)。
+    expect(result.current.ghosts).toHaveLength(5);
   });
 });

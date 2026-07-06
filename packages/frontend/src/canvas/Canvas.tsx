@@ -26,6 +26,12 @@ import { OwnershipEdge } from "../entities/OwnershipEdge.js";
 import { OWNERSHIP_EDGE_TYPE } from "../entities/ownershipEdge.js";
 import { OperationPulseEdge } from "../entities/OperationPulseEdge.js";
 import { OPERATION_EDGE_TYPE } from "../entities/operationEdge.js";
+import { PendingConnectionEdge } from "../entities/PendingConnectionEdge.js";
+import { PENDING_CONNECTION_EDGE_TYPE } from "../entities/pendingConnectionEdge.js";
+import { ConnectingEdge } from "../entities/ConnectingEdge.js";
+import { CONNECTING_EDGE_TYPE } from "../entities/connectingEdge.js";
+import { OperationTargetEdge } from "../entities/OperationTargetEdge.js";
+import { OPERATION_TARGET_EDGE_TYPE } from "../entities/operationTargetEdge.js";
 import {
   type CanvasFlowEdge,
   type CanvasFlowNode,
@@ -44,6 +50,9 @@ const edgeTypes: EdgeTypes = {
   [PEER_EDGE_TYPE]: PeerPropagationEdge,
   [OWNERSHIP_EDGE_TYPE]: OwnershipEdge,
   [OPERATION_EDGE_TYPE]: OperationPulseEdge,
+  [PENDING_CONNECTION_EDGE_TYPE]: PendingConnectionEdge,
+  [CONNECTING_EDGE_TYPE]: ConnectingEdge,
+  [OPERATION_TARGET_EDGE_TYPE]: OperationTargetEdge,
 };
 
 export interface CanvasProps {

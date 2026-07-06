@@ -195,6 +195,20 @@ body {
   animation: chainviz-spin 0.7s linear infinite;
 }
 
+/* --- 操作ボタンの押下前予告ツールチップ（Issue #123） --- */
+.action-hint {
+  position: relative;
+  display: inline-block;
+}
+
+/* glossary-popover の見た目（背景・枠線・影・幅）を流用しつつ、上端に余白を
+   持たせてボタンと重ならないようにする。 */
+.action-hint__popover {
+  top: calc(100% + 8px);
+  width: 280px;
+  line-height: 1.5;
+}
+
 /* --- インフラカード --- */
 .infra-card {
   position: relative;
@@ -546,6 +560,72 @@ body {
   border: 1px solid var(--border);
   background: rgba(70, 87, 125, 0.18);
   white-space: nowrap;
+}
+
+/* --- ゴースト → 接続予定先ノードの「接続予定エッジ」（Issue #123） --- */
+/* まだ実接続ではないことを示すため、実エッジより低彩度・細めの点線にする。
+   node ゴースト由来はピア接続系（青系）、workbench ゴースト由来は操作
+   エッジ系（マゼンタ系）の色相を、それぞれ通常より抑えたトーンで使う。 */
+.pending-connection-edge .react-flow__edge-path {
+  stroke-width: 1.5;
+  stroke-dasharray: 2 5;
+  stroke-opacity: 0.55;
+}
+
+.pending-connection-edge--peer .react-flow__edge-path {
+  stroke: #7db8ff;
+}
+
+.pending-connection-edge--operation .react-flow__edge-path {
+  stroke: var(--op-edge);
+}
+
+/* --- 実カード到着後の「接続確立中」エッジ（Issue #123） --- */
+/* 実 PeerEdge が1本も届いていない間だけ表示する。ブロック伝播パルス
+   （peer-edge, 実線）と混同しないよう、点線 + 控えめな色にする。 */
+.connecting-edge .react-flow__edge-path {
+  stroke: #7db8ff;
+  stroke-width: 1.6;
+  stroke-dasharray: 4 4;
+  stroke-opacity: 0.7;
+}
+
+.connecting-edge__label {
+  font-size: 10px;
+  color: var(--muted);
+  background: rgba(15, 20, 32, 0.85);
+  padding: 1px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+/* --- ワークベンチ → 操作先ノードの常設エッジ（Issue #123） --- */
+/* 揮発性の操作パルス（.operation-edge）と同系色だが、常設なのでより控えめに
+   する（実際に操作が起きた瞬間は既存の .operation-edge / .operation-pulse
+   がこの上を走る）。 */
+.operation-target-edge .react-flow__edge-path {
+  stroke: var(--op-edge);
+  stroke-width: 1.2;
+  stroke-dasharray: 2 5;
+  stroke-opacity: 0.4;
+}
+
+/* --- 実カード到着直後の新着強調（Issue #123） --- */
+/* 追加操作から生まれたカードだと一目で分かるよう、約5秒間アウトラインを
+   発光させる。ブロック受光の発光（同期状態インジケータの緑）と紛れない
+   よう、追加操作系のアクセント色（--accent、青）を使う。 */
+.infra-card--new {
+  animation: chainviz-new-arrival 1.4s ease-in-out infinite;
+}
+
+@keyframes chainviz-new-arrival {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(79, 157, 255, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(79, 157, 255, 0.15);
+  }
 }
 
 /* --- ホバーポップオーバー --- */

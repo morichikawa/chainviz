@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   LANGUAGE_STORAGE_KEY,
   type LanguageStorage,
+  format,
   isLanguage,
   loadLanguage,
   nextLanguage,
@@ -90,5 +91,39 @@ describe("nextLanguage", () => {
   it("toggles between the two supported languages", () => {
     expect(nextLanguage("ja")).toBe("en");
     expect(nextLanguage("en")).toBe("ja");
+  });
+});
+
+describe("format", () => {
+  it("replaces a single placeholder", () => {
+    expect(format("hello {name}", { name: "world" })).toBe("hello world");
+  });
+
+  it("replaces multiple distinct placeholders", () => {
+    expect(format("{a} and {b}", { a: "x", b: "y" })).toBe("x and y");
+  });
+
+  it("replaces repeated occurrences of the same placeholder", () => {
+    expect(format("{a}-{a}", { a: "z" })).toBe("z-z");
+  });
+
+  it("leaves an unmatched placeholder untouched", () => {
+    expect(format("hello {name}", {})).toBe("hello {name}");
+  });
+
+  it("returns the text unchanged when it has no placeholders", () => {
+    expect(format("no placeholders here", { name: "world" })).toBe(
+      "no placeholders here",
+    );
+  });
+
+  it("does not use inherited Object.prototype properties as placeholder values", () => {
+    // hasOwnProperty ガードにより、たとえば {toString} のようなキーが
+    // プロトタイプ経由で誤って解決されない。
+    expect(format("{toString}", {})).toBe("{toString}");
+  });
+
+  it("substitutes an empty string value explicitly", () => {
+    expect(format("[{name}]", { name: "" })).toBe("[]");
   });
 });

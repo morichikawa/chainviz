@@ -107,6 +107,40 @@ export const messages = {
     ja: "ノード同士がノード発見で見つけ合って自動的につないだ接続です。線が時間差で増えたり、ノードごとに相手が違ったりするのは正常な動きです。",
     en: "A connection the nodes established automatically after finding each other via node discovery. It is normal for cords to appear over time and for each node to have different peers.",
   },
+  // --- 追加操作の事前予告（Issue #123） ---
+  // `{elBoot}` / `{clBoot}` / `{rpcTarget}` は i18n.ts の format() で実行時に
+  // 置換するプレースホルダ（対象カードの containerName が入る）。
+  "action.addNode.hint": {
+    ja: "フォロワーノード(reth + beacon のペア、カード2枚)を起動します。{elBoot} と {clBoot} を入口(ブートノード)に既存ネットワークへ参加し、同期後は他のノードとも自動で繋がります",
+    en: "Starts a follower node (a reth + beacon pair; two cards). It joins the existing network through {elBoot} and {clBoot} as bootnodes, then connects to other peers automatically once synced.",
+  },
+  "action.addNode.hint.generic": {
+    ja: "フォロワーノード(reth + beacon のペア、カード2枚)を起動し、既存ネットワークのブートノードを入口に参加させます",
+    en: "Starts a follower node (a reth + beacon pair; two cards) and joins it to the existing network through its bootnodes.",
+  },
+  "action.addWorkbench.hint": {
+    ja: "Foundry(cast / forge)入りの操作用マシンを起動します。RPC 呼び出しは {rpcTarget} に送られ、専用のウォレット(鍵)が1つ割り当てられます",
+    en: "Starts an operator machine with Foundry (cast / forge). Its RPC calls go to {rpcTarget}, and it gets a dedicated wallet (key).",
+  },
+  "action.addWorkbench.hint.generic": {
+    ja: "Foundry(cast / forge)入りの操作用マシンを起動します。専用のウォレット(鍵)が1つ割り当てられます",
+    en: "Starts an operator machine with Foundry (cast / forge). It gets a dedicated wallet (key).",
+  },
+  "ghost.node.execution": { ja: "新しいノード (reth)", en: "New node (reth)" },
+  "ghost.node.consensus": {
+    ja: "新しいノード (beacon)",
+    en: "New node (beacon)",
+  },
+  "ghost.willConnect": {
+    ja: "{target} と接続予定",
+    en: "Will connect to {target}",
+  },
+  "ghost.rpcTarget": { ja: "操作先: {target}", en: "RPC target: {target}" },
+  "edge.connecting": {
+    ja: "P2P接続を確立中…",
+    en: "Establishing P2P connection…",
+  },
+  "field.rpcTarget": { ja: "操作先ノード", en: "RPC target" },
 } as const satisfies Record<string, Localized>;
 
 export type MessageKey = keyof typeof messages;
