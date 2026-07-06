@@ -817,3 +817,90 @@
   伴う点に注意(QAは既存スタックへの適用を一度実際に通すこと)。
 - 未決事項: なし(型・値の意味論・データの出所は本記録で確定。#123の
   案A/案Bの採否など UX 上の未決事項は各Issueのworklogを参照)。
+
+### 2026-07-06 Issue #123/#124 共通shared型のテスト強化(異常系・境界値)
+
+- 担当: tester
+- ブランチ: design-issue-123-124-shared-types
+- 対象: `NodeEntity.p2pRole` / `WorkbenchEntity.rpcTargetNodeId` の追加。
+  型定義のみの変更で、これらを設定・利用する実装ロジックは #123/#124 で
+  今後実装予定のため、テストは「型の追加が既存のdiff/store動作を壊さない
+  こと」の確認に範囲を絞った。runtime バリデーション(zod等)は
+  `packages/shared` に存在しないため、既存の `removable` の前例に倣った
+  シリアライズ/不変条件のテスト水準に合わせた。
+- 追加したテスト:
+  - collector `world-state/diff.test.ts`:
+    - `p2pRole` の変化(peer→bootnode)が entityUpdated の patch に載る
+    - 省略→bootnode(役割が後から判明)も差分として検出される
+    - `rpcTargetNodeId` の変化が workbench の patch に載る
+    - optional フィールドが present→absent になっても clearing patch は
+      出ない(既知の制約。下記参照)
+  - collector `world-state/store.test.ts`:
+    - `p2pRole` が無関係フィールドの patch 適用後も保持される
+    - `p2pRole` / `rpcTargetNodeId` がスナップショットを素通しで保持される
+  - frontend `world-state/store.test.ts`:
+    - `applySnapshot` が両フィールドを保持し、省略エンティティは undefined
+      のまま残る(後方互換)
+    - `applyDiff` の `p2pRole` patch が他フィールドを壊さずマージされる
+- 既存実装のバグではない既知の制約(実装担当への申し送り): `diff.ts` の
+  `fieldPatch` は `Object.keys(after)` のみを走査するため、before にあって
+  after で省略された optional フィールドは差分に現れず、store に旧値が
+  残る。全 optional フィールド共通の挙動で、bootnode/peer は一度確定すると
+  消えない運用のため現状は実害なし。#123/#124 で「役割の取り消し」
+  （bootnode を再び不明へ戻す）を扱う必要が出た場合はこの制約に留意する
+  こと。この挙動は上記 diff.test.ts のテストで固定化済み。
+- 確認: `pnpm build` / `pnpm test`(shared/collector/frontend)いずれも通過。
+  shared 13、collector 590、frontend 541 テストが green。
+
+### 2026-07-06 Issue #123/#124 共通shared型のレビュー(reviewer)
+
+- 担当: reviewer
+- 対象: ブランチ `design-issue-123-124-shared-types`(designerのコミット
+  2件 + testerのテスト強化(レビュー時点で未コミット))
+- 判定: **合格**(内容面の差し戻しなし。ただし下記「マージ前の要対応」あり)
+- 確認した内容:
+  1. 型設計: `NodeEntity.p2pRole?: "bootnode" | "peer"`(省略 = 不明の
+     3状態)と `WorkbenchEntity.rpcTargetNodeId?: string`(省略 = 解決
+     不能/旧スナップショット)は、いずれもチェーン非依存の語彙で
+     CLAUDE.mdの境界原則に沿う。"bootnode" はCONCEPT.md(386行目・
+     556行目)で既に使われている確立済みの語彙であり、`eth_getLogs` の
+     ようなチェーン固有RPC語彙の漏出には当たらない。導出ロジック
+     (Dockerラベル `com.chainviz.p2p-role`)はcollector(ChainAdapter)側に
+     閉じる設計で、境界を壊していない。null を使わず省略に一本化した
+     判断も、`ownerWorkbenchId` の null(意味のある状態)との対比が
+     コメントで説明されており妥当
+  2. testerの申し送り(optionalフィールドの「値あり→省略」が差分に
+     反映されない)は `diff.ts` の `fieldPatch`(`Object.keys(after)` のみ
+     走査)で事実と確認した。挙動を固定化するテストも追加済みで、
+     記録として十分。**補足(#123実装担当への追加の申し送り)**:
+     `p2pRole` は「一度確定したら取り消さない」運用で影響なしだが、
+     `rpcTargetNodeId` は「解決済み→解決不能(省略)」がランタイムで
+     起こり得る(転送先ノードが観測から消えた場合)。このときstoreには
+     旧idが残るが、同じポーリング周期で対象ノード自体に entityRemoved が
+     出るため、フロントが「参照先エンティティが存在しないidは無視する
+     (エッジを描かない)」というダングリング参照のガードを入れていれば
+     表示上の実害はない。#123のフロント実装ではこのガードを必ず入れること
+  3. 「型定義+docsのみの先行mainマージ」: CLAUDE.mdの「先行してmainに
+     未実装の設計だけが反映される期間を作らない」原則の例外に当たるが、
+     (a)ユーザーの明示的な許可済み、(b)#123/#124の両方が同一フィールドを
+     必要とし、どちらかのPRに同梱すると直列依存かコンフリクトが生じる、
+     (c)optionalフィールドのみで旧collector/旧frontendと双方向互換、
+     (d)両Issueの実装が直後に控えており「未実装の設計」期間は最小、
+     という条件が揃っており今回に限り妥当と判断する。本記録をもって
+     例外適用の経緯とする(他のケースの前例として流用しないこと)
+  4. `pnpm lint` / `pnpm build` / `pnpm test` を全パッケージで実行し
+     すべて通過(shared 13 / collector 590 / frontend 541、testerの
+     報告値と一致)
+  5. テストの質: 型のみの変更でランタイムロジックが無いため、JSON往復・
+     diff/storeの素通し・後方互換(省略時undefined)という水準は既存の
+     `removable` の前例と整合し適切。既知の制約を固定化するテスト
+     (clearing patchが出ないこと)は、将来 `fieldPatch` の走査方式を
+     変えたとき意図的な仕様変更として検出される点で意味がある。
+     エラー握りつぶし・環境依存の決め打ち定数は該当なし(定数追加なし)
+  6. コミット粒度: designerの2件(feat(shared)のコード+テスト / docsの
+     スキーマ反映+設計記録)は関心事が分かれており適切
+- **マージ前の要対応(統括へ)**: testerのテスト強化3ファイルと
+  meta.md追記がレビュー時点で未コミットのまま残っている。マージ前に
+  `test:` コミットとして確定させること(テスト強化とその記録は同一の
+  関心事なので1コミットで差し支えない)。本レビュー記録の追記分も
+  同様にコミットが必要
