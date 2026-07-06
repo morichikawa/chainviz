@@ -425,4 +425,195 @@ describe("getBlockReceipts", () => {
       { transactionHash: "0xt1", from: "0xa", to: "0xb", succeeded: true },
     ]);
   });
+
+  it("drops a receipt whose 'from' is missing (safe side: skip, never marked failed)", async () => {
+    // transactionHash はあるが from が欠落。証拠不足として捨て、
+    // 誤って failed 表示に倒れないことを確認する。
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        fakeResponse({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            result: [
+              { transactionHash: "0xt1", to: "0xb", status: "0x0" },
+              { transactionHash: "0xt2", from: "0xa", to: "0xb", status: "0x1" },
+            ],
+          }),
+        }),
+      ),
+    );
+    const rpc = createFetchEthRpcClient();
+    await expect(
+      getBlockReceipts(rpc, "http://x", "0xblock"),
+    ).resolves.toEqual([
+      { transactionHash: "0xt2", from: "0xa", to: "0xb", succeeded: true },
+    ]);
+  });
+
+  it("maps a missing or non-string 'to' to null", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        fakeResponse({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            result: [
+              { transactionHash: "0xt1", from: "0xa", status: "0x1" }, // to 欠落
+              { transactionHash: "0xt2", from: "0xa", to: 123, status: "0x1" }, // 非文字列
+            ],
+          }),
+        }),
+      ),
+    );
+    const rpc = createFetchEthRpcClient();
+    await expect(
+      getBlockReceipts(rpc, "http://x", "0xblock"),
+    ).resolves.toEqual([
+      { transactionHash: "0xt1", from: "0xa", to: null, succeeded: true },
+      { transactionHash: "0xt2", from: "0xa", to: null, succeeded: true },
+    ]);
+  });
+
+  it("treats a null status as succeeded (only the exact string '0x0' fails)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        fakeResponse({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            result: [
+              { transactionHash: "0xt1", from: "0xa", to: "0xb", status: null },
+            ],
+          }),
+        }),
+      ),
+    );
+    const rpc = createFetchEthRpcClient();
+    await expect(
+      getBlockReceipts(rpc, "http://x", "0xblock"),
+    ).resolves.toEqual([
+      { transactionHash: "0xt1", from: "0xa", to: "0xb", succeeded: true },
+    ]);
+  });
+
+  it("treats a numeric status 0 as succeeded (conservative: only the string '0x0' fails)", async () => {
+    // JSON-RPC は status を 16 進文字列で返すが、万一数値 0 が来ても
+    // 文字列 "0x0" と一致しないため failed には倒さない（安全側）。
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        fakeResponse({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            result: [
+              { transactionHash: "0xt1", from: "0xa", to: "0xb", status: 0 },
+            ],
+          }),
+        }),
+      ),
+    );
+    const rpc = createFetchEthRpcClient();
+    await expect(
+      getBlockReceipts(rpc, "http://x", "0xblock"),
+    ).resolves.toEqual([
+      { transactionHash: "0xt1", from: "0xa", to: "0xb", succeeded: true },
+    ]);
+  });
+
+  it("treats '0x00' (a differently-formatted zero) as succeeded (exact '0x0' match only)", async () => {
+    // 失敗判定は文字列 "0x0" の完全一致のみ。ゼロ相当でも表記が違えば
+    // failed には倒さない（証拠なしに failed 表示をしない保守的判断）。
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        fakeResponse({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            result: [
+              {
+                transactionHash: "0xt1",
+                from: "0xa",
+                to: "0xb",
+                status: "0x00",
+              },
+            ],
+          }),
+        }),
+      ),
+    );
+    const rpc = createFetchEthRpcClient();
+    await expect(
+      getBlockReceipts(rpc, "http://x", "0xblock"),
+    ).resolves.toEqual([
+      { transactionHash: "0xt1", from: "0xa", to: "0xb", succeeded: true },
+    ]);
+  });
+
+  it("returns null when the result is a non-array object", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        fakeResponse({
+          ok: true,
+          status: 200,
+          json: async () => ({ result: { transactionHash: "0xt1" } }),
+        }),
+      ),
+    );
+    const rpc = createFetchEthRpcClient();
+    await expect(
+      getBlockReceipts(rpc, "http://x", "0xblock"),
+    ).resolves.toBeNull();
+  });
+
+  it("returns null when the result is a scalar (unexpected shape)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        fakeResponse({
+          ok: true,
+          status: 200,
+          json: async () => ({ result: "0xdeadbeef" }),
+        }),
+      ),
+    );
+    const rpc = createFetchEthRpcClient();
+    await expect(
+      getBlockReceipts(rpc, "http://x", "0xblock"),
+    ).resolves.toBeNull();
+  });
+
+  it("routes a mixed block (success + failed + malformed) correctly, keeping order", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        fakeResponse({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            result: [
+              { transactionHash: "0xok1", from: "0xa", to: "0xb", status: "0x1" },
+              { transactionHash: "0xbad", from: "0xc", to: null, status: "0x0" },
+              { to: "0xd", status: "0x0" }, // transactionHash 欠落 → 捨てる
+              { transactionHash: "0xok2", from: "0xe", to: "0xf", status: "0x1" },
+            ],
+          }),
+        }),
+      ),
+    );
+    const rpc = createFetchEthRpcClient();
+    await expect(
+      getBlockReceipts(rpc, "http://x", "0xblock"),
+    ).resolves.toEqual([
+      { transactionHash: "0xok1", from: "0xa", to: "0xb", succeeded: true },
+      { transactionHash: "0xbad", from: "0xc", to: null, succeeded: false },
+      { transactionHash: "0xok2", from: "0xe", to: "0xf", succeeded: true },
+    ]);
+  });
 });

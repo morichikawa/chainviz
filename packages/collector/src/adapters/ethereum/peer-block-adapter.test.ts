@@ -748,6 +748,130 @@ describe("EthereumAdapter.subscribeTransactions", () => {
     });
   });
 
+  it("routes a mixed block end-to-end: success -> included, failed -> failed", async () => {
+    // 同一ブロックに success と failed の tx が混在するときの振り分けを
+    // アダプタ経由（getBlockReceipts + recordInclusion）で確認する。
+    const poller = new DockerPoller(
+      clientFrom([rethFixture("reth1", "172.28.1.1")]),
+    );
+    const ws = controllableWsClient();
+    const rpc = stubRpcClient({
+      blocks: {
+        "0xblock1": [
+          { transactionHash: "0xok", from: "0xa", to: "0xb", status: "0x1" },
+          { transactionHash: "0xbad", from: "0xc", to: null, status: "0x0" },
+        ],
+      },
+    });
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      ethRpcClient: rpc.client,
+    });
+    const txs: TransactionEntity[] = [];
+
+    await adapter.subscribeTransactions((t) => txs.push(t));
+    ws.emit("ws://172.28.1.1:8546", header());
+    await flushAsync();
+
+    expect(txs).toEqual<TransactionEntity[]>([
+      {
+        kind: "transaction",
+        hash: "0xok",
+        from: "0xa",
+        to: "0xb",
+        status: "included",
+        blockHash: "0xblock1",
+      },
+      {
+        kind: "transaction",
+        hash: "0xbad",
+        from: "0xc",
+        to: null,
+        status: "failed",
+        blockHash: "0xblock1",
+      },
+    ]);
+  });
+
+  it("drops a malformed receipt but still emits the valid txs in the same block", async () => {
+    // ブロック内に transactionHash 欠落の receipt が混じっても、正常な
+    // receipt だけが included/failed として通知される（不正 receipt は無視）。
+    const poller = new DockerPoller(
+      clientFrom([rethFixture("reth1", "172.28.1.1")]),
+    );
+    const ws = controllableWsClient();
+    const rpc = stubRpcClient({
+      blocks: {
+        "0xblock1": [
+          // transactionHash 欠落 → getBlockReceipts が捨てる。
+          {
+            transactionHash: undefined as unknown as string,
+            from: "0xz",
+            to: "0xy",
+            status: "0x0",
+          },
+          { transactionHash: "0xok", from: "0xa", to: "0xb", status: "0x1" },
+        ],
+      },
+    });
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      ethRpcClient: rpc.client,
+    });
+    const txs: TransactionEntity[] = [];
+
+    await adapter.subscribeTransactions((t) => txs.push(t));
+    ws.emit("ws://172.28.1.1:8546", header());
+    await flushAsync();
+
+    expect(txs).toEqual<TransactionEntity[]>([
+      {
+        kind: "transaction",
+        hash: "0xok",
+        from: "0xa",
+        to: "0xb",
+        status: "included",
+        blockHash: "0xblock1",
+      },
+    ]);
+  });
+
+  it("adds a tx seen only in a block (pending missed) directly as failed", async () => {
+    // pending 通知を取りこぼした失敗 tx も、ブロックの receipt から直接
+    // failed として可視化に載せる（未知ハッシュの failed 経路）。
+    const poller = new DockerPoller(
+      clientFrom([rethFixture("reth1", "172.28.1.1")]),
+    );
+    const ws = controllableWsClient();
+    const rpc = stubRpcClient({
+      blocks: {
+        "0xblock1": [
+          { transactionHash: "0xt9", from: "0xc", to: null, status: "0x0" },
+        ],
+      },
+    });
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      ethRpcClient: rpc.client,
+    });
+    const txs: TransactionEntity[] = [];
+
+    await adapter.subscribeTransactions((t) => txs.push(t));
+    ws.emit("ws://172.28.1.1:8546", header());
+    await flushAsync();
+
+    expect(txs).toEqual<TransactionEntity[]>([
+      {
+        kind: "transaction",
+        hash: "0xt9",
+        from: "0xc",
+        to: null,
+        status: "failed",
+        blockHash: "0xblock1",
+      },
+    ]);
+  });
+
   it("adds a tx seen only in a block (pending missed) directly as included", async () => {
     const poller = new DockerPoller(
       clientFrom([rethFixture("reth1", "172.28.1.1")]),
