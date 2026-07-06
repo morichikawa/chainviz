@@ -391,3 +391,37 @@
     了承(過去のPLAN.mdバックログ補完レビューと同じ理由。実行環境の
     動作に影響する変更が無く、検証対象が存在しない)。
   - push・PR作成・マージに進んでよい。
+
+### 2026-07-06 chainviz-designerエージェント追加のレビュー(reviewer 合格)
+
+- 担当: reviewer
+- ブランチ: chore-add-designer-agent(コミット eb49fdc)
+- 内容:
+  - 設計専任エージェント `chainviz-designer`(ペルソナ: 設計 想)の新規定義と
+    CLAUDE.md(チーム一覧・使い方の目安)への追記をレビューした。結果は合格。
+  - frontmatter(name/description/tools/model)は既存エージェントの慣例と整合。
+    tools は Read/Write/Edit/Bash/Grep/Glob で、docs/ARCHITECTURE.md の更新と
+    packages/shared の型実装という役割に対して適切。model: fable は
+    reviewer/detective と同じく分析寄りの役割への割り当てとして一貫している。
+  - 役割分担に矛盾なし。「packages/shared の型は designer が実装着手前に
+    先に実装してよい」という新方針に合わせ、CLAUDE.md の使い方の目安が
+    「設計範囲を超えて実装途中で追加の型変更が必要になった場合は
+    chainviz-reviewer に調整させる」と書き換えられており、reviewer 定義
+    (実装中の要望を受けて型を更新する)・実装担当定義(型変更は reviewer と
+    調整)の既存記述とも両立する。実装ロジックは書かないという線引きも明確。
+  - ペルソナの命名(姓「設計」が役割そのものを表す)は命名規約に適合。
+    チャット時のみ口調を使い docs/worklog では平易な日本語、という
+    使い分けの明記も既存エージェントと同じ形式。
+  - コミットは1件(feat:)で、エージェント定義+CLAUDE.md 追記という構成は
+    chainviz-detective 追加時(602ff6b)の前例と同粒度。`pnpm lint` 通過。
+- 指摘(非ブロッキング、任意対応):
+  - パイプラインの表記が CLAUDE.md では「設計 → 実装 → 試験学 → 査読誠 →
+    検証大地」(工程名と人名の混在)、designer 定義では「設計 → 実装 →
+    テスト強化 → レビュー → QA」(工程名のみ)と揺れている。どちらかに
+    統一するとよい。
+  - designer は docs/ARCHITECTURE.md と packages/shared を編集する役割の
+    ため、CLAUDE.md の「実装担当への割り振り時に Issue 番号のブランチを
+    使わせる」の対象に designer も含まれることを明確にしておくと、設計時の
+    ARCHITECTURE.md 更新が実装と同じブランチで merge され、main 上の docs が
+    未実装の設計を先行して記述する期間が生じない(「main 上で直接作業
+    しない」の全体ルールで実質カバーはされている)。
