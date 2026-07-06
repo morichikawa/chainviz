@@ -253,3 +253,51 @@
     「現状の Ethereum プロファイル1つでは networkId は1種類だが」が
     本変更で 2 種類になり陳腐化した。フロント担当のついでの修正で
     十分な軽微な齟齬
+
+### 2026-07-06 EL ピアエッジ実装の実機検証（qa）
+
+- 担当: qa
+- ブランチ: issue-106-el-peer-edges
+- 内容: 実際に Docker 環境 + 実 collector + 実 frontend を起動し、reth(EL)
+  同士の P2P 接続が PeerEdge として描画されることを、実データと実画面で
+  検証した。合格。
+- 検証環境: 稼働中の profiles/ethereum スタック（reth1=172.28.1.1、
+  reth2=172.28.1.2、beacon1=172.28.2.1、beacon2=172.28.2.2）。ブロックは
+  両 reth とも同一高（715→進行中）で進行しており、チェーンは正常稼働。
+- 実施した検証:
+  1. reth 側の P2P 接続の実在確認: reth1/reth2 の `admin_nodeInfo` で自己
+     enode を取得し、双方の `admin_peers` を確認。reth1 の admin_peers に
+     reth2 の enode（公開鍵 a8beb52c…）、reth2 の admin_peers に reth1 の
+     enode（公開鍵 466d7fca…）が相互に載っており、devp2p 接続が実在する
+     ことを確認した。
+  2. collector の WebSocket 配信確認: 実 collector を起動（一時ポート 4123）し
+     WebSocket でスナップショット/差分を購読。ワールドステートの `edges`
+     配列（`edgeAdded` 差分）に、以下 2 本の PeerEdge が独立して存在する
+     ことを確認した。
+     - EL: `{kind:"peer", fromNodeId:"chainviz-ethereum/reth1",
+       toNodeId:"chainviz-ethereum/reth2",
+       networkId:"chainviz-ethereum-execution"}`（Issue #106 の修正対象）
+     - CL: beacon1↔beacon2、networkId `chainviz-ethereum-consensus`（既存）
+     両者は networkId が別（execution / consensus）で名前空間が混ざって
+     いないことを確認した。念のため実アダプタの `pollPeersOnce()` を直接
+     呼び、CL・EL 双方のエッジが返ることも確認した。
+  3. frontend の実画面確認: 実 collector に接続した vite dev server を起動し、
+     ヘッドレスブラウザ（playwright + chromium）で描画を確認。React Flow の
+     エッジ DOM に上記 2 本の peer エッジ + ワークベンチのウォレット所有
+     エッジの計 3 本が存在。各エッジの stroke 色を実測し、
+     - EL peer（reth1↔reth2 / execution）= rgb(90,209,232) シアン系・実線
+     - CL peer（beacon1↔beacon2 / consensus）= rgb(255,143,107) オレンジ系・実線
+     - ウォレット所有エッジ = rgb(224,169,79) アンバー・破線
+     と、networkId ごとに色が分離されグルーピングも別系統になっている
+     ことを確認した。スクリーンショット上でも reth1 カードから reth2 カードへ
+     シアンの線が引かれていることを目視確認した。
+  4. 品質ゲート: ルートから `pnpm lint`（クリーン）・`pnpm build`（全パッケージ
+     成功）・`pnpm test`（shared 6 / e2e 34 / collector 550 / frontend 411、
+     すべて成功、終了コード 0）が通ることを確認した。
+- 判定: 完了条件「reth1 と reth2 の間に P2P の PeerEdge が描画される」を
+  満たしている。CL 側（beacon1↔beacon2）の既存 PeerEdge も引き続き正しく
+  描画され、networkId・色で EL 側と区別されている。合格。
+- 注意点（差し戻しではない申し送り）: 検証中に一時起動した collector /
+  frontend プロセスと検証用の一時スクリプトは停止・破棄済み。reviewer が
+  挙げた非ブロッキング指摘（CL 側 catch のログ無し・peerEdge.ts の陳腐化
+  コメント）は本 Issue のスコープ外で、別途フォローアップ推奨のまま。
