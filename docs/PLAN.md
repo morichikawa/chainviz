@@ -316,7 +316,7 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
 - [x] WebSocket接続ごとにerrorリスナーを張り、ソケットエラーをプロセス
       全体の安全網に頼らせない
       [#68](https://github.com/morichikawa/chainviz/issues/68)
-- [ ] txライフサイクルにfailedステータスを実装する
+- [x] txライフサイクルにfailedステータスを実装する
       [#86](https://github.com/morichikawa/chainviz/issues/86)
 - [x] P2Pエッジと所有エッジの色相が近く(ともにアンバー系)、線種でしか
       区別できない環境がある。色相を分離する
@@ -324,7 +324,7 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
 - [x] WSL2環境でcollectorのWebSocket/ロギングプロキシがVS Codeのポート
       転送経由で繋がらない
       [#99](https://github.com/morichikawa/chainviz/issues/99)
-- [ ] ノード/ワークベンチ追加時に仮の半透明カードと即時フィードバックを
+- [x] ノード/ワークベンチ追加時に仮の半透明カードと即時フィードバックを
       表示する
       [#102](https://github.com/morichikawa/chainviz/issues/102)
 - [x] compose起動ノードの削除ボタンを押すと必ずエラーになる(UIで防げて
@@ -332,6 +332,8 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
       [#103](https://github.com/morichikawa/chainviz/issues/103)
 - [ ] reth(EL)同士のP2P接続がPeerEdgeとして描画されない
       [#106](https://github.com/morichikawa/chainviz/issues/106)
+- [ ] 仮カード(ゴーストノード)の配置indexが、削除を挟むと重なることがある
+      [#113](https://github.com/morichikawa/chainviz/issues/113)
 
 ## 運用ルール（全ステップ共通）
 
