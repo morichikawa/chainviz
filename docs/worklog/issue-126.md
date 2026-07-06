@@ -67,3 +67,44 @@
     `profiles/ethereum` に対して `docker compose down`(プロジェクト名の
     上書きなし)を実行する前に、他worktree・他セッションが同じ
     `chainviz-ethereum` プロジェクトを使用中でないか必ず確認すること。
+
+### 2026-07-06 Issue #126 レビュー(chainviz-reviewer、1回目: 差し戻し)
+- 担当: reviewer
+- 確認した内容:
+  - `compose_project_name` はプロジェクト名をハードコードせず
+    `docker compose config --format json` の `name` フィールドを単一の
+    情報源としている。`COMPOSE_PROJECT_NAME` 環境変数による上書きも
+    正しく反映されることを読み取り専用コマンドで実地確認した
+    (通常時 `chainviz-ethereum`、上書き時は上書き値が返る)。
+  - ラベルフィルタ(`com.chainviz.managed=true` +
+    `com.docker.compose.project=<プロジェクト名>`)は
+    `packages/collector/src/adapters/ethereum/labels.ts` の
+    `MANAGED_LABEL` / `COMPOSE_PROJECT_LABEL` および
+    `node-lifecycle.ts` が動的追加コンテナに付与するラベル
+    (`MANAGED_LABEL: "true"`, `COMPOSE_PROJECT_LABEL: cfg.composeProject`)
+    と一致している。
+  - 実行順序(動的コンテナ削除 → `docker compose down`)の理由
+    (ネットワーク削除の `Resource is still in use` 回避)はコメント・
+    worklogに明記され、合成composeでの実機検証記録もある。`-v` の
+    パススルー(ボリューム削除)は従来どおりで壊れていない。
+  - `pnpm lint` / `pnpm build` / `pnpm test`(539件)すべて成功。
+    シェルスクリプトはlint対象外(eslintのみ)のため `bash -n` で構文
+    確認した。シェルスクリプトのみの変更でありユニットテスト追加は
+    対象外と判断。
+  - コミット粒度は2コミット(実装 / docs)で適切。Conventional Commits
+    形式も遵守。
+- 差し戻し理由(要修正):
+  1. `cleanup_dynamic_containers` 内の
+     `containers="$(docker ps -a --filter ...)"` が `docker ps` 自体の
+     失敗を検知していない。`set -e` なしのスクリプトのため、docker
+     デーモン停止・権限不足等で `docker ps` が失敗すると `$containers`
+     が空になり、「動的追加コンテナは残っていません」という誤った成功
+     メッセージを出して正常終了(return 0)してしまう。CLAUDE.md
+     「エラーを握りつぶすコードを見逃さない」の『失敗しているのに
+     ok相当を返す』パターンに該当。コマンド置換の終了コードを確認し、
+     失敗時は `FAILED=1` でエラー報告すること。
+- 推奨(必須ではない):
+  2. `compose_project_name` の `docker compose config ... 2>/dev/null` は
+     失敗時にdocker側の具体的なエラー内容を捨てて汎用メッセージに
+     すり替えている。stderrを通す・失敗時のみ表示する等の対応、あるいは
+     抑止する理由(成功時のWARNノイズ回避等)のコメント明記が望ましい。
