@@ -54,6 +54,7 @@ export const messages = {
   "field.blockHeight": { ja: "ブロック高", en: "Block height" },
   "sync.synced": { ja: "同期済み", en: "Synced" },
   "sync.syncing": { ja: "同期中", en: "Syncing" },
+  "ghost.status": { ja: "起動中…", en: "Starting…" },
   "canvas.empty": {
     ja: "表示するコンテナがありません",
     en: "No containers to display",
@@ -65,6 +66,8 @@ export const messages = {
     en: "Workbench label",
   },
   "action.remove": { ja: "削除", en: "Remove" },
+  "action.addNode.pending": { ja: "追加中…", en: "Adding…" },
+  "action.addWorkbench.pending": { ja: "追加中…", en: "Adding…" },
   "toast.region": { ja: "通知", en: "Notifications" },
   "toast.dismiss": { ja: "閉じる", en: "Dismiss" },
   "command.error.addNode": {
