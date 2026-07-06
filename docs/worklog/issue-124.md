@@ -527,3 +527,88 @@ reth-node.sh` の `--bootnodes`/`--trusted-peers` 参照)。
 - `pnpm lint && pnpm build && pnpm test`すべて通過を再確認済み。
 - E(モックデータ更新)見送りは統括の判断でPLAN.mdバックログへ別Issue
   起票することとした(レビュー推奨事項)。
+
+### 2026-07-06 Issue #124 QA検証(合格)
+
+- 担当: qa
+- ブランチ: issue-124-ux-design-p2p-mesh(worktree: chainviz-wt-124)
+- 判定: **合格**。完了条件「複数ノードが相互接続していく様子を見て、
+  ユーザーが『これは正常な挙動だ』と判断できるようになっていること」を
+  ラベル付与→collector正規化→フロント表示の全経路で実機確認した。
+
+#### 検証環境についての重要な前提
+
+- メイン作業ディレクトリ(`/home/zoe/workspace/chainviz`)で稼働中の本物の
+  `chainviz-ethereum` composeプロジェクト(7コンテナ)には一切触れていない。
+  過去にこのプロジェクトを誤停止・削除する事故が起きているため、検証は
+  すべて別プロジェクト名 `chainviz-verify-124`・別subnet `172.31.0.0/16`の
+  一時スタックで行い、終了時に `down -v` で完全削除した。
+- 本物のcompose(固定 `name: chainviz-ethereum`・静的IP 172.28.x.x・
+  subnet 172.28.0.0/16)は既存ネットワークとsubnetが重複するため、
+  一時的なオーバーライドファイル(scratchpad)で `name`・subnet・静的IPを
+  差し替え、host公開ポート(8545/5052は本物と衝突)は `ports: !reset []` で
+  無効化した(collectorはコンテナIP経由でRPCへ到達するためhost公開ポートは
+  不要)。オーバーライドはリポジトリには追加していない。
+- 稼働中のreth1/beacon1は本物のmainブランチのcompose(ラベル未追加)から
+  作成されており `com.chainviz.p2p-role` ラベルを持たない。また稼働中の
+  collector(port 4000)はmainビルドでp2pRole正規化を含まないため、bootnode
+  経路の検証はこの一時スタック+wt-124ビルドのcollectorで行った。
+  wt-124のcollector dist(17:58ビルド)はp2pRoleコミット(22:21)より古い
+  staleビルドだったため、検証前に `pnpm --filter @chainviz/collector build`
+  で再ビルドしてから使用した。
+
+#### 1. node-env: ラベルが実コンテナに付与されること(合格)
+
+- 一時スタックを `docker compose -p chainviz-verify-124 ... up -d` し、
+  `docker inspect` で各コンテナのラベルを確認:
+  - reth1: `com.chainviz.p2p-role=bootnode`
+  - beacon1: `com.chainviz.p2p-role=bootnode`
+  - reth2: ラベル無し(peer役。設計どおり付与されない)
+- 本物のreth1はラベル無しのまま(変更していないことを再確認済み)。
+
+#### 2. collector: p2pRoleへの正規化(合格・エンドツーエンド)
+
+- wt-124ビルドのcollectorを別ポート(WS 4100 / proxy 4101)で起動し、
+  実Dockerをポーリングさせた。WebSocketスナップショット(`payload.entities`)
+  を直接受信して確認:
+  - `chainviz-verify-124/reth1` → `p2pRole: "bootnode"`
+  - `chainviz-verify-124/beacon1` → `p2pRole: "bootnode"`
+  - `chainviz-verify-124/reth2` → `p2pRole: "peer"`
+  - 本物の `chainviz-ethereum/*`(ラベル無し)は全て `p2pRole: "peer"`
+    (ラベル無し→peerの正規化が実データでも成立することを確認)。
+- これによりラベル→collector読み取り→NodeEntity.p2pRoleの一方向の
+  データフローが実環境で機能することを確認した。
+
+#### 3. frontend: 凡例・バッジ・ホバーポップオーバー(合格・目視)
+
+- `websocket/mockData.ts` の `createMockSnapshot()` を一時改変し、reth-node-1
+  とlighthouse-1に `p2pRole: "bootnode"`、ピアエッジのnetworkIdを
+  `mock-execution` / `mock-consensus`(consensus用にlighthouse-2を追加)に
+  してexecution/consensus2ネットワークを注入。VITE_COLLECTOR_URL未設定の
+  mockモードでvite devを別ポート(5280)起動し、Playwright(chromium)で目視:
+  - **ネットワーク凡例**(右下・MiniMap上): 「実行ネットワーク 1」(紫チップ)+
+    「コンセンサスネットワーク 1」(青チップ)+ 固定ヒント「ピア接続は
+    ノード発見により時間とともに自動で増えます」が表示される。接続数は
+    実際の描画エッジ本数(各1)と一致。
+  - **ブートノードバッジ**: chainviz-lighthouse-1・chainviz-reth-1の
+    カードヘッダにのみ「ブートノード」ピルが表示される。peer役の
+    reth-2・lighthouse-2には出ない。
+  - **ピアエッジのホバーポップオーバー**: executionエッジにホバーすると
+    「実行ネットワーク」+ 端点「reth-node-1 ↔ reth-node-2」+「ノード同士が
+    ノード発見で見つけ合って自動的につないだ接続です。線が時間差で
+    増えたり、ノードごとに相手が違ったりするのは正常な動きです。」が表示
+    され、ホバー中のエッジが強調される。
+  - **英語切替**: Englishに切り替えると凡例・バッジ・ヒント文が
+    「Execution network / Consensus network / Bootnode / grow over time」に
+    なることを確認。
+  - コンソールエラーは favicon 404 のみ(機能に無関係)。
+  - 確認後、mockData.tsはバックアップから復元済み(git作業ツリーはクリーン)。
+
+#### 後片付け
+
+- 一時スタックを `docker compose -p chainviz-verify-124 ... down -v` で完全
+  削除(コンテナ・ネットワーク・ボリュームとも残存なし)。検証用collector
+  (4100)・vite(5280)プロセスも停止。本物の `chainviz-ethereum` 7コンテナは
+  稼働時間も変わらず健在。scratchpad以外のファイルは改変していない。
+
+- push/PR作成/マージ/Issueクローズは行っていない(統括の判断に委ねる)。
