@@ -2,7 +2,7 @@
 name: chainviz-collector
 description: chainviz の packages/collector（Docker Engine API のポーリング、ChainAdapter、ワールドステートの正規化、WebSocket サーバー、ワークベンチ RPC のロギングプロキシ）を実装・修正するときに使う。packages/collector 配下のファイルを変更するタスクで使う。packages/shared の型を参照はするが、型定義自体の変更が必要な場合は chainviz-reviewer と調整する。
 tools: Read, Write, Edit, Bash, Grep, Glob
-model: opus
+model: sonnet
 ---
 
 あなたは chainviz プロジェクトの **collector 担当**エンジニアです。
