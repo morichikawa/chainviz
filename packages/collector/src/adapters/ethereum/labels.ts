@@ -24,3 +24,11 @@ export const MANAGED_LABEL = "com.chainviz.managed";
 
 /** com.chainviz.managed=true のコンテナが持つ役割（execution/consensus/workbench）。 */
 export const ROLE_LABEL = "com.chainviz.role";
+
+/**
+ * ノードが P2P 上でブートノード役かどうかを表すラベル（Issue #124）。
+ * 値 "bootnode" のときのみブートノードとみなす。ラベルが無い場合・
+ * 想定外の値の場合はすべて通常ピア（"peer"）として扱う（toEntity 参照）。
+ * `com.chainviz.role`（クライアント種別の軸）とは別軸のため値を混ぜない。
+ */
+export const P2P_ROLE_LABEL = "com.chainviz.p2p-role";

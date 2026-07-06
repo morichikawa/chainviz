@@ -26,7 +26,7 @@ import {
 } from "./beacon-api.js";
 import { BlockPropagationTracker } from "./blocks.js";
 import { classifyContainer } from "./classify.js";
-import { MANAGED_LABEL } from "./labels.js";
+import { MANAGED_LABEL, P2P_ROLE_LABEL } from "./labels.js";
 import {
   fetchConnectedExecutionPeerIdentities,
   fetchExecutionPeerIdentity,
@@ -176,6 +176,10 @@ export class EthereumAdapter implements ChainAdapter {
       syncStatus: "syncing",
       blockHeight: 0,
       headBlockHash: "",
+      // P2P 上の役割（Issue #124）。ラベルが無い・想定外の値の場合は
+      // すべて通常ピア扱いにする（addNode で追加されるノードは常に peer
+      // 役であり、ラベルを付与しない設計 = node-lifecycle.ts 参照）。
+      p2pRole: obs.labels[P2P_ROLE_LABEL] === "bootnode" ? "bootnode" : "peer",
     };
   }
 

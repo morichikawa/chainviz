@@ -385,6 +385,93 @@ describe("EthereumAdapter.pollInfra", () => {
     );
   });
 
+  it("marks a node as peer when it carries no p2p-role label (Issue #124)", async () => {
+    // compose 起動の通常ノードには com.chainviz.p2p-role ラベルが無いため、
+    // 「省略 = peer」のフォールバックにより peer と判定される。
+    const adapter = new EthereumAdapter(
+      new DockerPoller(clientFrom([rethFixture])),
+    );
+    const partial = await adapter.pollInfra();
+    const node = partial.entities?.[0] as NodeEntity;
+    expect(node.p2pRole).toBe("peer");
+  });
+
+  it("marks a node as bootnode when the p2p-role label is exactly 'bootnode' (Issue #124)", async () => {
+    // profiles/ethereum の reth1/beacon1 相当のフィクスチャ。
+    const fixture: Fixture = {
+      ...rethFixture,
+      summary: {
+        ...rethFixture.summary,
+        Labels: {
+          ...rethFixture.summary.Labels,
+          "com.chainviz.p2p-role": "bootnode",
+        },
+      },
+    };
+    const adapter = new EthereumAdapter(
+      new DockerPoller(clientFrom([fixture])),
+    );
+    const partial = await adapter.pollInfra();
+    const node = partial.entities?.[0] as NodeEntity;
+    expect(node.p2pRole).toBe("bootnode");
+  });
+
+  it.each(["Bootnode", "BOOTNODE", "boot", "", " bootnode "])(
+    "treats p2p-role label value %j as peer (strict === 'bootnode' only, Issue #124)",
+    async (labelValue) => {
+      // managed ラベルの判定（厳密な === "true"）と同じ流儀で、想定外の
+      // 値はすべて安全側（peer）に倒すことを値ごとに網羅して固定する。
+      const fixture: Fixture = {
+        ...rethFixture,
+        summary: {
+          ...rethFixture.summary,
+          Labels: {
+            ...rethFixture.summary.Labels,
+            "com.chainviz.p2p-role": labelValue,
+          },
+        },
+      };
+      const adapter = new EthereumAdapter(
+        new DockerPoller(clientFrom([fixture])),
+      );
+      const partial = await adapter.pollInfra();
+      const node = partial.entities?.[0] as NodeEntity;
+      expect(node.p2pRole).toBe("peer");
+    },
+  );
+
+  it("marks a node as peer when the container carries no Labels at all (Issue #124)", async () => {
+    const fixture: Fixture = {
+      summary: {
+        Id: "id-no-labels-p2p",
+        Names: ["/chainviz-ethereum-reth10-1"],
+        Image: "ghcr.io/paradigmxyz/reth:latest",
+        State: "running",
+        Ports: [{ PrivatePort: 8545, PublicPort: 8545, Type: "tcp" }],
+        NetworkSettings: { Networks: { chain: { IPAddress: "172.28.1.10" } } },
+      },
+      top: { Titles: ["PID", "CMD"], Processes: [["1", "reth node"]] },
+    };
+    const adapter = new EthereumAdapter(
+      new DockerPoller(clientFrom([fixture])),
+    );
+    const partial = await adapter.pollInfra();
+    const node = partial.entities?.[0] as NodeEntity;
+    expect(node.p2pRole).toBe("peer");
+  });
+
+  it("marks an addNode-created node as peer even though it is managed (Issue #124)", async () => {
+    // addNode で追加したノードは常に peer 役であり、node-lifecycle.ts は
+    // p2p-role ラベルを付与しない設計（#124 の設計どおり）。managed ラベルの
+    // 有無とは独立して peer になることを確認する。
+    const adapter = new EthereumAdapter(
+      new DockerPoller(clientFrom([managedRethFixture])),
+    );
+    const partial = await adapter.pollInfra();
+    const node = partial.entities?.[0] as NodeEntity;
+    expect(node.p2pRole).toBe("peer");
+  });
+
   it("rejects when the underlying poller fails to list containers", async () => {
     const failing: DockerClient = {
       listContainers: async () => {
