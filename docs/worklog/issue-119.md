@@ -175,3 +175,41 @@
     レンダリングで破棄されたレンダーの結果が ref に残り得る。ただし
     再利用されるオブジェクトは内容が同一のものに限られ、本質的対策
     (preserveMeasuredDimensions)はこれに依存しないため実害は無い。
+
+### 2026-07-06 実機検証(QA)
+- 担当: qa
+- ブランチ: issue-119-node-flicker
+- 判定: **合格**
+- 検証手順と結果:
+  - `pnpm dev`(VITE_COLLECTOR_URL 未設定=モッククライアント)で frontend を
+    起動し、Playwright(chromium)で `http://localhost:5199/` を開いて
+    `.react-flow__node` の computed style を `requestAnimationFrame` で
+    16秒間・961フレーム高頻度サンプリングした。全ノード(lighthouse-1、
+    reth-node-1、reth-node-2、workbench-alice、スマートアカウント、
+    Alice EOA、Bob EOA)について `visibility:hidden` / `display:none` /
+    `opacity:0` になったフレームは 0 件で、ちらつきが解消されていることを
+    実測で確認した。モックは3秒間隔でブロック高と tx ライフサイクルを
+    進めるため、サンプリング中に5回程度の tick が発生しているが、
+    毎tick underlying entity が作り直される reth-node-1 や Alice EOA を
+    含めて一度も hidden にならなかった。
+  - サンプリング手法が実際に hidden を検出できることを負のコントロールで
+    確認した(あるノードに強制的に `visibility:hidden` を設定し、同じ
+    getComputedStyle 判定で検出できることを確認)。したがって上記の
+    「hidden 0件」は検出漏れではなく真に発生していないことを意味する。
+  - 参照安定化で更新が止まっていないことを確認した。Alice EOA カードは
+    16秒間で残高 5.0000→4.9998 ETH、nonce 3→8、直近 tx リストに新しい
+    `0xfeed…` ハッシュが5件反映されるなど、データ変化が正しく見た目に
+    反映されていた。変化しないカード(lighthouse-1、Bob EOA、スマート
+    アカウント、workbench-alice)はテキストが不変で正しい。
+  - reth のインフラカード券面は仕様上 blockHeight を表示せず(表示は
+    ホバー時の InfraPopover のみ)コンテナ名・クライアント種別・sync
+    状態のみのため、reth カードのテキストが tick で変化しないのは正しい
+    挙動であり回帰ではない。
+  - `pnpm lint` / `pnpm build` / `pnpm test` を全パッケージで実行し、
+    lint はクリーン、build は shared/collector/frontend/e2e すべて成功、
+    test は frontend 539件・collector 584件を含め全て pass した。
+- 備考:
+  - この環境では Playwright ブラウザに必要な共有ライブラリ
+    (libnspr4/libnss3 等)が未インストールのため、既存の展開済みライブラリを
+    `LD_LIBRARY_PATH` で読ませて chromium を起動した(環境固有の対処であり
+    プロダクトコードには影響しない)。
