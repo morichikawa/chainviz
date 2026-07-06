@@ -37,6 +37,22 @@ export interface BeaconTarget {
   networkId: string;
 }
 
+/**
+ * EL 間ピア接続（devp2p）をポーリングする Execution ノードの到達先。
+ * admin_nodeInfo / admin_peers を HTTP JSON-RPC で叩く（Issue #106）。
+ * エッジの端点は Execution コンテナ自身の stableId とする（EL 間の接続は
+ * reth プロセス同士のものなので、キャンバス上も reth カード間に描くのが
+ * 実態に即する。CL エッジの端点は beacon の stableId なので端点は重ならない）。
+ */
+export interface ExecutionPeerTarget {
+  /** ノードの安定識別子（NodeEntity.id と一致。PeerEdge の端点になる）。 */
+  stableId: string;
+  /** admin_nodeInfo / admin_peers を叩く HTTP JSON-RPC URL。 */
+  rpcUrl: string;
+  /** グルーピング用のネットワーク識別子（`<project>-execution`）。 */
+  networkId: string;
+}
+
 /** ブロック受信時刻を購読する Execution ノードの到達先。 */
 export interface ExecutionTarget {
   /** ノードの安定識別子（NodeEntity.id と一致）。 */
@@ -67,10 +83,24 @@ const ROLE_PREFIXES = [
   "validator",
 ];
 
-/** 安定識別子（project/service 形式）から所属ネットワーク ID を導く。 */
+/** 安定識別子（project/service 形式）からプロジェクト部を取り出す。 */
+function projectOf(stableId: string): string {
+  return stableId.includes("/") ? stableId.split("/")[0] : stableId;
+}
+
+/**
+ * 安定識別子から CL 側（libp2p）P2P ネットワークの ID を導く。
+ * EL 側（devp2p）とは物理的に別の P2P ネットワークなので、networkId も
+ * `-consensus` / `-execution` で分ける（フロントはこの ID 単位で色分け・
+ * グルーピングする。Issue #106）。
+ */
 function consensusNetworkId(stableId: string): string {
-  const project = stableId.includes("/") ? stableId.split("/")[0] : stableId;
-  return `${project}-consensus`;
+  return `${projectOf(stableId)}-consensus`;
+}
+
+/** 安定識別子から EL 側（devp2p）P2P ネットワークの ID を導く。 */
+function executionNetworkId(stableId: string): string {
+  return `${projectOf(stableId)}-execution`;
 }
 
 /** compose サービス名に "beacon" を含むか（validator を除外するため）。 */
@@ -143,6 +173,31 @@ export function beaconStableIdForExecution(
     if (serviceNodeKey(service) === key) return obs.stableId;
   }
   return undefined;
+}
+
+/**
+ * EL 間ピア接続の取得対象になる Execution ノードを観測値から抽出する。
+ * execution クライアントであり IP が取れるコンテナだけを対象にする
+ * （executionTargets と同じ選別基準。あちらはブロック購読用の WS URL と
+ * receivedAtKey を持つのに対し、こちらはピア取得用の HTTP RPC URL と
+ * networkId を持つ）。
+ */
+export function executionPeerTargets(
+  observations: ContainerObservation[],
+): ExecutionPeerTarget[] {
+  const targets: ExecutionPeerTarget[] = [];
+  for (const obs of observations) {
+    if (!obs.ip) continue;
+    const { kind, clientType } = classifyContainer(obs);
+    if (kind !== "node") continue;
+    if (!EXECUTION_CLIENTS.includes(clientType)) continue;
+    targets.push({
+      stableId: obs.stableId,
+      rpcUrl: `http://${obs.ip}:${EXECUTION_RPC_PORT}`,
+      networkId: executionNetworkId(obs.stableId),
+    });
+  }
+  return targets;
 }
 
 /**

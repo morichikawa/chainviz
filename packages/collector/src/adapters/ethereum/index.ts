@@ -28,6 +28,10 @@ import { BlockPropagationTracker } from "./blocks.js";
 import { classifyContainer } from "./classify.js";
 import { MANAGED_LABEL } from "./labels.js";
 import {
+  fetchConnectedExecutionPeerIdentities,
+  fetchExecutionPeerIdentity,
+} from "./el-peers.js";
+import {
   createFetchEthRpcClient,
   getBlockReceipts,
   getTransactionByHash,
@@ -40,8 +44,14 @@ import {
   type Subscription,
 } from "./eth-ws-client.js";
 import { createFetchHttpClient, type HttpClient } from "./http-client.js";
-import { toPeerEdges, type BeaconNodePeers } from "./peers.js";
-import { beaconTargets, executionTargets } from "./targets.js";
+import { toPeerEdges, type NodePeers } from "./peers.js";
+import {
+  beaconTargets,
+  executionPeerTargets,
+  executionTargets,
+  type BeaconTarget,
+  type ExecutionPeerTarget,
+} from "./targets.js";
 import { TransactionLifecycleTracker } from "./transactions.js";
 import {
   deriveWalletAddress,
@@ -185,16 +195,32 @@ export class EthereumAdapter implements ChainAdapter {
   // --- B 層: ピア接続 ---
 
   /**
-   * ビーコンノードの Beacon API を 1 巡ポーリングし、接続関係を PeerEdge[] へ
-   * 正規化して返す。到達対象は Docker の観測値から決める。個々のノードへの
-   * 問い合わせが失敗しても、そのノードだけ落として全体は継続する。
+   * ビーコン（CL）と reth（EL）の両方の P2P 接続を 1 巡ポーリングし、
+   * PeerEdge[] へ正規化して返す。到達対象は Docker の観測値から決める。
+   * CL（libp2p peer_id）と EL（enode 公開鍵）は識別子の名前空間が異なるため、
+   * peers.ts の toPeerEdges にはそれぞれ別々の NodePeers[] として渡し、
+   * 結果を連結する（混ぜて渡すと識別子の衝突判定が意味を持たなくなる）。
+   * CL・EL・個々のノードいずれの問い合わせが失敗しても、そのノードだけ
+   * 落として全体は継続する。
    */
   async pollPeersOnce(): Promise<PeerEdge[]> {
     const observations = await this.poller.pollOnce();
-    const targets = beaconTargets(observations);
+    const [consensusNodes, executionNodes] = await Promise.all([
+      this.fetchConsensusPeerNodes(beaconTargets(observations)),
+      this.fetchExecutionPeerNodes(executionPeerTargets(observations)),
+    ]);
+    return [...toPeerEdges(consensusNodes), ...toPeerEdges(executionNodes)];
+  }
 
+  /**
+   * CL 側（Beacon API）のピア情報を対象ノードぶん並行に取得する。個々の
+   * ノードへの問い合わせが失敗してもそのノードだけ落として継続する。
+   */
+  private async fetchConsensusPeerNodes(
+    targets: BeaconTarget[],
+  ): Promise<NodePeers[]> {
     const results = await Promise.all(
-      targets.map(async (target): Promise<BeaconNodePeers | null> => {
+      targets.map(async (target): Promise<NodePeers | null> => {
         try {
           const [peerId, connectedPeerIds] = await Promise.all([
             fetchNodePeerId(this.http, target.baseUrl),
@@ -211,9 +237,41 @@ export class EthereumAdapter implements ChainAdapter {
         }
       }),
     );
+    return results.filter((n): n is NodePeers => n !== null);
+  }
 
-    const nodes = results.filter((n): n is BeaconNodePeers => n !== null);
-    return toPeerEdges(nodes);
+  /**
+   * EL 側（admin_nodeInfo / admin_peers）のピア情報を対象ノードぶん並行に
+   * 取得する。個々のノードへの問い合わせが失敗してもそのノードだけ落として
+   * 継続する（`admin` API が無効なノードなどを想定。ログを残して CL 側と
+   * 挙動を揃えつつ原因を追えるようにする）。
+   */
+  private async fetchExecutionPeerNodes(
+    targets: ExecutionPeerTarget[],
+  ): Promise<NodePeers[]> {
+    const results = await Promise.all(
+      targets.map(async (target): Promise<NodePeers | null> => {
+        try {
+          const [peerId, connectedPeerIds] = await Promise.all([
+            fetchExecutionPeerIdentity(this.ethRpc, target.rpcUrl),
+            fetchConnectedExecutionPeerIdentities(this.ethRpc, target.rpcUrl),
+          ]);
+          return {
+            stableId: target.stableId,
+            peerId,
+            networkId: target.networkId,
+            connectedPeerIds,
+          };
+        } catch (err) {
+          console.error(
+            `[ethereum] execution peer poll failed for ${target.stableId}:`,
+            err,
+          );
+          return null;
+        }
+      }),
+    );
+    return results.filter((n): n is NodePeers => n !== null);
   }
 
   /**

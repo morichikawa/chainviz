@@ -269,6 +269,27 @@ interface ChainAdapter {
 実装では層ごとに関心を分けるため**層ごとの型付きコールバック**へ発展させた。
 型もそれに合わせ、未使用となった汎用口は削除している（先回り実装をしない）:
 
+- `subscribePeers` — B層。ピア接続を周期ポーリングし、`PeerEdge[]` を渡す。
+  Ethereum プロファイルは物理的に別物である 2 つの P2P ネットワークを
+  それぞれ観測する（Issue #106）:
+  - **CL（libp2p）**: 各 beacon ノードの Beacon API
+    （`/eth/v1/node/identity` と `/eth/v1/node/peers`）から自ノードの
+    peer_id と接続相手の peer_id 一覧を取り、エッジの端点は beacon
+    コンテナの stableId、`networkId` は `<project>-consensus` とする
+  - **EL（devp2p）**: 各 Execution ノードの HTTP JSON-RPC
+    （`admin_nodeInfo` と `admin_peers`）から自ノードと接続相手の識別子を
+    取り、エッジの端点は Execution コンテナ自身の stableId、`networkId` は
+    `<project>-execution` とする。識別子は enode URL から抽出した公開鍵
+    （小文字 16 進・0x なし）へ正規化して突き合わせる
+
+  どちらも「各ノードが自己申告した P2P 識別子 → stableId」の対応表を作り、
+  解決できた相手とのエッジだけを残す（観測対象外ノードとの接続は落とす）。
+  CL/EL で `networkId` を分けるのは、実体として別ネットワークである事実を
+  フロントの色分け・グルーピング（`networkId` 単位）にそのまま映すため。
+  エッジの同一性キーは from/to/networkId の 3 つ組なので、CL/EL のエッジは
+  端点が違う（beacon カード間 / Execution カード間）ことと合わせて衝突しない。
+  ブロック伝播パルスは `BlockEntity.receivedAt` のキー（beacon の stableId）と
+  端点が一致する CL エッジ上にのみ乗る（EL エッジは接続の可視化のみ）。
 - `subscribeBlocks` — B層。各 Execution ノードの `eth_subscribe(newHeads)` を
   購読し、ブロック受信時刻を束ねて渡す。
 - `subscribeTransactions` — C層。`newPendingTransactions`（pending 検知）と
