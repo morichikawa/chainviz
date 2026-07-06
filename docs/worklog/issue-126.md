@@ -108,3 +108,28 @@
      失敗時にdocker側の具体的なエラー内容を捨てて汎用メッセージに
      すり替えている。stderrを通す・失敗時のみ表示する等の対応、あるいは
      抑止する理由(成功時のWARNノイズ回避等)のコメント明記が望ましい。
+
+### 2026-07-06 Issue #126 レビュー(chainviz-reviewer、2回目: 合格)
+- 担当: reviewer
+- 確認した内容:
+  1. 差し戻し理由(docker ps失敗の握りつぶし)の解消: コミット8b9e156で
+     `containers="$(docker ps -a ...)"` が `if ! containers="$(...)"` の
+     形に変更され、失敗時はエラーメッセージ(手動確認用のコマンド例つき)を
+     stderrへ出力し `FAILED=1` を立てて `return 1` する。修正後のロジックを
+     偽のdockerコマンド(compose configは成功・psは失敗を返す)で単体実行し、
+     `return_code=1 FAILED=1` となり誤った成功報告が起きないことを
+     レビュー側でも独立に再確認した。
+  2. 推奨事項への対応: `compose_project_name` の `2>/dev/null` に
+     「正常時にも出うるWARN(未使用envの警告等)がエラー判定に混入しないよう
+     抑止し、実際の失敗は終了コードで検知する」という理由コメントが追記
+     された。CLAUDE.md「意図的に例外を握りつぶす場合は理由をコメントで
+     残す」に沿っており適切。
+  3. `pnpm lint` / `pnpm build` / `pnpm test`(539件)すべて成功。
+     `bash -n scripts/dev-down.sh` で構文確認も実施。
+  4. origin/mainへのrebase後、`git diff origin/main..HEAD` の差分は
+     `scripts/dev-down.sh` と docs(PLAN.md / WORKLOG.md /
+     worklog/issue-126.md)のみで、前回見えていた `.claude/agents/` 等の
+     見かけ上の削除は解消済み。merge-baseはorigin/mainと一致。
+  5. コミット粒度は3コミット(実装 / docs / レビュー指摘対応のfix)で
+     1変更1コミットを維持。Conventional Commits形式も遵守。
+- 判定: 合格。push/PR作成/マージは統括に委ねる。
