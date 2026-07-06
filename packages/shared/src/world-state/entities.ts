@@ -7,6 +7,16 @@ export interface InfraEntity {
   ports: number[];
   resources: { cpuPercent: number; memMB: number };
   process: { name: string; version?: string };
+  /**
+   * collector のコマンド（addNode / addWorkbench）で作成されたコンテナなら
+   * true。環境テンプレート（compose）起動時からある初期構成のコンテナは
+   * removeNode / removeWorkbench が拒否するため削除できず、false になる。
+   * 省略時は false（削除不可）と同義。フロントは true のときだけ削除 UI を
+   * 表示する（削除できないものに削除ボタンを出してエラーにしない。Issue #103）。
+   * optional なのは、フィールド未付与の旧スナップショットを「削除不可」として
+   * 安全側に倒して互換にするため。
+   */
+  removable?: boolean;
 }
 
 export interface NodeEntity extends InfraEntity {

@@ -82,6 +82,12 @@ interface InfraEntity {
   ports: number[];
   resources: { cpuPercent: number; memMB: number };
   process: { name: string; version?: string };
+  // collector の addNode/addWorkbench で作成されたコンテナなら true。
+  // compose 起動時からある初期構成のコンテナは removeNode/removeWorkbench が
+  // 拒否するため false。省略時は false（削除不可）と同義で、フロントは true の
+  // ときだけ削除 UI を出す。collector は managed ラベル（Issue #65 の
+  // 「Docker のラベルを単一の真実の情報源とする」方針）から値を導出する
+  removable?: boolean;
 }
 
 interface NodeEntity extends InfraEntity {
