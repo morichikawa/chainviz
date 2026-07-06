@@ -194,9 +194,10 @@ describe("real glossary data files (regression: duplicate keys, merge conflicts)
   });
 
   it("has no duplicate term keys within any single real file", () => {
-    // parseGlossaryYamlはJSオブジェクトを経由するため、YAML内で同じキーが
-    // 2度定義されても後勝ちで静かに1件へ潰れ、テスト側からは重複を検知
-    // できない。js-yamlが実際にパース時点で例外を投げることを直接確認する。
+    // js-yamlは重複キーで例外を投げるため、上のテストで既に検知できる
+    // （実際にjs-yaml 4.xの既定動作で確認済み)。ここではテキスト走査で
+    // 直接キーを数え、「どのキーが」重複しているかを明示するアサーション
+    // メッセージを得るための補助テスト。
     for (const file of files) {
       const yaml = readFileSync(file.path, "utf8");
       const keys: string[] = [];
