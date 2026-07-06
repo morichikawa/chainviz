@@ -70,4 +70,5 @@
 | #99 | Issue #99 WSL2環境でcollectorのWebSocket/ロギングプロキシが繋がらない(listen host を0.0.0.0に明示) | [2026-07-06](worklog/issue-99.md) |
 | #103 | Issue #103 compose起動ノードの削除ボタン改善のバックログ追加(docsのみ)のレビュー | [2026-07-06](worklog/issue-103.md) |
 | #106 | Issue #106 reth(EL)同士のP2Pエッジ未描画のバックログ追加(docsのみ)のレビュー | [2026-07-06](worklog/issue-106.md) |
+| #95 | Issue #95 P2Pエッジと所有エッジの色相分離(NETWORK_COLORSからアンバー系を除去) | [2026-07-06](worklog/issue-95.md) |
 | - | 特定Issueに紐付かない記録(PLAN.md/CLAUDE.md更新等) | [2026-07-05〜2026-07-06](worklog/meta.md) |
