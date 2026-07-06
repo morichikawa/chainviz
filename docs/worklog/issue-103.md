@@ -31,3 +31,57 @@
   の型変更を調整すること(Issue 本文にも記載あり)。ワークベンチは全て
   `addWorkbench` 経由で作られるため `removable` 相当のフィールドは
   `NodeEntity` 側だけで足りる見込み
+
+### 2026-07-06 Issue #103 removable フラグの設計と shared 型定義
+
+- 担当: designer(設計)
+- ブランチ: issue-103-removable-node-flag
+- 内容: 削除可否フラグの設計を確定し、`packages/shared` の型定義・テスト・
+  `docs/ARCHITECTURE.md` §2 を更新した。collector/frontend の実装は行って
+  いない(引き継ぎ内容は下記)。
+  - `packages/shared/src/world-state/entities.ts`: `InfraEntity` に
+    `removable?: boolean` を追加(JSDoc に意味論を明記)
+  - `packages/shared/src/world-state/entities.test.ts`: removable あり/なし
+    両ケースのテストを追加
+  - `docs/ARCHITECTURE.md` §2: `InfraEntity` のスキーマに同フィールドを反映
+  - 全パッケージで `pnpm build && pnpm test` 通過を確認(shared 8 件、
+    frontend 411 件、collector 含め全緑)
+- 決定事項・注意点:
+  - **フィールドは `NodeEntity` 単独ではなく基底の `InfraEntity` に置く**。
+    前回レビュー記録の「ワークベンチは全て addWorkbench 経由で作られる」
+    という見立ては誤りで、`profiles/ethereum/docker-compose.yml` には
+    `workbench` サービス(foundry)が定義されており、compose 起動の
+    ワークベンチにもノードと同一の不具合(× ボタン表示 → `removeWorkbench`
+    が拒否)が存在する。`InfraNodeCard.tsx` はノード/ワークベンチ共通の
+    コンポーネントなので、基底型に置けば 1 箇所の修正で両方直る
+  - **optional(`removable?`)にし、省略時は false(削除不可)と同義とする**。
+    理由: (1) 設計フェーズの shared 変更だけで既存 collector/frontend の
+    ビルドを壊さない、(2) フィールド未付与の旧スナップショット・リプレイを
+    「削除不可」の安全側に倒せる(削除 UI は collector が明示的に true と
+    言ったときだけ出る)。required にしないことによる曖昧さは JSDoc と
+    ARCHITECTURE.md の「省略時は false と同義」で固定した
+  - **値の導出はライフサイクルレジストリ(`this.nodes`)ではなく Docker の
+    `com.chainviz.managed` ラベルから行う**。理由: (1) Issue #65 で「ラベルを
+    単一の真実の情報源とする」方針が確定済みで、レジストリ自体もラベルから
+    再構築される(両者は一致する)、(2) A 層ポーリング(`EthereumAdapter.
+    pollInfra`)は `ContainerObservation.labels` を既に持っており、
+    `EthereumNodeLifecycle` への新たな結合を作らずに済む。なお addNode の
+    ロールバック失敗で生じるゴーストコンテナ(ラベルあり・レジストリ未登録)
+    では removable=true だが removeNode が拒否する不整合が理論上残るが、
+    これは既存のエラー経路であり本 Issue では扱わない
+  - フロントの表示方針は「`removable === true` のときだけ削除ボタンを
+    描画(それ以外は非表示)」とする。グレーアウト+理由表示も検討したが、
+    (1) compose 起動ノードに削除操作はそもそも提供されない機能であり無効
+    ボタンを見せる意味が薄い、(2) ja/en の理由文言追加と UI 調整で不具合
+    修正の範囲を超える、ため非表示を採用。将来説明が必要になれば
+    `InfraPopover` に理由を出す拡張で対応できる
+  - collector 実装時の指定: `packages/collector/src/adapters/ethereum/` に
+    `labels.ts` を新設してラベル定数(`com.chainviz.managed` 等)を一元化し、
+    `node-lifecycle.ts` / `classify.ts` / `index.ts` の重複定義を寄せること。
+    `EthereumAdapter.toEntity`(index.ts)の `infra` 組み立てで
+    `removable: obs.labels[MANAGED_LABEL] === "true"` を設定する
+  - frontend 実装時の指定: `InfraNodeCard.tsx` の削除ボタンを
+    `entity.removable === true` のときだけ描画。既存テスト
+    (`InfraNodeCard.test.tsx`)のフィクスチャは removable 未設定のため、
+    ボタン存在を前提とするテストが落ちる。フィクスチャに `removable: true`
+    を足し、false/未設定でボタンが出ないテストを追加すること
