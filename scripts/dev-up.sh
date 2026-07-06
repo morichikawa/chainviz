@@ -48,6 +48,42 @@ check_not_already_running() {
 check_not_already_running collector || exit 1
 check_not_already_running frontend || exit 1
 
+# collectorのdist/が現在のソースを反映しているかの目安を警告する(Issue #121)。
+# packages/collector/dist/.build-commit はpnpm build(packages/collectorの
+# ビルドスクリプト)実行時にgit commit hashとdirty状態を書き込むマーカー
+# ファイル。無ければ「ビルド情報が見つからない」、hashが現在のHEADと
+# 食い違えば「distが古い可能性がある」ことを警告する。あくまで警告に
+# 留め、起動は止めない(pnpm buildを再実行するかどうかはユーザーが選ぶ)。
+check_build_freshness() {
+  local marker_file="$ROOT_DIR/packages/collector/dist/.build-commit"
+  if [ ! -f "$marker_file" ]; then
+    echo "    警告: ビルド情報が見つかりません($marker_file)。dist/がpnpm buildで作られたものか確認してください。" >&2
+    return
+  fi
+
+  local current_hash
+  current_hash="$(git -C "$ROOT_DIR" rev-parse HEAD 2>/dev/null || true)"
+  if [ -z "$current_hash" ]; then
+    # gitが使えない(通常想定しない)環境では比較できないので何もしない。
+    return
+  fi
+
+  local marker_hash marker_dirty
+  marker_hash="$(sed -n '1p' "$marker_file" 2>/dev/null || true)"
+  marker_dirty="$(sed -n '2p' "$marker_file" 2>/dev/null || true)"
+
+  if [ -z "$marker_hash" ]; then
+    echo "    警告: ビルド情報($marker_file)の中身が壊れています。pnpm buildの再実行を検討してください。" >&2
+    return
+  fi
+
+  if [ "$marker_hash" != "$current_hash" ]; then
+    echo "    警告: dist/が古い可能性があります(ビルド時: $marker_hash、現在: $current_hash)。pnpm buildの再実行を検討してください。" >&2
+  elif [ "$marker_dirty" = "dirty" ]; then
+    echo "    警告: dist/はcommit $marker_hash の時点でuncommittedな変更を含んだ状態でビルドされています。その後さらに変更していないか確認してください。" >&2
+  fi
+}
+
 echo "==> [1/4] profiles/ethereum のDockerスタックを確認"
 cd "$PROFILE_DIR"
 if [ -z "$(docker compose ps -q 2>/dev/null)" ]; then
@@ -63,6 +99,7 @@ if [ ! -f "$ROOT_DIR/packages/collector/dist/index.js" ]; then
   pnpm build
 else
   echo "==> [2/4] ビルド済みのcollectorを再利用します(再ビルドしたい場合は pnpm build を先に実行してください)"
+  check_build_freshness
 fi
 
 echo "==> [3/4] collectorを起動します(port $COLLECTOR_PORT, proxy $PROXY_PORT)"
