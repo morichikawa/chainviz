@@ -151,3 +151,60 @@
     案がある。
 - `pnpm lint` / `pnpm build` / `pnpm test` を全パッケージで実行し通過
   （frontend 474 tests / collector 500 tests）。
+
+### 2026-07-06 Issue #102 静的レビュー(reviewer)
+- 担当: reviewer
+- ブランチ: issue-102-add-ghost-node
+- 結果: **合格**(差し戻しなし。フォローアップ推奨1件、下記)
+- 確認した内容:
+  - 境界の遵守: ゴーストノードはフロント内部限定の概念として
+    `packages/frontend/src/entities/ghostNode.ts` に閉じており、
+    `packages/shared` のスキーマ(`Command` / `WorldStateEntity` / diff)には
+    一切変更がない。チェーン固有の語彙の漏れもない。ARCHITECTURE.md §3 の
+    「commandResult を返し、実際の反映は後続の diff で届く」という設計と
+    整合する(ゴーストはその「diff が届くまでの隙間」を埋める純粋な UI 表現)。
+  - 実エンティティとの混同防止: `GhostFlowNode` は `type: "ghost"` の
+    discriminant で `InfraFlowNode` / `WalletFlowNode` と型レベルで区別され、
+    `draggable: false` / `selectable: false` / CSS `pointer-events: none` で
+    操作対象にもレイアウト永続化対象にもならない。妥当な設計。
+  - タイマーの後始末: 安全網タイマーは ghosts state と同期する useEffect で
+    「消えた commandId のタイマーを clearTimeout」しており、除去理由
+    (到着・失敗・タイムアウト)を問わず後片付けされる。アンマウント時の
+    一括 clearTimeout もあり、メモリリークは無い。
+  - エラーの握りつぶし: 新規コードに catch 自体が無く、失敗時は既存の
+    トースト通知経路(describeCommandError)に乗る。問題なし。
+  - 固定値の妥当性: `GHOST_TIMEOUT_MS`(60秒)は環境状態(チェーン稼働時間等)に
+    依存しない UI 安全網であり、成立前提がコードコメントと本 worklog の
+    両方に明記済み。CLAUDE.md の運用ルールを満たす。
+  - CanvasToolbar を disabled にしない判断: Issue #102 の要件は
+    「即時フィードバック」であり「二重送信防止」ではない。スピナー +
+    補足文言 + aria-busy + ゴーストカードで即時フィードバックは満たされて
+    おり、既存の「連打を許す」仕様(既存テストで明文化済み)とも矛盾しない。
+    妥当と判断。
+  - テストの実効性: 純粋関数の境界値(グリッド折り返し・非破壊性・
+    FIFO の種別スキップ)、hook の異常系(失敗と到着の競合・遅延失敗・
+    再接続スナップショット・タイマー独立性・アンマウント)まで
+    カバーされており、実装の詳細をなぞるだけの無意味なテストは見当たら
+    なかった。ghostSeqRef のバグは「修正前に失敗することを確認してから
+    直した」ことが記録されており、回帰テストとして実効性がある。
+  - ビルド・テスト: worktree で `pnpm lint` / `pnpm build` / `pnpm test` を
+    実行し全パッケージ通過(frontend 474 tests / collector 500 tests)。
+  - コミット粒度: `main..HEAD` は feat(仮カード) / feat(ツールバーの
+    ローディング表示) / docs(実装記録) / test(強化) / docs(テスト記録) の
+    5コミットに分かれており、1変更1コミットを満たす。
+- tester が発見したグリッド重なり(2回の addNode の間に entityRemoved で
+  infraCount が減ると ghostSeqRef の増分と相殺し、2枚のゴーストが同じ
+  セルに重なる)についての判断: **本 Issue のスコープでは許容とし、差し戻さない**。
+  理由: (1) 影響が表示上の重なりのみで機能への実害が無い、(2) 発生条件が
+  「追加操作の合間に既存実体の削除が挟まる」稀な競合に限られる、(3) 同種
+  連打(削除を挟まない)の重なりは正しく防げている。ただし
+  `useCommands.ts` の ghostSeqRef のコメント「以後常に新しいセルへ置ける」は
+  このケースでは成り立たない過大な主張なので、恒久対応(添字を単調増加
+  カウンタ単独にする等)と併せて**バックログ Issue として起票すること**
+  (統括への申し送り。#103/#106 と同じ扱い)。
+- 経緯の補記(レビュー時点で本 worklog に未記録だったため記録する):
+  本 Issue は実装担当(frontend)がレビュー・QA 完了前に GitHub Issue #102 を
+  誤ってクローズし、統括が再オープンした。CLAUDE.md の手順では Issue の
+  クローズは PR マージ(`Closes #102`)に伴って行われるべきで、実装完了時点で
+  担当が手動クローズするのは誤り。レビュー時点で Issue #102 が OPEN である
+  ことは `gh issue view 102 --json state` で確認済み。
