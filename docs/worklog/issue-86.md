@@ -191,3 +191,48 @@
   倒れる。これは「証拠なしに failed 表示をしない」保守的方針と整合しており
   実害はない（devnet の reth は `"0x0"` を返す）。将来 status 表記の揺れる
   クライアントに対応する場合はここを見直す余地がある、という記録に留める。
+
+### 2026-07-06 Issue #86 静的レビュー（合格）
+
+- 担当: レビュー
+- ブランチ: issue-86-tx-failed-status
+- 結果: **合格**。指摘事項なし（下記の軽微なメモのみ）。
+- 確認内容:
+  - RPC 呼び出し回数: `handleBlockInclusion` は `processedBlocks` ガード下で
+    `eth_getBlockReceipts` を 1 ブロック 1 回だけ呼んでおり、置き換え前の
+    `eth_getBlockByHash` 1 回から増えていない（tx ごとの receipt 取得なし）。
+    設計時の主張どおり。
+  - status 判定: `"0x0"` 完全一致のみ failed とする実装をコード・コメント・
+    テストで確認。JSON-RPC の QUANTITY エンコーディング（先頭ゼロなし）に
+    従う reth は `"0x0"`/`"0x1"` を返すことが collector 担当の実測
+    （curl での確認記録）と整合しており、完全一致で問題ない。
+  - #76 由来のリトライ機構: null 時・例外時とも `processedBlocks` から
+    マークを外す挙動は無変更。回帰テスト 2 件（null 版・例外版）は
+    `eth_getBlockReceipts` の形状に書き換えられた上で維持されている。
+  - `recordInclusion` のスキップ条件（同一 blockHash かつ同一 status）:
+    included→included の重複通知スキップ、reorg 時の blockHash 付け替え
+    再通知、status 変化（included⇔failed 双方向）の再通知がすべて
+    テストでカバーされている。
+  - テストの実効性（レビュー担当自身の変異確認）:
+    (1) `normalizeReceipt` の failed 判定を常に succeeded=true へ変異
+    → 5 テストが失敗を検出。(2) スキップ条件から status 比較を除去
+    → 2 テストが失敗を検出。いずれも復元後 green（collector 522 /
+    frontend 411）。
+  - `pnpm lint` / `pnpm build` / `pnpm test` 全パッケージ通過。
+  - 境界の遵守: 変更は `adapters/ethereum/` 配下に閉じており、
+    `packages/shared` / frontend に `eth_getBlockReceipts` 等の
+    チェーン固有語彙の漏れなし。`eth-rpc-client.ts` は `succeeded: boolean`
+    で返し、world-state の語彙（included/failed）へのマッピングは
+    アダプタ側で行う分離も設計どおり。
+  - docs: `docs/ARCHITECTURE.md` の `subscribeTransactions` 記述が実装と
+    一致。`docs/PLAN.md` チェック・`docs/WORKLOG.md` 索引も更新済み。
+  - コミット粒度: 7 コミットとも単一の関心事（設計 docs / RPC ヘルパー /
+    トラッカー / アダプタ切り替え / 実装 docs / テスト強化 / テスト docs）
+    に分かれており良好。
+- 軽微なメモ（差し戻し不要）:
+  - `normalizeReceipt` は不正 receipt をログなしで捨てるため、万一
+    不正形状が来るとその tx は pending のまま残る。既存の
+    `normalizeTransaction` と同じ安全側パターンで実害はないが、将来
+    別クライアント対応時にはデバッグログの追加を検討する余地がある。
+  - `docs/WORKLOG.md` の #86 索引行が「…の設計」のままだが、ファイルは
+    実装・テスト強化まで含む（表記のみの些事）。
