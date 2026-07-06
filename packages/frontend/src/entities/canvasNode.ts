@@ -32,3 +32,42 @@ export function canvasNodeLayoutKey(node: CanvasFlowNode): string {
   const entity = node.data.entity;
   return entity.kind === "wallet" ? entity.address : entity.containerName;
 }
+
+/**
+ * ワールドステート更新のたびに親（App.tsx）が組み立てる `nodes` は、React Flow
+ * が実測した `measured`(width/height)を持たない。React Flow は「渡された
+ * ノードオブジェクトの参照が前回と同じか」で `measured` を引き継げるかを判定
+ * しており、参照が変わると `measured` を破棄していったん再計測する
+ * (この間、対象カードは一瞬 visibility: hidden になる。Issue #119)。
+ *
+ * カードの内容が変わっただけで見た目のサイズまで変わることは通常なく、
+ * 毎回の再計測は不要なちらつきにしかならない。そこで、React Flow が
+ * 直前に計測して `previous`(Canvas 側の内部状態)へ書き戻した `measured` を
+ * `next`(親から渡された最新のノード配列)へ id ベースで引き継ぐことで、
+ * ノードオブジェクトの参照が変わった場合でも再計測サイクルに入らないようにする。
+ *
+ * `next` 側に既に `measured` が入っている(将来 App 側が持たせるようになった)
+ * 場合はそちらを優先する。`previous` に対応する id が無い(新規ノード)場合は
+ * 何も付与せず、React Flow の通常の初回計測に任せる。
+ */
+export function preserveMeasuredDimensions<TNode extends CanvasFlowNode>(
+  next: TNode[],
+  previous: TNode[],
+): TNode[] {
+  if (previous.length === 0) return next;
+
+  const measuredById = new Map(
+    previous
+      .filter((node) => node.measured?.width !== undefined && node.measured?.height !== undefined)
+      .map((node) => [node.id, node.measured]),
+  );
+  if (measuredById.size === 0) return next;
+
+  return next.map((node) => {
+    if (node.measured?.width !== undefined && node.measured?.height !== undefined) {
+      return node;
+    }
+    const measured = measuredById.get(node.id);
+    return measured ? { ...node, measured } : node;
+  });
+}
