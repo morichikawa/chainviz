@@ -80,4 +80,5 @@
 | #126 | Issue #126 pnpm dev:down --dockerが動的追加コンテナを削除しない不具合の修正 | [2026-07-06](worklog/issue-126.md) |
 | #124 | Issue #124 P2Pメッシュ形成の正常性を伝えるUX設計(凡例・エッジホバー・ブートノード明示) | [2026-07-06](worklog/issue-124.md) |
 | #123 | Issue #123 ノード/ワークベンチ追加時の追加先・接続先の予告(UX設計) | [2026-07-06](worklog/issue-123.md) |
+| #125 | Issue #125 ブロック伝播パルスが移動して見えない問題のUX設計(SMIL凍結の根本原因特定・CSS offset-path化・グリッド間隔) | [2026-07-06](worklog/issue-125.md) |
 | - | 特定Issueに紐付かない記録(PLAN.md/CLAUDE.md更新等) | [2026-07-05〜2026-07-06](worklog/meta.md) |
