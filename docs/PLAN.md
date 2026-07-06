@@ -345,7 +345,7 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
 - [ ] ブロック伝播パルスが隣接カード間では移動距離が短すぎて点滅にしか
       見えない
       [#125](https://github.com/morichikawa/chainviz/issues/125)
-- [ ] pnpm dev:down --dockerがaddNode/addWorkbenchで動的追加したコンテナを
+- [x] pnpm dev:down --dockerがaddNode/addWorkbenchで動的追加したコンテナを
       削除しない
       [#126](https://github.com/morichikawa/chainviz/issues/126)
 - [ ] 動的追加ワークベンチのRPCがロギングプロキシを経由せずreth1に直結して
