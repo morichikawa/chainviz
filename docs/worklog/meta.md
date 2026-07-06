@@ -725,3 +725,182 @@
     了承(CLAUDE.mdに明記された例外に該当。実行環境の動作に影響する
     変更が無く、検証対象が存在しない)。
   - push・PR作成・マージは統括の判断に委ねる。
+
+### 2026-07-06 Issue #123/#124 共通のshared型設計(p2pRole / rpcTargetNodeId)
+
+- 担当: designer
+- ブランチ: design-issue-123-124-shared-types
+- 内容: Issue #123(ノード/ワークベンチ追加時の接続先予告)と Issue #124
+  (P2Pメッシュ形成の正常性の伝達)のUX設計(それぞれ
+  `issue-123-ux-design-node-addition` / `issue-124-ux-design-p2p-mesh`
+  ブランチの `docs/worklog/issue-123.md` / `issue-124.md` に記録)が
+  重複して必要としていた `packages/shared` の型変更を、単一の設計に
+  統合して実装した。実装ロジック(collector/frontend)は書いていない。
+- 実装した型(`packages/shared/src/world-state/entities.ts`):
+  1. `NodeEntity.p2pRole?: "bootnode" | "peer"` — P2P上の役割。
+     - #123は `"boot" | "peer"`、#124は `"bootnode"`(単一値)を提案して
+       いたが、値は `"bootnode"` に統一(用語集・UI文言の「ブートノード/
+       bootnode」と1対1で対応し、略語 "boot" より誤読が少ない)。
+     - `"peer"` も残した2値のユニオンにした。collectorはラベルの有無から
+       どちらかを常に確定できるため「知っていることを明示する」形にし、
+       「省略 = 不明(旧スナップショット)」の意味論を `removable` の前例と
+       同じく明確にするため。フロントの判定は `=== "bootnode"` のみで
+       よく、省略時は自然にフォールバック(#123 §4-5)に倒れる。
+     - bootnodeという語彙はチェーン非依存のP2P一般概念(Bitcoinのseed
+       node、libp2pのbootstrap peerも同値に正規化する想定)と判断し、
+       ChainAdapter境界には抵触しないとした。
+  2. `WorkbenchEntity.rpcTargetNodeId?: string` — RPC呼び出しが最終的に
+     届くノードのid。#123の提案は `string | null` だったが、null は
+     採らず「解決不能・旧スナップショット = 省略」に一本化した(「無い」
+     の表現が2通りあると collector/frontend で解釈が割れる。
+     `WalletEntity.ownerWorkbenchId` の null は「所有者が削除された」
+     という意味のある状態であり、こちらには区別すべき状態が無い)。
+- テスト: `entities.test.ts` にJSON往復・省略時の意味論のテストを3件追加
+  (既存の removable テストと同じ流儀)。`pnpm build && pnpm test && pnpm
+  lint` を全パッケージで実行し、collector/frontend のビルド・既存テストを
+  壊さないことを確認した(shared 13 / collector 584 / frontend 539 passed)。
+- docs: `docs/ARCHITECTURE.md` のワールドステートスキーマ(NodeEntity /
+  WorkbenchEntity)に両フィールドと導出方法のコメントを反映した。
+- PR戦略の判断(統括への提案): **型定義+docsのみの独立した先行PRとして
+  このブランチをマージし、#123と#124はこれを前提に並行実装する**(案a)。
+  - 理由: `p2pRole` は両Issueが必要とするため、どちらか一方のPRに
+    同梱すると他方への直列依存または entities.ts の二重編集(コンフリクト)
+    が生じる。optionalフィールドのみのスキーマ追加は動作に影響せず
+    (旧collector/旧frontendのどちらとも互換)、両Issueの実装が直後に
+    始まるため「未実装の設計だけがmainにある期間」は最小で済む。
+  - CLAUDE.mdの「先行してmainに未実装の設計だけが反映される期間を
+    作らない」原則からの例外になるため、採否は統括が判断すること。
+    #123のフォールバック設計(§4-5)により、#123/#124はどちらが先に
+    マージされても動作が破綻しない(値が来るまでは表示を出さないだけ)。
+- collector側の正規化ロジック設計(実装はcollector担当。ここでは設計のみ):
+  1. `p2pRole`(#124のブランチで実装):
+     - `adapters/ethereum/labels.ts` にラベルキー定数
+       `P2P_ROLE_LABEL = "com.chainviz.p2p-role"` を追加する。
+     - `adapters/ethereum/index.ts` の `toEntity()`(nodeを返す分岐)で
+       `p2pRole: obs.labels[P2P_ROLE_LABEL] === "bootnode" ? "bootnode"
+       : "peer"` を設定する(ラベル無し・想定外の値はすべて peer)。
+     - addNodeで追加するノードは常にpeer役なので `node-lifecycle.ts` は
+       ラベルを付与しない(現状のままでよい。#124の設計どおり)。
+  2. `rpcTargetNodeId`(#123のブランチで実装):
+     - 値の出所はコンテナenvではなく **collectorの設定**とする。全ワーク
+       ベンチの実効的なRPC到達先はロギングプロキシの転送先
+       (`CHAINVIZ_PROXY_TARGET`、既定 `http://172.28.1.1:8545`)であり、
+       Alice(compose起動)のenv `ETH_RPC_URL` はプロキシ自身
+       (`host.docker.internal:4001`)を指すためenvからは解決できない。
+       また `ContainerObservation` はenvを持たない(listContainersは
+       envを返さず、inspect追加はポーリング負荷増)。
+     - `EthereumAdapterDeps` に `rpcTargetHost?: string` を追加し、
+       collector本体 `src/index.ts` が `resolveProxyTarget()` の結果から
+       URLのhost部を取り出して渡す。`pollInfra()` 内で、同じポーリングの
+       観測結果から `ip === rpcTargetHost` のノードを探し、その
+       `stableId` を全 `WorkbenchEntity.rpcTargetNodeId` に設定する。
+       見つからなければ省略する。毎ポーリングで解決し直すので、後から
+       ブートノードが再作成されても追従する(固定の解決結果を埋め込まない)。
+     - 注意: 動的追加ワークベンチは現状プロキシを経由せず
+       `node-lifecycle.ts` の既定 `http://172.28.1.1:8545` へ直結する
+       (#123 §1で発見された実装ギャップ)。既定値同士は同一ホストのため
+       上記の一括解決で表示上は正しいが、`CHAINVIZ_PROXY_TARGET` を
+       変更した環境では動的追加分の表示が実態とずれ得る。プロキシ経由化
+       (#123 判断事項3の別Issue)が入れば一致する。この前提は実装時に
+       コード上のコメントにも明記すること。
+- node-env側の設計(#124のブランチで実装): `profiles/ethereum/
+  docker-compose.yml` の reth1・beacon1 サービスに
+  `labels: { com.chainviz.p2p-role: "bootnode" }` を追加する(2サービス
+  各1〜2行)。**ラベル追加は必要**と判断した。理由: 既存の
+  `RETH_ROLE`/`BEACON_ROLE` env はlistContainersの観測に含まれず、
+  collectorに「reth1/beacon1がブート役」という構成知識をハードコード
+  するのはチェーンプロファイル追加時の差し替え単位を壊すため。ラベルは
+  既に `ContainerObservation.labels` として収集済みで、Issue #65の
+  「Dockerラベルを単一の真実の情報源とする」方針とも整合する。既存の
+  `com.chainviz.role`(execution/consensus/workbench)はクライアント
+  種別の別軸なので値を混ぜない。ラベル変更は既存コンテナの再作成を
+  伴う点に注意(QAは既存スタックへの適用を一度実際に通すこと)。
+- 未決事項: なし(型・値の意味論・データの出所は本記録で確定。#123の
+  案A/案Bの採否など UX 上の未決事項は各Issueのworklogを参照)。
+
+### 2026-07-06 Issue #123/#124 共通shared型のテスト強化(異常系・境界値)
+
+- 担当: tester
+- ブランチ: design-issue-123-124-shared-types
+- 対象: `NodeEntity.p2pRole` / `WorkbenchEntity.rpcTargetNodeId` の追加。
+  型定義のみの変更で、これらを設定・利用する実装ロジックは #123/#124 で
+  今後実装予定のため、テストは「型の追加が既存のdiff/store動作を壊さない
+  こと」の確認に範囲を絞った。runtime バリデーション(zod等)は
+  `packages/shared` に存在しないため、既存の `removable` の前例に倣った
+  シリアライズ/不変条件のテスト水準に合わせた。
+- 追加したテスト:
+  - collector `world-state/diff.test.ts`:
+    - `p2pRole` の変化(peer→bootnode)が entityUpdated の patch に載る
+    - 省略→bootnode(役割が後から判明)も差分として検出される
+    - `rpcTargetNodeId` の変化が workbench の patch に載る
+    - optional フィールドが present→absent になっても clearing patch は
+      出ない(既知の制約。下記参照)
+  - collector `world-state/store.test.ts`:
+    - `p2pRole` が無関係フィールドの patch 適用後も保持される
+    - `p2pRole` / `rpcTargetNodeId` がスナップショットを素通しで保持される
+  - frontend `world-state/store.test.ts`:
+    - `applySnapshot` が両フィールドを保持し、省略エンティティは undefined
+      のまま残る(後方互換)
+    - `applyDiff` の `p2pRole` patch が他フィールドを壊さずマージされる
+- 既存実装のバグではない既知の制約(実装担当への申し送り): `diff.ts` の
+  `fieldPatch` は `Object.keys(after)` のみを走査するため、before にあって
+  after で省略された optional フィールドは差分に現れず、store に旧値が
+  残る。全 optional フィールド共通の挙動で、bootnode/peer は一度確定すると
+  消えない運用のため現状は実害なし。#123/#124 で「役割の取り消し」
+  （bootnode を再び不明へ戻す）を扱う必要が出た場合はこの制約に留意する
+  こと。この挙動は上記 diff.test.ts のテストで固定化済み。
+- 確認: `pnpm build` / `pnpm test`(shared/collector/frontend)いずれも通過。
+  shared 13、collector 590、frontend 541 テストが green。
+
+### 2026-07-06 Issue #123/#124 共通shared型のレビュー(reviewer)
+
+- 担当: reviewer
+- 対象: ブランチ `design-issue-123-124-shared-types`(designerのコミット
+  2件 + testerのテスト強化(レビュー時点で未コミット))
+- 判定: **合格**(内容面の差し戻しなし。ただし下記「マージ前の要対応」あり)
+- 確認した内容:
+  1. 型設計: `NodeEntity.p2pRole?: "bootnode" | "peer"`(省略 = 不明の
+     3状態)と `WorkbenchEntity.rpcTargetNodeId?: string`(省略 = 解決
+     不能/旧スナップショット)は、いずれもチェーン非依存の語彙で
+     CLAUDE.mdの境界原則に沿う。"bootnode" はCONCEPT.md(386行目・
+     556行目)で既に使われている確立済みの語彙であり、`eth_getLogs` の
+     ようなチェーン固有RPC語彙の漏出には当たらない。導出ロジック
+     (Dockerラベル `com.chainviz.p2p-role`)はcollector(ChainAdapter)側に
+     閉じる設計で、境界を壊していない。null を使わず省略に一本化した
+     判断も、`ownerWorkbenchId` の null(意味のある状態)との対比が
+     コメントで説明されており妥当
+  2. testerの申し送り(optionalフィールドの「値あり→省略」が差分に
+     反映されない)は `diff.ts` の `fieldPatch`(`Object.keys(after)` のみ
+     走査)で事実と確認した。挙動を固定化するテストも追加済みで、
+     記録として十分。**補足(#123実装担当への追加の申し送り)**:
+     `p2pRole` は「一度確定したら取り消さない」運用で影響なしだが、
+     `rpcTargetNodeId` は「解決済み→解決不能(省略)」がランタイムで
+     起こり得る(転送先ノードが観測から消えた場合)。このときstoreには
+     旧idが残るが、同じポーリング周期で対象ノード自体に entityRemoved が
+     出るため、フロントが「参照先エンティティが存在しないidは無視する
+     (エッジを描かない)」というダングリング参照のガードを入れていれば
+     表示上の実害はない。#123のフロント実装ではこのガードを必ず入れること
+  3. 「型定義+docsのみの先行mainマージ」: CLAUDE.mdの「先行してmainに
+     未実装の設計だけが反映される期間を作らない」原則の例外に当たるが、
+     (a)ユーザーの明示的な許可済み、(b)#123/#124の両方が同一フィールドを
+     必要とし、どちらかのPRに同梱すると直列依存かコンフリクトが生じる、
+     (c)optionalフィールドのみで旧collector/旧frontendと双方向互換、
+     (d)両Issueの実装が直後に控えており「未実装の設計」期間は最小、
+     という条件が揃っており今回に限り妥当と判断する。本記録をもって
+     例外適用の経緯とする(他のケースの前例として流用しないこと)
+  4. `pnpm lint` / `pnpm build` / `pnpm test` を全パッケージで実行し
+     すべて通過(shared 13 / collector 590 / frontend 541、testerの
+     報告値と一致)
+  5. テストの質: 型のみの変更でランタイムロジックが無いため、JSON往復・
+     diff/storeの素通し・後方互換(省略時undefined)という水準は既存の
+     `removable` の前例と整合し適切。既知の制約を固定化するテスト
+     (clearing patchが出ないこと)は、将来 `fieldPatch` の走査方式を
+     変えたとき意図的な仕様変更として検出される点で意味がある。
+     エラー握りつぶし・環境依存の決め打ち定数は該当なし(定数追加なし)
+  6. コミット粒度: designerの2件(feat(shared)のコード+テスト / docsの
+     スキーマ反映+設計記録)は関心事が分かれており適切
+- **マージ前の要対応(統括へ)**: testerのテスト強化3ファイルと
+  meta.md追記がレビュー時点で未コミットのまま残っている。マージ前に
+  `test:` コミットとして確定させること(テスト強化とその記録は同一の
+  関心事なので1コミットで差し支えない)。本レビュー記録の追記分も
+  同様にコミットが必要

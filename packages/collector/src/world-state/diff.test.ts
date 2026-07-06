@@ -238,6 +238,61 @@ describe("computeDiff", () => {
       },
     ]);
   });
+
+  it("carries p2pRole in the patch when a node's P2P role changes", () => {
+    // Issue #123 / #124: peer から bootnode への遷移が更新差分に載ること。
+    const before = node({ p2pRole: "peer" });
+    const after = node({ p2pRole: "bootnode" });
+    const events = computeDiff([before], [after]);
+    expect(events).toEqual([
+      {
+        type: "entityUpdated",
+        id: "chainviz-ethereum/reth1",
+        patch: { p2pRole: "bootnode" },
+      },
+    ]);
+  });
+
+  it("reports a newly appearing p2pRole (unknown -> bootnode) as a patch", () => {
+    // 旧 collector が p2pRole 未付与で送っていたノードに、後から役割が
+    // 判明した場合。省略 -> "bootnode" は差分として検出される。
+    const before = node();
+    const after = node({ p2pRole: "bootnode" });
+    const events = computeDiff([before], [after]);
+    expect(events).toEqual([
+      {
+        type: "entityUpdated",
+        id: "chainviz-ethereum/reth1",
+        patch: { p2pRole: "bootnode" },
+      },
+    ]);
+  });
+
+  it("carries rpcTargetNodeId in the patch when the workbench's RPC target changes", () => {
+    // Issue #123: 操作先ノードの解決結果が更新差分に載ること。
+    const before = workbench({ rpcTargetNodeId: "chainviz-ethereum/reth1" });
+    const after = workbench({ rpcTargetNodeId: "chainviz-ethereum/reth2" });
+    const events = computeDiff([before], [after]);
+    expect(events).toEqual([
+      {
+        type: "entityUpdated",
+        id: "chainviz-ethereum/workbench",
+        patch: { rpcTargetNodeId: "chainviz-ethereum/reth2" },
+      },
+    ]);
+  });
+
+  it("does not emit a clearing patch when an optional field disappears (known limitation)", () => {
+    // fieldPatch は after 側のキーだけを走査するため、before にあって after に
+    // 無くなったフィールド（p2pRole を省略に戻す）は差分に現れない。この方針は
+    // 全 optional フィールド共通で、store には旧値が残る。bootnode/peer は
+    // 一度確定すると消えない運用のため実害は無いが、#123/#124 の実装で
+    // 「役割の取り消し」を扱う場合はこの制約に留意する。
+    const before = node({ p2pRole: "bootnode" });
+    const after = node();
+    const events = computeDiff([before], [after]);
+    expect(events).toEqual([]);
+  });
 });
 
 function edge(overrides: Partial<PeerEdge> = {}): PeerEdge {

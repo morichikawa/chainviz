@@ -26,12 +26,37 @@ export interface NodeEntity extends InfraEntity {
   syncStatus: "syncing" | "synced";
   blockHeight: number;
   headBlockHash: string;
+  /**
+   * P2P ネットワーク上の役割。"bootnode" は新規参加ノードが最初に接続する
+   * 入口役のノード、"peer" はそれ以外の通常ピア。bootnode はチェーン非依存の
+   * P2P 一般語彙として使う（Bitcoin の seed node、libp2p の bootstrap peer も
+   * この値に正規化する想定）。collector（ChainAdapter）が Docker ラベル
+   * `com.chainviz.p2p-role` から導出する（Issue #65 の「ラベルを単一の真実の
+   * 情報源とする」方針）。
+   * optional なのはフィールド未付与の旧スナップショットとの互換のため。
+   * 省略時は「不明」を意味し、フロントは `p2pRole === "bootnode"` の判定
+   * だけを行い、該当ノードが見つからなければブートノード前提の表示
+   * （バッジ・接続予定先の予告）を出さない側に倒す（Issue #123 / #124）。
+   */
+  p2pRole?: "bootnode" | "peer";
 }
 
 export interface WorkbenchEntity extends InfraEntity {
   kind: "workbench";
   label: string;
   walletIds: string[];
+  /**
+   * このワークベンチの RPC 呼び出しが最終的に届くノードのエンティティ id
+   * （ロギングプロキシ経由の場合はプロキシの転送先を解決した結果）。
+   * フロントはワークベンチ→ノードの常設「操作先」エッジやカード詳細の
+   * 表示に使う（Issue #123）。
+   * optional なのは旧スナップショットとの互換のためで、解決できない場合も
+   * 省略する（省略 = 不明。フロントは操作先の表示を出さないフォールバックに
+   * 倒す）。null は使わず「無い」の表現を省略に一本化する（WalletEntity の
+   * ownerWorkbenchId の null は「所有者が削除された」という意味のある状態
+   * だが、こちらの不在は単に解決不能なだけで区別する状態が無いため）。
+   */
+  rpcTargetNodeId?: string;
 }
 
 export interface PeerEdge {
