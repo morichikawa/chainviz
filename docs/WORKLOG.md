@@ -73,7 +73,7 @@
 | #103 | Issue #103 compose起動ノードの削除ボタン(バックログ追加レビュー・removableフラグ設計) | [2026-07-06](worklog/issue-103.md) |
 | #106 | Issue #106 reth(EL)同士のP2Pエッジ未描画のバックログ追加(docsのみ)のレビュー | [2026-07-06](worklog/issue-106.md) |
 | #95 | Issue #95 P2Pエッジと所有エッジの色相分離(NETWORK_COLORSからアンバー系を除去) | [2026-07-06](worklog/issue-95.md) |
-| #113 | Issue #113 仮カード(ゴーストノード)の配置indexの重なりのバックログ追加(docsのみ)のレビュー | [2026-07-06](worklog/issue-113.md) |
+| #113 | Issue #113 仮カード(ゴーストノード)の配置indexの重なり(バックログ登録・frontend実装) | [2026-07-06](worklog/issue-113.md) |
 | #119 | Issue #119 定期更新のたびにノードカードが一瞬ちらつく(React Flowの再計測サイクル) | [2026-07-06](worklog/issue-119.md) |
 | #121 | Issue #121 pnpm dev:upの古いdistビルド未検知のバックログ追加(docsのみ)のレビュー | [2026-07-06](worklog/issue-121.md) |
 | #123-#126 | Issue #123/#124/#125/#126 UX・運用バックログ4件の登録(docsのみ)のレビュー | [2026-07-06](worklog/issue-123-126.md) |

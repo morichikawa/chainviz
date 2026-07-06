@@ -35,3 +35,43 @@
   実装を前提にする）。
 - QA について: docs のみの変更のため、統括の判断により chainviz-qa は
   省略（動かして検証する対象が無い）。
+
+### 2026-07-06 Issue #113 実装(frontend: ゴースト配置indexの重なり修正)
+
+- 担当: frontend
+- ブランチ: issue-113-fix-ghost-position-overlap
+- 内容: `packages/frontend/src/commands/useCommands.ts` のゴースト（仮カード）
+  配置indexの計算方法を変更した。
+  - 旧実装: `index: infraCount + ghostSeqRef.current`（現在の infraCount と
+    単調増加する連番の単純合算）。infraCount は既存の node/workbench
+    エンティティ数で、削除が起きると減少する。ゴーストが生きている間に
+    既存インフラが削除されると、後から発行したゴーストの計算結果が
+    先に発行済みのゴーストの位置と一致してしまい、グリッド上で重なる
+    バグがあった（Issue本文の再現手順どおり）。
+  - 新実装: `ghostIndexRef`（次に払い出すインデックスを保持する ref）を
+    `Math.max(ghostIndexRef.current, infraCount)` で更新し、実際に払い出す
+    index もこの値を使う。infraCount は「最低限このインデックス以上を使う」
+    という下限としてのみ参照し、加算はしない。ghostIndexRef 自体は
+    一度払い出した値より小さい値を二度と返さない単調増加のカウンタになる
+    ため、既存インフラの削除で infraCount が下がっても、既に表示中の
+    ゴーストの位置を再利用することがない。既存の「既存 node/workbench
+    カードと衝突しない」という下限の仕組みは維持している。
+  - `ghostSeqRef` にあった「ゴーストが消えても巻き戻さない（以後常に新しい
+    セルへ置ける）」というコメントは、この不具合が示すとおり過大な主張
+    だったため削除し、新しい変数名・設計意図に合わせて書き直した。
+- テスト: `packages/frontend/src/commands/useCommands.test.tsx` に
+  Issue #113 専用の describe ブロックを追加した。
+  - Issue本文の再現手順（entityAdded で登録 → addNode → entityRemoved で
+    削除 → addNode）をそのままテストケース化し、2枚目のゴーストの座標が
+    1枚目と一致しないことを確認する
+  - 既存インフラを複数回削除しながら addNode を繰り返しても、生存中の
+    全ゴーストの座標が互いに重複しないことを確認する
+  - 修正前のコード（`git stash` で一時的に旧実装へ戻した状態）でこの2件が
+    実際に失敗すること、修正後に成功することを確認済み（「直したはず」で
+    済ませず実際に再現・再確認した）
+- 確認: `pnpm build`（frontend）・`pnpm test`（frontend、全541件）・
+  `pnpm eslint`（変更ファイルに対して）がいずれも成功
+- 次の担当への申し送り: 実装済みだが `chainviz-tester` によるテスト強化・
+  `chainviz-reviewer` の静的レビュー・`chainviz-qa` の検証は未実施。
+  `docs/PLAN.md` のチェックボックスは更新済みだが、Issue のクローズは
+  PR マージ時の `Closes #113` に委ねる（自分ではクローズしない）。
