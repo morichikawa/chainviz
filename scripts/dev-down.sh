@@ -28,6 +28,9 @@ FAILED=0
 # 呼び出し前提: カレントディレクトリが PROFILE_DIR であること。
 compose_project_name() {
   local json
+  # stderrを捨てているのは、docker compose configが正常時にも出しうる
+  # WARN(未使用envの警告等)がここでのエラー判定に混入しないようにする
+  # ため。実際の失敗は終了コード(|| return 1)で検知する。
   json="$(docker compose config --format json 2>/dev/null)" || return 1
   node -e '
     let data = "";
@@ -67,10 +70,14 @@ cleanup_dynamic_containers() {
   fi
 
   local containers
-  containers="$(docker ps -a \
+  if ! containers="$(docker ps -a \
     --filter "label=com.chainviz.managed=true" \
     --filter "label=com.docker.compose.project=$project" \
-    --format '{{.Names}}')"
+    --format '{{.Names}}')"; then
+    echo "エラー: docker psの実行に失敗したため、動的追加コンテナの有無を確認できませんでした。手動で確認してください(docker ps -a --filter label=com.chainviz.managed=true)。" >&2
+    FAILED=1
+    return 1
+  fi
 
   if [ -z "$containers" ]; then
     echo "==> 動的追加コンテナ(addNode/addWorkbench由来)は残っていません"
