@@ -208,3 +208,46 @@
   クローズは PR マージ(`Closes #102`)に伴って行われるべきで、実装完了時点で
   担当が手動クローズするのは誤り。レビュー時点で Issue #102 が OPEN である
   ことは `gh issue view 102 --json state` で確認済み。
+
+### 2026-07-06 Issue #102 実機検証（chainviz-qa）
+- 担当: qa
+- ブランチ: issue-102-add-ghost-node
+- 判定: 合格（機能は仕様どおり動作。ただしモック起動時の見え方に注意点あり。下記）
+- 検証環境: ヘッドレス（WSL2、実ブラウザ・DISPLAYなし）。ブラウザによる
+  スクリーンショット取得はできないため、実 `App` コンポーネントを jsdom へ
+  マウントする統合ハーネスを一時作成し、DOM レベルで挙動を観測した
+  （検証後にハーネスは削除。製品コードは無変更）。実 collector クライアントと
+  同一の `ChainvizClient` インターフェースを満たすモックへ、実 collector の
+  コンテナ起動遅延を模した `commandLatencyMs`（2〜3秒）を注入して確認した。
+  経路は `App → CanvasToolbar/useCommands → ghost 生成 → entityAdded 到着で
+  ghost 除去` で、実 collector との差はエンティティ到着の出所と遅延の大きさ
+  だけであり、機能ロジックの経路は同一。
+- 確認できたこと（完了条件との対応）:
+  - 「+ ノードを追加」押下の瞬間、半透明の仮カード（`infra-card ghost-card
+    ghost-card--node`）が即座に1枚キャンバスへ増える（0→1）。スピナー
+    （`.ghost-card__spinner`）・種別ラベル「ノード」・サブタイトル「起動中…」を
+    表示。ボタン側も同時に `aria-busy="true"` になりスピナーと文言
+    「+ ノードを追加 (追加中…)」を表示する。
+  - 「+ ワークベンチを追加」でも同様（`ghost-card--workbench`、種別
+    「ワークベンチ」、ボタンが `aria-busy="true"`）。
+  - 遅延後に実エンティティ（entityAdded）が届くと、仮カードが消え実カード
+    （follower ノード / ワークベンチ）へ置き換わる。ボタンの `aria-busy` も
+    false に戻りローディング表示が消える。
+  - `pnpm lint` / `pnpm build` / `pnpm test` を全パッケージで実行し通過
+    （frontend 474 tests / collector 500 tests、lint・build ともクリーン）。
+- 注意点（差し戻しはしない。統括への申し送り）:
+  - `pnpm dev` をモックデータ（`VITE_COLLECTOR_URL` 未設定）で起動した場合、
+    モッククライアント（`app/defaultClient.ts` → `createMockClient(handlers)`、
+    既定 `commandLatencyMs: 0`）は addNode/addWorkbench を `queueMicrotask` で
+    即時 resolve する。このため entityAdded が同一マイクロタスク内で届いて
+    仮カードが生成直後に除去され、画面描画（paint）前に消えるため、
+    **仮カード・ボタンのローディングが人間の目にはほぼ視認できない**。
+    ハーネスでも 0 遅延時は click 直後に ghost 数が 0（生成→除去が同フラッシュ
+    内で完了）であることを確認した。
+  - これは #102 の機能ロジックの不具合ではない（機能は遅延のある実
+    collector に対して正しく動く。本来この機能はコンテナ起動の数秒間を
+    橋渡しするものであり、遅延ゼロのモックでは橋渡しすべき対象が無い）。
+    ただし「モック起動でこの機能をデモ・目視確認したい」場合は現状の
+    モックでは確認できないため、モックの add コマンドに小さな遅延を持たせる
+    等の改善を検討する余地がある（frontend 担当。非ブロッキングの改善案）。
+- 差し戻し先: なし（合格）。上記モック視認性は任意のフォローアップ課題。
