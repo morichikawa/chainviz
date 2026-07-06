@@ -6,9 +6,11 @@ import type {
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_GRID,
+  type InfraFlowNode,
   defaultGridPosition,
   entitiesToFlowNodes,
   isInfraEntity,
+  isSameInfraNode,
 } from "./infraNode.js";
 
 function node(id: string, containerName = `c-${id}`): NodeEntity {
@@ -137,5 +139,89 @@ describe("entitiesToFlowNodes", () => {
   it("sorts ids lexicographically (string, not numeric)", () => {
     const nodes = entitiesToFlowNodes([node("n10"), node("n2"), node("n1")], {});
     expect(nodes.map((n) => n.id)).toEqual(["n1", "n10", "n2"]);
+  });
+});
+
+describe("isSameInfraNode", () => {
+  it("returns true when entity reference and position are unchanged (Issue #119)", () => {
+    const [previous] = entitiesToFlowNodes([node("a")], {});
+    const [next] = entitiesToFlowNodes([node("a")], {});
+    // entitiesToFlowNodes は同じ入力からでも毎回新しいノードオブジェクトを
+    // 作るが、entity 自体(引数の node("a") と同一の値)は同じ参照。
+    const sharedEntity = node("a");
+    const withSharedEntity = { ...previous, data: { entity: sharedEntity } };
+    const nextWithSharedEntity = { ...next, data: { entity: sharedEntity } };
+    expect(isSameInfraNode(withSharedEntity, nextWithSharedEntity)).toBe(true);
+  });
+
+  it("returns false when the entity reference changed", () => {
+    const [a] = entitiesToFlowNodes([node("a")], {});
+    const [b] = entitiesToFlowNodes([node("a")], {});
+    // node("a") をそれぞれ別に呼んでいるため entity の参照は異なる。
+    expect(isSameInfraNode(a, b)).toBe(false);
+  });
+
+  it("returns false when only the position changed", () => {
+    const entity = node("a", "c-a");
+    const previous = entitiesToFlowNodes([entity], {})[0];
+    const next = entitiesToFlowNodes([entity], { "c-a": { x: 1, y: 2 } })[0];
+    expect(isSameInfraNode(previous, next)).toBe(false);
+  });
+
+  it("returns false when only x changed", () => {
+    const entity = node("a", "c-a");
+    const previous = entitiesToFlowNodes([entity], { "c-a": { x: 0, y: 5 } })[0];
+    const next = entitiesToFlowNodes([entity], { "c-a": { x: 1, y: 5 } })[0];
+    expect(isSameInfraNode(previous, next)).toBe(false);
+  });
+
+  it("returns false when only y changed", () => {
+    const entity = node("a", "c-a");
+    const previous = entitiesToFlowNodes([entity], { "c-a": { x: 5, y: 0 } })[0];
+    const next = entitiesToFlowNodes([entity], { "c-a": { x: 5, y: 1 } })[0];
+    expect(isSameInfraNode(previous, next)).toBe(false);
+  });
+
+  it("compares position by value, so distinct position objects with equal x/y are 'same'", () => {
+    // 同じ entity 参照・座標だが position は別オブジェクト。参照比較ではなく
+    // x/y の値比較なので同一とみなす(不要な再計測を招かない)。
+    const entity = node("a", "c-a");
+    const previous: InfraFlowNode = {
+      id: "a",
+      type: "infra",
+      position: { x: 3, y: 4 },
+      data: { entity },
+    };
+    const next: InfraFlowNode = {
+      id: "a",
+      type: "infra",
+      position: { x: 3, y: 4 },
+      data: { entity },
+    };
+    expect(previous.position).not.toBe(next.position);
+    expect(isSameInfraNode(previous, next)).toBe(true);
+  });
+
+  it("detects a deep field change because the store hands back a new entity reference", () => {
+    // resources のような入れ子フィールドだけが変わっても、WorldState 側は
+    // 内容変更時に必ず新しい entity オブジェクトを作る(参照が変わる)ため
+    // isSameInfraNode は変化を取りこぼさない。浅い比較で深い変更を
+    // 見逃していないことの確認。
+    const base = node("a", "c-a");
+    const changed: typeof base = {
+      ...base,
+      resources: { ...base.resources, cpuPercent: 99 },
+    };
+    const previous = { ...entitiesToFlowNodes([base], {})[0], data: { entity: base } };
+    const next = { ...entitiesToFlowNodes([changed], {})[0], data: { entity: changed } };
+    expect(isSameInfraNode(previous, next)).toBe(false);
+  });
+
+  it("returns true only while the exact same entity reference is shared (reference-based, by design)", () => {
+    // 同一 entity 参照であれば内容も同一であることが保証される(store 契約)。
+    const shared = node("a", "c-a");
+    const previous = { ...entitiesToFlowNodes([shared], {})[0], data: { entity: shared } };
+    const next = { ...entitiesToFlowNodes([shared], {})[0], data: { entity: shared } };
+    expect(isSameInfraNode(previous, next)).toBe(true);
   });
 });

@@ -3,7 +3,7 @@ import type {
   TransactionEntity,
   WalletEntity,
 } from "@chainviz/shared";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Canvas } from "../canvas/Canvas.js";
 import { CanvasToolbar } from "../canvas/CanvasToolbar.js";
 import { CommandActionsProvider } from "../commands/CommandActionsContext.js";
@@ -11,14 +11,23 @@ import { useCommands } from "../commands/useCommands.js";
 import { ToastStack } from "../notifications/Toast.js";
 import { useNotifications } from "../notifications/useNotifications.js";
 import { attachPulsesToEdges } from "../entities/blockPulse.js";
-import { entitiesToFlowNodes } from "../entities/infraNode.js";
+import {
+  type InfraFlowNode,
+  entitiesToFlowNodes,
+  isSameInfraNode,
+} from "../entities/infraNode.js";
 import { peerEdgesToFlowEdges } from "../entities/peerEdge.js";
 import { ownershipEdgesToFlowEdges } from "../entities/ownershipEdge.js";
+import { stabilizeNodes } from "../entities/nodeStability.js";
 import { indexTransactions } from "../entities/transaction.js";
 import { useBlockPulses } from "../entities/useBlockPulses.js";
 import { useOperationPulses } from "../entities/useOperationPulses.js";
 import { useTxLifecycle } from "../entities/useTxLifecycle.js";
-import { walletsToFlowNodes } from "../entities/walletNode.js";
+import {
+  type WalletFlowNode,
+  isSameWalletNode,
+  walletsToFlowNodes,
+} from "../entities/walletNode.js";
 import { GlossaryProvider } from "../glossary/GlossaryProvider.js";
 import { glossary as defaultGlossary } from "../glossary/data.js";
 import type { Glossary } from "../glossary/types.js";
@@ -103,10 +112,23 @@ function AppShell({
 
   const entities = useMemo(() => listEntities(state), [state]);
 
-  const infraNodes = useMemo(
-    () => entitiesToFlowNodes(entities, layout),
-    [entities, layout],
-  );
+  // ノードカードのちらつき対策(Issue #119)。本質的な対策は Canvas.tsx の
+  // preserveMeasuredDimensions(React Flow が実測した measured を引き継ぐ)
+  // 側にある。ここではそれを補完し、ワールドステート更新のたびに
+  // entitiesToFlowNodes / walletsToFlowNodes が全ノードを新しいオブジェクトと
+  // して作り直してしまう無駄を減らすため、前回の出力を ref に保持し、内容が
+  // 変わっていないノードは同一オブジェクト参照を再利用する(該当ノードの
+  // React 側の再レンダー自体を避けられる)。
+  const previousInfraNodesRef = useRef<InfraFlowNode[]>([]);
+  const infraNodes = useMemo(() => {
+    const next = stabilizeNodes(
+      entitiesToFlowNodes(entities, layout),
+      previousInfraNodesRef.current,
+      isSameInfraNode,
+    );
+    previousInfraNodesRef.current = next;
+    return next;
+  }, [entities, layout]);
 
   // 現存するインフラノードの id 集合（ピア接続・所有エッジの端点存在判定に使う）。
   const infraNodeIds = useMemo(
@@ -156,16 +178,22 @@ function AppShell({
   // tx が pending → 確定へ変わった瞬間を検知し、確定フラッシュ演出中の集合を得る。
   const settling = useTxLifecycle(transactions);
 
-  const walletNodes = useMemo(
-    () =>
+  // infraNodes と同じ理由(Issue #119)でウォレットカードも参照を安定化する。
+  const previousWalletNodesRef = useRef<WalletFlowNode[]>([]);
+  const walletNodes = useMemo(() => {
+    const next = stabilizeNodes(
       walletsToFlowNodes(wallets, {
         layout,
         txByHash,
         settling,
         presentInfraIds: infraNodeIds,
       }),
-    [wallets, layout, txByHash, settling, infraNodeIds],
-  );
+      previousWalletNodesRef.current,
+      isSameWalletNode,
+    );
+    previousWalletNodesRef.current = next;
+    return next;
+  }, [wallets, layout, txByHash, settling, infraNodeIds]);
 
   // ワークベンチ → ウォレットの所有エッジ（点線・別色で B層のピア接続と区別）。
   const ownershipEdges = useMemo(

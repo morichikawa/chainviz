@@ -28,6 +28,7 @@ import {
   type CanvasFlowEdge,
   type CanvasFlowNode,
   canvasNodeLayoutKey,
+  preserveMeasuredDimensions,
 } from "../entities/canvasNode.js";
 import type { Position } from "../layout/layoutStore.js";
 
@@ -55,9 +56,13 @@ function CanvasInner({ nodes, edges = [], onPersistPosition }: CanvasProps) {
   const [rfNodes, setRfNodes] = useState<CanvasFlowNode[]>(nodes);
   const [rfEdges, setRfEdges] = useState<CanvasFlowEdge[]>(edges);
 
-  // ワールドステート更新で親が nodes を再計算したら反映する。
+  // ワールドステート更新で親が nodes を再計算したら反映する。React Flow は
+  // 実測済み(measured)の情報を持たないノードオブジェクトを受け取ると再計測
+  // サイクルに入り、一瞬 visibility を hidden にする(Issue #119)。直前まで
+  // rfNodes が持っていた実測値を引き継いでから反映することでこれを防ぐ
+  // (詳細は canvasNode.ts の preserveMeasuredDimensions を参照)。
   useEffect(() => {
-    setRfNodes(nodes);
+    setRfNodes((current) => preserveMeasuredDimensions(nodes, current));
   }, [nodes]);
 
   // ピア接続の追加・削除で親が edges を再計算したら反映する。

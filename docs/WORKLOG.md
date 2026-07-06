@@ -74,4 +74,5 @@
 | #106 | Issue #106 reth(EL)同士のP2Pエッジ未描画のバックログ追加(docsのみ)のレビュー | [2026-07-06](worklog/issue-106.md) |
 | #95 | Issue #95 P2Pエッジと所有エッジの色相分離(NETWORK_COLORSからアンバー系を除去) | [2026-07-06](worklog/issue-95.md) |
 | #113 | Issue #113 仮カード(ゴーストノード)の配置indexの重なりのバックログ追加(docsのみ)のレビュー | [2026-07-06](worklog/issue-113.md) |
+| #119 | Issue #119 定期更新のたびにノードカードが一瞬ちらつく(React Flowの再計測サイクル) | [2026-07-06](worklog/issue-119.md) |
 | - | 特定Issueに紐付かない記録(PLAN.md/CLAUDE.md更新等) | [2026-07-05〜2026-07-06](worklog/meta.md) |

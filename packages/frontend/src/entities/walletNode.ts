@@ -120,3 +120,33 @@ export function walletsToFlowNodes(
     };
   });
 }
+
+/** 参照の同一性のみで配列を比較する(順序も含めて完全一致か)。 */
+function sameByReference<T>(a: readonly T[], b: readonly T[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((item, index) => item === b[index]);
+}
+
+/**
+ * 2つの WalletFlowNode が「見た目上変化していない」とみなせるか判定する
+ * (`stabilizeNodes` に渡す比較関数。infraNode.ts の isSameInfraNode と同じ
+ * 狙い。Issue #119)。
+ *
+ * `transactions` / `settlingHashes` は `walletsToFlowNodes` が毎回新しい配列を
+ * 組み立てるため配列自体の参照比較はできないが、要素(TransactionEntity /
+ * tx hash 文字列)は内容が変わらない限り安定するため、要素ごとの参照比較で
+ * 判定する。
+ */
+export function isSameWalletNode(
+  previous: WalletFlowNode,
+  next: WalletFlowNode,
+): boolean {
+  return (
+    previous.data.entity === next.data.entity &&
+    previous.data.ownerPresent === next.data.ownerPresent &&
+    previous.position.x === next.position.x &&
+    previous.position.y === next.position.y &&
+    sameByReference(previous.data.transactions, next.data.transactions) &&
+    sameByReference(previous.data.settlingHashes, next.data.settlingHashes)
+  );
+}
