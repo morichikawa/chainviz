@@ -27,6 +27,12 @@ import type {
   DockerOperations,
   LabeledContainer,
 } from "../../docker/operations.js";
+import {
+  COMPOSE_PROJECT_LABEL,
+  COMPOSE_SERVICE_LABEL,
+  MANAGED_LABEL,
+  ROLE_LABEL,
+} from "./labels.js";
 import { readProfileMnemonic } from "./mnemonic.js";
 import {
   WALLET_INDEX_LABEL,
@@ -34,12 +40,6 @@ import {
 } from "./wallet-derivation.js";
 
 export { parseMnemonic } from "./mnemonic.js";
-
-const COMPOSE_PROJECT_LABEL = "com.docker.compose.project";
-const COMPOSE_SERVICE_LABEL = "com.docker.compose.service";
-/** collector が addNode/addWorkbench で作成したコンテナである印。 */
-const MANAGED_LABEL = "com.chainviz.managed";
-const ROLE_LABEL = "com.chainviz.role";
 
 /** 実行層（reth）の固定 IP 帯。reth1=172.28.1.1, reth2=172.28.1.2。 */
 const EXECUTION_IP_PREFIX = "172.28.1.";
