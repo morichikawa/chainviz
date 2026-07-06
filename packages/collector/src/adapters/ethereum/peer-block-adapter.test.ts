@@ -11,7 +11,7 @@ import type {
   DockerStatsResult,
   DockerTopResult,
 } from "../../docker/types.js";
-import type { EthRpcClient, RpcBlock, RpcTransaction } from "./eth-rpc-client.js";
+import type { EthRpcClient, RpcTransaction } from "./eth-rpc-client.js";
 import type {
   EthWsClient,
   NewHeadHeader,
@@ -170,10 +170,23 @@ function controllableWsClient(): {
   };
 }
 
-/** eth_getTransactionByHash / eth_getBlockByHash を固定データで返すスタブ。 */
+/**
+ * eth_getBlockReceipts の生の JSON-RPC レスポンス形状(正規化前)。stubRpcClient
+ * は実際の HTTP レスポンス相当を返し、EthereumAdapter 経由で呼ばれる本物の
+ * getBlockReceipts(normalizeReceipt を含む)がそれを正規化する。
+ */
+interface RawReceiptFixture {
+  transactionHash: string;
+  from: string;
+  to: string | null;
+  /** "0x1"(成功) / "0x0"(失敗)。省略時は成功扱い。 */
+  status?: string;
+}
+
+/** eth_getTransactionByHash / eth_getBlockReceipts を固定データで返すスタブ。 */
 function stubRpcClient(data: {
   txs?: Record<string, RpcTransaction | null>;
-  blocks?: Record<string, RpcBlock | null>;
+  blocks?: Record<string, RawReceiptFixture[] | null>;
 }): {
   client: EthRpcClient;
   txCalls: string[];
@@ -188,7 +201,7 @@ function stubRpcClient(data: {
         txCalls.push(hash);
         return (data.txs?.[hash] ?? null) as T;
       }
-      if (method === "eth_getBlockByHash") {
+      if (method === "eth_getBlockReceipts") {
         const blockHash = params[0] as string;
         blockCalls.push(blockHash);
         return (data.blocks?.[blockHash] ?? null) as T;
@@ -658,10 +671,14 @@ describe("EthereumAdapter.subscribeTransactions", () => {
     const rpc = stubRpcClient({
       txs: { "0xt1": { hash: "0xt1", from: "0xa", to: "0xb" } },
       blocks: {
-        "0xblock1": {
-          hash: "0xblock1",
-          transactions: [{ hash: "0xt1", from: "0xa", to: "0xb" }],
-        },
+        "0xblock1": [
+          {
+            transactionHash: "0xt1",
+            from: "0xa",
+            to: "0xb",
+            status: "0x1",
+          },
+        ],
       },
     });
     const adapter = new EthereumAdapter(poller, {
@@ -688,6 +705,49 @@ describe("EthereumAdapter.subscribeTransactions", () => {
     });
   });
 
+  it("promotes a pending tx to failed when its receipt reports status 0x0", async () => {
+    // ブロックに取り込まれたが実行に失敗した tx(cast send --create 0xfe 等)。
+    const poller = new DockerPoller(
+      clientFrom([rethFixture("reth1", "172.28.1.1")]),
+    );
+    const ws = controllableWsClient();
+    const rpc = stubRpcClient({
+      txs: { "0xt1": { hash: "0xt1", from: "0xa", to: null } },
+      blocks: {
+        "0xblock1": [
+          {
+            transactionHash: "0xt1",
+            from: "0xa",
+            to: null,
+            status: "0x0",
+          },
+        ],
+      },
+    });
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      ethRpcClient: rpc.client,
+    });
+    const txs: TransactionEntity[] = [];
+
+    await adapter.subscribeTransactions((t) => txs.push(t));
+    ws.emitPending("ws://172.28.1.1:8546", "0xt1");
+    await flushAsync();
+    ws.emit("ws://172.28.1.1:8546", header());
+    await flushAsync();
+
+    expect(txs).toHaveLength(2);
+    expect(txs[0].status).toBe("pending");
+    expect(txs[1]).toEqual<TransactionEntity>({
+      kind: "transaction",
+      hash: "0xt1",
+      from: "0xa",
+      to: null,
+      status: "failed",
+      blockHash: "0xblock1",
+    });
+  });
+
   it("adds a tx seen only in a block (pending missed) directly as included", async () => {
     const poller = new DockerPoller(
       clientFrom([rethFixture("reth1", "172.28.1.1")]),
@@ -695,10 +755,9 @@ describe("EthereumAdapter.subscribeTransactions", () => {
     const ws = controllableWsClient();
     const rpc = stubRpcClient({
       blocks: {
-        "0xblock1": {
-          hash: "0xblock1",
-          transactions: [{ hash: "0xt9", from: "0xc", to: null }],
-        },
+        "0xblock1": [
+          { transactionHash: "0xt9", from: "0xc", to: null, status: "0x1" },
+        ],
       },
     });
     const adapter = new EthereumAdapter(poller, {
@@ -723,7 +782,7 @@ describe("EthereumAdapter.subscribeTransactions", () => {
     ]);
   });
 
-  it("fetches each block only once even when several nodes announce it", async () => {
+  it("fetches each block's receipts only once even when several nodes announce it", async () => {
     const poller = new DockerPoller(
       clientFrom([
         rethFixture("reth1", "172.28.1.1"),
@@ -733,10 +792,9 @@ describe("EthereumAdapter.subscribeTransactions", () => {
     const ws = controllableWsClient();
     const rpc = stubRpcClient({
       blocks: {
-        "0xblock1": {
-          hash: "0xblock1",
-          transactions: [{ hash: "0xt1", from: "0xa", to: "0xb" }],
-        },
+        "0xblock1": [
+          { transactionHash: "0xt1", from: "0xa", to: "0xb", status: "0x1" },
+        ],
       },
     });
     const adapter = new EthereumAdapter(poller, {
@@ -750,13 +808,13 @@ describe("EthereumAdapter.subscribeTransactions", () => {
     ws.emit("ws://172.28.1.2:8546", header());
     await flushAsync();
 
-    // 同一ブロックは 2 ノードから届くが getBlockByHash は 1 回だけ。
+    // 同一ブロックは 2 ノードから届くが eth_getBlockReceipts は 1 回だけ。
     expect(rpc.blockCalls).toEqual(["0xblock1"]);
     expect(txs).toHaveLength(1);
   });
 
   it("retries block inclusion on a later node's notification when the first fetch returns null", async () => {
-    // 回帰テスト: 1 ノード目の getBlockByHash が null（伝播遅延）を返しても
+    // 回帰テスト: 1 ノード目の eth_getBlockReceipts が null（伝播遅延）を返しても
     // processedBlocks に残らず、同一ブロックを通知する 2 ノード目の newHeads で
     // included へ回復できること。以前は初回で処理済みにしてしまい、後続通知が
     // 弾かれて tx が pending のまま固まる不具合があった。
@@ -767,17 +825,16 @@ describe("EthereumAdapter.subscribeTransactions", () => {
       ]),
     );
     const ws = controllableWsClient();
-    const block: RpcBlock = {
-      hash: "0xblock1",
-      transactions: [{ hash: "0xt1", from: "0xa", to: "0xb" }],
-    };
+    const receipts: RawReceiptFixture[] = [
+      { transactionHash: "0xt1", from: "0xa", to: "0xb", status: "0x1" },
+    ];
     let blockAttempts = 0;
     const rpc: EthRpcClient = {
       async call<T>(_url: string, method: string): Promise<T> {
         if (method === "eth_getTransactionByHash") return null as T;
         // 1 回目の取得は null（まだ伝播していない）、2 回目以降は成功。
         blockAttempts += 1;
-        return (blockAttempts === 1 ? null : block) as T;
+        return (blockAttempts === 1 ? null : receipts) as T;
       },
     };
     const adapter = new EthereumAdapter(poller, {
@@ -809,7 +866,7 @@ describe("EthereumAdapter.subscribeTransactions", () => {
   });
 
   it("retries block inclusion on a later node's notification when the first fetch throws", async () => {
-    // 回帰テスト（例外版）: 1 ノード目の getBlockByHash が例外を投げても
+    // 回帰テスト（例外版）: 1 ノード目の eth_getBlockReceipts が例外を投げても
     // processedBlocks に残らず、後続ノードの通知で回復できること。
     vi.spyOn(console, "error").mockImplementation(() => {});
     const poller = new DockerPoller(
@@ -819,17 +876,16 @@ describe("EthereumAdapter.subscribeTransactions", () => {
       ]),
     );
     const ws = controllableWsClient();
-    const block: RpcBlock = {
-      hash: "0xblock1",
-      transactions: [{ hash: "0xt1", from: "0xa", to: "0xb" }],
-    };
+    const receipts: RawReceiptFixture[] = [
+      { transactionHash: "0xt1", from: "0xa", to: "0xb", status: "0x1" },
+    ];
     let blockAttempts = 0;
     const rpc: EthRpcClient = {
       async call<T>(_url: string, method: string): Promise<T> {
         if (method === "eth_getTransactionByHash") return null as T;
         blockAttempts += 1;
         if (blockAttempts === 1) throw new Error("rpc timeout");
-        return block as T;
+        return receipts as T;
       },
     };
     const adapter = new EthereumAdapter(poller, {

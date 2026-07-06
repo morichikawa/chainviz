@@ -28,7 +28,7 @@ import { BlockPropagationTracker } from "./blocks.js";
 import { classifyContainer } from "./classify.js";
 import {
   createFetchEthRpcClient,
-  getBlockByHash,
+  getBlockReceipts,
   getTransactionByHash,
   type EthRpcClient,
 } from "./eth-rpc-client.js";
@@ -330,9 +330,11 @@ export class EthereumAdapter implements ChainAdapter {
   }
 
   /**
-   * newHeads で得たブロックハッシュから、ブロックに含まれる tx 一覧を HTTP
-   * JSON-RPC で取得し、pending だった tx を included へ遷移させる（未追跡の tx は
-   * included として新規追加）。取得失敗はログして握り、購読自体は継続させる。
+   * newHeads で得たブロックハッシュから、ブロックに含まれる全 tx の receipt を
+   * HTTP JSON-RPC(eth_getBlockReceipts)で取得し、pending だった tx を
+   * included/failed へ遷移させる（未追跡の tx は included/failed として新規
+   * 追加）。receipt の succeeded(false)を world-state の "failed" へ、それ以外を
+   * "included" へマッピングする。取得失敗はログして握り、購読自体は継続させる。
    */
   private async handleBlockInclusion(
     rpcUrl: string,
@@ -341,8 +343,8 @@ export class EthereumAdapter implements ChainAdapter {
   ): Promise<void> {
     if (!this.markBlockProcessed(blockHash)) return;
     try {
-      const block = await getBlockByHash(this.ethRpc, rpcUrl, blockHash);
-      if (!block) {
+      const receipts = await getBlockReceipts(this.ethRpc, rpcUrl, blockHash);
+      if (!receipts) {
         // ブロックがまだ取得できない（伝播遅延など）。処理済みマークを外し、
         // 同一ブロックを通知する後続ノードからの newHeads で再試行できるように
         // する。複数ノードが同一ブロックを通知する性質がそのまま再試行機構になる。
@@ -350,8 +352,13 @@ export class EthereumAdapter implements ChainAdapter {
         return;
       }
       const changed = this.txTracker.recordInclusion(
-        block.hash,
-        block.transactions,
+        blockHash,
+        receipts.map((r) => ({
+          hash: r.transactionHash,
+          from: r.from,
+          to: r.to,
+          status: r.succeeded ? "included" : "failed",
+        })),
       );
       for (const entity of changed) onTx(entity);
     } catch (err) {
@@ -359,7 +366,7 @@ export class EthereumAdapter implements ChainAdapter {
       // 再試行できるようにする（さもないと当該ブロックの tx が pending のまま固まる）。
       this.processedBlocks.delete(blockHash);
       console.error(
-        `[ethereum] failed to fetch block ${blockHash} for tx inclusion:`,
+        `[ethereum] failed to fetch receipts for block ${blockHash} for tx inclusion:`,
         err,
       );
     }
