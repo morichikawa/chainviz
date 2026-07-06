@@ -63,8 +63,10 @@ Docker 上の Ethereum ノード群を Miro 風の無限キャンバスでリア
   Issue化する（ステップ単位でまとめて1 Issue にはしない）。ステップは
   GitHub の milestone に対応させる。担当パッケージに応じて
   `node-env` / `collector` / `frontend` / `shared` ラベルを付ける。
-  チェックボックスにチェックを付けたら対応する Issue も閉じ、
-  `docs/PLAN.md` にその Issue 番号へのリンクを併記する
+  チェックボックスにチェックを付けたら`docs/PLAN.md`にその Issue 番号への
+  リンクを併記する。対応する Issue のクローズは、実装担当が自分で
+  `gh issue close` するのではなく、レビュー・QA を経て PR がマージされる際、
+  PR 本文の `Closes #<番号>` による自動クローズに委ねる
 - **Issue ごとにブランチを切る**。`main` 上で直接作業しない。ブランチ名は
   `issue-<番号>-<内容を表す短い英語スラッグ>`（例: `issue-1-genesis-pos-net`）
 - **1つの変更内容 = 1コミット**に分ける。異なる関心事（設定変更とロジック
