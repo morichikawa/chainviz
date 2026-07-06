@@ -179,6 +179,43 @@ describe("WorldStateStore", () => {
     expect(store.getSnapshot().entities).toHaveLength(1);
   });
 
+  it("keeps p2pRole intact when an unrelated field is patched", () => {
+    // Issue #123 / #124: bootnode として登録したノードのブロック高だけが
+    // 更新されても、p2pRole は patch に含まれず既存値が保持される。
+    const store = new WorldStateStore();
+    store.applyInfra([node({ p2pRole: "bootnode" })]);
+    const diff = store.applyInfra([
+      node({ p2pRole: "bootnode", blockHeight: 42 }),
+    ]);
+    expect(diff).toEqual([
+      {
+        type: "entityUpdated",
+        id: "chainviz-ethereum/reth1",
+        patch: { blockHeight: 42 },
+      },
+    ]);
+    const stored = store.getSnapshot().entities[0] as NodeEntity;
+    expect(stored.p2pRole).toBe("bootnode");
+    expect(stored.blockHeight).toBe(42);
+  });
+
+  it("carries p2pRole and rpcTargetNodeId through the snapshot unchanged", () => {
+    const store = new WorldStateStore();
+    store.applyInfra([
+      node({ p2pRole: "peer" }),
+      workbench({ rpcTargetNodeId: "chainviz-ethereum/reth1" }),
+    ]);
+    const snapshot = store.getSnapshot();
+    const storedNode = snapshot.entities.find(
+      (e) => e.kind === "node",
+    ) as NodeEntity;
+    const storedWorkbench = snapshot.entities.find(
+      (e) => e.kind === "workbench",
+    ) as WorkbenchEntity;
+    expect(storedNode.p2pRole).toBe("peer");
+    expect(storedWorkbench.rpcTargetNodeId).toBe("chainviz-ethereum/reth1");
+  });
+
   it("emits an add for a second distinct node while keeping the first", () => {
     const store = new WorldStateStore();
     store.applyInfra([node()]);

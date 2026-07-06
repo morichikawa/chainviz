@@ -97,6 +97,30 @@ describe("applySnapshot", () => {
     expect(state.edges).not.toBe(snapshot.edges);
   });
 
+  it("preserves optional p2pRole and rpcTargetNodeId fields", () => {
+    // Issue #123 / #124: 新しい optional フィールドがスナップショット取り込みで
+    // 欠落しないこと。省略されたエンティティは undefined のまま安全に残る。
+    const snapshot: WorldStateSnapshot = {
+      chainType: "ethereum",
+      timestamp: 1,
+      entities: [
+        node("boot", { p2pRole: "bootnode" }),
+        node("legacy"),
+        {
+          ...workbench("wb-1"),
+          rpcTargetNodeId: "boot",
+        },
+      ],
+      edges: [],
+    };
+    const state = applySnapshot(snapshot);
+    expect((state.entities.boot as NodeEntity).p2pRole).toBe("bootnode");
+    expect((state.entities.legacy as NodeEntity).p2pRole).toBeUndefined();
+    expect((state.entities["wb-1"] as WorkbenchEntity).rpcTargetNodeId).toBe(
+      "boot",
+    );
+  });
+
   it("later entity with same id wins", () => {
     const snapshot: WorldStateSnapshot = {
       chainType: "ethereum",
@@ -190,6 +214,26 @@ describe("applyDiff", () => {
     expect(n1.syncStatus).toBe("synced");
     // patch に含めなかったフィールドは維持される。
     expect(n1.clientType).toBe("reth");
+  });
+
+  it("merges a p2pRole patch without clobbering other node fields", () => {
+    // Issue #123 / #124: 役割が後から判明した場合の entityUpdated。既存の
+    // blockHeight などは patch に含まれないので維持される。
+    const state = applySnapshot({
+      chainType: "ethereum",
+      timestamp: 1,
+      entities: [node("n1", { blockHeight: 5 })],
+      edges: [],
+    });
+    const next = applyDiff(state, [
+      { type: "entityUpdated", id: "n1", patch: { p2pRole: "bootnode" } },
+    ]);
+    const n1 = next.entities.n1 as NodeEntity;
+    expect(n1.p2pRole).toBe("bootnode");
+    expect(n1.blockHeight).toBe(5);
+    expect(n1.clientType).toBe("reth");
+    // 入力は不変。
+    expect((state.entities.n1 as NodeEntity).p2pRole).toBeUndefined();
   });
 
   it("keeps a wallet and nulls its owner via entityUpdated (workbench removal case)", () => {
