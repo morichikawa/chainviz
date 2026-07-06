@@ -476,6 +476,65 @@ describe("executionPeerTargets", () => {
   it("returns no targets for an empty observation set", () => {
     expect(executionPeerTargets([])).toEqual([]);
   });
+
+  it("selects every execution client type, not just reth", () => {
+    // 対象は EXECUTION_CLIENTS 全般（reth 専用ではない）。geth も admin_* を
+    // 持つので同じくピア取得対象に含める。
+    const geth1 = obs({
+      stableId: "chainviz-ethereum/geth1",
+      labels: { "com.docker.compose.service": "geth1" },
+      image: "ethereum/client-go:latest",
+      ip: "172.28.1.3",
+      processes: [{ command: "geth", name: "geth" }],
+    });
+    const targets = executionPeerTargets([obs(), geth1]);
+    expect(targets.map((t) => t.stableId)).toEqual([
+      "chainviz-ethereum/reth1",
+      "chainviz-ethereum/geth1",
+    ]);
+  });
+
+  it("does not collide EL/CL networkIds when the project name contains '-consensus'", () => {
+    // プロジェクト名にハイフンや紛らわしい語（-consensus）が入っていても、
+    // EL は必ず -execution、CL は必ず -consensus を付けるので衝突しない。
+    const rethWeird = obs({
+      stableId: "weird-consensus/reth1",
+      labels: { "com.docker.compose.service": "reth1" },
+    });
+    const beaconWeird = obs({
+      stableId: "weird-consensus/beacon1",
+      labels: { "com.docker.compose.service": "beacon1" },
+      image: "sigp/lighthouse:latest",
+      ip: "172.28.2.9",
+      processes: [{ command: "lighthouse bn", name: "lighthouse" }],
+    });
+    const elNetworkId = executionPeerTargets([rethWeird])[0].networkId;
+    const clNetworkId = beaconTargets([beaconWeird])[0].networkId;
+    expect(elNetworkId).toBe("weird-consensus-execution");
+    expect(clNetworkId).toBe("weird-consensus-consensus");
+    expect(elNetworkId).not.toBe(clNetworkId);
+  });
+
+  it("keeps EL/CL networkIds distinct even across different projects (suffix guarantees separation)", () => {
+    // あるプロジェクトの EL networkId が別プロジェクトの CL networkId と偶然
+    // 一致することはない（末尾が -execution / -consensus で必ず異なるため）。
+    const elA = executionPeerTargets([
+      obs({ stableId: "proj-a/reth1" }),
+    ])[0].networkId;
+    const clB = beaconTargets([
+      obs({
+        stableId: "proj-a-execution/beacon1",
+        labels: { "com.docker.compose.service": "beacon1" },
+        image: "sigp/lighthouse:latest",
+        ip: "172.28.2.3",
+        processes: [{ command: "lighthouse bn", name: "lighthouse" }],
+      }),
+    ])[0].networkId;
+    // proj-a-execution == proj-a + "-execution" のように紛れそうでも一致しない。
+    expect(elA).toBe("proj-a-execution");
+    expect(clB).toBe("proj-a-execution-consensus");
+    expect(elA).not.toBe(clB);
+  });
 });
 
 describe("executionRpcUrls", () => {

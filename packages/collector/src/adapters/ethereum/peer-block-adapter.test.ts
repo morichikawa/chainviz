@@ -494,6 +494,86 @@ describe("EthereumAdapter.pollPeersOnce (EL / reth admin_peers)", () => {
       },
     ]);
   });
+
+  it("still delivers CL edges when every EL admin_* call fails (layer isolation)", async () => {
+    // EL 側が全ノード失敗（admin API 無効など）しても、CL 側の beacon エッジは
+    // 影響を受けずに配信される（Promise.all の片方の失敗が全体を巻き込まない）。
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const poller = new DockerPoller(
+      clientFrom([
+        rethFixture("reth1", "172.28.1.1"),
+        rethFixture("reth2", "172.28.1.2"),
+        beaconFixture("beacon1", "172.28.2.1"),
+        beaconFixture("beacon2", "172.28.2.2"),
+      ]),
+    );
+    const http = beaconHttp({
+      "http://172.28.2.1:5052": { peerId: "peer-1", connected: ["peer-2"] },
+      "http://172.28.2.2:5052": { peerId: "peer-2", connected: ["peer-1"] },
+    });
+    const rpc = elRpcClient({
+      "http://172.28.1.1:8545": { nodeInfoError: new Error("admin disabled") },
+      "http://172.28.1.2:8545": { nodeInfoError: new Error("admin disabled") },
+    });
+    const adapter = new EthereumAdapter(poller, {
+      httpClient: http,
+      ethRpcClient: rpc,
+    });
+
+    const edges = await adapter.pollPeersOnce();
+    // CL の 1 本だけが残り、EL エッジは 1 本も出ない。
+    expect(edges).toEqual([
+      {
+        kind: "peer",
+        fromNodeId: "chainviz-ethereum/beacon1",
+        toNodeId: "chainviz-ethereum/beacon2",
+        networkId: "chainviz-ethereum-consensus",
+      },
+    ]);
+    vi.restoreAllMocks();
+  });
+
+  it("still delivers EL edges when every CL Beacon API call fails (layer isolation)", async () => {
+    // 逆方向: CL 側が全滅しても EL 側の reth エッジは配信される。
+    const poller = new DockerPoller(
+      clientFrom([
+        rethFixture("reth1", "172.28.1.1"),
+        rethFixture("reth2", "172.28.1.2"),
+        beaconFixture("beacon1", "172.28.2.1"),
+        beaconFixture("beacon2", "172.28.2.2"),
+      ]),
+    );
+    const http: HttpClient = {
+      getJson: (async (url: string) => {
+        // すべての Beacon API 呼び出しを失敗させる。
+        throw new Error(`beacon down ${url}`);
+      }) as HttpClient["getJson"],
+    };
+    const rpc = elRpcClient({
+      "http://172.28.1.1:8545": {
+        nodeInfo: { enode: enodeUrl("11", "172.28.1.1") },
+        peers: [{ enode: enodeUrl("22", "172.28.1.2") }],
+      },
+      "http://172.28.1.2:8545": {
+        nodeInfo: { enode: enodeUrl("22", "172.28.1.2") },
+        peers: [{ enode: enodeUrl("11", "172.28.1.1") }],
+      },
+    });
+    const adapter = new EthereumAdapter(poller, {
+      httpClient: http,
+      ethRpcClient: rpc,
+    });
+
+    const edges = await adapter.pollPeersOnce();
+    expect(edges).toEqual([
+      {
+        kind: "peer",
+        fromNodeId: "chainviz-ethereum/reth1",
+        toNodeId: "chainviz-ethereum/reth2",
+        networkId: "chainviz-ethereum-execution",
+      },
+    ]);
+  });
 });
 
 describe("EthereumAdapter.subscribePeers", () => {
