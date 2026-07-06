@@ -190,3 +190,47 @@
   (3) tester によるテスト強化、
   (4) docs（PLAN.md チェック・worklog）
   の粒度で分割することを推奨する
+
+### 2026-07-06 Issue #121 QA検証(実際に動かしての確認)
+
+- 担当: qa
+- ブランチ: issue-121-detect-stale-build（worktree: /home/zoe/workspace/chainviz-wt-121）
+- 結果: **合格**（完了条件を満たしていることを実際に動かして確認）
+- 検証環境の注意: メイン作業ディレクトリ側で docker/collector(4000)/
+  frontend(5173) が稼働中のため、ポート衝突と共有 docker プロジェクトへの
+  破壊的操作を避け、本 worktree では collector のビルドと
+  `scripts/dev-up.sh` のビルド鮮度チェック(`check_build_freshness`)部分の
+  みを検証した。docker compose の起動・停止操作は一切行っていない。
+- 検証手順と結果:
+  1. `pnpm --filter @chainviz/collector build` を実行し、
+     `packages/collector/dist/.build-commit` が生成されることを確認。
+     中身は1行目が現在の HEAD(`11f055b...`)、2行目が `clean` で、
+     `git rev-parse HEAD` と一致した。
+  2. `scripts/dev-up.sh` から `check_build_freshness` 関数定義(57〜85行)を
+     そのまま抽出し、実際のマーカーファイル(`ROOT_DIR` を本 worktree に
+     設定)に対して各シナリオを実行した:
+     - マーカーの hash を古いもの(`0000...`)に書き換え → 
+       「警告: dist/が古い可能性があります(ビルド時: 0000...、現在: 11f055b...)」
+       が stderr に出力された(期待どおり)。
+     - マーカーファイルを削除 → 
+       「警告: ビルド情報が見つかりません(...dist/.build-commit)」が出力された。
+     - マーカーを「現在の HEAD + dirty」に書き換え → 
+       「警告: dist/はcommit ... の時点でuncommittedな変更を含んだ...」が出力された。
+     - マーカーを「現在の HEAD + clean」(最新一致状態)に戻す → 
+       出力なし(警告が出ないこと)を確認。
+     - マーカー1行目を空にする(中身破損) → 
+       「警告: ビルド情報(...)の中身が壊れています」が出力された。
+  3. 完了条件の再現シナリオ: ビルド後にマーカーを1つ前のコミット
+     (`HEAD~1`)を指す状態に書き換え、`dev-up.sh` の
+     「[2/4] ビルド済みのcollectorを再利用します」分岐相当を再現したところ、
+     続けて「警告: dist/が古い可能性があります(ビルド時: 65b2f6b...、
+     現在: 11f055b...)」が起動ログに出た。これは「コード変更後に pnpm build を
+     忘れて pnpm dev:up した場合、古いビルドで動いていることが起動ログで
+     警告として分かる」という完了条件そのものであり、満たされている。
+     確認後、`pnpm --filter @chainviz/collector build` を再実行してマーカーを
+     現在の HEAD・clean の正常状態へ復元した。
+  4. `pnpm --filter @chainviz/collector test` が 619件全通過することを確認。
+- `docs/PLAN.md` の #121 該当項目(バックログ行)は既に実装コミット
+  11f055b でチェック済み(`[x]`)であり、本検証の結果と一致するため
+  変更は加えていない。
+- git push / PR作成 / マージ / Issue クローズは行っていない(統括の判断に委ねる)。
