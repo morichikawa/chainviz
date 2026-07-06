@@ -904,3 +904,44 @@
   `test:` コミットとして確定させること(テスト強化とその記録は同一の
   関心事なので1コミットで差し支えない)。本レビュー記録の追記分も
   同様にコミットが必要
+
+### 2026-07-06 PLAN.mdバックログへのIssue #135追加のレビュー(reviewer 合格)
+
+- 担当: reviewer
+- ブランチ: docs-plan-add-135-backlog(コミット 882df22)
+- 内容:
+  - `docs/PLAN.md` のバックログセクションへIssue #135(eth_subscribeの
+    WebSocket接続が切断時に自動再接続しない)を1項目追加するdocsのみの
+    変更をレビューした。結果は合格。
+  - `gh issue view 135` で照合: 状態はOPENで `[ ]`(未チェック)と一致。
+    PLAN.mdの行の文言はIssueタイトルそのままで正確。リンク先URLも
+    正しい。特定のステップに紐づかないバックログ配置(既存の
+    #125/#129 等と同様)と整合。
+  - Issue本文の技術的主張をコードと突き合わせて確認:
+    `packages/collector/src/adapters/ethereum/eth-ws-client.ts` の
+    `subscribe()` は `socket.on("open")`(購読開始)・
+    `socket.on("message")`(通知処理)・`socket.on("error")`(コールバック)
+    のみを配線しており、`socket.on("close")` ハンドラと再接続処理は
+    存在しない。「接続断時に自動再接続しない」という主張は実装と一致。
+    newHeads / newPendingTransactions の両方が同じ `subscribe()` を
+    経由するため、タイトルが両購読を対象にしている点も正確。
+  - Issue本文の対応方針にある「再接続の待機時間等を固定値にする場合は
+    前提条件をコメントとworklogの両方に明記する」という注意書きは、
+    CLAUDE.mdの品質ゲート運用ルール(環境状態依存の固定値の禁止)と
+    整合しており適切。
+  - ラベルは collector。修正箇所が `eth-ws-client.ts`(collector側の
+    ChainAdapter実装内)であることと整合し妥当。
+  - 変更は `docs/PLAN.md` のみ3行の追加で、コミットは1件
+    (Conventional Commits形式の `docs:`)。「1変更=1コミット」
+    「チェックボックス1行=Issue 1つ」の規約に適合。
+  - `pnpm lint` / `pnpm build` / `pnpm test`(shared 13件・e2e 34件・
+    collector 625件・frontend 550件)がすべて通ることを確認した。
+- 決定事項・注意点:
+  - 統括が実運用でBlockEntity配信の停止を観測済み(コンテナRecreate後、
+    collector再起動まで復旧しない)とのことで、Issue本文の再現手順・
+    完了条件の記述はその観測と矛盾しない。実際の再現・修正後の動作
+    検証は #135 実装時のQA(chainviz-qa)の担当となる。
+  - QA(chainviz-qa)はdocsのみの変更のため省略可とする依頼元の判断を
+    了承(CLAUDE.mdに明記された例外に該当。実行環境の動作に影響する
+    変更が無く、検証対象が存在しない)。
+  - push・PR作成・マージは統括の判断に委ねる。

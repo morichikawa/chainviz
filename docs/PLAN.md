@@ -351,6 +351,9 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
 - [ ] 動的追加ワークベンチのRPCがロギングプロキシを経由せずreth1に直結して
       いる(操作エッジが描画されない)
       [#129](https://github.com/morichikawa/chainviz/issues/129)
+- [ ] eth_subscribe(newHeads/newPendingTransactions)のWebSocket接続が
+      切断時に自動再接続しない
+      [#135](https://github.com/morichikawa/chainviz/issues/135)
 
 ## 運用ルール（全ステップ共通）
 
