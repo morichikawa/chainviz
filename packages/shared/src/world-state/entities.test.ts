@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type {
+  NodeEntity,
   OperationEdge,
   PeerEdge,
   WalletEntity,
+  WorkbenchEntity,
   WorldStateEdge,
   WorldStateSnapshot,
 } from "./entities.js";
@@ -32,6 +34,45 @@ describe("world-state entities", () => {
     };
 
     expect(snapshot.entities).toHaveLength(0);
+  });
+
+  it("marks an addNode-created node as removable", () => {
+    const added: NodeEntity = {
+      kind: "node",
+      id: "node-3",
+      containerName: "chainviz-node-3",
+      ip: "172.28.1.3",
+      ports: [8545],
+      resources: { cpuPercent: 0, memMB: 0 },
+      process: { name: "reth" },
+      chainType: "ethereum",
+      clientType: "reth",
+      syncStatus: "syncing",
+      blockHeight: 0,
+      headBlockHash: "",
+      removable: true,
+    };
+
+    expect(added.removable).toBe(true);
+  });
+
+  it("treats an entity without the removable flag as non-removable (omitted = false)", () => {
+    // compose 起動時からある初期構成のコンテナ、またはフィールド追加前の
+    // 旧スナップショット。省略は「削除不可」の安全側に倒す。
+    const composeLaunched: WorkbenchEntity = {
+      kind: "workbench",
+      id: "workbench-1",
+      containerName: "chainviz-workbench-1",
+      ip: "172.28.3.1",
+      ports: [],
+      resources: { cpuPercent: 0, memMB: 0 },
+      process: { name: "foundry" },
+      label: "workbench",
+      walletIds: [],
+    };
+
+    expect(composeLaunched.removable).toBeUndefined();
+    expect(composeLaunched.removable ?? false).toBe(false);
   });
 
   it("represents a workbench-to-node call as an OperationEdge", () => {
