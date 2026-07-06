@@ -13,6 +13,8 @@ import {
   type NodeChange,
 } from "@xyflow/react";
 import { useCallback, useEffect, useState } from "react";
+import { GhostNodeCard } from "../entities/GhostNodeCard.js";
+import { GHOST_NODE_TYPE } from "../entities/ghostNode.js";
 import { InfraNodeCard } from "../entities/InfraNodeCard.js";
 import { PeerPropagationEdge } from "../entities/PeerPropagationEdge.js";
 import { PEER_EDGE_TYPE } from "../entities/peerEdge.js";
@@ -33,6 +35,7 @@ import type { Position } from "../layout/layoutStore.js";
 const nodeTypes: NodeTypes = {
   infra: InfraNodeCard,
   [WALLET_NODE_TYPE]: WalletCard,
+  [GHOST_NODE_TYPE]: GhostNodeCard,
 };
 const edgeTypes: EdgeTypes = {
   [PEER_EDGE_TYPE]: PeerPropagationEdge,

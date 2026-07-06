@@ -14,6 +14,11 @@ export interface TxDetail {
   to: string | null;
 }
 
+/** ブロック取り込み時に確定した tx の情報（from/to に加え確定ステータスを持つ）。 */
+export interface TxInclusionDetail extends TxDetail {
+  status: "included" | "failed";
+}
+
 /**
  * tx ハッシュごとに現在の TransactionEntity を保持し、状態遷移
  * （pending → included）を差分として返す。保持数が maxTxs を超えたら古い
@@ -44,21 +49,26 @@ export class TransactionLifecycleTracker {
   }
 
   /**
-   * ブロック blockHash に含まれる tx 群を included として記録する。状態が
-   * 変化した（新規に included になった、または別ブロックから付け替わった）tx の
-   * TransactionEntity だけを返す。pending として未追跡だった tx も、ブロックから
-   * 得た from/to を使って included として新規追加する（購読開始前に投入された
-   * tx や pending 通知を取りこぼした tx も可視化に載せるため）。既に同じ
-   * blockHash で included 済みの tx は変化なしとして返さない。
+   * ブロック blockHash に含まれる tx 群を included/failed として記録する。状態が
+   * 変化した（新規に確定した、別ブロックから付け替わった、included と failed の間で
+   * ステータス自体が変わった）tx の TransactionEntity だけを返す。pending として
+   * 未追跡だった tx も、ブロックから得た from/to を使って新規追加する（購読開始前に
+   * 投入された tx や pending 通知を取りこぼした tx も可視化に載せるため）。既に同じ
+   * blockHash・同じ status で記録済みの tx は変化なしとして返さない（同一ブロックを
+   * 複数ノードが重複通知するケースのスキップ）。failed の tx にもブロックには
+   * 取り込まれているため blockHash をセットする。
    */
-  recordInclusion(blockHash: string, txs: TxDetail[]): TransactionEntity[] {
+  recordInclusion(
+    blockHash: string,
+    txs: TxInclusionDetail[],
+  ): TransactionEntity[] {
     const changed: TransactionEntity[] = [];
     for (const tx of txs) {
       const existing = this.txs.get(tx.hash);
       if (
         existing &&
-        existing.status === "included" &&
-        existing.blockHash === blockHash
+        existing.blockHash === blockHash &&
+        existing.status === tx.status
       ) {
         continue;
       }
@@ -68,7 +78,7 @@ export class TransactionLifecycleTracker {
         // 既知の tx は元の from/to を保ち、未知なら今回のブロック情報で埋める。
         from: existing?.from ?? tx.from,
         to: existing ? existing.to : tx.to,
-        status: "included",
+        status: tx.status,
         blockHash,
       };
       this.put(entity);

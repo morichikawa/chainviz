@@ -83,10 +83,22 @@ function AppShell({
   const [layout, setLayout] = useState<LayoutMap>(() => loadLayout(storage));
   const { notifications, notify, dismiss } = useNotifications();
 
-  const { state, status, operations, actions } = useCommands(
+  const { state, status, operations, actions, ghosts } = useCommands(
     clientFactory,
     notify,
     t,
+  );
+
+  // ボタン押下直後のローディング表示（Issue #102）に使う。仮カードが
+  // 1枚でも残っている間は「まだ実体化していない addNode/addWorkbench がある」
+  // とみなす。
+  const pendingAddNode = useMemo(
+    () => ghosts.some((ghost) => ghost.data.kind === "node"),
+    [ghosts],
+  );
+  const pendingAddWorkbench = useMemo(
+    () => ghosts.some((ghost) => ghost.data.kind === "workbench"),
+    [ghosts],
   );
 
   const entities = useMemo(() => listEntities(state), [state]);
@@ -166,8 +178,8 @@ function AppShell({
   const operationEdges = useOperationPulses(operations, infraNodeIds);
 
   const nodes = useMemo(
-    () => [...infraNodes, ...walletNodes],
-    [infraNodes, walletNodes],
+    () => [...infraNodes, ...walletNodes, ...ghosts],
+    [infraNodes, walletNodes, ghosts],
   );
   const edges = useMemo(
     () => [...peerEdgesWithPulses, ...ownershipEdges, ...operationEdges],
@@ -195,7 +207,10 @@ function AppShell({
       </header>
       <CommandActionsProvider actions={actions}>
         <main className="app__canvas">
-          <CanvasToolbar />
+          <CanvasToolbar
+            pendingAddNode={pendingAddNode}
+            pendingAddWorkbench={pendingAddWorkbench}
+          />
           {nodes.length === 0 ? (
             <p className="app__empty">{t("canvas.empty")}</p>
           ) : (
