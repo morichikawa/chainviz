@@ -85,3 +85,54 @@
     (`InfraNodeCard.test.tsx`)のフィクスチャは removable 未設定のため、
     ボタン存在を前提とするテストが落ちる。フィクスチャに `removable: true`
     を足し、false/未設定でボタンが出ないテストを追加すること
+
+### 2026-07-06 Issue #103 collector側: removable フラグの算出とラベル定数の一元化
+
+- 担当: collector
+- ブランチ: issue-103-removable-node-flag
+- 内容: 設計フェーズの引き継ぎに従い、collector 側の実装を行った。
+  frontend 側（`InfraNodeCard.tsx`）は描画麗が並行で対応中のため触れて
+  いない。
+  - `packages/collector/src/adapters/ethereum/labels.ts` を新設し、
+    `com.docker.compose.project` / `com.docker.compose.service` /
+    `com.chainviz.managed` / `com.chainviz.role` の4定数を一元化した。
+    `node-lifecycle.ts`（付与・回収側）と `classify.ts`（分類での参照側）
+    に重複定義されていたリテラルをここからの import に置き換えた
+    （値そのものは変更していないため挙動に変化はない）。
+  - `packages/collector/src/adapters/ethereum/index.ts` の
+    `EthereumAdapter.toEntity` で組み立てる `InfraEntity` に
+    `removable: obs.labels[MANAGED_LABEL] === "true"` を設定した。
+    `infra` オブジェクトは node/workbench 両方の分岐で `...infra` として
+    展開されるため、この1箇所の変更で両方の kind に反映される。
+  - `docker/observe.ts`・`adapters/ethereum/targets.ts` にも
+    `com.docker.compose.service` 等の同名リテラルが独立して存在するが、
+    今回のスコープ（node-lifecycle.ts / classify.ts の重複解消）には
+    含めず手を入れていない。`observe.ts` は Docker 共通層でチェーン非依存の
+    ファイルであり、compose ラベルはチェーン固有の概念ではないため、
+    そもそも `adapters/ethereum/labels.ts` に寄せる対象ではないと判断した。
+    `targets.ts` の重複は残っているため、将来さらなる整理をする場合は
+    そちらも候補になる。
+  - テスト（`packages/collector/src/adapters/ethereum/index.test.ts`）:
+    - 既存の compose 起動ノード・ワークベンチのテストに
+      `removable === false`（managed ラベル無し）の検証を追加した。
+    - `com.chainviz.managed=true` を持つ managed な reth / workbench の
+      フィクスチャを追加し、`removable === true` になることを確認する
+      テストを2件追加した。
+    - `com.chainviz.managed` ラベルが存在するが値が `"true"` 以外の場合に
+      `removable === false`（安全側）になることを確認するテストを追加した。
+  - `pnpm lint && pnpm build && pnpm test` を全パッケージに対して実行し、
+    通過を確認した（collector 503件、shared 8件、frontend 411件、e2e 34件、
+    いずれも成功）。
+- 決定事項・注意点:
+  - **`docs/PLAN.md` のIssue #103チェックボックス、および GitHub Issue の
+    クローズは今回行っていない**。Issue #103 は「compose起動ノードの
+    削除ボタンを押すと必ずエラーになる」問題そのものへの対応であり、
+    frontend 側（`InfraNodeCard.tsx` の削除ボタン出し分け）が完了して
+    初めてユーザー影響のある不具合が解消される。collector 側の変更
+    （`removable` フラグの算出）だけでは compose 起動ノードのカードに
+    削除ボタンが表示され続け、押すとまだエラーになる状態は変わらない。
+    frontend 側の対応が完了した時点でチェック・クローズするのが適切と
+    判断し、統括の判断を仰ぐ形にした。
+  - labels.ts の定数値自体は変更していない（既存の文字列リテラルを
+    import に置き換えただけ）ため、この変更単独で既存の Docker ラベル
+    運用・回収ロジックの挙動は変わらない。
