@@ -67,6 +67,7 @@
 | #80 | Issue #80 操作エッジ(OperationEdge/operationObserved)の shared 型定義と collector 側の観測→配信配線 | [2026-07-05](worklog/issue-80.md) |
 | #81-#84 | Issue #81/#82/#84 C層フロント(txライフサイクル・ウォレット・用語) | [2026-07-05](worklog/issue-81-84.md) |
 | #83 | Issue #83 ワークベンチ→ノードの操作エッジ(operationObserved)をエッジ+パルスで描画 | [2026-07-05](worklog/issue-83.md) |
+| #86 | Issue #86 txライフサイクルのfailedステータス(receipt status 0x0の検知)の設計 | [2026-07-06](worklog/issue-86.md) |
 | #99 | Issue #99 WSL2環境でcollectorのWebSocket/ロギングプロキシが繋がらない(listen host を0.0.0.0に明示) | [2026-07-06](worklog/issue-99.md) |
 | #103 | Issue #103 compose起動ノードの削除ボタン改善のバックログ追加(docsのみ)のレビュー | [2026-07-06](worklog/issue-103.md) |
 | #106 | Issue #106 reth(EL)同士のP2Pエッジ未描画のバックログ追加(docsのみ)のレビュー | [2026-07-06](worklog/issue-106.md) |
