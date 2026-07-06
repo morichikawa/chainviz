@@ -102,6 +102,24 @@ consensus-p2p:
   layer: b-network
   relatedTerms: [p2p, peer, gossip]
 
+bootnode:
+  name:
+    ja: ブートノード
+    en: Bootnode
+  definition:
+    ja: >-
+      新しくネットワークに参加するノードが最初に接続する既知のノード。
+      ここを入口にディスカバリでピアを発見した後は、対等なピアの一つに
+      なる。chainvizでは「+ ノードを追加」で増えるノードが、どのブート
+      ノードを入口に参加するかを事前に予告する。
+    en: >-
+      A well-known node that a newly joining node connects to first. After
+      using it as an entry point to discover peers, the new node becomes just
+      another peer among equals. chainviz previews which bootnode a node
+      added via "+ Add node" will use as its entry point.
+  layer: b-network
+  relatedTerms: [peer, discovery, p2p]
+
 gossip:
   name:
     ja: ゴシップ伝播
