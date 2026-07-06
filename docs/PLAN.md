@@ -338,7 +338,7 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
       [#119](https://github.com/morichikawa/chainviz/issues/119)
 - [x] pnpm dev:upがdist/の古いビルドを検知せず気づかないまま起動してしまう
       [#121](https://github.com/morichikawa/chainviz/issues/121)
-- [ ] ノード/ワークベンチ追加時に、どこに何と繋がって追加されるか分からない
+- [x] ノード/ワークベンチ追加時に、どこに何と繋がって追加されるか分からない
       [#123](https://github.com/morichikawa/chainviz/issues/123)
 - [x] reth同士のP2Pメッシュ形成が分かりにくく、正しい状態か判断できない
       [#124](https://github.com/morichikawa/chainviz/issues/124)
