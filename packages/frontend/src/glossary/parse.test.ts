@@ -5,17 +5,21 @@ import { mergeGlossaries, parseGlossaryYaml } from "./parse.js";
 
 // jsdom 環境では import.meta.url が file スキームでないため、cwd から
 // 上方向にリポジトリルートの glossary/ を探索する。
-function findGlossaryFile(): string {
+function findGlossaryFile(relativePath: string): string {
   let dir = process.cwd();
   for (let i = 0; i < 6; i++) {
-    const candidate = resolve(dir, "glossary/ethereum/terms/a-infra.yaml");
+    const candidate = resolve(dir, relativePath);
     if (existsSync(candidate)) return candidate;
     dir = dirname(dir);
   }
-  throw new Error("a-infra.yaml not found from cwd");
+  throw new Error(`${relativePath} not found from cwd`);
 }
 
-const aInfraPath = findGlossaryFile();
+const aInfraPath = findGlossaryFile("glossary/ethereum/terms/a-infra.yaml");
+const bNetworkPath = findGlossaryFile("glossary/ethereum/terms/b-network.yaml");
+const cTransactionPath = findGlossaryFile(
+  "glossary/ethereum/terms/c-transaction.yaml",
+);
 
 describe("parseGlossaryYaml", () => {
   it("parses the real A-layer glossary file", () => {
@@ -167,5 +171,57 @@ x:
 
   it("returns an empty glossary with no arguments", () => {
     expect(mergeGlossaries()).toEqual({});
+  });
+});
+
+describe("real glossary data files (regression: duplicate keys, merge conflicts)", () => {
+  // Issue #123 レビューで発覚: rebase時にb-network.yamlへbootnodeが2重定義
+  // されたまま気づかれず(挿入位置が違いコンフリクトマーカーが出なかった)、
+  // js-yamlが重複キーで例外を投げてアプリ起動時にクラッシュする不具合が
+  // あった。glossary/data.tsが実際に読む全ファイルを、data.tsと同じ
+  // mergeGlossaries経路でパースし、例外なく完了すること・キーが重複せず
+  // 各層のキー数の単純合計と一致することを固定する。
+  const files = [
+    { name: "a-infra", path: aInfraPath },
+    { name: "b-network", path: bNetworkPath },
+    { name: "c-transaction", path: cTransactionPath },
+  ];
+
+  it("parses every real glossary file without throwing", () => {
+    for (const file of files) {
+      expect(() => parseGlossaryYaml(readFileSync(file.path, "utf8"))).not.toThrow();
+    }
+  });
+
+  it("has no duplicate term keys within any single real file", () => {
+    // parseGlossaryYamlはJSオブジェクトを経由するため、YAML内で同じキーが
+    // 2度定義されても後勝ちで静かに1件へ潰れ、テスト側からは重複を検知
+    // できない。js-yamlが実際にパース時点で例外を投げることを直接確認する。
+    for (const file of files) {
+      const yaml = readFileSync(file.path, "utf8");
+      const keys: string[] = [];
+      for (const match of yaml.matchAll(/^([a-zA-Z0-9-]+):$/gm)) {
+        keys.push(match[1]);
+      }
+      const seen = new Set<string>();
+      const duplicates = keys.filter((key) =>
+        seen.has(key) ? true : (seen.add(key), false),
+      );
+      expect(duplicates).toEqual([]);
+    }
+  });
+
+  it("merges all three real files into a single glossary without key collisions", () => {
+    const merged = mergeGlossaries(
+      parseGlossaryYaml(readFileSync(aInfraPath, "utf8")),
+      parseGlossaryYaml(readFileSync(bNetworkPath, "utf8")),
+      parseGlossaryYaml(readFileSync(cTransactionPath, "utf8")),
+    );
+    const individualCounts = files.map(
+      (file) =>
+        Object.keys(parseGlossaryYaml(readFileSync(file.path, "utf8"))).length,
+    );
+    const totalIndividual = individualCounts.reduce((a, b) => a + b, 0);
+    expect(Object.keys(merged).length).toBe(totalIndividual);
   });
 });

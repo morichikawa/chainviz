@@ -666,3 +666,75 @@ Playwright で目視確認した上で、`useNewArrivalHighlight.test.ts` に
   3. `feat(frontend)`: UX実装一式(§4-1〜§4-6、readyバグ修正含む)
   4. 本コミット(docs)
 - `pnpm lint && pnpm build && pnpm test`すべて通過を再確認。
+
+### 2026-07-06 レビュー再実施（査読誠・2回目）: 不合格（差し戻し）
+
+- 確認範囲: 差し戻し2点の解消状況、rebase後の#123/#124共存、
+  lint/build/test、コミット粒度
+- 合格した項目:
+  1. **新着強調のreadyバグ修正**: `useWorldState`の`hasReceivedSnapshot`は
+     `onSnapshot`内でのみtrueになり、`status`と独立。実クライアントの順序
+     （onopen先行→snapshot後着）を再現する回帰テスト3件も妥当で、
+     「修正前ロジックに戻すと3件とも失敗する」検証も実施済みと確認。
+     `App.tsx`→`useNewArrivalHighlight`への配線も正しい。解消と認める
+  2. **mainの取り込み自体**: `origin/main`(PR #137マージ後)がHEADの祖先で
+     あることを確認。#124の凡例・ホバー・バッジ（PeerNetworkLegend /
+     PeerEdgePopover / InfraNodeCardのbootnodeバッジテスト）は本ブランチの
+     差分で破壊されておらず、`messages.ts` / `styles.css` /
+     `InfraNodeCard.test.tsx` は両Issueの内容が共存している。rebase後の
+     optional chaining修正(3b207ba)も妥当
+  3. `pnpm lint && pnpm build && pnpm test` 全通過（frontend 758件含む）
+  4. コミット粒度: 6コミット構成は許容範囲。ただし`feat(frontend)`(576cde9)
+     は3,334行追加と大きく、前回推奨した§単位の分割には従っていない
+     （推奨事項のため差し戻し理由にはしない）
+- **差し戻し理由（1件・ブロッキング）**:
+  - `glossary/ethereum/terms/b-network.yaml` に **トップレベルキー
+    `bootnode:` が二重定義**されている（54行目=main/#124由来、105行目=
+    本ブランチのコミット138f30b由来。文面も別物）。前回差し戻し理由2で
+    「1つに統合する必要がある」と明記した症状そのものが未解消。
+    worklogの前回対応記録には「重複していたため統合」とあるが、実際には
+    統合されていない（#124側とは挿入位置が違うためrebaseで文面上の
+    コンフリクトが発生せず、両方が残ったまま素通りしたと推測される）
+  - 実害: フロントの `glossary/parse.ts` は `js-yaml` の `load()` を
+    そのまま呼んでおり、js-yamlは重複キーで `duplicated mapping key
+    (105:1)` 例外を投げる。`glossary/data.ts` はモジュール評価時
+    （＝アプリ起動時）に `parseGlossaryYaml(bNetworkRaw)` を呼ぶため、
+    **フロントは起動時にクラッシュする**。lint/build/testが通るのは、
+    `parse.test.ts` が実データとして `a-infra.yaml` しか読んでおらず、
+    `b-network.yaml` を誰もパースしないため
+- 対応指示:
+  1. 54行目（#124由来）と105行目（本ブランチ由来）のbootnode定義を
+     1つに統合する（#124版の「reth1/beacon1がこの役を担う」と#123版の
+     「chainvizが接続先を事前に予告する」は補完関係なので、文面を
+     マージするのが望ましい。ja/en両方）。コミット138f30bの内容を
+     修正する形（rebase -iやamend相当）でも、修正コミットの追加でも可
+  2. 再発防止として、実データのglossary YAML全ファイル（a-infra /
+     b-network / c-transaction）をパースして例外が出ないことを確認する
+     テストを追加すること（今回の重複キーはこのテストがあれば品質ゲート
+     で検出できた）。追加したテストが修正前の状態で実際に失敗することを
+     確認してから統合すること
+  3. worklogの前回対応記録の「統合した」という記述は事実と異なるため、
+     訂正の追記をすること
+
+### 2026-07-06 統括による差し戻し対応(2回目)
+
+前回の対応記録「重複していたため統合」は事実誤認だった(訂正)。実際には
+rebase時、main/#124由来のbootnode定義(54行目)と本ブランチ由来の定義
+(105行目)が異なる挿入位置だったためコンフリクトマーカーが出ず、両方が
+サイレントに残っていた。
+
+- `glossary/ethereum/terms/b-network.yaml`の105行目の重複ブロック(#123
+  由来)を削除し、54行目(#124由来、reth1/beacon1の役割まで説明する内容)
+  に統一した。js-yamlで実際にパースできることを確認済み。
+- 再発防止として、`packages/frontend/src/glossary/parse.test.ts`に
+  実データの全glossaryファイル(a-infra/b-network/c-transaction)を対象
+  にした回帰テスト3件を追加した:
+  - 全ファイルが例外なくパースできること
+  - 各ファイル単体でトップレベルキーの重複が無いこと
+  - 3ファイルをマージした結果のキー数が個別キー数の単純合計と一致する
+    こと(=マージ時にもキー衝突が無いこと)
+  追加したテストが実際に不具合を検出できることを、b-network.yamlへ
+  一時的にbootnodeを重複させて確認した(3件とも意図通り失敗、
+  `duplicated mapping key`例外を実際に確認)。元に戻した後、全761件
+  (frontend)通過を確認。
+- `pnpm lint && pnpm build && pnpm test`すべて通過を再確認。
