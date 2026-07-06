@@ -50,6 +50,7 @@ export const messages = {
   "field.cpu": { ja: "CPU", en: "CPU" },
   "field.memory": { ja: "メモリ", en: "Memory" },
   "field.client": { ja: "クライアント", en: "Client" },
+  "field.role": { ja: "役割", en: "Role" },
   "field.sync": { ja: "同期状態", en: "Sync status" },
   "field.blockHeight": { ja: "ブロック高", en: "Block height" },
   "sync.synced": { ja: "同期済み", en: "Synced" },
@@ -89,6 +90,22 @@ export const messages = {
   "command.error.unknown": {
     ja: "コマンドの実行に失敗しました",
     en: "Command failed",
+  },
+  "role.bootnode": { ja: "ブートノード", en: "Bootnode" },
+  "network.execution": { ja: "実行ネットワーク", en: "Execution network" },
+  "network.consensus": { ja: "コンセンサスネットワーク", en: "Consensus network" },
+  "legend.hint.prefix": { ja: "ピア接続は", en: "Peer connections grow over time via " },
+  "legend.hint.term": { ja: "ノード発見", en: "node discovery" },
+  // en は語順の都合上 prefix に文を集約しているため、suffix は意図的に
+  // 空文字にしている（GlossaryTerm で挟む都合上3分割しているが、英語の
+  // 文構造ではprefixで文が完結するため）。
+  "legend.hint.suffix": {
+    ja: "により時間とともに自動で増えます",
+    en: "",
+  },
+  "peerEdge.hint": {
+    ja: "ノード同士がノード発見で見つけ合って自動的につないだ接続です。線が時間差で増えたり、ノードごとに相手が違ったりするのは正常な動きです。",
+    en: "A connection the nodes established automatically after finding each other via node discovery. It is normal for cords to appear over time and for each node to have different peers.",
   },
 } as const satisfies Record<string, Localized>;
 

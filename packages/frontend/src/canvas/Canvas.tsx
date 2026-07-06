@@ -1,6 +1,7 @@
 import {
   Background,
   Controls,
+  type Edge,
   type EdgeChange,
   MiniMap,
   type Node,
@@ -12,12 +13,13 @@ import {
   applyNodeChanges,
   type NodeChange,
 } from "@xyflow/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { GhostNodeCard } from "../entities/GhostNodeCard.js";
 import { GHOST_NODE_TYPE } from "../entities/ghostNode.js";
 import { InfraNodeCard } from "../entities/InfraNodeCard.js";
+import { PeerNetworkLegend } from "../entities/PeerNetworkLegend.js";
 import { PeerPropagationEdge } from "../entities/PeerPropagationEdge.js";
-import { PEER_EDGE_TYPE } from "../entities/peerEdge.js";
+import { PEER_EDGE_TYPE, isPeerFlowEdge } from "../entities/peerEdge.js";
 import { WalletCard } from "../entities/WalletCard.js";
 import { WALLET_NODE_TYPE } from "../entities/walletNode.js";
 import { OwnershipEdge } from "../entities/OwnershipEdge.js";
@@ -55,6 +57,11 @@ export interface CanvasProps {
 function CanvasInner({ nodes, edges = [], onPersistPosition }: CanvasProps) {
   const [rfNodes, setRfNodes] = useState<CanvasFlowNode[]>(nodes);
   const [rfEdges, setRfEdges] = useState<CanvasFlowEdge[]>(edges);
+  // ホバー中のピア接続（紐）の id。ホバー強調・ポップオーバー表示
+  // （Issue #124 B）に使う。ピア以外のエッジでは常に null のまま。
+  const [hoveredPeerEdgeId, setHoveredPeerEdgeId] = useState<string | null>(
+    null,
+  );
 
   // ワールドステート更新で親が nodes を再計算したら反映する。React Flow は
   // 実測済み(measured)の情報を持たないノードオブジェクトを受け取ると再計測
@@ -88,15 +95,47 @@ function CanvasInner({ nodes, edges = [], onPersistPosition }: CanvasProps) {
     [onPersistPosition],
   );
 
+  // ピア接続だけホバー状態を追う（所有エッジ・操作エッジはホバー説明の
+  // 対象外。Issue #124 B）。
+  const onEdgeMouseEnter = useCallback(
+    (_event: unknown, edge: Edge) => {
+      if (edge.type === PEER_EDGE_TYPE) setHoveredPeerEdgeId(edge.id);
+    },
+    [],
+  );
+  const onEdgeMouseLeave = useCallback((_event: unknown, edge: Edge) => {
+    if (edge.type === PEER_EDGE_TYPE) {
+      setHoveredPeerEdgeId((current) => (current === edge.id ? null : current));
+    }
+  }, []);
+
+  // 表示直前にホバー状態を注入する。rfEdges 自体は書き換えない
+  // （applyEdgeChanges の対象と hover 由来の派生 state を混ぜない）。
+  const displayEdges = useMemo(
+    () =>
+      rfEdges.map((edge) => {
+        if (!isPeerFlowEdge(edge)) return edge;
+        const hovered = edge.id === hoveredPeerEdgeId;
+        if ((edge.data?.hovered ?? false) === hovered) return edge;
+        return { ...edge, data: { ...edge.data, hovered } };
+      }),
+    [rfEdges, hoveredPeerEdgeId],
+  );
+
+  // ネットワーク凡例（Issue #124 A）に渡す、現在描画中のピア接続だけの一覧。
+  const peerEdges = useMemo(() => rfEdges.filter(isPeerFlowEdge), [rfEdges]);
+
   return (
     <ReactFlow
       nodes={rfNodes}
-      edges={rfEdges}
+      edges={displayEdges}
       nodeTypes={nodeTypes}
       edgeTypes={edgeTypes}
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
       onNodeDragStop={onNodeDragStop}
+      onEdgeMouseEnter={onEdgeMouseEnter}
+      onEdgeMouseLeave={onEdgeMouseLeave}
       fitView
       minZoom={0.2}
       maxZoom={2}
@@ -113,6 +152,7 @@ function CanvasInner({ nodes, edges = [], onPersistPosition }: CanvasProps) {
       <Background bgColor="var(--bg)" />
       <Controls />
       <MiniMap pannable zoomable />
+      <PeerNetworkLegend edges={peerEdges} />
     </ReactFlow>
   );
 }

@@ -78,4 +78,5 @@
 | #121 | Issue #121 pnpm dev:upの古いdistビルド未検知のバックログ追加(docsのみ)のレビュー | [2026-07-06](worklog/issue-121.md) |
 | #123-#126 | Issue #123/#124/#125/#126 UX・運用バックログ4件の登録(docsのみ)のレビュー | [2026-07-06](worklog/issue-123-126.md) |
 | #126 | Issue #126 pnpm dev:down --dockerが動的追加コンテナを削除しない不具合の修正 | [2026-07-06](worklog/issue-126.md) |
+| #124 | Issue #124 P2Pメッシュ形成の正常性を伝えるUX設計(凡例・エッジホバー・ブートノード明示) | [2026-07-06](worklog/issue-124.md) |
 | - | 特定Issueに紐付かない記録(PLAN.md/CLAUDE.md更新等) | [2026-07-05〜2026-07-06](worklog/meta.md) |

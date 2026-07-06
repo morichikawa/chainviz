@@ -1,5 +1,6 @@
 import type { PeerEdge } from "@chainviz/shared";
 import type { Edge } from "@xyflow/react";
+import type { MessageKey } from "../i18n/messages.js";
 
 /**
  * B層のピア接続（紐）を React Flow のエッジに変換するための型・関数。
@@ -32,6 +33,17 @@ export interface PeerEdgeData extends Record<string, unknown> {
   networkId: string;
   /** このエッジ上で現在走らせるブロック伝播パルス（無ければ未設定）。 */
   pulses?: EdgePulse[];
+  /**
+   * ホバーポップオーバー（Issue #124）に出す端点表記。stableId
+   * （`${project}/${service}` 形式。collector 側 `stableId` 参照）の
+   * service 部分を `[小, 大]` の順（source, target と対応）で持つ。
+   * optional なのは、防御的にエッジを組み立てる経路（`blockPulse.ts` の
+   * フォールバック等）が省略できるようにするため。省略時は表示側が空表記に
+   * フォールバックする。
+   */
+  endpoints?: [string, string];
+  /** 現在このエッジがホバーされているか（Canvas.tsx が hover 状態から注入する）。 */
+  hovered?: boolean;
 }
 
 export type PeerFlowEdge = Edge<PeerEdgeData>;
@@ -40,9 +52,23 @@ export type PeerFlowEdge = Edge<PeerEdgeData>;
 export const PEER_EDGE_TYPE = "peer";
 
 /**
+ * キャンバスの合併エッジ型（`CanvasFlowEdge`）からピア接続だけを絞り込む
+ * ための型ガード。B/C層のエッジはいずれも `Edge<T>`（2 引数）で `type` が
+ * リテラル型ではないため、TypeScript は `edge.type === PEER_EDGE_TYPE` の
+ * 比較だけでは型を絞り込めない。Canvas.tsx のホバー処理・凡例向けの
+ * フィルタで共有する（Issue #124）。
+ */
+export function isPeerFlowEdge(edge: Edge): edge is PeerFlowEdge {
+  return edge.type === PEER_EDGE_TYPE;
+}
+
+/**
  * networkId ごとに紐の色を分けるためのパレット。
- * 現状の Ethereum プロファイル1つでは networkId は1種類だが、将来の
- * 複数チェーン比較（Phase 6 以降）でネットワークを見分けられるようにしておく。
+ * Ethereum プロファイル単体でも execution・consensus という2種類の
+ * networkId を持つ（Issue #106 以降。`targets.ts` の
+ * consensusNetworkId/executionNetworkId 参照）ため、最低でも2色を区別できる
+ * 必要がある。加えて将来の複数チェーン比較（Phase 6 以降）でもネットワークを
+ * 見分けられるようにしておく。
  *
  * 紐は `stroke-opacity` を掛けた状態で背景色(--bg #0f1420)の上に描かれるため、
  * 見た目のコントラストは単色のコントラスト比だけでは測れない。背景と混色した
@@ -91,6 +117,45 @@ function orderedPair(a: string, b: string): [string, string] {
 }
 
 /**
+ * stableId（collector が付与するエンティティ id。`${project}/${service}`
+ * 形式。`profiles/ethereum` の compose service 名を含む）から、ホバー
+ * ポップオーバーで人が読める短い表記（service 部分）を取り出す
+ * （Issue #124）。`/` を含まない stableId（旧形式・別チェーン想定）は
+ * そのまま返す。
+ */
+export function stableIdServiceName(stableId: string): string {
+  const idx = stableId.lastIndexOf("/");
+  return idx === -1 ? stableId : stableId.slice(idx + 1);
+}
+
+/**
+ * networkId から「これが何のP2Pネットワークか」の表示情報を導く
+ * （ネットワーク凡例・ピアエッジのホバーポップオーバーで共有。Issue #124）。
+ *
+ * networkId 末尾の `-execution` / `-consensus` は Ethereum の ChainAdapter
+ * （`packages/collector/src/adapters/ethereum/targets.ts` の
+ * consensusNetworkId/executionNetworkId）が付ける接尾辞であり、Ethereum
+ * プロファイルのフロント表現セットの一部。将来別チェーンプロファイルを
+ * 追加するときは、この関数を差し替え単位として新しい判定を足す
+ * （既存の分岐に手を入れて増やす方向にはしない。CLAUDE.md「チェーン
+ * プロファイル単位で増やす」）。どちらにも合致しない networkId は
+ * 用語解説の無い生の networkId 表示にフォールバックする。
+ */
+export type NetworkNameInfo =
+  | { kind: "known"; labelKey: MessageKey; termKey: "execution-p2p" | "consensus-p2p" }
+  | { kind: "raw" };
+
+export function describeNetwork(networkId: string): NetworkNameInfo {
+  if (networkId.endsWith("-execution")) {
+    return { kind: "known", labelKey: "network.execution", termKey: "execution-p2p" };
+  }
+  if (networkId.endsWith("-consensus")) {
+    return { kind: "known", labelKey: "network.consensus", termKey: "consensus-p2p" };
+  }
+  return { kind: "raw" };
+}
+
+/**
  * ピア接続（PeerEdge）の配列を React Flow のエッジ配列へ変換する。
  *
  * - 端点のカードが両方存在するエッジだけを描く（宙ぶらりんの紐を避ける）。
@@ -125,7 +190,10 @@ export function peerEdgesToFlowEdges(
       type: PEER_EDGE_TYPE,
       source: lo,
       target: hi,
-      data: { networkId: edge.networkId },
+      data: {
+        networkId: edge.networkId,
+        endpoints: [stableIdServiceName(lo), stableIdServiceName(hi)],
+      },
       className: `peer-edge peer-edge--net-${networkClassToken(edge.networkId)}`,
       // strokeWidth は初期値(1.5)だと細く、opacity 併用時に背景へ埋もれ
       // やすかったため 2 に太くした（Issue #32）。

@@ -54,6 +54,8 @@ services:
     environment:
       RETH_ROLE: boot
       RETH_P2P_IP: 172.28.1.1
+    labels:
+      com.chainviz.p2p-role: "bootnode"
     volumes:
       - genesis:/genesis:ro
       - reth1data:/data
@@ -75,6 +77,8 @@ services:
       BEACON_ROLE: boot
       ENR_ADDRESS: 172.28.2.1
       EXECUTION_ENDPOINT: http://reth1:8551
+    labels:
+      com.chainviz.p2p-role: "bootnode"
     volumes:
       - genesis:/genesis:ro
       - beacon1data:/data

@@ -58,6 +58,14 @@ export function InfraPopover({ entity }: { entity: InfraEntity }) {
             </span>
             <span className="infra-field__value">{entity.clientType}</span>
           </div>
+          {entity.p2pRole === "bootnode" && (
+            <div className="infra-field">
+              <span className="infra-field__label">{t("field.role")}</span>
+              <span className="infra-field__value">
+                <GlossaryTerm termKey="bootnode">{t("role.bootnode")}</GlossaryTerm>
+              </span>
+            </div>
+          )}
           <Field
             label={t("field.sync")}
             value={

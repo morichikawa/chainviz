@@ -49,7 +49,58 @@ discovery:
       Ethereum uses discv5, a distributed discovery protocol, gathering
       information about other nodes from known ones to grow its connections.
   layer: b-network
-  relatedTerms: [peer, p2p]
+  relatedTerms: [peer, p2p, bootnode]
+
+bootnode:
+  name:
+    ja: ブートノード
+    en: Bootnode
+  definition:
+    ja: >-
+      新しく参加するノードが最初に接続する入口役のノード。既知の接続先
+      としてここから他のピアの情報を教わり、以後は各ノードがノード発見で
+      自分の接続を広げていく(2本目以降の接続はブートノードを介さない)。
+      chainviz の Ethereum プロファイルでは reth1(実行)と beacon1
+      (コンセンサス)がこの役を担う。
+    en: >-
+      The entry-point node that a newly joining node connects to first. It
+      learns about other peers through this known node, and from then on
+      each node grows its own connections via discovery (connections beyond
+      the first no longer go through the bootnode). In chainviz's Ethereum
+      profile, reth1 (execution) and beacon1 (consensus) play this role.
+  layer: b-network
+  relatedTerms: [peer, discovery, p2p]
+
+execution-p2p:
+  name:
+    ja: 実行層P2Pネットワーク
+    en: Execution P2P network
+  definition:
+    ja: >-
+      実行クライアント(reth など)同士が devp2p というプロトコルで
+      直接つながるP2Pネットワーク。トランザクションのゴシップや過去
+      ブロックの取り寄せ(同期)に使われる。
+    en: >-
+      The P2P network in which execution clients (such as reth) connect
+      directly to one another using the devp2p protocol. It is used for
+      gossiping transactions and fetching past blocks (syncing).
+  layer: b-network
+  relatedTerms: [p2p, peer, gossip]
+
+consensus-p2p:
+  name:
+    ja: 合意層P2Pネットワーク
+    en: Consensus P2P network
+  definition:
+    ja: >-
+      コンセンサスクライアント(beacon)同士が libp2p でつながる
+      P2Pネットワーク。新しいブロックや合意情報のゴシップに使われる。
+    en: >-
+      The P2P network in which consensus clients (beacon nodes) connect to
+      one another over libp2p. It is used for gossiping new blocks and
+      consensus information.
+  layer: b-network
+  relatedTerms: [p2p, peer, gossip]
 
 gossip:
   name:
