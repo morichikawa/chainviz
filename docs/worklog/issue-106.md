@@ -97,3 +97,69 @@
   - 実装時に判断してよいこと: `pollPeersOnce` 内の CL/EL の並行化の粒度
     （ターゲット単位で一括 Promise.all にするか、ネットワーク単位で
     分けるか）、`admin_peers` の失敗ログの文言
+
+### 2026-07-06 EL ピアエッジの実装（collector）
+
+- 担当: collector
+- ブランチ: issue-106-el-peer-edges
+- 内容: 設計フェーズで引き継がれた骨格に、実際の RPC 呼び出しと
+  `pollPeersOnce` への配線を実装した
+- 実施したこと:
+  - `el-peers.ts` に `fetchExecutionPeerIdentity` /
+    `fetchConnectedExecutionPeerIdentities` を追加。既存の `EthRpcClient`
+    （`eth-rpc-client.ts`）の `rpc.call(url, "admin_nodeInfo"/"admin_peers", [])`
+    をそのまま使い、既存の正規化関数（`normalizeAdminNodeInfo` /
+    `normalizeAdminPeers`）に通す。`admin_nodeInfo` が識別子を返せない場合は
+    例外を投げる（呼び出し側でそのノードだけ落とす設計のため、ここで
+    握りつぶさない）
+  - `index.ts` の `pollPeersOnce` を、CL（`fetchConsensusPeerNodes`、既存の
+    Beacon API 呼び出しをそのまま private メソッドへ切り出しただけで挙動は
+    変更なし）と EL（`fetchExecutionPeerNodes`、新規）を並行に取得し、
+    `toPeerEdges` を CL/EL それぞれ別々に呼んでから連結する形に拡張した。
+    並行化の粒度は「CL 全体」と「EL 全体」を `Promise.all` で並べ、各層の
+    内部はターゲット単位でさらに `Promise.all` する 2 段構成にした（層を
+    跨いだ待ち合わせを避け、CL が遅くても EL の結果に引きずられない）。
+    `EthereumAdapter` は既存の `this.ethRpc` をそのまま使い、依存追加なし
+  - EL 側の個々のノード失敗は `console.error` でログを残しつつそのノードを
+    落として継続する（`[ethereum] execution peer poll failed for <stableId>:`）。
+    CL 側の失敗ハンドリングは既存のまま（ログなしで握る）変更していない
+  - テスト: `el-peers.test.ts` に 2 ヘルパーの正常系・RPC 例外の伝播・
+    識別子が取れない場合の例外化を追加。`peer-block-adapter.test.ts` に
+    EL 単独のエッジ生成・EL 個別ノード失敗時の継続とログ出力・CL/EL 混在
+    トポロジでの名前空間分離（`chainviz-ethereum-consensus` /
+    `chainviz-ethereum-execution` それぞれ独立にエッジが立つこと）を追加した
+  - 既存テストの副作用修正: EL ポーリングが有効になったことで、
+    `ethRpcClient` を明示しない既存テスト（reth コンテナを含みつつ
+    `pollPeersOnce` を呼ぶもの）が、実装のデフォルト
+    `createFetchEthRpcClient()`（実際に `fetch` する）経由で存在しない
+    アドレスへ本物のネットワークリクエストを送り、3 秒のタイムアウトまで
+    待つようになっていた（1 テストが約 3 秒に肥大化するのを確認して修正）。
+    該当テストに `ethRpcClient` のスタブを追加して修正し、修正後は該当
+    テストが数ミリ秒で終わることを確認した
+- 実機確認（このバグの発端の再現・解消確認）:
+  - 稼働中の `profiles/ethereum` スタック（reth1=172.28.1.1、
+    reth2=172.28.1.2）に対し、reth1 の `admin_peers` を直接 curl で叩き、
+    reth2 の enode（`enode://a8beb52c...@172.28.1.2:30303`）が接続相手として
+    返ることを確認した
+  - collector を実際に起動（`CHAINVIZ_COLLECTOR_PORT=4123` で一時起動）し、
+    WebSocket でスナップショットを取得したところ、
+    `{ kind: "peer", fromNodeId: "chainviz-ethereum/reth1", toNodeId:
+    "chainviz-ethereum/reth2", networkId: "chainviz-ethereum-execution" }`
+    が edges に含まれることを確認した。同時に CL 側の
+    `chainviz-ethereum-consensus` の beacon1↔beacon2 エッジも独立して
+    存在しており、名前空間が混ざっていないことを確認した。これにより
+    Issue #106 の発端（reth1↔reth2 の P2P 接続はあるのに画面に線が出ない）
+    が解消されたことを実データで確認できた
+  - 確認後、一時起動した collector プロセスは停止し、検証用の一時
+    スクリプトも削除した
+- 品質ゲート: `pnpm lint && pnpm build && pnpm test`（ルートから全パッケージ
+  対象）が通ることを確認済み
+- 次の担当（tester → reviewer → qa）への申し送り:
+  - `docs/ARCHITECTURE.md` は設計フェーズで既に更新済み（EL ピア収集・
+    networkId 分離・ブロック伝播パルスを乗せない旨を記載済み）なので、
+    実装差分によるドキュメント齟齬は無いはず。念のため sync-docs 観点で
+    確認してほしい
+  - 固定値として `EXECUTION_RPC_PORT`（8545）を使っているが、これは
+    `targets.ts` で既存の `executionRpcUrls` / `executionTargets` が
+    既に使っている値の再利用であり、本 Issue で新規に導入した固定値では
+    ない
