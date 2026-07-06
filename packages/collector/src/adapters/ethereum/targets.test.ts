@@ -5,6 +5,7 @@ import {
   beaconTargets,
   EXECUTION_RPC_PORT,
   EXECUTION_WS_PORT,
+  executionPeerTargets,
   executionRpcUrls,
   executionTargets,
 } from "./targets.js";
@@ -420,6 +421,60 @@ describe("beaconStableIdForExecution", () => {
     expect(
       beaconStableIdForExecution(obs(), [beaconOther, beacon1]),
     ).toBe("other-project/beacon1");
+  });
+});
+
+describe("executionPeerTargets", () => {
+  it("selects execution nodes and builds their peer-polling RPC URL", () => {
+    expect(executionPeerTargets([obs()])).toEqual([
+      {
+        stableId: "chainviz-ethereum/reth1",
+        rpcUrl: `http://172.28.1.1:${EXECUTION_RPC_PORT}`,
+        networkId: "chainviz-ethereum-execution",
+      },
+    ]);
+  });
+
+  it("derives a networkId distinct from the consensus one", () => {
+    // 同じプロジェクトでも EL(devp2p) と CL(libp2p) は別ネットワークとして
+    // グルーピングする（Issue #106）。
+    const elNetworkId = executionPeerTargets([obs()])[0].networkId;
+    const clNetworkId = beaconTargets([beacon1])[0].networkId;
+    expect(elNetworkId).toBe("chainviz-ethereum-execution");
+    expect(clNetworkId).toBe("chainviz-ethereum-consensus");
+    expect(elNetworkId).not.toBe(clNetworkId);
+  });
+
+  it("excludes beacon, validator and workbench containers", () => {
+    expect(executionPeerTargets([beacon1, validator1, workbench])).toEqual([]);
+  });
+
+  it("excludes execution nodes without an IP address", () => {
+    expect(executionPeerTargets([{ ...obs(), ip: "" }])).toEqual([]);
+  });
+
+  it("lists every execution node in a full observation set", () => {
+    const reth2 = obs({
+      stableId: "chainviz-ethereum/reth2",
+      labels: { "com.docker.compose.service": "reth2" },
+      ip: "172.28.1.2",
+    });
+    const targets = executionPeerTargets([obs(), reth2, beacon1, workbench]);
+    expect(targets.map((t) => t.stableId)).toEqual([
+      "chainviz-ethereum/reth1",
+      "chainviz-ethereum/reth2",
+    ]);
+  });
+
+  it("derives the network id from a stable id without a project prefix", () => {
+    const noSlash = obs({ stableId: "reth1" });
+    expect(executionPeerTargets([noSlash])[0].networkId).toBe(
+      "reth1-execution",
+    );
+  });
+
+  it("returns no targets for an empty observation set", () => {
+    expect(executionPeerTargets([])).toEqual([]);
   });
 });
 
