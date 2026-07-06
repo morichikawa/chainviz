@@ -336,7 +336,7 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
       [#113](https://github.com/morichikawa/chainviz/issues/113)
 - [x] 定期更新のたびにノードカードが一瞬ちらつく(React Flowの再計測サイクル)
       [#119](https://github.com/morichikawa/chainviz/issues/119)
-- [ ] pnpm dev:upがdist/の古いビルドを検知せず気づかないまま起動してしまう
+- [x] pnpm dev:upがdist/の古いビルドを検知せず気づかないまま起動してしまう
       [#121](https://github.com/morichikawa/chainviz/issues/121)
 - [ ] ノード/ワークベンチ追加時に、どこに何と繋がって追加されるか分からない
       [#123](https://github.com/morichikawa/chainviz/issues/123)
