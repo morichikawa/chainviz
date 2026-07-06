@@ -316,7 +316,7 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
 - [x] WebSocket接続ごとにerrorリスナーを張り、ソケットエラーをプロセス
       全体の安全網に頼らせない
       [#68](https://github.com/morichikawa/chainviz/issues/68)
-- [ ] txライフサイクルにfailedステータスを実装する
+- [x] txライフサイクルにfailedステータスを実装する
       [#86](https://github.com/morichikawa/chainviz/issues/86)
 - [ ] P2Pエッジと所有エッジの色相が近く(ともにアンバー系)、線種でしか
       区別できない環境がある。色相を分離する
