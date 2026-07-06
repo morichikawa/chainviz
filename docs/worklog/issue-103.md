@@ -259,3 +259,56 @@
     いずれも厳密比較で安全側に倒れており、境界・異常系の挙動は仕様どおり
   - 本エントリは査読誠のレビュー(直前のエントリ)で指摘された記録漏れを
     受けて、統括が事後的に追記したもの(試験学の完了報告内容を転記)
+
+### 2026-07-06 Issue #103 removableフラグ実装の実環境検証(QA)
+
+- 担当: qa
+- ブランチ: issue-103-removable-node-flag
+- 内容: 実際にDocker環境(profiles/ethereumのcompose起動スタック)に対して
+  collectorを起動し、WebSocket経由でスナップショット・差分を観測して、
+  PLAN.mdステップ5の完了条件(既存compose起動ノードは削除できない/UIから
+  追加したノード・ワークベンチは削除できる)がUIレベルで満たされているかを
+  検証した。合格と判定した。
+- 検証手順と結果:
+  1. 静的チェック: ワークツリー上で`pnpm lint`(exit 0)、`pnpm build`
+     (exit 0)、`pnpm test`(exit 0)がすべて通過。テスト件数は
+     shared 10 / collector 512 / frontend 417 / e2e 34 でいずれも成功。
+     加えてフロントの本番ビルド`pnpm --filter frontend build:web`
+     (vite build)も成功した(exit 0)。
+  2. 完了条件1(compose起動ノード・ワークベンチに削除ボタンが出ない):
+     稼働中の7コンテナ(reth1/reth2/beacon1/beacon2/validator1/validator2/
+     workbench)は`com.chainviz.managed`ラベルを持たない(空)ことを
+     `docker inspect`で確認。collectorを起動しWebSocketで受信した
+     スナップショットで、この7エンティティすべてが`removable=false`で
+     配信されることを確認した。`InfraNodeCard.tsx`は`removable === true`の
+     ときだけ削除ボタンを描画するため、これらのカードには削除ボタンが
+     出ない。
+  3. 完了条件2(追加したノード/ワークベンチは削除ボタンが出て実際に削除
+     できる):
+     - `addWorkbench`(label=qa-test-wb)を送信 → commandResult ok=true。
+       追加された`chainviz-ethereum/qa-test-wb`が`removable=true`で
+       entityAddedされることを確認。続けて`removeWorkbench`を送信 →
+       ok=true、対象のentityRemovedを受信し、ワールドステートから
+       消えることを確認した。
+     - `addNode`(chainProfile=ethereum)を送信 → commandResult ok=true。
+       フォロワーの`reth3`・`beacon3`ペアがともに`removable=true`で
+       entityAddedされることを確認。`removeNode`(reth3)を送信 → ok=true、
+       reth3・beacon3両方のコンテナが削除され、対象のentityRemovedを
+       受信することを確認した。
+  4. 後片付け: テストで追加したコンテナ(qa-test-wb / reth3 / beacon3)は
+     すべて削除され、検証後は元のcompose起動7コンテナのみが残る状態に
+     戻っていることを確認した。検証用に起動したcollectorプロセスも停止した。
+- 判定: 合格。PLAN.mdステップ5の完了条件のうち本Issueが対象とする
+  「既存compose起動ノードは削除できない(削除ボタンを出さない)」「UIから
+  追加したノード/ワークベンチは削除ボタンが出て実際に削除できる」が
+  実環境で満たされていることを確認した。compose起動カードに削除ボタンが
+  出ないため、Issue #103の「押すと必ずエラーになる」経路自体がUIから
+  塞がれている。
+- 決定事項・注意点:
+  - 削除ボタン押下→エラー通知の経路をブラウザ上で手動クリックまでは
+    再現していないが、削除ボタンの表示可否は`entity.removable`のみに
+    依存する純粋な描画分岐であり(コンポーネントは他の状態を参照しない)、
+    collectorが両ケースで正しい`removable`値を配信することを実データで
+    確認したため、UI上の出し分けは担保されている。
+  - GitHub Issue #103は現在OPEN(一度早計にクローズされ再オープン済み)。
+    PRの`Closes #103`でマージ時にクローズする。
