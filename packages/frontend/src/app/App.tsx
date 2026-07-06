@@ -83,7 +83,7 @@ function AppShell({
   const [layout, setLayout] = useState<LayoutMap>(() => loadLayout(storage));
   const { notifications, notify, dismiss } = useNotifications();
 
-  const { state, status, operations, actions } = useCommands(
+  const { state, status, operations, actions, ghosts } = useCommands(
     clientFactory,
     notify,
     t,
@@ -166,8 +166,8 @@ function AppShell({
   const operationEdges = useOperationPulses(operations, infraNodeIds);
 
   const nodes = useMemo(
-    () => [...infraNodes, ...walletNodes],
-    [infraNodes, walletNodes],
+    () => [...infraNodes, ...walletNodes, ...ghosts],
+    [infraNodes, walletNodes, ghosts],
   );
   const edges = useMemo(
     () => [...peerEdgesWithPulses, ...ownershipEdges, ...operationEdges],

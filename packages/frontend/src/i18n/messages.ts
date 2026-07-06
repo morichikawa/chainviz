@@ -54,6 +54,7 @@ export const messages = {
   "field.blockHeight": { ja: "ブロック高", en: "Block height" },
   "sync.synced": { ja: "同期済み", en: "Synced" },
   "sync.syncing": { ja: "同期中", en: "Syncing" },
+  "ghost.status": { ja: "起動中…", en: "Starting…" },
   "canvas.empty": {
     ja: "表示するコンテナがありません",
     en: "No containers to display",
