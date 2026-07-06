@@ -273,3 +273,396 @@ designer に委ねる。
   ヘッドレス環境に CJK フォントが無く日本語が豆腐になるが、
   レイアウト・挙動の確認には支障ない(文言は `i18n/messages.ts` を直接
   確認した)。
+
+### 2026-07-06 Issue #123 collector側実装(rpcTargetNodeIdの解決)
+
+- 担当: collector
+- ブランチ: issue-123-ux-design-node-addition
+- 内容: `docs/worklog/meta.md`(designerによるshared型設計・collector側正規化
+  ロジック設計の記録)に従い、`WorkbenchEntity.rpcTargetNodeId` を collector
+  側で解決する実装を行った。
+- 変更点:
+  1. `packages/collector/src/adapters/ethereum/index.ts`:
+     `EthereumAdapterDeps` に `rpcTargetHost?: string` を追加した。
+     `pollInfra()` で、同じポーリングの観測結果(entities)から
+     `kind === "node" && ip === rpcTargetHost` のノードを探し、見つかれば
+     その `id`(stableId)を全 `WorkbenchEntity.rpcTargetNodeId` に設定する
+     私有メソッド `resolveRpcTargetNodeId()` を追加した。`rpcTargetHost` が
+     未設定、または一致するノードが観測に無ければ何も設定しない(省略のまま)。
+     解決は毎ポーリングで entities から探し直す実装であり、固定の解決結果を
+     キャッシュ・埋め込みしていない(ブートノードが再作成されて stableId が
+     変わっても追従する)。
+  2. `packages/collector/src/index.ts`: `main()` で
+     `resolveProxyTarget()` → `parseProxyTargetHost()`(既存の
+     `proxy/operation-observer.ts` の関数を再利用)でホストを解決し、
+     `EthereumAdapter` の `rpcTargetHost` と、既存のロギングプロキシの
+     `createOperationObserver` の `targetHost` の両方に同じ値を渡すよう
+     配線した(従来は `targetHost` のみをこの用途で計算していたが、
+     同じ値をアダプタにも渡す形にまとめた。重複計算・値のズレを避けるため)。
+  3. 実装ギャップ(#129で別対応予定)の前提をコード上のコメントにも明記した
+     (`pollInfra()` のドキュメントコメント): 動的追加ワークベンチ
+     (addWorkbench)は現状ロギングプロキシを経由せず node-lifecycle.ts の
+     既定 `ETH_RPC_URL`(reth1 直)へ直結するため、`CHAINVIZ_PROXY_TARGET` を
+     変更した環境では動的追加ワークベンチの実際の呼び出し先とここで解決する
+     `rpcTargetNodeId` がずれ得る。既定値同士は同一ホストのため通常運用では
+     一致する。
+  4. `p2pRole` の設定ロジックは対象外(Issue #124のブランチで実装される。
+     本ブランチでは shared 型定義のみが先行マージ済み)。
+- テスト: `packages/collector/src/adapters/ethereum/index.test.ts` に
+  `describe("EthereumAdapter.pollInfra rpcTargetNodeId resolution (Issue #123)")`
+  を追加し、以下を検証した。
+  - `rpcTargetHost` が観測ノードの ip と一致する場合、複数ワークベンチ全てに
+    同じ `rpcTargetNodeId` が設定される
+  - `rpcTargetHost` 未設定(deps省略)では `rpcTargetNodeId` を設定しない
+  - `rpcTargetHost` がどのノードの ip とも一致しない場合は設定しない
+  - ポーリングごとに解決し直す(1回目は対象ノード未観測で unresolved、
+    2回目に対象ノードが観測されると resolved になる)ことを、Docker
+    コンテナ一覧が変化する疑似 DockerClient で確認した(固定値のキャッシュに
+    していれば検出できないケース)
+- 実機確認: メイン作業ディレクトリで稼働中の docker compose 環境(reth1/
+  beacon1/reth2/beacon2/validator1/validator2/workbench)に対し、
+  ビルド済み collector のモジュールを読み取り専用のスクリプト
+  (コンテナ操作は一切行わない一時スクリプト。確認後削除済み)から呼び出し、
+  `pollInfra()` の結果を直接確認した。
+  - 既定の `CHAINVIZ_PROXY_TARGET`(`http://172.28.1.1:8545`)では、
+    workbench の `rpcTargetNodeId` が reth1(`chainviz-ethereum/reth1`、
+    ip `172.28.1.1`)に正しく解決されることを確認した。
+  - `CHAINVIZ_PROXY_TARGET` を存在しないホスト(`http://10.99.99.99:8545`)に
+    差し替えると `rpcTargetNodeId` が `undefined`(省略)になることを確認し、
+    フォールバックが機能することも確認した。
+  - このworktreeから本物の docker compose プロジェクトへの操作(addNode等)
+    は一切行っていない(読み取りのみ)。
+- 確認: `pnpm --filter @chainviz/collector build` / `pnpm --filter
+  @chainviz/collector test` とも通過(629 tests green)。`eslint`も対象
+  ファイルに対して実行しエラー無し。
+- frontend側への申し送り: `WorkbenchEntity.rpcTargetNodeId` は
+  collector が毎ポーリング解決し直す値であり、対象ノードが観測から消えると
+  次のポーリングまでは古い id が残り得る(design記録・meta.md のreviewer
+  補足のとおり)。frontend側は「参照先エンティティが存在しない id は無視する
+  (エッジを描かない)」というダングリング参照ガードを必ず入れること。
+  §4 のUX実装(ツールチップ・ゴースト2枚化・接続予定エッジ・配置ルール・
+  操作先エッジ・i18n文言・モック更新)は本記録の対象外(frontend担当が別途
+  実装)。
+- 未実施: `docs/PLAN.md` の Issue #123 チェックボックス更新は、frontend側の
+  実装が完了してからまとめて行う(今回は据え置き)。
+
+### 2026-07-06 Issue #123 frontend実装(§4の全項目)
+
+- 担当: frontend
+- ブランチ: issue-123-ux-design-node-addition
+- 前提: このセッションはセッションリミットで一度中断したfrontend実装の続き。
+  着手時点で以下はすでに実装・ビルド・テスト確認済みだった(このセッションでは
+  触っていない): `packages/frontend/src/entities/infraNode.ts` の
+  `resolveLayoutPositions` / `findFreeGridPosition`(配置ルールの土台)、
+  `clientCategory.ts`、`connectionTargets.ts`(`resolveBootNodes` /
+  `resolveRpcTargetNode`)、`i18n/messages.ts` のヒント文言キー、
+  `glossary/ethereum/terms/b-network.yaml` の `bootnode` 用語。
+
+#### 実装した範囲(§4-1〜§4-6 すべて)
+
+1. **§4-1 押下前のツールチップ**: `canvas/ActionHint.tsx`(新規)を、
+   `glossary/GlossaryTerm.tsx` と同じ「`aria-describedby` で参照する自前
+   ポップオーバー」の方式で実装した。`commands/commandMessages.ts` に
+   `resolveAddNodeHint` / `resolveAddWorkbenchHint` を追加し、
+   `connectionTargets.ts` の解決結果 + `i18n/i18n.ts` の `format()` で
+   `{elBoot}` 等を実際の containerName に置換する。解決できなければ
+   `*.hint.generic` にフォールバックする(§4-5)。`CanvasToolbar` に
+   `entities` prop を追加し、`App.tsx` から現在のワールドステートを渡す。
+2. **§4-2 仮カード(ゴースト)の拡張**: `entities/ghostNode.ts` の
+   `GhostNodeData` に `layer?: "execution"|"consensus"`・
+   `targetContainerName?`・`targetNodeId?` を追加。`createGhostNode` は
+   `layer` があれば id に `-execution`/`-consensus` サフィックスを付ける
+   (同じ commandId の2枚が衝突しないように)。`commands/useCommands.ts` の
+   `dispatch` を、addNode 時に execution/consensus 用の2枚のゴーストを
+   生成するよう変更した(`resolveBootNodes` / `resolveRpcTargetNode` を
+   ディスパッチ時点の world-state から解決し、ゴーストの接続予定先に
+   埋め込む)。`GhostNodeCard.tsx` はゴースト名を層に応じて
+   「新しいノード (reth)」「新しいノード (beacon)」に、サブタイトルを
+   「起動中… {target} と接続予定」/「起動中… 操作先: {target}」に
+   (解決できなければ従来どおり「起動中…」のみ)変更した。
+   ゴースト→接続予定先ノードへの点線エッジは
+   `entities/pendingConnectionEdge.ts`(+`PendingConnectionEdge.tsx`)で
+   導出・描画する(node 由来はピア接続系、workbench 由来は操作エッジ系の
+   低彩度色)。
+   - 実体への対応付け(#102のFIFO近似)は、`removeOldestGhostByKind` を
+     `removeGhostForArrivedEntity`(`entities/ghostNode.ts`)に置き換え、
+     到着した node エンティティの `clientType` から層を判定して同じ層の
+     ゴーストを優先的に消すようにした(見つからなければ層を問わない
+     FIFO へフォールバック)。
+3. **§4-3 配置ルール**: `App.tsx` に、entities が変化するたびに
+   `resolveLayoutPositions` で「まだ保存されていない containerName」に
+   空きグリッドスロットを確定し、即座に `saveLayout` で永続化する
+   effect を追加した(既存カードの位置は不変。旧「id ソートで毎回添字を
+   振り直す」実装は使っていない)。
+   - **既知の制約(実装しきれなかった点)**: UX設計 §4-3 ルール2
+     「ゴーストの位置 = 実カードの最終位置にする」は、ピクセル単位での
+     完全一致までは実装していない。ゴーストの位置は
+     `useCommands.ts` の既存の `ghostIndexRef`(単調増加カウンタ、Issue
+     #113 対応)をそのまま使っており、実カードの位置は
+     `resolveLayoutPositions`(containerName のアルファベット順に空き
+     スロットを確定)という別のアルゴリズムで決まる。レイアウトが
+     ドラッグ移動されておらず、他の追加操作と競合しない「素の」状態では
+     両者はほぼ一致するが、保証はしていない。ゴースト側もレイアウトの
+     空きスロット探索を共有する設計にすれば厳密な一致が実現できるが、
+     `useCommands` に `layout` を渡す配線・関連テストの大規模な書き換えが
+     必要になり、今回のセッション内では見送った(既存カードが動かない
+     というルール1の効果は完全に得られている)。次の担当が続きをやる
+     場合は、この既知のギャップから着手するとよい。
+4. **§4-4 到着後の新着強調・接続確立中エッジ・常設操作先エッジ**:
+   - `entities/useNewArrivalHighlight.ts`(新規)で、実カード到着から
+     `NEW_ARRIVAL_HIGHLIGHT_DURATION_MS`(5000ms)だけ `isNew` を立てる
+     フックを実装。`InfraNodeCard.tsx` は `isNew` で `infra-card--new`
+     クラス(発光アニメーション)を付ける。
+   - `entities/connectingEdge.ts`(+`ConnectingEdge.tsx`)で、実
+     PeerEdge を1本も持たないノードから対応する層のブートノードへの
+     「P2P接続を確立中…」エッジを導出・描画する。ゴースト由来の
+     `pendingConnectionEdge` とは別物で、実エンティティ・実エッジの
+     状態だけから毎回導出する(ゴースト側の状態を引き継ぐ必要がない
+     設計)。
+   - `entities/operationTargetEdge.ts`(+`OperationTargetEdge.tsx`)で、
+     `WorkbenchEntity.rpcTargetNodeId` から常設の「操作先」エッジを
+     導出・描画する。`InfraPopover.tsx` にも「操作先ノード」欄を追加した。
+5. **§4-5 フォールバック**: 各解決関数(`resolveBootNodes` /
+   `resolveRpcTargetNode` / 上記の各エッジ導出関数)はすべて
+   「解決できなければ省略・描画しない」設計にしており、ユニットテストで
+   個別に確認している。
+6. **§4-6 モックデータの更新**: `websocket/mockData.ts` を更新した。
+   - `createMockSnapshot`: reth-node-1 / lighthouse-1 に
+     `p2pRole: "bootnode"`、reth-node-2 に `p2pRole: "peer"` を設定。
+     workbench-alice に `rpcTargetNodeId: "reth-node-1"` を設定。
+   - `addNode`: 1コマンドで reth + beacon の2エンティティ
+     (`newFollowerNodePair`)を追加するよう変更(`applyCommand` の戻り値を
+     `diff?` から `diffs?: DiffEvent[]`(複数)に変更)。
+     `ADD_NODE_PEER_CONNECT_DELAY_MS`(4000ms、UX確認用の演出値)経過後に
+     ブートノードとの `edgeAdded` を模擬発火し、「接続確立中…」→実エッジの
+     切り替えをオフラインで確認できるようにした。
+   - `addWorkbench`: 新規ワークベンチに `rpcTargetNodeId: "reth-node-1"`
+     を設定。
+   - ついでに、追加された node/workbench に `removable: true` を設定した
+     (副次的な修正。従来 mockData.ts はどの追加エンティティにも
+     `removable` を設定しておらず、モック環境では削除ボタンが一切
+     表示されない状態だった。本Issueの手動確認で気付いたため、
+     コード上ついでに直した)。
+
+#### 実装中に見つけて直した不具合(新着強調の初期表示レース)
+
+Playwright での実機確認で、**接続直後に初期スナップショットのカード
+全部が「新着」として発光してしまう**不具合を発見した。原因は
+`useWorldState` の接続処理が別 effect の非同期処理であるため、
+マウント直後の最初のレンダーでは `entityIds` が空で渡り、次のレンダーで
+初期スナップショットの id が届く、という2段階になっていたこと。
+「effect の初回呼び出しを基準にする」実装だと、この空の状態を基準に
+してしまい、直後に届いた初期カード全部を新着と誤判定していた。
+
+`useNewArrivalHighlight` に `ready: boolean` 引数を追加し、呼び出し側
+(`App.tsx`)が `status === "connected"`(=最初のスナップショットが
+届いたかどうか)を明示的に渡すよう変更して修正した。`ready` が
+初めて true になった時点の id 集合を基準にすることで、接続の非同期性に
+依存しない判定にした。修正前の状態を実際に再現し(Playwright:
+「infra-card--new count right after arrival: 6」= 初期4件+新規2件が
+全部発光)、修正後に再現しなくなること(同じ操作で2件のみ発光)を
+Playwright で目視確認した上で、`useNewArrivalHighlight.test.ts` に
+この非同期到着レースを再現する回帰テストを追加した。
+
+#### 動作確認
+
+- `pnpm --filter @chainviz/frontend build` / `build:web` / `test` /
+  `packages/frontend` への `eslint` すべて通過を確認した
+  (675 tests green)。
+- Playwright(スクラッチパッドに導入済みのものを再利用。手順は本ファイル
+  §8 参照)で実際に `pnpm --filter @chainviz/frontend dev` を起動し、
+  以下を目視・テキスト抽出で確認した:
+  - ツールチップ: ホバーで日本語/英語とも `{elBoot}`/`{clBoot}`/
+    `{rpcTarget}` が実際の containerName に置換されて表示される。
+  - ノード追加直後、reth/beacon の2枚の実カードが「新着」発光
+    (`infra-card--new`)付きで到着し、ブートノードへの
+    「P2P接続を確立中…」点線エッジが表示され、
+    `ADD_NODE_PEER_CONNECT_DELAY_MS` 経過後に実エッジ(緑の実線)へ
+    切り替わって「接続確立中」エッジが消えることを確認した。
+  - 発光は5秒経過後に消えることを確認した。
+  - ワークベンチ追加後、常設の「操作先」エッジ(既存の Alice 分・
+    新規追加分の両方)が表示され、カードのホバーポップオーバーに
+    「操作先ノード: chainviz-reth-1」が出ることを確認した。
+- Issue #113(ゴースト配置indexが削除を挟むと重なる)の再現手順に相当する
+  テスト(`useCommands.test.tsx` の「placement index」系)は、addNode が
+  1回で2つの index を消費する新仕様に合わせて書き直した上ですべて
+  green。ただし上記の「既知の制約」のとおり、ゴースト位置と実カード位置の
+  厳密な一致(#113の根本原因だった仕組み自体の置き換え)は今回未実施。
+
+#### 変更ファイル(主なもの)
+
+- 新規: `canvas/ActionHint.tsx`(+test)、`entities/connectingEdge.ts`
+  (+`ConnectingEdge.tsx`、+test)、`entities/pendingConnectionEdge.ts`
+  (+`PendingConnectionEdge.tsx`、+test)、
+  `entities/operationTargetEdge.ts`(+`OperationTargetEdge.tsx`、+test)、
+  `entities/useNewArrivalHighlight.ts`(+test)
+- 変更: `entities/ghostNode.ts`、`entities/GhostNodeCard.tsx`、
+  `entities/InfraNodeCard.tsx`、`entities/InfraPopover.tsx`、
+  `entities/canvasNode.ts`、`canvas/Canvas.tsx`、`canvas/CanvasToolbar.tsx`、
+  `commands/useCommands.ts`、`commands/commandMessages.ts`、`app/App.tsx`、
+  `websocket/mockData.ts`、`styles.css`
+- 上記すべてに対応するユニットテストを同じ変更の中で追加・更新した
+  (`useCommands.test.tsx` は addNode が2ゴーストになった仕様変更に合わせ、
+  ゴースト関連のdescribeブロックをほぼ全面的に書き直した)。
+
+#### 次の担当への申し送り
+
+- 上記「既知の制約」(ゴースト⇔実カードの位置厳密一致は未実装)を
+  参照。優先度が高ければ、`useCommands` に `layout`(または layout 由来の
+  占有セル集合)を渡す設計から着手するとよい。
+- `docs/PLAN.md` の Issue #123 チェックボックスは、レビュー・QA前提の
+  ため未更新のまま(統括の判断に委ねる)。
+- GitHub Issue のクローズ・commit/push/PR作成は行っていない(統括の判断に
+  委ねる)。
+
+### 2026-07-06 Issue #123 テスト強化(異常系・境界値)
+
+- 担当: tester
+- ブランチ: issue-123-ux-design-node-addition
+- 内容: frontend実装担当が書いた基本テスト(675件)に対し、見落としがちな
+  異常系・境界値・特殊遷移のユニットテストを15件追加した。実装コードは
+  一切変更していない。追加後 `pnpm --filter @chainviz/frontend build` /
+  `test`(690件green)/ 対象テストファイルへの `eslint` すべて通過。
+- 追加したテストと観点:
+  1. `entities/connectingEdge.test.ts`(+2): 接続確立中エッジ(§4-4)が、
+     相手がブートノードでない別フォロワーとのピア接続(ディスカバリメッシュ)でも
+     消えること。同一層の未接続フォロワーが複数あるとき各々に独立したエッジを
+     引くこと(1本に潰れ・取りこぼしが無いこと)。
+  2. `entities/connectionTargets.test.ts`(+3): `resolveBootNodes` で
+     consensus 片側のみ present のケース(execution-only の対称)、クライアント
+     種別が EL/CL いずれにも分類されないブートノードを無視すること。
+     `resolveRpcTargetNode` で先頭ワークベンチの `rpcTargetNodeId` が
+     ダングリング(指す先のノードが存在しない)でも探索を打ち切らず次の
+     解決可能なワークベンチの対象を返すこと。
+  3. `commands/commandMessages.test.ts`(+1): `resolveAddNodeHint` が
+     consensus ブートノードのみ既知の場合に generic 文言へフォールバック
+     すること(§4-5。execution-only の対称ケース)。
+  4. `entities/infraNode.test.ts`(+3): `resolveLayoutPositions`(§4-3)で
+     複数欠けの中抜けスロットを正しく埋めること、削除済みカードの stale な
+     レイアウトエントリが slot を占有し続けるため削除→追加が入り乱れても
+     新規カードが重ならないこと(Issue #113 と同種の再発が無いことの確認)、
+     グリッド外へドラッグした保存済みカードがグリッドセルを占有しないこと。
+  5. `entities/useNewArrivalHighlight.test.ts`(+2): addNode の reth+beacon
+     ペアが同一レンダーで同時到着したとき両方を新着強調すること(片方の
+     取りこぼしが無いこと)、同時到着した複数 id が duration 経過でまとめて
+     解除されること。
+  6. `entities/pendingConnectionEdge.test.ts`(+1): ペアの片方だけ接続予定先が
+     present な部分解決時、存在する方だけエッジを描き他方を宙ぶらりんに
+     しないこと。
+  7. `entities/ghostNode.test.ts`(+2): `removeGhostForArrivedEntity` で
+     2ペア保留中に片ペアの beacon が先着したとき、層一致で最古の consensus
+     ゴーストを消し別ペアの execution を巻き込まないこと(ペアの取り違え・
+     交錯が起きないこと)。ゴーストの並びが consensus 先行でも reth 到着は
+     execution ゴーストを消すこと(純粋な先頭 FIFO ではなく層一致優先)。
+  8. `entities/operationTargetEdge.test.ts`(+1): 複数ワークベンチのうち一方の
+     操作先ノードだけが削除された場合、消えた側のエッジは描かず生きている側は
+     残すこと(後始末が他方を巻き込まないこと)。
+- バグ報告: 既存実装にバグは検出されなかった。上記の観点はいずれも実装が
+  正しく振る舞うことを確認する形で追加できた。frontend実装担当が書いた
+  基本テストは既にハッピーパス・多くの異常系を高い網羅性でカバーしており、
+  今回の追加は隙間の補強にとどまる。
+- 未実施: `docs/PLAN.md` のチェックボックス更新・commit/push/PR作成は行って
+  いない(統括の判断に委ねる)。frontend実装の「既知の制約」(ゴースト⇔実カード
+  位置の厳密一致未実装)はテスト対象外(未実装機能のため)。
+
+### 2026-07-06 Issue #123 静的レビュー1回目(差し戻し)
+
+- 担当: reviewer
+- ブランチ: issue-123-ux-design-node-addition(全変更が未コミットの状態で
+  レビューした)
+- 確認したこと:
+  - 設計原則: フロントは Docker/ノード API に直接触れておらず、collector の
+    `rpcTargetNodeId` 解決も IP ベースのチェーン非依存な実装で問題なし。
+    `entities/clientCategory.ts` は reth/lighthouse 等のクライアント名で
+    EL/CL を判定するチェーン固有ロジックだが、main 側の `InfraPopover.tsx` /
+    `PeerNetworkLegend.tsx` に既に同種の前例があり、将来チェーンプロファイル
+    表現セット(`chain-profiles/`)へ移す旨の負債コメントも明記されているため
+    許容とした
+  - `packages/shared`: 差分なし(型は #134 で先行マージ済みのものをそのまま
+    使用)を確認
+  - エラー握りつぶし: 新規コードに catch 節そのものが無く、各解決関数は
+    「解決できなければ省略・描画しない」というフォールバックを docstring 付きで
+    実装しており問題なし。ダングリング参照ガード(collector 担当の申し送り)も
+    pendingConnectionEdge / connectingEdge / operationTargetEdge の全てに
+    入っている
+  - 固定値: `NEW_ARRIVAL_HIGHLIGHT_DURATION_MS`(5000ms)・
+    `ADD_NODE_PEER_CONNECT_DELAY_MS`(4000ms、モック演出値)とも「環境の状態に
+    依存しない UX 上の固定値」である旨のコメントがあり問題なし
+  - 品質ゲート: リポジトリ全体で `pnpm lint` / `pnpm build` / `pnpm test`
+    (shared 13 / e2e 34 / collector 629 / frontend 690)すべて通過
+  - テストの質: tester 強化分15件を含め、異常系(片側のみ解決・ダングリング
+    参照・ペア同時到着・層一致 FIFO)まで実装の振る舞いを検証しており良好
+  - UX設計(§4)からの逸脱・先回り実装: 文言は設計の文言と一致。実装範囲も
+    §4-1〜§4-6 に収まっており過剰実装なし
+- 差し戻し理由(要対応2点):
+  1. **新着強調の `ready` 修正が実 WebSocket クライアントでは不完全**。
+     `websocket/client.ts` は WebSocket の `open` イベントで status を
+     `connected` にするが、スナップショットはその後の `message` イベントで
+     届く。そのため実接続では「`ready=true` かつ entities 空」のレンダーが
+     必ず1回挟まり、`useNewArrivalHighlight` が空集合を基準に確立してしまい、
+     直後に届く初期スナップショットの全カードが新着発光する(修正したはずの
+     不具合が実環境でだけ再発する)。モック(`mockData.ts` の `connect()`)は
+     `connected` への遷移とスナップショット配信を同一同期処理内で行うため
+     React のバッチ処理で同時に見え、Playwright(dev=モック)の確認では
+     検出できない。回帰テストも「ready と ids が同時に届く」ケースのみで、
+     「ready が先行し ids が1レンダー遅れて届く」実クライアントの順序を
+     カバーしていない。対応案: `ready` を「接続状態」ではなく「最初の
+     スナップショットを適用済みか」に基づかせる(例: `useWorldState` が
+     snapshot 適用済みフラグを返す)。あわせて「ready 先行・ids 後着」の
+     回帰テストを追加すること
+  2. **main(origin/main)の取り込みが必須**。本ブランチ分岐後に Issue #124
+     (PR #137)が main へマージされており、重複ファイルが多い。特に
+     `glossary/ethereum/terms/b-network.yaml` には **bootnode 項目が本ブランチ
+     と main の双方で別文面のまま追加**されており、単純マージでは YAML の
+     重複キーになるため1つに統合する必要がある。collector の
+     `adapters/ethereum/index.ts`(pollInfra 周辺)・`Canvas.tsx`・
+     `InfraNodeCard.tsx`・`InfraPopover.tsx`・`messages.ts`・`styles.css` も
+     両側で変更されている。また本ブランチのブートノード予告機能は
+     `NodeEntity.p2pRole` を collector が設定する #124 の実装(main 側)に
+     依存しており、main を取り込まない限り実環境では generic フォールバック
+     しか動作しない(QA が本来の動作を検証できない)。取り込み・衝突解消後に
+     lint/build/test を再実行すること
+- 軽微な指摘(対応は裁量、差し戻し理由ではない):
+  - `entitiesToFlowNodes` の1レンダー限りの暫定位置は id ソート順で空き
+    スロットを割り当てる一方、確定側の `resolveLayoutPositions` は
+    containerName 辞書順。複数カード同時初出時に暫定位置と確定位置が
+    食い違い、1レンダーだけ位置が飛び得る(実害は軽微)
+  - UX設計 §6-4 の CONCEPT.md 追記提案は未実施のまま(統括預かりの判断事項。
+    マージ前に採否を決めること)
+  - mockData の `removable: true` 付与は本 Issue と別関心の副次修正なので、
+    コミットを分けること
+- 申し送り事項への回答:
+  1. `ready` 修正の妥当性 → モック経路に対しては妥当だが、実クライアント
+     経路で上記1のとおり不完全。差し戻し
+  2. ゴースト位置と実カード最終位置の不一致 → 許容と判断。ルール1(既存
+     カード不動)は完全に実現されており、Issue #113 同種の再発もテストで
+     担保済み。厳密一致は残件として別 Issue 化を推奨
+  3. main 取り込み → 必要(上記2)
+- コミット粒度: 現状すべて未コミット。「1変更1コミット」に従い、少なくとも
+  collector 実装 / glossary(※main 取り込みで #124 側と統合するなら消える
+  可能性あり) / frontend の §4-1(ツールチップ)・§4-2(ゴースト・接続予定
+  エッジ)・§4-3(配置ルール)・§4-4(新着強調・確立中・操作先エッジ)・
+  §4-6(モック更新) / removable 副次修正 / テスト強化 / worklog の単位で
+  分けることを推奨する
+
+### 2026-07-06 統括によるレビュー指摘対応
+
+- レビュー(査読誠)の差し戻し2点に対応:
+  1. **新着強調のreadyバグ**: `useWorldState`に`hasReceivedSnapshot`
+     (最初のスナップショット受信済みか)を追加。実WebSocketクライアント
+     では`status==="connected"`(onopen相当)とスナップショット到着の
+     間に「connectedだがentitiesは空」のレンダーが必ず挟まるため、
+     `App.tsx`の`useNewArrivalHighlight`の`ready`引数をこちらに切り替えた。
+     `useWorldState.test.tsx`に、実際の順序(open先行→snapshot後着)を
+     再現する回帰テスト3件を追加。修正前のロジック
+     (`hasReceivedSnapshot: status === "connected"`)に一時的に戻し、
+     3件とも意図通り失敗することを確認してから元に戻した。
+  2. **mainの取り込み**: Issue #124(PR #137)マージ後のmainを取り込んだ。
+     `glossary/ethereum/terms/b-network.yaml`のbootnode定義が両ブランチ
+     で重複していたため統合。
+- コミットを以下の単位に分割した:
+  1. `feat(collector)`: rpcTargetNodeId解決
+  2. `feat(glossary)`: bootnode用語追加
+  3. `feat(frontend)`: UX実装一式(§4-1〜§4-6、readyバグ修正含む)
+  4. 本コミット(docs)
+- `pnpm lint && pnpm build && pnpm test`すべて通過を再確認。
