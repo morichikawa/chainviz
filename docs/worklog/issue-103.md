@@ -168,3 +168,55 @@
     ワールドステートなど)の場合も「削除不可」の安全側として扱われる
     (`=== true` の厳密比較のため)。これは shared 側の設計方針
     (「省略時は false と同義」)と一致している。
+
+### 2026-07-06 Issue #103 removable フラグ実装(shared/collector/frontend/テスト強化)のレビュー
+
+- 担当: reviewer
+- ブランチ: issue-103-removable-node-flag
+- 内容: 設計(shared 型)・collector・frontend・テスト強化の一連の変更
+  (32c3af9〜2cecdec の8コミット)を静的にレビューし、コード・設計・テストは
+  合格、worklog の記録に不備2点(下記)を指摘した。
+- 確認結果:
+  - **基底 `InfraEntity` に置いた設計判断は妥当**。
+    `profiles/ethereum/docker-compose.yml` の `workbench` サービス(foundry、
+    173行目)が compose 起動(managed ラベル無し)であることを実際に確認した。
+    レビュー初回記録(本ファイル冒頭)の「ワークベンチは全て addWorkbench
+    経由」という見立ては誤りだったので、設計フェーズの訂正が正しい。
+    `InfraNodeCard.tsx` は node/workbench 共通のため基底型1箇所で両方直る
+  - **labels.ts への一元化で値・挙動の変化なし**。`node-lifecycle.ts` /
+    `classify.ts` の文字列リテラルと `labels.ts` の定数値が完全一致する
+    ことを diff で確認。`docker/observe.ts` を対象外とした判断も妥当
+    (docker 共通層から adapters/ethereum への import は依存の向きが逆に
+    なるため)。`targets.ts` の `COMPOSE_SERVICE_LABEL` 重複はスコープ外と
+    して許容するが、labels.ts のコメント「このファイルを唯一の定義元に
+    する」とは厳密には不一致のまま。将来の整理候補として残る
+  - **テストの質**: collector 側の変異注入(`=== "true"` → `!== "false"`)を
+    レビュー時にも実際に実行し、10件が失敗することを再確認した(検証後に
+    revert 済み)。異常系(大文字・数値・空文字・前後空白・ラベル欠落)、
+    node/workbench の一貫性、混在ポーリング、JSON 往復での省略時意味論、
+    フロント側の非 boolean 値混入まで網羅されており、意味のあるテストに
+    なっている
+  - **エラー握りつぶし・決め打ち定数**: 今回の diff に該当なし。既存の
+    addNode ロールバック失敗経路も console.error + 理由コメント付きで
+    CLAUDE.md のルールに適合している
+  - `pnpm lint && pnpm build && pnpm test` 全パッケージ通過(shared 10 /
+    collector 512 / frontend 417 / e2e 34、いずれも成功)。e2e は削除ボタン
+    (`infra-card-remove-*`)に依存していないことも確認
+  - コミット粒度: 8コミットいずれも単一の関心事に収まっており問題なし
+- 決定事項・注意点:
+  - **ゴーストコンテナの不整合は本 Issue のスコープ外として見送りで可**と
+    判断した。理由: (1) 発生には beacon 起動失敗+ロールバック失敗の二重
+    障害が必要、(2) 発生しても collector 再起動時の
+    `recoverManagedContainers`(ラベル回収)でレジストリに登録され
+    removeNode で消せるようになる(自己回復する一時状態)、(3) UI 上の帰結は
+    修正前と同じ「削除ボタン押下でエラー通知」であり悪化ではない。実運用や
+    QA で実際に観測された場合に別 Issue 化すれば足りる
+  - **worklog の記録不備(要修正)**: (1) GitHub Issue #103 はレビュー・QA
+    完了前の 2026-07-06 02:51:41Z にクローズされ、統括が 02:52:47Z に
+    再オープンした(GitHub タイムラインで確認。本レビュー時点で OPEN)。
+    frontend 側の記録は「クローズした」ことを正規の手順のように記述して
+    おり、早計だった旨と再オープンの経緯が記録されていなかったため、
+    この行をもって経緯の正とする。Issue のクローズは PR マージ時の
+    `Closes #103` に委ねること。(2) テスト強化(2cecdec)の作業記録が
+    本ファイルに無い。CLAUDE.md のルール(タスク完了時に worklog へ追記)に
+    従い、テスト担当の記録を追記してから PR を作成すること
