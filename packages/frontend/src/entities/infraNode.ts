@@ -76,3 +76,22 @@ export function entitiesToFlowNodes(
     };
   });
 }
+
+/**
+ * 2つの InfraFlowNode が「見た目上変化していない」とみなせるか判定する
+ * (`stabilizeNodes` に渡す比較関数。Issue #119)。
+ *
+ * `entity` は WorldState 側で内容に変化がない限り同一オブジェクト参照が
+ * 保たれる(`world-state/store.ts` の `applyDiff` 参照)ため、参照比較だけで
+ * 「実データが変わっていないか」を安価に判定できる。
+ */
+export function isSameInfraNode(
+  previous: InfraFlowNode,
+  next: InfraFlowNode,
+): boolean {
+  return (
+    previous.data.entity === next.data.entity &&
+    previous.position.x === next.position.x &&
+    previous.position.y === next.position.y
+  );
+}

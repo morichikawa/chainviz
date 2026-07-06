@@ -9,6 +9,7 @@ import {
   defaultGridPosition,
   entitiesToFlowNodes,
   isInfraEntity,
+  isSameInfraNode,
 } from "./infraNode.js";
 
 function node(id: string, containerName = `c-${id}`): NodeEntity {
@@ -137,5 +138,32 @@ describe("entitiesToFlowNodes", () => {
   it("sorts ids lexicographically (string, not numeric)", () => {
     const nodes = entitiesToFlowNodes([node("n10"), node("n2"), node("n1")], {});
     expect(nodes.map((n) => n.id)).toEqual(["n1", "n10", "n2"]);
+  });
+});
+
+describe("isSameInfraNode", () => {
+  it("returns true when entity reference and position are unchanged (Issue #119)", () => {
+    const [previous] = entitiesToFlowNodes([node("a")], {});
+    const [next] = entitiesToFlowNodes([node("a")], {});
+    // entitiesToFlowNodes は同じ入力からでも毎回新しいノードオブジェクトを
+    // 作るが、entity 自体(引数の node("a") と同一の値)は同じ参照。
+    const sharedEntity = node("a");
+    const withSharedEntity = { ...previous, data: { entity: sharedEntity } };
+    const nextWithSharedEntity = { ...next, data: { entity: sharedEntity } };
+    expect(isSameInfraNode(withSharedEntity, nextWithSharedEntity)).toBe(true);
+  });
+
+  it("returns false when the entity reference changed", () => {
+    const [a] = entitiesToFlowNodes([node("a")], {});
+    const [b] = entitiesToFlowNodes([node("a")], {});
+    // node("a") をそれぞれ別に呼んでいるため entity の参照は異なる。
+    expect(isSameInfraNode(a, b)).toBe(false);
+  });
+
+  it("returns false when only the position changed", () => {
+    const entity = node("a", "c-a");
+    const previous = entitiesToFlowNodes([entity], {})[0];
+    const next = entitiesToFlowNodes([entity], { "c-a": { x: 1, y: 2 } })[0];
+    expect(isSameInfraNode(previous, next)).toBe(false);
   });
 });

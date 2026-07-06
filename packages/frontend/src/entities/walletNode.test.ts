@@ -8,6 +8,7 @@ import { indexTransactions } from "./transaction.js";
 import {
   WALLET_GRID,
   formatEther,
+  isSameWalletNode,
   isWalletEntity,
   walletsToFlowNodes,
 } from "./walletNode.js";
@@ -163,5 +164,83 @@ describe("walletsToFlowNodes", () => {
       ctx({ presentInfraIds: new Set(["wb-1"]) }),
     );
     expect(nodes[0].data.ownerPresent).toBe(false);
+  });
+});
+
+describe("isSameWalletNode", () => {
+  const tx: TransactionEntity = {
+    kind: "transaction",
+    hash: "0x1",
+    from: "0xa",
+    to: "0xb",
+    status: "pending",
+  };
+
+  it("returns true when nothing meaningful changed between two recomputations (Issue #119)", () => {
+    const entity = wallet({ address: "0xa", recentTxHashes: ["0x1"] });
+    const context = ctx({ txByHash: indexTransactions([tx]) });
+    const previous = walletsToFlowNodes([entity], context)[0];
+    // 別回の呼び出しでも、entity・tx が同じ参照であれば内容は変わっていない。
+    const next = walletsToFlowNodes([entity], context)[0];
+    expect(previous).not.toBe(next); // walletsToFlowNodes は毎回新しいオブジェクトを返す
+    expect(isSameWalletNode(previous, next)).toBe(true);
+  });
+
+  it("returns false when the entity reference changed", () => {
+    const context = ctx();
+    const previous = walletsToFlowNodes(
+      [wallet({ address: "0xa" })],
+      context,
+    )[0];
+    const next = walletsToFlowNodes([wallet({ address: "0xa" })], context)[0];
+    expect(isSameWalletNode(previous, next)).toBe(false);
+  });
+
+  it("returns false when the transaction list content changed", () => {
+    const entity = wallet({ address: "0xa", recentTxHashes: ["0x1"] });
+    const previous = walletsToFlowNodes(
+      [entity],
+      ctx({ txByHash: indexTransactions([tx]) }),
+    )[0];
+    const updatedTx: TransactionEntity = { ...tx, status: "included" };
+    const next = walletsToFlowNodes(
+      [entity],
+      ctx({ txByHash: indexTransactions([updatedTx]) }),
+    )[0];
+    expect(isSameWalletNode(previous, next)).toBe(false);
+  });
+
+  it("returns false when settlingHashes changed", () => {
+    const entity = wallet({ address: "0xa", recentTxHashes: ["0x1"] });
+    const context = ctx({ txByHash: indexTransactions([tx]) });
+    const previous = walletsToFlowNodes([entity], context)[0];
+    const next = walletsToFlowNodes(
+      [entity],
+      { ...context, settling: new Set(["0x1"]) },
+    )[0];
+    expect(isSameWalletNode(previous, next)).toBe(false);
+  });
+
+  it("returns false when ownerPresent changed", () => {
+    const entity = wallet({ address: "0xa", ownerWorkbenchId: "wb-1" });
+    const previous = walletsToFlowNodes(
+      [entity],
+      ctx({ presentInfraIds: new Set(["wb-1"]) }),
+    )[0];
+    const next = walletsToFlowNodes(
+      [entity],
+      ctx({ presentInfraIds: new Set() }),
+    )[0];
+    expect(isSameWalletNode(previous, next)).toBe(false);
+  });
+
+  it("returns false when the position changed", () => {
+    const entity = wallet({ address: "0xa" });
+    const previous = walletsToFlowNodes([entity], ctx())[0];
+    const next = walletsToFlowNodes(
+      [entity],
+      ctx({ layout: { "0xa": { x: 5, y: 5 } } }),
+    )[0];
+    expect(isSameWalletNode(previous, next)).toBe(false);
   });
 });
