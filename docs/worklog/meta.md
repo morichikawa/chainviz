@@ -655,3 +655,35 @@
 - 判定: 差し戻し(要修正2点の対応後に再レビュー)。なお本変更は
   docs/ + .claude/agents/ のみの変更のため、修正後の再レビュー合格を
   もって chainviz-qa の省略は CLAUDE.md の明記済み例外に該当し妥当。
+
+### 2026-07-06 chainviz-uxエージェント追加の再レビュー(reviewer 合格)
+
+- 担当: reviewer
+- ブランチ: chore-add-ux-agent(コミット 93168f0)
+- 内容:
+  - 前回差し戻し2点の修正を確認した。
+    1. frontmatter の tools が `Read, Write, Edit, Bash, Grep, Glob` に
+       なり、Edit の欠落が解消。chainviz-designer.md と同一のツール構成で
+       慣例と整合。
+    2. 起動手順の記述が実態と一致することをコードと突き合わせて確認。
+       `pnpm dev:up`(scripts/dev-up.sh: Docker + collector + frontend の
+       実環境一括起動)と `pnpm --filter @chainviz/frontend dev`
+       (packages/frontend の vite。`VITE_COLLECTOR_URL` 未設定時は
+       packages/frontend/src/app/defaultClient.ts が mockData.ts の
+       モッククライアントを返す)の説明はいずれも正確。
+  - 前回の非ブロッキング推奨3点への対応も確認した。
+    - description 末尾に chainviz-qa との境界(完了条件との照合は qa、
+      こちらは分かりやすさの評価に特化)を追記。chainviz-detective.md の
+      description が隣接役割との境界を明示する書き方と整合。
+    - docs/CONCEPT.md の決定事項を変える更新はユーザー・統括に先に確認する
+      という歯止めを追記(補強程度の追記は除くという例外付き)。なお統括の
+      報告では「守ること」への追加とされていたが、実際の配置は「やること」の
+      CONCEPT.md 更新の項目内。内容としては更新作業の直近に置かれており
+      むしろ読みやすく、問題としない。
+    - Playwright 未導入の件も「未導入なら都度導入する」と明記され解消。
+  - `pnpm lint` 通過。main との差分は .md 3ファイルのみ
+    (.claude/agents/chainviz-ux.md、CLAUDE.md、docs/worklog/meta.md)で、
+    build/test は main と同一結果。コミットは差し戻し対応1件で粒度も妥当。
+- 判定: 合格。docs/ + .claude/agents/ のみの変更のため、CLAUDE.md の
+  明記済み例外により chainviz-qa の省略は妥当。push / PR / マージは
+  統括に委ねる。
