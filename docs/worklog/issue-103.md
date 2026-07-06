@@ -220,3 +220,42 @@
     `Closes #103` に委ねること。(2) テスト強化(2cecdec)の作業記録が
     本ファイルに無い。CLAUDE.md のルール(タスク完了時に worklog へ追記)に
     従い、テスト担当の記録を追記してから PR を作成すること
+
+### 2026-07-06 Issue #103 removableフラグの異常系・境界値テスト強化
+
+- 担当: tester
+- ブランチ: issue-103-removable-node-flag
+- 内容: 既存の基本テストを異常系・境界値の観点で強化した(実装は変更せず
+  テストのみ追加。コミット2cecdec)。
+  - collector(`packages/collector/src/adapters/ethereum/index.test.ts`):
+    - managedラベルが存在するが値が`"true"`以外(大文字`TRUE`/`True`、
+      数値的文字列`1`、`yes`、空文字、前後空白付き`" true "`)の6パターンを
+      `it.each`で検証し、いずれも`removable === false`になることを確認
+    - labelsオブジェクト自体に該当キーが無い(欠落)場合に`removable`が
+      falseになることを検証
+    - workbench側でもmanaged値が想定外(`"false"`)のとき`removable === false`
+      になることを検証(node側だけでなく一貫していることの確認)
+    - managed/unmanagedのnode・workbenchを1回のポーリングに混在させ、
+      各エンティティが自分のラベルに応じて独立にremovableを得ること
+      (共通`toEntity`経路を通り、片方の判定が他方へ漏れ出さないこと)を検証
+  - frontend(`packages/frontend/src/entities/InfraNodeCard.test.tsx`):
+    - workbenchで`removable`が`undefined`のときボタン非表示になることを
+      検証(nodeのみだったundefinedケースをworkbenchにも対称化)
+    - `removable`が文字列`"true"`(型を欺いた退化スナップショットを想定)
+      でも、`=== true`の厳密比較によりボタンが非表示になることを検証
+  - shared(`packages/shared/src/world-state/entities.test.ts`):
+    - `removable`のtrue/falseがJSONシリアライズの往復で崩れないこと
+      (collector→frontendのWebSocket経路を模したround-trip)を検証
+    - `removable`省略時は`JSON.stringify`がキーごと落とし、受信側も
+      `undefined`として受け取ること、「省略=false相当」の意味論が
+      `=== true`判定・`?? false`の両方で一致することを検証
+  - 変異注入による実効性確認: `=== "true"`を`!== "false"`に一時的に変更し、
+    追加したテスト10件が実際に失敗することを確認したうえで元に戻した
+  - `pnpm lint && pnpm build && pnpm test`を全パッケージに対して実行し、
+    通過を確認した(collector 512件、frontend 417件、shared 10件)
+- 決定事項・注意点:
+  - 実装のバグは見つからなかった。`removable: obs.labels[MANAGED_LABEL]
+    === "true"`(collector)と`entity.removable === true`(frontend)は
+    いずれも厳密比較で安全側に倒れており、境界・異常系の挙動は仕様どおり
+  - 本エントリは査読誠のレビュー(直前のエントリ)で指摘された記録漏れを
+    受けて、統括が事後的に追記したもの(試験学の完了報告内容を転記)
