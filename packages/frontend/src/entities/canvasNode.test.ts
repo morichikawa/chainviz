@@ -66,4 +66,21 @@ describe("canvasNodeLayoutKey", () => {
     });
     expect(canvasNodeLayoutKey(ghost)).toBe("cmd-1");
   });
+
+  it("uses commandId for workbench ghosts too (kind does not change the key source)", () => {
+    const ghost = createGhostNode({
+      commandId: "cmd-9",
+      kind: "workbench",
+      label: "Carol",
+      index: 3,
+    });
+    expect(canvasNodeLayoutKey(ghost)).toBe("cmd-9");
+  });
+
+  it("gives ghosts sharing a containerName-like label distinct keys (keyed by commandId, not label)", () => {
+    // ラベルが同じでも commandId が違えばレイアウトキーは衝突しない。
+    const a = createGhostNode({ commandId: "a", kind: "node", label: "ethereum", index: 0 });
+    const b = createGhostNode({ commandId: "b", kind: "node", label: "ethereum", index: 1 });
+    expect(canvasNodeLayoutKey(a)).not.toBe(canvasNodeLayoutKey(b));
+  });
 });
