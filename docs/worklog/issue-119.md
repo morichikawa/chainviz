@@ -113,3 +113,65 @@
     引き継ぐ。実運用では削除と再追加が別 tick に分かれ、その時点の previous
     (Canvas の rfNodes)に当該 id が無いため問題にならない。この境界挙動を
     テストで固定した。
+
+### 2026-07-06 静的レビュー(査読)
+- 担当: reviewer
+- ブランチ: issue-119-node-flicker
+- 判定: **合格**
+- 確認した内容:
+  - **store の参照契約**: `packages/frontend/src/world-state/store.ts` の
+    `applyDiff` は `entityUpdated` で必ず `{...existing, ...event.patch}` と
+    新しいオブジェクトを作り、`entityAdded` も受信イベント由来の新オブジェクトを
+    格納する。エンティティをその場で書き換える(同一参照のまま内容を変える)
+    箇所は frontend パッケージ全体を grep して存在しないことを確認した。
+    実 WebSocket 経路は JSON デシリアライズで毎回新オブジェクトになり、
+    モック(`websocket/mockData.ts`)も毎 tick 新しい patch オブジェクトを
+    生成するため、`isSameInfraNode`/`isSameWalletNode` が依存する
+    「内容が変わったら参照も変わる」契約は両経路で成立している。
+    なお内容が変わらない patch でも新参照になるが、これは「更新を取りこぼす」
+    方向ではなく「余分に再生成する」方向の誤差であり安全側。
+  - **stale measured の安全性**: `@xyflow/react`(12.11.1)のソースを確認し、
+    ノードの DOM 要素には ResizeObserver が張られ続けており、実サイズが
+    変わればその時点で dimension change → `onNodesChange` →
+    `applyNodeChanges` で `measured` が更新されることを確認した。
+    `preserveMeasuredDimensions` が引き継ぐ値は「再計測までの初期値」で
+    しかなく、サイズが実際に変わるケースでも自己修正される。tick をまたぐ
+    削除→再追加では Canvas の `rfNodes` から当該 id が消えているため
+    stale 値の引き継ぎ自体が起きない。
+  - **修正機構の妥当性**: `@xyflow/system`(0.0.78)の `adoptUserNodes` を
+    確認し、参照が変わったノードでも `userNode.measured` があればそれを
+    内部ノードに採用し `nodesInitialized` が保たれる(=hidden 化しない)
+    ことをソースで裏付けた。
+  - **パフォーマンス**: `stabilizeNodes` は Map 構築込みで O(n)。比較関数は
+    インフラカードが O(1)、ウォレットカードが直近 tx 件数分の参照比較のみで、
+    エンティティ数の増加に対して線形。毎 tick 全ノードを新規生成していた
+    従来と比べ増分は無視できる。
+  - **テストの実効性**: ミューテーションテストで確認した。
+    (1) `preserveMeasuredDimensions` を素通しにする → canvasNode.test.ts 失敗、
+    (2) `stabilizeNodes` を素通しにする → 11件失敗、
+    (3) `isSameInfraNode` の position 比較を外す → 3件失敗、
+    (4) `isSameWalletNode` の transactions 比較を外す → 4件失敗。
+    いずれも検出でき、テストは実装を壊せば落ちる実効的なものである。
+    確認後はすべて元に戻し、作業ツリーがクリーンであることを確認した。
+  - **品質ゲート**: `pnpm lint` / `pnpm build` / `pnpm test`(frontend 539件
+    含む全パッケージ)がすべて通ることを確認した。
+  - **エラー握りつぶし・固定値**: 今回の変更に catch 節は無く、環境状態に
+    依存した決め打ち定数も無い(純粋関数と ref によるメモ化のみ)。
+  - **docs との整合**: ARCHITECTURE.md はフォルダ構成・スキーマ・プロトコルの
+    粒度で書かれており、今回の変更(frontend 内部の描画最適化)は境界・
+    スキーマ・プロトコルのいずれにも影響しないため反映不要と判断した。
+    経緯の詳細は本 worklog に十分記録されている。
+  - **コミット粒度**: 5コミット(本質的対策 fix / 補完的最適化 perf /
+    実装 worklog docs / テスト強化 test / テスト worklog docs)で、
+    いずれも単一の関心事に収まっており Conventional Commits 形式。
+- 軽微な指摘(非ブロッキング、次回改善で可):
+  - `sameByReference` が `entities/nodeStability.ts`(export、ただし
+    プロダクションコードからは未使用でテストのみが参照)と
+    `entities/walletNode.ts`(private で同一実装を重複定義)の2箇所にある。
+    walletNode.ts が nodeStability.ts から import するか、未使用 export を
+    整理するのが望ましい。動作には影響しない。
+  - `App.tsx` の `useMemo` 内で `previousInfraNodesRef.current = next` と
+    ref を書き換えるのはレンダーフェーズの副作用であり、React の並行
+    レンダリングで破棄されたレンダーの結果が ref に残り得る。ただし
+    再利用されるオブジェクトは内容が同一のものに限られ、本質的対策
+    (preserveMeasuredDimensions)はこれに依存しないため実害は無い。
