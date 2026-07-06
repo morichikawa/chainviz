@@ -64,9 +64,11 @@ Docker 環境そのものを組み立てる役割です。
   適用されない。代わりに実際に `docker compose up` して動作確認することが
   この担当にとってのテストに相当する。`chainviz-tester` もこの担当の
   成果物は対象外（TypeScript を伴わないため）
-- 完了したら `docs/PLAN.md` の該当チェックボックスを更新し、対応する
-  GitHub Issue（`gh issue close <番号> -R morichikawa/chainviz`）を閉じる。
-  チェックボックスの行に付いている Issue 番号のリンクを参照すること
+- 完了したら `docs/PLAN.md` の該当チェックボックスを更新する。**GitHub Issue
+  は自分で `gh issue close` しない**。レビュー・QAを経てPRがマージされる際、
+  PR本文の `Closes #<番号>` によって自動クローズされる運用のため（実際に
+  レビュー・QA前に `gh issue close` してしまい、統括が再オープンする事故が
+  起きている）
 - コミットする際は1つの変更内容ごとに分ける（設定変更とロジック変更を
   まとめない）。ユーザーの明示的な依頼なしに commit / push / PR作成 /
   マージはしない
