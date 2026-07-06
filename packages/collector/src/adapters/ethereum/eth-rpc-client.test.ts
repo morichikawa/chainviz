@@ -3,7 +3,7 @@ import {
   createFetchEthRpcClient,
   fetchBalanceWei,
   fetchNonce,
-  getBlockByHash,
+  getBlockReceipts,
   getTransactionByHash,
   type EthRpcClient,
 } from "./eth-rpc-client.js";
@@ -277,44 +277,48 @@ describe("getTransactionByHash", () => {
   });
 });
 
-describe("getBlockByHash", () => {
-  it("requests full transactions and returns their hash/from/to", async () => {
+describe("getBlockReceipts", () => {
+  it("requests receipts by block hash and normalizes hash/from/to/succeeded", async () => {
     const fetchMock = vi.fn(async () =>
       fakeResponse({
         ok: true,
         status: 200,
         json: async () => ({
-          result: {
-            hash: "0xblock",
-            number: "0x10",
-            transactions: [
-              { hash: "0xt1", from: "0xa", to: "0xb" },
-              { hash: "0xt2", from: "0xc", to: null },
-            ],
-          },
+          result: [
+            {
+              transactionHash: "0xt1",
+              from: "0xa",
+              to: "0xb",
+              status: "0x1",
+            },
+            {
+              transactionHash: "0xt2",
+              from: "0xc",
+              to: null,
+              status: "0x0",
+            },
+          ],
         }),
       }),
     );
     vi.stubGlobal("fetch", fetchMock);
     const rpc = createFetchEthRpcClient();
-    await expect(getBlockByHash(rpc, "http://x", "0xblock")).resolves.toEqual({
-      hash: "0xblock",
-      transactions: [
-        { hash: "0xt1", from: "0xa", to: "0xb" },
-        { hash: "0xt2", from: "0xc", to: null },
-      ],
-    });
+    await expect(
+      getBlockReceipts(rpc, "http://x", "0xblock"),
+    ).resolves.toEqual([
+      { transactionHash: "0xt1", from: "0xa", to: "0xb", succeeded: true },
+      { transactionHash: "0xt2", from: "0xc", to: null, succeeded: false },
+    ]);
     const [, init] = fetchMock.mock.calls[0] as unknown as [
       string,
       { body: string },
     ];
     const body = JSON.parse(init.body);
-    expect(body.method).toBe("eth_getBlockByHash");
-    // fullTx=true を指定してブロック内 tx 本体を得る。
-    expect(body.params).toEqual(["0xblock", true]);
+    expect(body.method).toBe("eth_getBlockReceipts");
+    expect(body.params).toEqual(["0xblock"]);
   });
 
-  it("returns an empty tx list for an empty block", async () => {
+  it("treats a missing status field as succeeded (pre-Byzantium fallback)", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
@@ -322,16 +326,62 @@ describe("getBlockByHash", () => {
           ok: true,
           status: 200,
           json: async () => ({
-            result: { hash: "0xblock", transactions: [] },
+            result: [{ transactionHash: "0xt1", from: "0xa", to: "0xb" }],
           }),
         }),
       ),
     );
     const rpc = createFetchEthRpcClient();
-    await expect(getBlockByHash(rpc, "http://x", "0xblock")).resolves.toEqual({
-      hash: "0xblock",
-      transactions: [],
-    });
+    await expect(
+      getBlockReceipts(rpc, "http://x", "0xblock"),
+    ).resolves.toEqual([
+      { transactionHash: "0xt1", from: "0xa", to: "0xb", succeeded: true },
+    ]);
+  });
+
+  it("treats an unexpected status value as succeeded (conservative: only '0x0' fails)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        fakeResponse({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            result: [
+              {
+                transactionHash: "0xt1",
+                from: "0xa",
+                to: "0xb",
+                status: "weird",
+              },
+            ],
+          }),
+        }),
+      ),
+    );
+    const rpc = createFetchEthRpcClient();
+    await expect(
+      getBlockReceipts(rpc, "http://x", "0xblock"),
+    ).resolves.toEqual([
+      { transactionHash: "0xt1", from: "0xa", to: "0xb", succeeded: true },
+    ]);
+  });
+
+  it("returns an empty receipt list for an empty block", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        fakeResponse({
+          ok: true,
+          status: 200,
+          json: async () => ({ result: [] }),
+        }),
+      ),
+    );
+    const rpc = createFetchEthRpcClient();
+    await expect(
+      getBlockReceipts(rpc, "http://x", "0xblock"),
+    ).resolves.toEqual([]);
   });
 
   it("returns null when the block is unknown (result: null)", async () => {
@@ -347,11 +397,11 @@ describe("getBlockByHash", () => {
     );
     const rpc = createFetchEthRpcClient();
     await expect(
-      getBlockByHash(rpc, "http://x", "0xmissing"),
+      getBlockReceipts(rpc, "http://x", "0xmissing"),
     ).resolves.toBeNull();
   });
 
-  it("drops malformed tx entries while keeping the valid ones", async () => {
+  it("drops malformed receipt entries while keeping the valid ones", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
@@ -359,22 +409,20 @@ describe("getBlockByHash", () => {
           ok: true,
           status: 200,
           json: async () => ({
-            result: {
-              hash: "0xblock",
-              transactions: [
-                { hash: "0xt1", from: "0xa", to: "0xb" },
-                { from: "0xc" }, // hash 欠落 → 捨てる
-                "0xrawhash", // 文字列だけの tx（fullTx でない要素）→ 捨てる
-              ],
-            },
+            result: [
+              { transactionHash: "0xt1", from: "0xa", to: "0xb", status: "0x1" },
+              { from: "0xc" }, // transactionHash 欠落 → 捨てる
+              "0xrawhash", // オブジェクトでない要素 → 捨てる
+            ],
           }),
         }),
       ),
     );
     const rpc = createFetchEthRpcClient();
-    await expect(getBlockByHash(rpc, "http://x", "0xblock")).resolves.toEqual({
-      hash: "0xblock",
-      transactions: [{ hash: "0xt1", from: "0xa", to: "0xb" }],
-    });
+    await expect(
+      getBlockReceipts(rpc, "http://x", "0xblock"),
+    ).resolves.toEqual([
+      { transactionHash: "0xt1", from: "0xa", to: "0xb", succeeded: true },
+    ]);
   });
 });

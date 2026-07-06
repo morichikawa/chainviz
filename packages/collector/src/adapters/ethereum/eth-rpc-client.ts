@@ -20,10 +20,18 @@ export interface RpcTransaction {
   to: string | null;
 }
 
-/** eth_getBlockByHash(fullTx=true) から取り出すブロック（tx 本体を含む）。 */
-export interface RpcBlock {
-  hash: string;
-  transactions: RpcTransaction[];
+/**
+ * eth_getBlockReceipts から取り出す tx receipt の最小限の情報。succeeded は
+ * receipt の status（0x0/0x1）から解釈した実行結果であり、world-state の語彙
+ *（included/failed）へのマッピングは呼び出し側（アダプタ）が行う。
+ */
+export interface RpcTransactionReceipt {
+  transactionHash: string;
+  from: string;
+  /** コントラクト作成 tx では to は null。 */
+  to: string | null;
+  /** receipt.status が "0x0" のときだけ false。それ以外（0x1・欠落・不正値）は true。 */
+  succeeded: boolean;
 }
 
 interface JsonRpcResponse<T> {
@@ -37,9 +45,11 @@ interface RawTransaction {
   to?: unknown;
 }
 
-interface RawBlock {
-  hash?: unknown;
-  transactions?: unknown;
+interface RawReceipt {
+  transactionHash?: unknown;
+  from?: unknown;
+  to?: unknown;
+  status?: unknown;
 }
 
 /** グローバル fetch を用いた EthRpcClient 実装。 */
@@ -128,25 +138,42 @@ export async function getTransactionByHash(
   return normalizeTransaction(raw);
 }
 
+/** 生の JSON-RPC receipt オブジェクトを RpcTransactionReceipt へ正規化する（不正なら null）。 */
+function normalizeReceipt(raw: unknown): RpcTransactionReceipt | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const receipt = raw as RawReceipt;
+  if (
+    typeof receipt.transactionHash !== "string" ||
+    typeof receipt.from !== "string"
+  ) {
+    return null;
+  }
+  const to = typeof receipt.to === "string" ? receipt.to : null;
+  // status が "0x0" のときだけ失敗とする。"0x1"・欠落・不正値は成功扱い
+  // （証拠なしに failed 表示をしない保守的判断。status 欠落は pre-Byzantium の
+  // receipt 形式で、本プロファイルの devnet では実際には起きない）。
+  const succeeded = receipt.status !== "0x0";
+  return { transactionHash: receipt.transactionHash, from: receipt.from, to, succeeded };
+}
+
 /**
- * eth_getBlockByHash(fullTx=true) でブロックを取得し、含まれる tx 本体を
- * 返す。未知のブロックでは null を返す。
+ * eth_getBlockReceipts でブロックに含まれる全 tx の receipt を取得する。
+ * receipt には transactionHash / from / to / status がすべて含まれるため、
+ * 1 回の呼び出しでブロック内 tx 一覧と各 tx の成否を同時に得られる（tx 本体を
+ * 別途 eth_getBlockByHash で取得する必要がない）。未知のブロックでは null を
+ * 返す（JSON-RPC では result=null で返る）。空ブロックは空配列を返す。
  */
-export async function getBlockByHash(
+export async function getBlockReceipts(
   rpc: EthRpcClient,
   rpcUrl: string,
   blockHash: string,
-): Promise<RpcBlock | null> {
-  const raw = await rpc.call<RawBlock | null>(rpcUrl, "eth_getBlockByHash", [
+): Promise<RpcTransactionReceipt[] | null> {
+  const raw = await rpc.call<unknown[] | null>(rpcUrl, "eth_getBlockReceipts", [
     blockHash,
-    true,
   ]);
-  if (typeof raw !== "object" || raw === null) return null;
-  if (typeof raw.hash !== "string") return null;
-  const txs = Array.isArray(raw.transactions)
-    ? raw.transactions
-        .map((t) => normalizeTransaction(t))
-        .filter((t): t is RpcTransaction => t !== null)
-    : [];
-  return { hash: raw.hash, transactions: txs };
+  if (raw === null || raw === undefined) return null;
+  if (!Array.isArray(raw)) return null;
+  return raw
+    .map((r) => normalizeReceipt(r))
+    .filter((r): r is RpcTransactionReceipt => r !== null);
 }
