@@ -1,11 +1,15 @@
 import type { PeerEdge } from "@chainviz/shared";
+import type { Edge } from "@xyflow/react";
 import { describe, expect, it } from "vitest";
 import {
   NETWORK_COLORS,
+  describeNetwork,
   groupEdgesByNetwork,
+  isPeerFlowEdge,
   networkClassToken,
   networkIdColor,
   peerEdgesToFlowEdges,
+  stableIdServiceName,
 } from "./peerEdge.js";
 
 function peer(
@@ -274,6 +278,131 @@ describe("peerEdgesToFlowEdges", () => {
     );
     expect(edges).toHaveLength(2);
     expect(new Set(edges.map((e) => e.id)).size).toBe(2);
+  });
+});
+
+describe("describeNetwork (Issue #124)", () => {
+  it("recognizes the Ethereum execution suffix", () => {
+    expect(describeNetwork("chainviz-ethereum-execution")).toEqual({
+      kind: "known",
+      labelKey: "network.execution",
+      termKey: "execution-p2p",
+    });
+  });
+
+  it("recognizes the Ethereum consensus suffix", () => {
+    expect(describeNetwork("chainviz-ethereum-consensus")).toEqual({
+      kind: "known",
+      labelKey: "network.consensus",
+      termKey: "consensus-p2p",
+    });
+  });
+
+  it("falls back to raw for the empty string", () => {
+    expect(describeNetwork("")).toEqual({ kind: "raw" });
+  });
+
+  it("falls back to raw for an unrelated networkId", () => {
+    expect(describeNetwork("1337")).toEqual({ kind: "raw" });
+    expect(describeNetwork("some-other-chain-network")).toEqual({ kind: "raw" });
+  });
+
+  it("still matches when the prefix before the suffix is empty", () => {
+    // networkId が接尾辞そのものだけ（接頭辞が空）でも suffix 判定は成立する。
+    // 実運用では起きないが、endsWith の素直な挙動を固定しておく。
+    expect(describeNetwork("-execution").kind).toBe("known");
+    expect(describeNetwork("-consensus").kind).toBe("known");
+  });
+
+  it("is case-sensitive: uppercased suffixes do not match", () => {
+    // targets.ts は小文字の接尾辞しか付けないため、大文字は既知扱いしない
+    // （生の networkId 表示にフォールバックする）。
+    expect(describeNetwork("x-Execution")).toEqual({ kind: "raw" });
+    expect(describeNetwork("x-EXECUTION")).toEqual({ kind: "raw" });
+    expect(describeNetwork("X-CONSENSUS")).toEqual({ kind: "raw" });
+  });
+
+  it("requires the hyphen: a bare word without the hyphen is raw", () => {
+    // "execution"（先頭ハイフン無し）は "-execution" で終わらないので raw。
+    expect(describeNetwork("execution")).toEqual({ kind: "raw" });
+    expect(describeNetwork("consensus")).toEqual({ kind: "raw" });
+  });
+
+  it("requires the suffix to be at the end, not merely contained", () => {
+    // 中間に含むだけ（末尾がハイフン以外で続く）なら未知扱い。
+    expect(describeNetwork("x-execution-foo")).toEqual({ kind: "raw" });
+    expect(describeNetwork("x-execution ")).toEqual({ kind: "raw" });
+  });
+
+  it("lets the trailing suffix win when both words appear", () => {
+    // 末尾の接尾辞だけで決まる。"consensus-execution" は execution 側、
+    // "execution-consensus" は consensus 側になる（中間語には引きずられない）。
+    expect(describeNetwork("consensus-execution")).toEqual({
+      kind: "known",
+      labelKey: "network.execution",
+      termKey: "execution-p2p",
+    });
+    expect(describeNetwork("execution-consensus")).toEqual({
+      kind: "known",
+      labelKey: "network.consensus",
+      termKey: "consensus-p2p",
+    });
+  });
+});
+
+describe("stableIdServiceName (Issue #124)", () => {
+  it("returns the segment after the last slash", () => {
+    expect(stableIdServiceName("chainviz-ethereum/reth1")).toBe("reth1");
+  });
+
+  it("returns the whole id when there is no slash", () => {
+    expect(stableIdServiceName("reth1")).toBe("reth1");
+  });
+
+  it("returns an empty string for the empty string", () => {
+    expect(stableIdServiceName("")).toBe("");
+  });
+
+  it("uses the last slash when several are present", () => {
+    expect(stableIdServiceName("proj/group/reth1")).toBe("reth1");
+  });
+
+  it("returns an empty string when the id ends with a slash", () => {
+    expect(stableIdServiceName("proj/")).toBe("");
+    expect(stableIdServiceName("a/b/c/")).toBe("");
+  });
+
+  it("handles a leading slash (empty project part)", () => {
+    expect(stableIdServiceName("/reth1")).toBe("reth1");
+  });
+});
+
+describe("isPeerFlowEdge (Issue #124)", () => {
+  const base = { id: "e", source: "a", target: "b" };
+
+  it("returns true for a peer-typed edge", () => {
+    expect(isPeerFlowEdge({ ...base, type: "peer" })).toBe(true);
+  });
+
+  it("returns false for ownership and operation edges", () => {
+    // 所有エッジ・操作エッジはホバー説明の対象外・凡例の集計対象外。
+    expect(isPeerFlowEdge({ ...base, type: "ownership" })).toBe(false);
+    expect(isPeerFlowEdge({ ...base, type: "operation" })).toBe(false);
+  });
+
+  it("returns false for an edge with no type", () => {
+    expect(isPeerFlowEdge({ ...base } as Edge)).toBe(false);
+  });
+
+  it("filters a mixed edge list down to peer edges only", () => {
+    // Canvas.tsx が凡例へ渡す peerEdges 抽出・ホバー注入の前提を固定する。
+    const edges: Edge[] = [
+      { ...base, id: "p1", type: "peer" },
+      { ...base, id: "o1", type: "ownership" },
+      { ...base, id: "op1", type: "operation" },
+      { ...base, id: "p2", type: "peer" },
+    ];
+    expect(edges.filter(isPeerFlowEdge).map((e) => e.id)).toEqual(["p1", "p2"]);
   });
 });
 

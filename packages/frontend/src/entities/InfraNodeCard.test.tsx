@@ -178,3 +178,70 @@ describe("InfraNodeCard remove button visibility (removable)", () => {
     expect(screen.queryByTestId("infra-card-remove-reth-follower-1")).toBeNull();
   });
 });
+
+describe("InfraNodeCard bootnode badge (Issue #124 C)", () => {
+  it("shows a bootnode badge when p2pRole is bootnode", () => {
+    const bootnode: NodeEntity = { ...node, p2pRole: "bootnode" };
+    renderCard(bootnode);
+    expect(
+      screen.getByTestId("infra-card-bootnode-reth-follower-1").textContent,
+    ).toBe("ブートノード");
+  });
+
+  it("does not show a bootnode badge when p2pRole is peer", () => {
+    const peer: NodeEntity = { ...node, p2pRole: "peer" };
+    renderCard(peer);
+    expect(screen.queryByTestId("infra-card-bootnode-reth-follower-1")).toBeNull();
+  });
+
+  it("does not show a bootnode badge when p2pRole is undefined（旧スナップショット想定）", () => {
+    const withoutRole: NodeEntity = { ...node };
+    delete withoutRole.p2pRole;
+    renderCard(withoutRole);
+    expect(screen.queryByTestId("infra-card-bootnode-reth-follower-1")).toBeNull();
+  });
+
+  it("does not show a bootnode badge for a workbench card", () => {
+    renderCard(workbench);
+    expect(screen.queryByTestId("infra-card-bootnode-workbench-1")).toBeNull();
+  });
+
+  it("shows both the bootnode badge and the remove button (independent of removable)", () => {
+    // バッジと削除ボタンは別軸。addNode で追加した(removable) ノードが
+    // たまたま bootnode 扱いでも両方独立に出る。
+    renderCard({ ...node, p2pRole: "bootnode", removable: true });
+    expect(
+      screen.queryByTestId("infra-card-bootnode-reth-follower-1"),
+    ).not.toBeNull();
+    expect(
+      screen.queryByTestId("infra-card-remove-reth-follower-1"),
+    ).not.toBeNull();
+  });
+
+  it("shows the bootnode badge even when the node is not removable (compose起動想定)", () => {
+    renderCard({ ...node, p2pRole: "bootnode", removable: false });
+    expect(
+      screen.queryByTestId("infra-card-bootnode-reth-follower-1"),
+    ).not.toBeNull();
+    expect(
+      screen.queryByTestId("infra-card-remove-reth-follower-1"),
+    ).toBeNull();
+  });
+
+  it("shows the bootnode badge regardless of sync status (independent fields)", () => {
+    renderCard({ ...node, p2pRole: "bootnode", syncStatus: "syncing" });
+    expect(
+      screen.queryByTestId("infra-card-bootnode-reth-follower-1"),
+    ).not.toBeNull();
+  });
+
+  it("ignores an unexpected p2pRole value and shows no badge (defensive)", () => {
+    // collector は想定外値を peer に正規化するが、旧/壊れたスナップショット
+    // 経由で想定外の文字列が届いても、=== "bootnode" の厳密比較で出さない。
+    const corrupted = { ...node, p2pRole: "Bootnode" } as unknown as NodeEntity;
+    renderCard(corrupted);
+    expect(
+      screen.queryByTestId("infra-card-bootnode-reth-follower-1"),
+    ).toBeNull();
+  });
+});
