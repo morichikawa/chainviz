@@ -39,7 +39,7 @@ import {
   type Subscription,
 } from "./eth-ws-client.js";
 import { createFetchHttpClient, type HttpClient } from "./http-client.js";
-import { toPeerEdges, type BeaconNodePeers } from "./peers.js";
+import { toPeerEdges, type NodePeers } from "./peers.js";
 import { beaconTargets, executionTargets } from "./targets.js";
 import { TransactionLifecycleTracker } from "./transactions.js";
 import {
@@ -188,7 +188,7 @@ export class EthereumAdapter implements ChainAdapter {
     const targets = beaconTargets(observations);
 
     const results = await Promise.all(
-      targets.map(async (target): Promise<BeaconNodePeers | null> => {
+      targets.map(async (target): Promise<NodePeers | null> => {
         try {
           const [peerId, connectedPeerIds] = await Promise.all([
             fetchNodePeerId(this.http, target.baseUrl),
@@ -206,7 +206,7 @@ export class EthereumAdapter implements ChainAdapter {
       }),
     );
 
-    const nodes = results.filter((n): n is BeaconNodePeers => n !== null);
+    const nodes = results.filter((n): n is NodePeers => n !== null);
     return toPeerEdges(nodes);
   }
 

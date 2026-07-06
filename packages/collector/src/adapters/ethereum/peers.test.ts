@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { toPeerEdges, type BeaconNodePeers } from "./peers.js";
+import { toPeerEdges, type NodePeers } from "./peers.js";
 
-function beaconNode(overrides: Partial<BeaconNodePeers> = {}): BeaconNodePeers {
+function beaconNode(overrides: Partial<NodePeers> = {}): NodePeers {
   return {
     stableId: "p/beacon1",
     peerId: "peer-1",
