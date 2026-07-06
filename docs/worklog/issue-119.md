@@ -74,3 +74,42 @@
     システムに無く起動できなかったため、`.deb` を `dpkg-deb -x` で展開し
     `LD_LIBRARY_PATH` で読ませて回避した(この環境固有の対処であり、
     プロダクトコードには影響しない)。
+
+### 2026-07-06 テスト強化(異常系・境界値)
+- 担当: tester
+- ブランチ: issue-119-node-flicker
+- 内容: 実装担当が書いた基本テストに、異常系・境界値・特殊遷移の観点で
+  ユニットテストを追加した(実装は変更していない)。合計25件追加。
+  - `entities/canvasNode.test.ts`(`preserveMeasuredDimensions`、6件追加):
+    next 配列の並び順維持、前回に一致 id がある要素にだけ measured を付ける
+    (新規ノードは触らない)、next 側の measured が部分的(width のみ・height 欠落)
+    な場合に前回の完全な measured で置き換える、同一 id が削除→再追加されたとき
+    stale な measured を引き継ぐ挙動の明文化、同一 id で type が変わる異常
+    ケースでも id ベース突き合わせが安全に動く、infra/wallet 混在配列で id ごとに
+    measured を引き継ぐ。
+  - `entities/nodeStability.test.ts`(`stabilizeNodes`、5件追加):
+    追加・削除・更新が同一 tick で混在するケース、長さが同じでも id が入れ替わった
+    場合に前回配列を誤って返さない、長い配列の中間要素が変化したときの新参照、
+    内容不変ノードが index 移動したときの参照再利用と配列新参照、削除のみでも
+    配列は新参照になる。
+  - `entities/infraNode.test.ts`(`isSameInfraNode`、6件追加):
+    x のみ/y のみ変化の検出、position を値比較する(別オブジェクト同値なら同一)、
+    resources のような入れ子フィールドの変更を store の新 entity 参照経由で
+    検出できる(浅い比較で深い変更を見逃さない)、同一 entity 参照のときのみ
+    同一と判定する(参照ベースであることの明文化)。
+  - `entities/walletNode.test.ts`(`isSameWalletNode`、8件追加):
+    x のみ/y のみ変化の検出、position の値比較、内容が同じでも tx 要素の参照が
+    変われば変化として検出、transactions の長さ変化の検出、transactions と
+    settlingHashes の並び替えを変化とみなす(順序依存)、balance のような
+    entity フィールド変更を新 entity 参照経由で検出。
+- 決定事項・注意点:
+  - `isSameInfraNode`/`isSameWalletNode` は entity を参照比較する設計のため、
+    「深い内部フィールドの変更」は WorldState 側が変更時に必ず新しい entity
+    オブジェクトを作る(参照が変わる)という契約に依存して検出している。
+    仮に store が同一参照のまま内部を書き換える実装になると変更を取りこぼす
+    ため、その契約が崩れないことが前提であることをテストのコメントに明記した。
+  - `preserveMeasuredDimensions` は純粋関数として id のみで突き合わせるため、
+    同一 tick 内で同じ id が削除→再追加された場合は旧ノードの measured を
+    引き継ぐ。実運用では削除と再追加が別 tick に分かれ、その時点の previous
+    (Canvas の rfNodes)に当該 id が無いため問題にならない。この境界挙動を
+    テストで固定した。
