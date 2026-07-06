@@ -163,3 +163,40 @@
     `targets.ts` で既存の `executionRpcUrls` / `executionTargets` が
     既に使っている値の再利用であり、本 Issue で新規に導入した固定値では
     ない
+
+### 2026-07-06 EL ピアエッジの異常系・境界値テスト強化（tester）
+
+- 担当: tester
+- ブランチ: issue-106-el-peer-edges
+- 内容: 実装担当が書いた基本テスト（ハッピーパス中心）に、異常系・境界値・
+  部分失敗の分離を確認するテストを追加した。実装コードは変更していない
+- 追加したテスト（計 18 件）:
+  - `el-peers.test.ts`（`enodePublicKey`）: 公開鍵長の境界値（127 桁で不足・
+    129 桁で超過はいずれも不一致）、`@host` 区切りの欠落、スキーム大文字
+    `ENODE://` の非一致（case-sensitive）、先頭空白による非一致、enode 内で
+    公開鍵に `0x` を付けた場合の非一致
+  - `el-peers.test.ts`（`normalizeAdminNodeInfo`）: `id` の接頭辞が大文字
+    `0X` の場合は剥がされず不正になる挙動、空文字の `id`、接頭辞 `0x` のみで
+    桁が無い `id`、enode が空文字でも例外にせず `id` フォールバックで解決する
+    ケース
+  - `el-peers.test.ts`（`normalizeAdminPeers`）: 同一 peer が重複して返って
+    きた場合に正規化段では重複を残すこと（重複排除は下流 `toPeerEdges` の
+    責務）、自ノード自身が peer として返る異常系でも正規化段では落とさない
+    こと（自己ループ除去も `toPeerEdges` の責務）、enode 由来と `id`
+    フォールバックが混在する場合
+  - `peer-block-adapter.test.ts`（`pollPeersOnce`）: EL 側の admin_* 呼び出しが
+    全ノード失敗しても CL 側の beacon エッジは配信されること、逆に CL 側の
+    Beacon API が全滅しても EL 側の reth エッジは配信されること（`Promise.all`
+    の片側失敗が他方を巻き込まない層の分離）
+  - `targets.test.ts`（`executionPeerTargets`）: reth 以外の execution
+    クライアント種別（geth）も対象に含めること（reth 専用でない）、
+    プロジェクト名に `-consensus` を含んでも EL の `-execution` と CL の
+    `-consensus` は衝突しないこと、あるプロジェクトの EL networkId が別
+    プロジェクトの CL networkId と偶然一致しないこと（末尾の
+    `-execution` / `-consensus` が必ず異なるため）
+- 品質ゲート: ルートから `pnpm lint && pnpm build && pnpm test` が通ることを
+  確認した（collector 550 件・frontend 411 件などすべて成功）。テスト追加前は
+  collector 532 件だったので純増 18 件
+- 実装のバグは見つからなかった。既存実装は enode 形式の揺れ・部分失敗・
+  networkId 分離のいずれについても安全側に倒れており、追加テストはその
+  挙動を回帰として固定するもの
