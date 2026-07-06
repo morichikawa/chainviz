@@ -138,3 +138,56 @@
     `cast send --create 0xfe`（`--gas-limit` を明示しないと `cast send` が
     ガス見積もり段階でエラーになり tx が送信されないので注意。
     `cast send --private-key <key> --gas-limit 100000 --create 0xfe`）。
+
+### 2026-07-06 Issue #86 テスト強化（異常系・境界値）
+
+- 担当: テスト強化
+- ブランチ: issue-86-tx-failed-status
+- 内容: collector 実装担当が書いた基本テストに対し、failed ステータス導入に
+  伴う異常系・境界値・振り分けの観点でユニットテストを追加した。実装コードは
+  変更していない（テストの追加のみ）。追加は 15 件。
+  - `eth-rpc-client.test.ts`（getBlockReceipts / normalizeReceipt、8件追加）:
+    - `from` 欠落の receipt は捨てられ、誤って failed 表示に倒れないこと。
+    - `to` 欠落・非文字列はいずれも null に正規化されること。
+    - `status` が null / 数値 0 / `"0x00"` のいずれでも succeeded 扱いに
+      なること（失敗判定は文字列 `"0x0"` の完全一致のみ、という保守的挙動の
+      境界確認。証拠なしに failed に倒さない）。
+    - result が非配列オブジェクト・スカラ値のとき null を返すこと（未知
+      ブロックと同じ安全側の扱い）。
+    - success / failed / 不正 receipt が混在するブロックを、順序を保ったまま
+      不正分だけ落として正しく正規化すること。
+  - `transactions.test.ts`（TransactionLifecycleTracker、4件追加）:
+    - 同一ブロックに included と failed が混在（既知 pending・未知 tx 双方）
+      する場合の振り分け。
+    - 同一ブロックでの failed → included のステータス変化も再通知されること
+      （既存の included → failed の逆方向）。
+    - 空ブロック（tx 0 件）では空配列を返すこと。
+    - 同一ブロック内に同一ハッシュが同一 status で重複しても 1 回だけ通知
+      されること。
+  - `peer-block-adapter.test.ts`（EthereumAdapter.subscribeTransactions、3件追加）:
+    - success + failed 混在ブロックを getBlockReceipts + recordInclusion 経由で
+      end-to-end に included / failed へ振り分けること。
+    - transactionHash 欠落の不正 receipt が混じっても、正常な tx だけが通知
+      されること。
+    - pending 通知を取りこぼした失敗 tx を、ブロックの receipt から直接
+      failed として通知すること（未知ハッシュの failed 経路）。
+- 確認: `pnpm lint && pnpm build && pnpm test` を全パッケージで実行し通過
+  （collector 522 tests / frontend 411 tests、いずれも green）。
+- 観点ごとの結論（依頼された 5 点）:
+  1. 不正な receipt（status 欠落・不正値、transactionHash/from 欠落）は
+     すべて安全側（included 扱い、または receipt 自体を skip）に倒れており、
+     証拠なしに failed 表示にならないことを確認した。
+  2. 同一ブロックの success / failed 混在は RPC 正規化層・トラッカー層・
+     アダプタ層の 3 段すべてで正しく振り分けられる。
+  3. 「同一 blockHash かつ同一 status」のスキップ条件は、status が変われば
+     included ⇔ failed 双方向で再通知され、変わらなければスキップされる。
+  4. ブロック取得が null / 例外の場合の #76 由来リトライ機構は、failed 判定
+     追加後も既存テストで維持されている（変更なし）。
+  5. 未知の tx ハッシュ（included/failed として報告されたが pending 未記録）は
+     ブロックの from/to を使って直接追加される経路を included・failed 双方で
+     確認した。
+- 補足（バグではない設計上のメモ）: 失敗判定は receipt.status の文字列
+  `"0x0"` 完全一致のみで、`"0x00"` などゼロ相当の別表記は succeeded に
+  倒れる。これは「証拠なしに failed 表示をしない」保守的方針と整合しており
+  実害はない（devnet の reth は `"0x0"` を返す）。将来 status 表記の揺れる
+  クライアントに対応する場合はここを見直す余地がある、という記録に留める。
