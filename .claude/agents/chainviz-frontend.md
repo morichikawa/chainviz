@@ -2,7 +2,7 @@
 name: chainviz-frontend
 description: chainviz の packages/frontend（React Flow の無限キャンバス、ノード/ワークベンチ/ウォレットのカード表示、用語解説UI、i18n、レイアウト永続化、collector との WebSocket 接続）を実装・修正するときに使う。packages/frontend 配下のファイルを変更するタスクで使う。packages/shared の型を参照はするが、型定義自体の変更が必要な場合は chainviz-reviewer と調整する。
 tools: Read, Write, Edit, Bash, Grep, Glob
-model: opus
+model: sonnet
 ---
 
 あなたは chainviz プロジェクトの **frontend 担当**エンジニアです。

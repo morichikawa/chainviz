@@ -425,3 +425,23 @@
     ARCHITECTURE.md 更新が実装と同じブランチで merge され、main 上の docs が
     未実装の設計を先行して記述する期間が生じない(「main 上で直接作業
     しない」の全体ルールで実質カバーはされている)。
+
+### 2026-07-06 実装担当3エージェントのモデルをsonnetへ変更のレビュー(reviewer 合格)
+
+- 担当: reviewer
+- ブランチ: chore-implementers-to-sonnet(コミット 783b223)
+- 内容:
+  - `.claude/agents/chainviz-collector.md` / `chainviz-frontend.md` /
+    `chainviz-node-env.md` の3ファイルについて、frontmatter の
+    `model: opus` → `model: sonnet` への変更をレビューした。結果は合格。
+  - `git diff main..HEAD` で確認し、差分は3ファイル各1行(model行)のみ。
+    name/description/tools や本文への意図しない変更は無い。
+  - コミットは1件(chore:)で、「実装担当3体のモデル変更」という単一の
+    関心事に対応しており粒度は適切。作業ツリーもクリーン。
+  - `pnpm lint` 通過。コード変更を伴わないため build/test への影響は無い
+    (念のためのlint確認のみ)。
+- 決定事項・注意点:
+  - 変更理由は「設計担当 chainviz-designer を fable にしたのに合わせ、
+    実装担当は sonnet にする」という方針(ユーザー指示)。分析寄りの
+    reviewer/detective/designer は fable、実装担当は sonnet という
+    役割ベースのモデル割り当てになった。
