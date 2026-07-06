@@ -82,6 +82,12 @@ interface InfraEntity {
   ports: number[];
   resources: { cpuPercent: number; memMB: number };
   process: { name: string; version?: string };
+  // collector の addNode/addWorkbench で作成されたコンテナなら true。
+  // compose 起動時からある初期構成のコンテナは removeNode/removeWorkbench が
+  // 拒否するため false。省略時は false（削除不可）と同義で、フロントは true の
+  // ときだけ削除 UI を出す。collector は managed ラベル（Issue #65 の
+  // 「Docker のラベルを単一の真実の情報源とする」方針）から値を導出する
+  removable?: boolean;
 }
 
 interface NodeEntity extends InfraEntity {
@@ -267,6 +273,13 @@ interface ChainAdapter {
   購読し、ブロック受信時刻を束ねて渡す。
 - `subscribeTransactions` — C層。`newPendingTransactions`（pending 検知）と
   `newHeads`（ブロック取り込み検知）を購読し、状態変化した tx を渡す。
+  ブロック取り込みの検知では `eth_getBlockReceipts` を 1 ブロックにつき
+  1 回だけ呼び、ブロック内 tx 一覧（hash/from/to）と各 tx の実行結果
+  （receipt の status）を同時に得る。status が失敗（`0x0`）の tx は
+  `failed`、それ以外は `included` へ正規化する。tx ごとに
+  `eth_getTransactionReceipt` を呼ぶ方式は採らず、RPC 呼び出し回数は
+  failed 判定の導入前（`eth_getBlockByHash` 1 回）から増えない
+  （Issue #86）。
 
 いずれも `BlockEntity` / `TransactionEntity` を返し、ワールドステートへの反映
 （差分計算・エンティティ更新）は store 側が担う。チェーン固有の RPC メソッド名は

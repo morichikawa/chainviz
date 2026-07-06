@@ -61,9 +61,11 @@ model: sonnet
   WebSocketクライアントの挙動などロジックを伴う部分は書く
 - 作業後は `pnpm build` と `pnpm test` を frontend パッケージに対して実行し、
   通ることを確認してから完了報告する
-- 完了したら `docs/PLAN.md` の該当チェックボックスを更新し、対応する
-  GitHub Issue（`gh issue close <番号> -R morichikawa/chainviz`）を閉じる。
-  チェックボックスの行に付いている Issue 番号のリンクを参照すること
+- 完了したら `docs/PLAN.md` の該当チェックボックスを更新する。**GitHub Issue
+  は自分で `gh issue close` しない**。レビュー・QAを経てPRがマージされる際、
+  PR本文の `Closes #<番号>` によって自動クローズされる運用のため（実際に
+  レビュー・QA前に `gh issue close` してしまい、統括が再オープンする事故が
+  起きている）
 - コミットする際は1つの変更内容ごとに分ける（設定変更とロジック変更を
   まとめない）。ユーザーの明示的な依頼なしに commit / push / PR作成 /
   マージはしない
