@@ -605,3 +605,53 @@
 - 判定: 合格。本変更自体が docs/ 配下のみの変更のため、明記された例外の
   適用第1号として chainviz-qa は省略でよい(ユーザーからも今回の省略の
   明示的な指示あり)。
+
+### 2026-07-06 chainviz-uxエージェント追加のレビュー(reviewer 差し戻し)
+
+- 担当: reviewer
+- ブランチ: chore-add-ux-agent(コミット ec32c04)
+- 内容:
+  - UX専任エージェント `chainviz-ux`(体験優)の新規追加
+    (`.claude/agents/chainviz-ux.md` + CLAUDE.md への登録)をレビューした。
+  - 合格点: frontmatter の name/description/model は既存慣例
+    (特に chainviz-designer.md)と整合。description は「役割 + 隣接担当との
+    境界 + コードは書かない」という既存の書き方に揃っている。
+    CLAUDE.md への追記(チーム一覧の designer 直後への配置、使い方の目安の
+    「UXが課題の中心なら ux、併用も可」の使い分け、designer/ux 共通の
+    ブランチ運用ルールへの docs/CONCEPT.md の追加)は書式・粒度とも既存と
+    整合。命名「体験 優」も「名は体を表す」方式に沿う。コミットは1件で、
+    designer 追加時(eb49fdc)と同じ「エージェント定義 + CLAUDE.md 登録」の
+    構成であり粒度も妥当。`pnpm lint` 通過。差分は .md のみ(git diff --stat
+    で確認)のため build/test は main と同一結果。
+  - 差し戻し理由(要修正2点):
+    1. frontmatter の tools に Edit が無い(`Read, Write, Bash, Grep, Glob`)。
+       本文で職務とされている「docs/CONCEPT.md の該当箇所の更新」
+       「docs/worklog/ への追記」「docs/WORKLOG.md 索引への1行追加」は
+       いずれも既存ファイルの部分編集であり、Edit 無しでは Write で
+       ファイル全体を書き直すしかなく破壊事故のもと。同じく docs 更新を
+       担う chainviz-designer は Edit を持っており慣例とも不整合。
+       `tools: Read, Write, Edit, Bash, Grep, Glob` に揃えること。
+    2. 「やること」冒頭の起動手順「`pnpm dev:up`または`pnpm dev`で
+       モック起動し」が事実と異なる。(a) ルート package.json に `dev`
+       スクリプトは存在しない(存在するのは packages/frontend の `dev`
+       (vite)のみ)。(b) `pnpm dev:up`(scripts/dev-up.sh)は Docker スタック
+       + collector + frontend の実環境一括起動であり「モック起動」では
+       ない。モックが使われるのは VITE_COLLECTOR_URL 未設定で frontend の
+       vite dev server を起動した場合(packages/frontend/src/app/
+       defaultClient.ts)。「実環境なら `pnpm dev:up`、UI のみモックで
+       確認するなら `pnpm --filter @chainviz/frontend dev`(VITE_COLLECTOR_URL
+       未設定)」のように実態に合わせて書き直すこと。
+  - 推奨(差し戻し理由ではない):
+    - 「Playwright等でスクリーンショット・操作を確認する」とあるが、
+      Playwright はリポジトリに導入されていない(packages/e2e は vitest)。
+      都度導入する前提なのか、既存の手段で確認するのかを明確にするとよい。
+    - description に chainviz-qa との境界(完了条件との照合は qa、こちらは
+      分かりやすさの評価)が無い。detective/qa/reviewer が隣接役割との
+      境界を description で明示している慣例に合わせる一文を推奨。
+    - docs/CONCEPT.md は「正」(決定事項の原典)であるため、「守ること」に
+      「CONCEPT.md の決定事項を変える更新はユーザー・統括の確認を経る」
+      旨の歯止めを追加することを推奨(現状は『決めきれない判断は確認する』
+      のみで、決定済み事項の書き換えへの明示的な歯止めが無い)。
+- 判定: 差し戻し(要修正2点の対応後に再レビュー)。なお本変更は
+  docs/ + .claude/agents/ のみの変更のため、修正後の再レビュー合格を
+  もって chainviz-qa の省略は CLAUDE.md の明記済み例外に該当し妥当。
