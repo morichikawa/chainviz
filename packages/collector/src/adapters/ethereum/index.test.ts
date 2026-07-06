@@ -485,3 +485,98 @@ describe("EthereumAdapter.pollInfra", () => {
     await expect(adapter.pollInfra()).rejects.toThrow("daemon down");
   });
 });
+
+/** rethFixture とは別 IP を持つ、2つ目のワークベンチ（複数ワークベンチの一括解決確認用）。 */
+const secondWorkbenchFixture: Fixture = {
+  summary: {
+    Id: "id-wb-2",
+    Names: ["/chainviz-ethereum-workbench-2"],
+    Image: "ghcr.io/foundry-rs/foundry:latest",
+    State: "running",
+    Labels: {
+      "com.docker.compose.project": "chainviz-ethereum",
+      "com.docker.compose.service": "workbench-2",
+    },
+    NetworkSettings: { Networks: { chain: { IPAddress: "172.28.3.9" } } },
+  },
+  top: { Titles: ["CMD"], Processes: [["sh -c sleep infinity"]] },
+};
+
+describe("EthereumAdapter.pollInfra rpcTargetNodeId resolution (Issue #123)", () => {
+  it("sets rpcTargetNodeId on every workbench when rpcTargetHost matches an observed node's ip", async () => {
+    const adapter = new EthereumAdapter(
+      new DockerPoller(
+        clientFrom([rethFixture, workbenchFixture, secondWorkbenchFixture]),
+      ),
+      { rpcTargetHost: "172.28.1.1" },
+    );
+    const partial = await adapter.pollInfra();
+    const node = partial.entities?.find((e) => e.kind === "node") as NodeEntity;
+    const workbenches = partial.entities?.filter(
+      (e): e is WorkbenchEntity => e.kind === "workbench",
+    );
+    expect(workbenches).toHaveLength(2);
+    for (const wb of workbenches ?? []) {
+      expect(wb.rpcTargetNodeId).toBe(node.id);
+    }
+  });
+
+  it("omits rpcTargetNodeId when rpcTargetHost is not configured (旧設定・未指定との互換)", async () => {
+    const adapter = new EthereumAdapter(
+      new DockerPoller(clientFrom([rethFixture, workbenchFixture])),
+    );
+    const partial = await adapter.pollInfra();
+    const workbench = partial.entities?.find(
+      (e) => e.kind === "workbench",
+    ) as WorkbenchEntity;
+    expect(workbench.rpcTargetNodeId).toBeUndefined();
+  });
+
+  it("omits rpcTargetNodeId when rpcTargetHost matches no observed node's ip", async () => {
+    const adapter = new EthereumAdapter(
+      new DockerPoller(clientFrom([rethFixture, workbenchFixture])),
+      { rpcTargetHost: "10.0.0.99" },
+    );
+    const partial = await adapter.pollInfra();
+    const workbench = partial.entities?.find(
+      (e) => e.kind === "workbench",
+    ) as WorkbenchEntity;
+    expect(workbench.rpcTargetNodeId).toBeUndefined();
+  });
+
+  it("re-resolves on every poll instead of caching a fixed result (ブートノード再作成への追従)", async () => {
+    // 1 回目のポーリングでは対象ノードがまだ観測されず、2 回目で現れるケースを
+    // 模す。固定の解決結果を埋め込んでいれば 2 回目も unresolved のままになる。
+    let containers: DockerContainerSummary[] = [workbenchFixture.summary];
+    const byId = new Map([
+      [rethFixture.summary.Id, rethFixture],
+      [workbenchFixture.summary.Id, workbenchFixture],
+    ]);
+    const client: DockerClient = {
+      listContainers: async () => containers,
+      getContainer: (id: string) => ({
+        top: async () => byId.get(id)?.top ?? { Titles: ["CMD"], Processes: [] },
+        stats: async () => zeroStats,
+      }),
+    };
+    const adapter = new EthereumAdapter(new DockerPoller(client), {
+      rpcTargetHost: "172.28.1.1",
+    });
+
+    const first = await adapter.pollInfra();
+    const firstWorkbench = first.entities?.find(
+      (e) => e.kind === "workbench",
+    ) as WorkbenchEntity;
+    expect(firstWorkbench.rpcTargetNodeId).toBeUndefined();
+
+    containers = [rethFixture.summary, workbenchFixture.summary];
+    const second = await adapter.pollInfra();
+    const secondNode = second.entities?.find(
+      (e) => e.kind === "node",
+    ) as NodeEntity;
+    const secondWorkbench = second.entities?.find(
+      (e) => e.kind === "workbench",
+    ) as WorkbenchEntity;
+    expect(secondWorkbench.rpcTargetNodeId).toBe(secondNode.id);
+  });
+});

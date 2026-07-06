@@ -78,6 +78,15 @@ export interface EthereumAdapterDeps {
   mnemonic?: string;
   /** mnemonic + index からアドレスを導出する関数（テスト差し替え用）。 */
   deriveAddress?: (mnemonic: string, index: number) => string;
+  /**
+   * ロギングプロキシの転送先ホスト（IP）。`resolveProxyTarget()` の結果を
+   * `parseProxyTargetHost()` で解決したものを collector 本体（index.ts）が
+   * 渡す。全ワークベンチの実効的な RPC 到達先はこのホストであるため、
+   * `pollInfra()` はここに一致する IP を持つノードを探して
+   * `WorkbenchEntity.rpcTargetNodeId` を解決する（Issue #123）。
+   * 未指定・解決不能な場合は rpcTargetNodeId を省略する。
+   */
+  rpcTargetHost?: string;
 }
 
 /**
@@ -108,6 +117,7 @@ export class EthereumAdapter implements ChainAdapter {
   private readonly now: () => number;
   private readonly mnemonic?: string;
   private readonly deriveAddress: (mnemonic: string, index: number) => string;
+  private readonly rpcTargetHost?: string;
   private readonly blockTracker = new BlockPropagationTracker();
   private readonly txTracker = new TransactionLifecycleTracker();
 
@@ -131,15 +141,54 @@ export class EthereumAdapter implements ChainAdapter {
     this.now = deps.now ?? (() => Date.now());
     this.mnemonic = deps.mnemonic;
     this.deriveAddress = deps.deriveAddress ?? deriveWalletAddress;
+    this.rpcTargetHost = deps.rpcTargetHost;
   }
 
-  /** A 層: Docker をポーリングし、コンテナを NodeEntity / WorkbenchEntity へ正規化する。 */
+  /**
+   * A 層: Docker をポーリングし、コンテナを NodeEntity / WorkbenchEntity へ正規化する。
+   *
+   * `rpcTargetHost`（ロギングプロキシの転送先ホスト）が設定されている場合、
+   * 同じポーリング観測から `ip === rpcTargetHost` のノードを探し、見つかれば
+   * その `stableId` を全ワークベンチの `rpcTargetNodeId` に設定する。毎回の
+   * ポーリングで解決し直すため、転送先ノードが再作成されて IP が変わらない
+   * 限り（ブートノードの stableId 自体が変わっても）追従する。見つからない
+   * 場合は省略する（旧スナップショット・解決不能との互換）。
+   *
+   * 注意（実装ギャップ、Issue #123 §1 / #129）: 動的追加ワークベンチ
+   * （addWorkbench）は現状このロギングプロキシを経由せず、
+   * node-lifecycle.ts の既定 ETH_RPC_URL（reth1 直）へ直結する。既定値同士は
+   * 同一ホストのため通常運用では表示上正しいが、`CHAINVIZ_PROXY_TARGET` を
+   * 変更した環境では動的追加ワークベンチの実際の呼び出し先とここで解決する
+   * rpcTargetNodeId がずれ得る。Issue #129 でプロキシ経由化されれば一致する。
+   */
   async pollInfra(): Promise<Partial<WorldStateSnapshot>> {
     const observations = await this.poller.pollOnce();
+    const entities = observations.map((o) => this.toEntity(o));
+    const rpcTargetNodeId = this.resolveRpcTargetNodeId(entities);
+    if (rpcTargetNodeId !== undefined) {
+      for (const entity of entities) {
+        if (entity.kind === "workbench") entity.rpcTargetNodeId = rpcTargetNodeId;
+      }
+    }
     return {
       chainType: this.chainType,
-      entities: observations.map((o) => this.toEntity(o)),
+      entities,
     };
+  }
+
+  /**
+   * 同じポーリング観測（entities）の中から `ip === rpcTargetHost` のノードを
+   * 探し、その stableId（= entity.id）を返す。`rpcTargetHost` 未設定、または
+   * 一致するノードが観測に無ければ undefined（呼び出し側は設定をスキップする）。
+   */
+  private resolveRpcTargetNodeId(
+    entities: (NodeEntity | WorkbenchEntity)[],
+  ): string | undefined {
+    if (!this.rpcTargetHost) return undefined;
+    const target = entities.find(
+      (e): e is NodeEntity => e.kind === "node" && e.ip === this.rpcTargetHost,
+    );
+    return target?.id;
   }
 
   private toEntity(obs: ContainerObservation): NodeEntity | WorkbenchEntity {

@@ -9,8 +9,11 @@ import {
   type InfraFlowNode,
   defaultGridPosition,
   entitiesToFlowNodes,
+  findFreeGridPosition,
   isInfraEntity,
   isSameInfraNode,
+  positionKey,
+  resolveLayoutPositions,
 } from "./infraNode.js";
 
 function node(id: string, containerName = `c-${id}`): NodeEntity {
@@ -111,8 +114,11 @@ describe("entitiesToFlowNodes", () => {
     expect(nodes[3].position).toEqual({ x: 0, y: DEFAULT_GRID.gapY });
   });
 
-  it("mixes saved positions with grid fallbacks using the sorted index", () => {
-    // b は保存済み、a と c は未保存。ソート順 a,b,c で index 0,1,2。
+  it("assigns unsaved cards to the lowest free grid slot, not wasting a slot on saved cards (Issue #123)", () => {
+    // b は保存済み(グリッド外の座標)。a と c は未保存で、互いに衝突しない
+    // 最小の空きセルへ詰めて割り当てられる（b の保存位置がグリッド上の
+    // セルでなければ、a=index0, c=index1 になる。旧実装は配列内の並び順で
+    // index を消費していたため c は index2 になっていた）。
     const nodes = entitiesToFlowNodes(
       [node("c", "c-c"), node("a", "c-a"), node("b", "c-b")],
       { "c-b": { x: 999, y: 888 } },
@@ -120,7 +126,21 @@ describe("entitiesToFlowNodes", () => {
     expect(nodes.map((n) => n.id)).toEqual(["a", "b", "c"]);
     expect(nodes[0].position).toEqual({ x: 0, y: 0 });
     expect(nodes[1].position).toEqual({ x: 999, y: 888 });
-    expect(nodes[2].position).toEqual({ x: 2 * DEFAULT_GRID.gapX, y: 0 });
+    expect(nodes[2].position).toEqual({ x: DEFAULT_GRID.gapX, y: 0 });
+  });
+
+  it("does not shift a previously-saved card's position when a new unsaved card appears (Issue #123)", () => {
+    // 既存カード a は保存済み。新規カード b が増えても a の位置は変わらない
+    // （旧「id ソートで添字を振り直す」方式ではここが動いてしまっていた）。
+    const before = entitiesToFlowNodes([node("a", "c-a")], {
+      "c-a": { x: 500, y: 500 },
+    });
+    const after = entitiesToFlowNodes([node("a", "c-a"), node("b", "c-b")], {
+      "c-a": { x: 500, y: 500 },
+    });
+    expect(after.find((n) => n.id === "a")?.position).toEqual(
+      before[0].position,
+    );
   });
 
   it("honors custom grid options", () => {
@@ -223,5 +243,134 @@ describe("isSameInfraNode", () => {
     const previous = { ...entitiesToFlowNodes([shared], {})[0], data: { entity: shared } };
     const next = { ...entitiesToFlowNodes([shared], {})[0], data: { entity: shared } };
     expect(isSameInfraNode(previous, next)).toBe(true);
+  });
+});
+
+describe("positionKey", () => {
+  it("encodes x and y as a comma-separated string", () => {
+    expect(positionKey({ x: 10, y: 20 })).toBe("10,20");
+  });
+
+  it("distinguishes positions that only differ in one coordinate", () => {
+    expect(positionKey({ x: 1, y: 2 })).not.toBe(positionKey({ x: 2, y: 1 }));
+  });
+
+  it("handles negative and zero coordinates", () => {
+    expect(positionKey({ x: 0, y: -5 })).toBe("0,-5");
+  });
+});
+
+describe("findFreeGridPosition (Issue #123)", () => {
+  it("returns the first grid cell when nothing is occupied", () => {
+    expect(findFreeGridPosition([])).toEqual(defaultGridPosition(0));
+  });
+
+  it("skips occupied cells and returns the first free one", () => {
+    const occupied = [positionKey(defaultGridPosition(0)), positionKey(defaultGridPosition(1))];
+    expect(findFreeGridPosition(occupied)).toEqual(defaultGridPosition(2));
+  });
+
+  it("finds a gap in the middle of the occupied set (not just the tail)", () => {
+    const occupied = [positionKey(defaultGridPosition(0)), positionKey(defaultGridPosition(2))];
+    expect(findFreeGridPosition(occupied)).toEqual(defaultGridPosition(1));
+  });
+
+  it("accepts any Iterable<string>, not only an array", () => {
+    const occupied = new Set([positionKey(defaultGridPosition(0))]);
+    expect(findFreeGridPosition(occupied)).toEqual(defaultGridPosition(1));
+  });
+
+  it("honors a custom grid", () => {
+    const grid = { columns: 1, gapX: 10, gapY: 10, originX: 0, originY: 0 };
+    const occupied = [positionKey(defaultGridPosition(0, grid))];
+    expect(findFreeGridPosition(occupied, grid)).toEqual(defaultGridPosition(1, grid));
+  });
+
+  it("does not loop forever when every cell up to a large index is occupied", () => {
+    const occupied = Array.from({ length: 50 }, (_, i) => positionKey(defaultGridPosition(i)));
+    expect(findFreeGridPosition(occupied)).toEqual(defaultGridPosition(50));
+  });
+});
+
+describe("resolveLayoutPositions (Issue #123 §4-3)", () => {
+  it("returns the same layout reference unchanged when nothing is missing", () => {
+    const layout = { "c-a": { x: 0, y: 0 } };
+    expect(resolveLayoutPositions(["c-a"], layout)).toBe(layout);
+  });
+
+  it("assigns a free grid slot to a single missing container", () => {
+    const next = resolveLayoutPositions(["c-a"], {});
+    expect(next["c-a"]).toEqual(defaultGridPosition(0));
+  });
+
+  it("does not overwrite an already-saved position for an existing container", () => {
+    const layout = { "c-a": { x: 500, y: 500 } };
+    const next = resolveLayoutPositions(["c-a", "c-b"], layout);
+    expect(next["c-a"]).toEqual({ x: 500, y: 500 });
+  });
+
+  it("assigns missing containers in alphabetical order (deterministic, not arrival order)", () => {
+    const next = resolveLayoutPositions(["c-b", "c-a"], {});
+    expect(next["c-a"]).toEqual(defaultGridPosition(0));
+    expect(next["c-b"]).toEqual(defaultGridPosition(1));
+  });
+
+  it("skips a grid cell already occupied by a saved position that happens to land on it", () => {
+    // 保存済み c-a がグリッド上のセル(0番)と一致する座標にある場合、
+    // 新規カード c-b はそこを避けて次の空きセル(1番)へ入る。
+    const layout = { "c-a": defaultGridPosition(0) };
+    const next = resolveLayoutPositions(["c-a", "c-b"], layout);
+    expect(next["c-b"]).toEqual(defaultGridPosition(1));
+  });
+
+  it("preserves previously-assigned entries across repeated calls (never moves existing cards)", () => {
+    const first = resolveLayoutPositions(["c-a"], {});
+    const second = resolveLayoutPositions(["c-a", "c-b"], first);
+    expect(second["c-a"]).toEqual(first["c-a"]);
+  });
+
+  it("returns an empty object for no container names and an empty layout", () => {
+    expect(resolveLayoutPositions([], {})).toEqual({});
+  });
+
+  it("honors a custom grid when assigning new positions", () => {
+    const grid = { columns: 1, gapX: 10, gapY: 20, originX: 5, originY: 7 };
+    const next = resolveLayoutPositions(["c-a"], {}, grid);
+    expect(next["c-a"]).toEqual(defaultGridPosition(0, grid));
+  });
+
+  it("fills multiple interior gaps when several containers are missing at once", () => {
+    // slot0 と slot2 が保存済みで埋まっている。未保存の c-x, c-y は空いている
+    // slot1 → slot3 の順に詰めて割り当てられる（複数欠けの中抜けを正しく埋める）。
+    const layout = {
+      "c-0": defaultGridPosition(0),
+      "c-2": defaultGridPosition(2),
+    };
+    const next = resolveLayoutPositions(["c-0", "c-2", "c-x", "c-y"], layout);
+    expect(next["c-x"]).toEqual(defaultGridPosition(1));
+    expect(next["c-y"]).toEqual(defaultGridPosition(3));
+  });
+
+  it("keeps a removed card's slot reserved via its stale layout entry so a new card never overlaps it (Issue #113-adjacent)", () => {
+    // App.tsx は削除されたカードのレイアウトエントリを掃除せず、present な
+    // containerName だけを resolveLayoutPositions へ渡す。stale なエントリが
+    // slot を占有し続けるため、削除→追加が入り乱れても新規カードが削除済み
+    // カードの位置と重ならない（Issue #113 と同種の重なりが再発しないことの確認）。
+    const layout = {
+      "c-a": defaultGridPosition(0),
+      "c-b": defaultGridPosition(1),
+    };
+    // c-a は削除済み（present に含めない）。新規 c-c が来る。
+    const next = resolveLayoutPositions(["c-b", "c-c"], layout);
+    expect(next["c-c"]).toEqual(defaultGridPosition(2));
+    expect(next["c-c"]).not.toEqual(layout["c-a"]);
+  });
+
+  it("does not consume a grid slot for a saved card placed off the grid (dragged away)", () => {
+    // ドラッグでグリッド外へ動かした保存済みカードはグリッドセルを占有しない。
+    // 新規カードは slot0 から普通に詰められる（resolveLayoutPositions 単体での確認）。
+    const layout = { "c-a": { x: 12345, y: 67890 } };
+    const next = resolveLayoutPositions(["c-a", "c-b"], layout);
+    expect(next["c-b"]).toEqual(defaultGridPosition(0));
   });
 });

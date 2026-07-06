@@ -47,6 +47,17 @@ const lighthouseNode: NodeEntity = {
   headBlockHash: "0x00000080",
 };
 
+/**
+ * reth-node-1 / lighthouse-1 を EL/CL それぞれのブートノードとして扱う
+ * （実環境の node-lifecycle.ts と同じく、reth1 / beacon1 が入口に固定される。
+ * Issue #123 UX設計 §5）。それ以外のノードは通常のピア。
+ */
+const EL_BOOTNODE_ID = "reth-node-1";
+const CL_BOOTNODE_ID = "lighthouse-1";
+
+/** addWorkbench の RPC 接続先（実環境の既定 `ETH_RPC_URL` = reth1 と同じ）。 */
+const RPC_TARGET_NODE_ID = EL_BOOTNODE_ID;
+
 /** 0x + 指定プレフィックス + ゼロ埋めで 40 桁のダミーアドレスを作る。 */
 function addr(prefix: string): string {
   return `0x${prefix.padEnd(40, "0")}`;
@@ -85,6 +96,8 @@ const workbench: WorkbenchEntity = {
   process: { name: "foundry" },
   label: "Alice",
   walletIds: [ALICE_WALLET, SAFE_WALLET],
+  // 実環境の既定 ETH_RPC_URL（reth1 直）と同じ対象を模す（Issue #123）。
+  rpcTargetNodeId: RPC_TARGET_NODE_ID,
 };
 
 /** Alice の EOA。workbench-alice が所有し、tx ライフサイクルの主役になる。 */
@@ -185,9 +198,10 @@ export function createMockSnapshot(): WorldStateSnapshot {
     chainType: "ethereum",
     timestamp: Date.now(),
     entities: [
-      rethNode(1, 128),
-      rethNode(2, 128),
-      lighthouseNode,
+      // reth-node-1 / lighthouse-1 がそれぞれ EL/CL のブートノード（Issue #123）。
+      { ...rethNode(1, 128), p2pRole: "bootnode" },
+      { ...rethNode(2, 128), p2pRole: "peer" },
+      { ...lighthouseNode, p2pRole: "bootnode" },
       workbench,
       aliceWallet(),
       bobWallet(),
@@ -258,9 +272,14 @@ const NON_REMOVABLE_NODE_IDS = new Set([
   "lighthouse-1",
 ]);
 
-/** addNode で追加するフォロワー reth ノード（同期中から始まる）。 */
-function newFollowerNode(seq: number): NodeEntity {
-  return {
+/**
+ * addNode で追加するフォロワーの reth + beacon ペア（Issue #123 UX設計 §4-6。
+ * 実環境の node-lifecycle.ts が addNode で reth/beacon の2コンテナを追加する
+ * 挙動をモックでも再現する）。どちらも同期中から始まり、EL/CL それぞれの
+ * ブートノードを入口に参加する `p2pRole: "peer"` のノードとして追加する。
+ */
+function newFollowerNodePair(seq: number): { reth: NodeEntity; beacon: NodeEntity } {
+  const reth: NodeEntity = {
     kind: "node",
     id: `reth-follower-${seq}`,
     containerName: `chainviz-reth-follower-${seq}`,
@@ -273,7 +292,26 @@ function newFollowerNode(seq: number): NodeEntity {
     syncStatus: "syncing",
     blockHeight: 0,
     headBlockHash: "0x00000000",
+    p2pRole: "peer",
+    removable: true,
   };
+  const beacon: NodeEntity = {
+    kind: "node",
+    id: `beacon-follower-${seq}`,
+    containerName: `chainviz-beacon-follower-${seq}`,
+    ip: `172.20.0.${120 + seq}`,
+    ports: [5052, 9000],
+    resources: { cpuPercent: 1.6, memMB: 320 },
+    process: { name: "lighthouse bn", version: "5.3.0" },
+    chainType: "ethereum",
+    clientType: "lighthouse",
+    syncStatus: "syncing",
+    blockHeight: 0,
+    headBlockHash: "0x00000000",
+    p2pRole: "peer",
+    removable: true,
+  };
+  return { reth, beacon };
 }
 
 /** addWorkbench で追加するワークベンチ。 */
@@ -288,8 +326,21 @@ function newWorkbench(seq: number, label: string): WorkbenchEntity {
     process: { name: "foundry" },
     label,
     walletIds: [],
+    removable: true,
+    // 実環境の既定 ETH_RPC_URL（reth1 直）と同じ対象を模す（Issue #123）。
+    rpcTargetNodeId: RPC_TARGET_NODE_ID,
   };
 }
+
+/**
+ * addNode 成功から、新しい reth/beacon ペアの実 PeerEdge がブートノードとの
+ * 間に張られるまでの模擬遅延（Issue #123 UX設計 §4-4「接続予定エッジは実
+ * カード到着後も残し、実PeerEdgeが1本でも届いた時点で消す」の遷移をオフライン
+ * 確認できるようにするための演出値。実測タイムアウトではなく、UI 上で
+ * 「接続確立中…」表示から実エッジへの切り替えを目視できれば十分という
+ * 固定 UX 値）。
+ */
+export const ADD_NODE_PEER_CONNECT_DELAY_MS = 4000;
 
 export interface MockClientOptions {
   /** ブロック高を進める diff の送出間隔(ms)。0 以下でタイマーを起動しない。 */
@@ -403,18 +454,63 @@ export function createMockClient(
     handlers.onStatusChange?.(next);
   }
 
-  /** コマンドを適用し、流す diff と結果を返す。 */
-  function applyCommand(command: Command): { ok: boolean; error?: string; diff?: DiffEvent } {
+  /**
+   * addNode で追加した reth/beacon ペアそれぞれとブートノードとの間に、
+   * 実 PeerEdge が張られたことを模す（Issue #123 UX設計 §4-4 の遷移確認用。
+   * ADD_NODE_PEER_CONNECT_DELAY_MS 経過後に1回だけ発火する）。ペアの片方
+   * だけが既に削除されていても、残っている側の edgeAdded はそのまま送る
+   * （world-state 側が端点存在チェックで無視するので害はない）。
+   */
+  function scheduleFollowerPeerConnect(rethId: string, beaconId: string) {
+    const t = setTimeout(() => {
+      commandTimers.delete(t);
+      const edges: DiffEvent[] = [
+        {
+          type: "edgeAdded",
+          edge: {
+            kind: "peer",
+            fromNodeId: rethId,
+            toNodeId: EL_BOOTNODE_ID,
+            networkId: MOCK_NETWORK_ID,
+          },
+        },
+        {
+          type: "edgeAdded",
+          edge: {
+            kind: "peer",
+            fromNodeId: beaconId,
+            toNodeId: CL_BOOTNODE_ID,
+            networkId: MOCK_NETWORK_ID,
+          },
+        },
+      ];
+      handlers.onDiff?.(edges);
+    }, ADD_NODE_PEER_CONNECT_DELAY_MS);
+    commandTimers.add(t);
+  }
+
+  /** コマンドを適用し、流す diff 列と結果を返す。 */
+  function applyCommand(
+    command: Command,
+  ): { ok: boolean; error?: string; diffs?: DiffEvent[] } {
     switch (command.action) {
       case "addNode": {
-        const node = newFollowerNode(++entitySeq);
-        nodeIds.add(node.id);
-        return { ok: true, diff: { type: "entityAdded", entity: node } };
+        const { reth, beacon } = newFollowerNodePair(++entitySeq);
+        nodeIds.add(reth.id);
+        nodeIds.add(beacon.id);
+        scheduleFollowerPeerConnect(reth.id, beacon.id);
+        return {
+          ok: true,
+          diffs: [
+            { type: "entityAdded", entity: reth },
+            { type: "entityAdded", entity: beacon },
+          ],
+        };
       }
       case "addWorkbench": {
         const wb = newWorkbench(++entitySeq, command.label);
         workbenchIds.add(wb.id);
-        return { ok: true, diff: { type: "entityAdded", entity: wb } };
+        return { ok: true, diffs: [{ type: "entityAdded", entity: wb }] };
       }
       case "removeNode": {
         if (!nodeIds.has(command.nodeId)) {
@@ -429,7 +525,7 @@ export function createMockClient(
         nodeIds.delete(command.nodeId);
         return {
           ok: true,
-          diff: { type: "entityRemoved", id: command.nodeId },
+          diffs: [{ type: "entityRemoved", id: command.nodeId }],
         };
       }
       case "removeWorkbench": {
@@ -439,7 +535,7 @@ export function createMockClient(
         workbenchIds.delete(command.workbenchId);
         return {
           ok: true,
-          diff: { type: "entityRemoved", id: command.workbenchId },
+          diffs: [{ type: "entityRemoved", id: command.workbenchId }],
         };
       }
     }
@@ -447,7 +543,7 @@ export function createMockClient(
 
   function resolveCommand(commandId: string, command: Command) {
     const result = applyCommand(command);
-    if (result.diff) handlers.onDiff?.([result.diff]);
+    if (result.diffs && result.diffs.length > 0) handlers.onDiff?.(result.diffs);
     handlers.onCommandResult?.(commandId, result.ok, result.error);
   }
 

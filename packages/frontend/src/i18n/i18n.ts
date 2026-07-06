@@ -45,6 +45,22 @@ export function translate(key: MessageKey, lang: Language): string {
   return pickLocale(entry, lang);
 }
 
+/**
+ * `t()` が返した文言に含まれる `{key}` 形式のプレースホルダを、実行時の値で
+ * 置換する（Issue #123: 追加操作の予告ツールチップ/仮カードで接続先の
+ * containerName を埋め込むために追加）。
+ *
+ * `messages.ts` の値は素の文字列で、既存の `translate` 自体には補間機能が
+ * 無いため、呼び出し側が `format(t(key), { elBoot: "..." })` のように使う。
+ * 対応する値が `params` に無いプレースホルダはそのまま残す（文言や呼び出しの
+ * 対応漏れがあっても表示が壊れず、置換し忘れに気付きやすい防御的な挙動）。
+ */
+export function format(text: string, params: Record<string, string>): string {
+  return text.replace(/\{(\w+)\}/g, (match, key: string) =>
+    Object.prototype.hasOwnProperty.call(params, key) ? params[key] : match,
+  );
+}
+
 /** 保存済みの UI 言語を読み込む。未保存・不正値はデフォルト言語。 */
 export function loadLanguage(storage: LanguageStorage): Language {
   const raw = storage.getItem(LANGUAGE_STORAGE_KEY);

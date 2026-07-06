@@ -1,4 +1,5 @@
 import type { Node } from "@xyflow/react";
+import { clientCategory } from "./clientCategory.js";
 import { DEFAULT_GRID, type GridOptions, defaultGridPosition } from "./infraNode.js";
 
 /**
@@ -16,12 +17,32 @@ import { DEFAULT_GRID, type GridOptions, defaultGridPosition } from "./infraNode
 /** ゴーストが表す対象の種別。addNode / addWorkbench のどちらから生まれたか。 */
 export type GhostKind = "node" | "workbench";
 
+/**
+ * ゴーストが node の場合、EL/CL のどちらを表すか（Issue #123 UX設計 §4-2）。
+ * addNode は reth + beacon の 2 コンテナを追加するため、ゴーストも 2 枚に
+ * 分けてそれぞれの層を持たせる。workbench ゴーストにはこのフィールドは無い。
+ */
+export type GhostLayer = "execution" | "consensus";
+
 export interface GhostNodeData extends Record<string, unknown> {
   /** このゴーストを生んだコマンドの id。commandResult / 実体到着との突き合わせに使う。 */
   commandId: string;
   kind: GhostKind;
   /** カードのサブタイトルに出す補助情報（chainProfile / ワークベンチ名）。 */
   label: string;
+  /** kind === "node" のときだけ意味を持つ、EL/CL の別（Issue #123）。 */
+  layer?: GhostLayer;
+  /**
+   * このゴーストが接続予定のノードの containerName（ツールチップ・サブタイトル
+   * 表示用。Issue #123 UX設計 §4-2）。ブートノード / RPC 接続先を解決できない
+   * 場合は省略する（§4-5 フォールバック）。
+   */
+  targetContainerName?: string;
+  /**
+   * 接続予定エッジの終点にする、接続予定先ノードの安定 ID。
+   * `targetContainerName` と同時に解決される（同じノードの別表現）。
+   */
+  targetNodeId?: string;
 }
 
 /** React Flow の nodeTypes で使うゴーストカードの型名。 */
@@ -54,25 +75,40 @@ export interface CreateGhostNodeParams {
   /** 何番目のゴースト/インフラカードとして置くか（グリッド位置の算出に使う）。 */
   index: number;
   grid?: GridOptions;
+  /** kind === "node" のときの EL/CL 別（Issue #123）。 */
+  layer?: GhostLayer;
+  /** 接続予定先ノードの containerName / 安定 ID（解決できなければ省略）。 */
+  targetContainerName?: string;
+  targetNodeId?: string;
 }
 
-/** ゴーストノード 1 件分の React Flow ノードを組み立てる。 */
+/**
+ * ゴーストノード 1 件分の React Flow ノードを組み立てる。
+ *
+ * kind === "node" の addNode は reth 用・beacon 用の 2 枚のゴーストになる
+ * ため、`node-${commandId}` だけでは id が重複する。id には `layer` も
+ * 含めて一意にする（workbench には layer が無いので従来どおり）。
+ */
 export function createGhostNode({
   commandId,
   kind,
   label,
   index,
   grid = GHOST_GRID,
+  layer,
+  targetContainerName,
+  targetNodeId,
 }: CreateGhostNodeParams): GhostFlowNode {
   const position = defaultGridPosition(index, grid);
+  const id = layer ? `ghost-${commandId}-${layer}` : `ghost-${commandId}`;
   return {
-    id: `ghost-${commandId}`,
+    id,
     type: GHOST_NODE_TYPE,
     position,
     // 位置が未確定の暫定カードなので、ドラッグでレイアウトに焼き付けさせない。
     draggable: false,
     selectable: false,
-    data: { commandId, kind, label },
+    data: { commandId, kind, label, layer, targetContainerName, targetNodeId },
   };
 }
 
@@ -102,4 +138,42 @@ export function removeOldestGhostByKind(
   const index = ghosts.findIndex((ghost) => ghost.data.kind === kind);
   if (index === -1) return ghosts;
   return [...ghosts.slice(0, index), ...ghosts.slice(index + 1)];
+}
+
+/** `removeGhostForArrivedEntity` に渡す、実体到着イベント側の最小限の形。 */
+export interface ArrivedInfraEntity {
+  kind: "node" | "workbench";
+  /** kind === "node" のときのクライアント種別（reth / lighthouse 等）。 */
+  clientType?: string;
+}
+
+/**
+ * 実エンティティ（entityAdded）の到着に対応する 1 枚のゴーストを取り除いた
+ * 新しい配列を返す（純粋関数。Issue #123 UX設計 §4-3 ルール2）。
+ *
+ * addNode が reth 用・beacon 用の 2 枚のゴーストを生むようになったため、
+ * `removeOldestGhostByKind`（kind だけの FIFO）では届いた実体がどちらの
+ * ゴーストに対応するか区別できない。到着した node の `clientType` から
+ * EL/CL の層を判定し、同じ層のゴーストのうち最も古いものを優先して消す。
+ * 同じ層のゴーストが無い場合（旧スナップショット・層不明の生成物など）は
+ * kind だけの FIFO へフォールバックする（ゴーストが消えなくなる事故を防ぐ）。
+ */
+export function removeGhostForArrivedEntity(
+  ghosts: GhostFlowNode[],
+  entity: ArrivedInfraEntity,
+): GhostFlowNode[] {
+  if (entity.kind === "workbench") {
+    return removeOldestGhostByKind(ghosts, "workbench");
+  }
+
+  const category = clientCategory(entity.clientType ?? "");
+  if (category === "execution" || category === "consensus") {
+    const index = ghosts.findIndex(
+      (ghost) => ghost.data.kind === "node" && ghost.data.layer === category,
+    );
+    if (index !== -1) {
+      return [...ghosts.slice(0, index), ...ghosts.slice(index + 1)];
+    }
+  }
+  return removeOldestGhostByKind(ghosts, "node");
 }

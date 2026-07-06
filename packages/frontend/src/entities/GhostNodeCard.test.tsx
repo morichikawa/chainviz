@@ -66,4 +66,75 @@ describe("GhostNodeCard", () => {
     renderGhost({ commandId: "cmd-6", kind: "node", label: "ethereum" });
     expect(screen.queryByRole("button")).toBeNull();
   });
+
+  describe("layer-specific name + connection target subtitle (Issue #123)", () => {
+    it("shows the execution-layer name instead of the raw chainProfile label", () => {
+      renderGhost({
+        commandId: "cmd-7",
+        kind: "node",
+        label: "ethereum",
+        layer: "execution",
+      });
+      expect(screen.getByText("新しいノード (reth)")).toBeTruthy();
+      expect(screen.queryByText("ethereum")).toBeNull();
+    });
+
+    it("shows the consensus-layer name", () => {
+      renderGhost({
+        commandId: "cmd-8",
+        kind: "node",
+        label: "ethereum",
+        layer: "consensus",
+      });
+      expect(screen.getByText("新しいノード (beacon)")).toBeTruthy();
+    });
+
+    it("shows the English layer names", () => {
+      renderGhost(
+        { commandId: "cmd-9", kind: "node", label: "ethereum", layer: "execution" },
+        "en",
+      );
+      expect(screen.getByText("New node (reth)")).toBeTruthy();
+    });
+
+    it("appends the resolved connection target to the subtitle for a node ghost", () => {
+      renderGhost({
+        commandId: "cmd-10",
+        kind: "node",
+        label: "ethereum",
+        layer: "execution",
+        targetContainerName: "chainviz-ethereum-reth1",
+      });
+      expect(
+        screen.getByText("起動中… chainviz-ethereum-reth1 と接続予定"),
+      ).toBeTruthy();
+    });
+
+    it("appends the resolved RPC target to the subtitle for a workbench ghost", () => {
+      renderGhost({
+        commandId: "cmd-11",
+        kind: "workbench",
+        label: "Carol",
+        targetContainerName: "chainviz-ethereum-reth1",
+      });
+      expect(
+        screen.getByText("起動中… 操作先: chainviz-ethereum-reth1"),
+      ).toBeTruthy();
+    });
+
+    it("falls back to the plain pending subtitle when no connection target resolves (Issue #123 §4-5)", () => {
+      renderGhost({
+        commandId: "cmd-12",
+        kind: "node",
+        label: "ethereum",
+        layer: "consensus",
+      });
+      expect(screen.getByText("起動中…")).toBeTruthy();
+    });
+
+    it("falls back to the raw label as the name when layer is absent (legacy/defensive)", () => {
+      renderGhost({ commandId: "cmd-13", kind: "node", label: "ethereum" });
+      expect(screen.getByText("ethereum")).toBeTruthy();
+    });
+  });
 });

@@ -12,7 +12,7 @@ import type { InfraFlowNode } from "./infraNode.js";
  * ホバーで詳細ポップオーバー（InfraPopover）を表示する。
  */
 export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
-  const { entity } = data;
+  const { entity, rpcTargetContainerName, isNew } = data;
   const { t } = useLanguage();
   const actions = useCommandActions();
   const [hovered, setHovered] = useState(false);
@@ -31,9 +31,20 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
     else actions.removeWorkbench(entity.id);
   };
 
+  // 実カード到着からの一定時間だけ付く新着強調クラス（Issue #123 UX設計
+  // §4-4）。isNew の計算・タイマー管理は entities/useNewArrivalHighlight.ts
+  // 側の責務で、ここでは受け取ったフラグをクラス名へ反映するだけ。
+  const className = [
+    "infra-card",
+    `infra-card--${entity.kind}`,
+    isNew ? "infra-card--new" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
     <div
-      className={`infra-card infra-card--${entity.kind}`}
+      className={className}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       data-testid={`infra-card-${entity.id}`}
@@ -91,7 +102,9 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
       </div>
       <div className="infra-card__name">{entity.containerName}</div>
       <div className="infra-card__subtitle">{subtitle}</div>
-      {hovered && <InfraPopover entity={entity} />}
+      {hovered && (
+        <InfraPopover entity={entity} rpcTargetContainerName={rpcTargetContainerName} />
+      )}
     </div>
   );
 }

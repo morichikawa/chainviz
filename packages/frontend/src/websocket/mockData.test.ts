@@ -1,9 +1,11 @@
+import type { DiffEvent, NodeEntity } from "@chainviz/shared";
 import { describe, expect, it, vi } from "vitest";
 import {
   groupEdgesByNetwork,
   peerEdgesToFlowEdges,
 } from "../entities/peerEdge.js";
 import {
+  ADD_NODE_PEER_CONNECT_DELAY_MS,
   MOCK_NETWORK_ID,
   createMockClient,
   createMockSnapshot,
@@ -43,6 +45,26 @@ describe("createMockSnapshot", () => {
       expect(nodeIds.has(edge.fromNodeId)).toBe(true);
       expect(nodeIds.has(edge.toNodeId)).toBe(true);
     }
+  });
+});
+
+describe("createMockSnapshot connection targets (Issue #123)", () => {
+  it("marks reth-node-1 and lighthouse-1 as the EL/CL bootnodes", () => {
+    const snapshot = createMockSnapshot();
+    const byId = new Map(
+      snapshot.entities
+        .filter((e): e is NodeEntity => e.kind === "node")
+        .map((e) => [e.id, e]),
+    );
+    expect(byId.get("reth-node-1")?.p2pRole).toBe("bootnode");
+    expect(byId.get("lighthouse-1")?.p2pRole).toBe("bootnode");
+    expect(byId.get("reth-node-2")?.p2pRole).toBe("peer");
+  });
+
+  it("resolves workbench-alice's rpcTargetNodeId to the EL bootnode", () => {
+    const snapshot = createMockSnapshot();
+    const wb = snapshot.entities.find((e) => e.kind === "workbench");
+    expect(wb?.kind === "workbench" && wb.rpcTargetNodeId).toBe("reth-node-1");
   });
 });
 
@@ -456,6 +478,109 @@ describe("createMockClient", () => {
     expect(() => client.disconnect()).not.toThrow();
     vi.advanceTimersByTime(5000);
     expect(onDiff).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+});
+
+describe("createMockClient addNode reth+beacon pair (Issue #123 §4-6)", () => {
+  it("emits both a reth and a beacon entityAdded in a single diff for one addNode", async () => {
+    const onDiff = vi.fn();
+    const client = createMockClient({ onDiff }, { intervalMs: 0 });
+    client.connect();
+    client.sendCommand({ action: "addNode", chainProfile: "ethereum" });
+    await Promise.resolve();
+
+    const diff = onDiff.mock.calls[0][0] as DiffEvent[];
+    expect(diff).toHaveLength(2);
+    const kinds = diff.map((e) => e.type === "entityAdded" && e.entity.kind);
+    expect(kinds).toEqual(["node", "node"]);
+    const clientTypes = diff.map(
+      (e) => e.type === "entityAdded" && e.entity.kind === "node" && e.entity.clientType,
+    );
+    expect(clientTypes.sort()).toEqual(["lighthouse", "reth"]);
+  });
+
+  it("marks both new nodes as p2pRole peer and removable", async () => {
+    const onDiff = vi.fn();
+    const client = createMockClient({ onDiff }, { intervalMs: 0 });
+    client.connect();
+    client.sendCommand({ action: "addNode", chainProfile: "ethereum" });
+    await Promise.resolve();
+
+    const diff = onDiff.mock.calls[0][0] as DiffEvent[];
+    for (const event of diff) {
+      if (event.type !== "entityAdded" || event.entity.kind !== "node") continue;
+      expect(event.entity.p2pRole).toBe("peer");
+      expect(event.entity.removable).toBe(true);
+    }
+  });
+
+  it("assigns each addNode call a distinct reth/beacon id pair", async () => {
+    const onDiff = vi.fn();
+    const client = createMockClient({ onDiff }, { intervalMs: 0 });
+    client.connect();
+    client.sendCommand({ action: "addNode", chainProfile: "ethereum" });
+    client.sendCommand({ action: "addNode", chainProfile: "ethereum" });
+    await Promise.resolve();
+
+    const ids = onDiff.mock.calls.flatMap((call) =>
+      (call[0] as DiffEvent[]).map(
+        (e) => e.type === "entityAdded" && e.entity.kind === "node" && e.entity.id,
+      ),
+    );
+    expect(new Set(ids).size).toBe(4);
+  });
+
+  it("resolves a new workbench's rpcTargetNodeId to the EL bootnode", async () => {
+    const onDiff = vi.fn();
+    const client = createMockClient({ onDiff }, { intervalMs: 0 });
+    client.connect();
+    client.sendCommand({ action: "addWorkbench", label: "Zoe" });
+    await Promise.resolve();
+
+    const diff = onDiff.mock.calls[0][0] as DiffEvent[];
+    const event = diff[0];
+    expect(event.type === "entityAdded" && event.entity.kind === "workbench" && event.entity.rpcTargetNodeId).toBe(
+      "reth-node-1",
+    );
+  });
+
+  it("emits edgeAdded diffs for both new nodes after the connect delay elapses", async () => {
+    vi.useFakeTimers();
+    const onDiff = vi.fn();
+    const client = createMockClient({ onDiff }, { intervalMs: 0 });
+    client.connect();
+    client.sendCommand({ action: "addNode", chainProfile: "ethereum" });
+
+    // コマンド結果・entityAdded 自体はマイクロタスク（queueMicrotask）で解決
+    // されるため、フェイクタイマーの advance ではなく Promise を1度挟んで
+    // マイクロタスクキューを吐き出させる必要がある。
+    await Promise.resolve();
+    const callsBeforeDelay = onDiff.mock.calls.length;
+
+    vi.advanceTimersByTime(ADD_NODE_PEER_CONNECT_DELAY_MS - 1);
+    expect(onDiff.mock.calls.length).toBe(callsBeforeDelay);
+
+    vi.advanceTimersByTime(1);
+    expect(onDiff.mock.calls.length).toBe(callsBeforeDelay + 1);
+    const edgeDiff = onDiff.mock.calls.at(-1)?.[0] as DiffEvent[];
+    expect(edgeDiff).toHaveLength(2);
+    expect(edgeDiff.every((e) => e.type === "edgeAdded")).toBe(true);
+    vi.useRealTimers();
+  });
+
+  it("does not emit the delayed edgeAdded diffs if disconnected before the delay elapses", async () => {
+    vi.useFakeTimers();
+    const onDiff = vi.fn();
+    const client = createMockClient({ onDiff }, { intervalMs: 0 });
+    client.connect();
+    client.sendCommand({ action: "addNode", chainProfile: "ethereum" });
+    await Promise.resolve();
+    const callsBeforeDisconnect = onDiff.mock.calls.length;
+
+    client.disconnect();
+    vi.advanceTimersByTime(ADD_NODE_PEER_CONNECT_DELAY_MS * 2);
+    expect(onDiff.mock.calls.length).toBe(callsBeforeDisconnect);
     vi.useRealTimers();
   });
 });

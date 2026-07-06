@@ -1,12 +1,15 @@
-import type { Command } from "@chainviz/shared";
+import type { Command, WorldStateEntity } from "@chainviz/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  resolveBootNodes,
+  resolveRpcTargetNode,
+} from "../entities/connectionTargets.js";
 import {
   GHOST_TIMEOUT_MS,
   type GhostFlowNode,
-  type GhostKind,
   createGhostNode,
   removeGhostByCommandId,
-  removeOldestGhostByKind,
+  removeGhostForArrivedEntity,
 } from "../entities/ghostNode.js";
 import type { OperationSignal } from "../entities/operationEdge.js";
 import type { MessageKey } from "../i18n/messages.js";
@@ -35,6 +38,8 @@ export interface CommandActions {
 export interface UseCommandsResult {
   state: WorldState;
   status: ConnectionStatus;
+  /** 最初のスナップショットを受信済みか（`useWorldState`参照）。 */
+  hasReceivedSnapshot: boolean;
   /** 揮発性の操作観測イベント列（描画側で操作パルスに消費する）。 */
   operations: OperationSignal[];
   actions: CommandActions;
@@ -112,32 +117,39 @@ export function useCommands(
     [],
   );
 
-  const { state, status, operations, sendCommand } = useWorldState(
-    clientFactory,
-    handleCommandResult,
-  );
+  const { state, status, hasReceivedSnapshot, operations, sendCommand } =
+    useWorldState(clientFactory, handleCommandResult);
   stateRef.current = state;
 
-  // node / workbench の実エンティティが新規に届いたら、同種の仮カードを
-  // 最も古いものから1枚取り除く（entityAdded は commandId を持たないため厳密な
-  // 対応付けはできない。FIFO 近似の理由は entities/ghostNode.ts 参照）。
+  // node / workbench の実エンティティが新規に届いたら、対応する仮カードを
+  // 1枚取り除く（entityAdded は commandId を持たないため厳密な対応付けは
+  // できない。node は到着した clientType から EL/CL の層を判定し、同じ層の
+  // ゴーストを優先して消す（addNode が reth/beacon の2枚のゴーストを生む
+  // ため）。FIFO 近似・フォールバックの理由は entities/ghostNode.ts 参照。
   const seenEntityIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const previous = seenEntityIdsRef.current;
     const currentIds = Object.keys(state.entities);
-    const arrivedKinds: GhostKind[] = [];
+    const arrivedEntities: WorldStateEntity[] = [];
     for (const id of currentIds) {
       if (previous.has(id)) continue;
       const entity = state.entities[id];
       if (entity && (entity.kind === "node" || entity.kind === "workbench")) {
-        arrivedKinds.push(entity.kind);
+        arrivedEntities.push(entity);
       }
     }
     seenEntityIdsRef.current = new Set(currentIds);
-    if (arrivedKinds.length === 0) return;
+    if (arrivedEntities.length === 0) return;
     setGhosts((current) => {
       let next = current;
-      for (const kind of arrivedKinds) next = removeOldestGhostByKind(next, kind);
+      for (const entity of arrivedEntities) {
+        next = removeGhostForArrivedEntity(
+          next,
+          entity.kind === "node"
+            ? { kind: "node", clientType: entity.clientType }
+            : { kind: "workbench" },
+        );
+      }
       return next;
     });
   }, [state.entities]);
@@ -187,21 +199,63 @@ export function useCommands(
       if (command.action !== "addNode" && command.action !== "addWorkbench") {
         return;
       }
-      const kind: GhostKind = command.action === "addNode" ? "node" : "workbench";
-      const label =
-        command.action === "addNode" ? command.chainProfile : command.label;
+
       const infraCount = Object.values(stateRef.current.entities).filter(
         (entity) => entity.kind === "node" || entity.kind === "workbench",
       ).length;
       // 既存の node/workbench カードと衝突しないよう infraCount を下限にしつつ、
       // 一度払い出した値より下がらないよう ghostIndexRef 自身の値も下限にする。
-      const index = Math.max(ghostIndexRef.current, infraCount);
-      ghostIndexRef.current = index + 1;
+      const nextIndex = () => {
+        const index = Math.max(ghostIndexRef.current, infraCount);
+        ghostIndexRef.current = index + 1;
+        return index;
+      };
+
+      if (command.action === "addNode") {
+        // フォロワー reth + beacon の2コンテナ追加を、2枚のゴースト（EL/CL）
+        // で表す（Issue #123 UX設計 §4-2）。接続予定先（ブートノード）は
+        // 現時点の world-state から解決できる範囲で予告し、解決できなければ
+        // 省略する（§4-5 フォールバック。createGhostNode が undefined を
+        // そのまま許容する）。
+        const bootNodes = resolveBootNodes(
+          Object.values(stateRef.current.entities),
+        );
+        const executionGhost = createGhostNode({
+          commandId,
+          kind: "node",
+          label: command.chainProfile,
+          index: nextIndex(),
+          layer: "execution",
+          targetContainerName: bootNodes.execution?.containerName,
+          targetNodeId: bootNodes.execution?.id,
+        });
+        const consensusGhost = createGhostNode({
+          commandId,
+          kind: "node",
+          label: command.chainProfile,
+          index: nextIndex(),
+          layer: "consensus",
+          targetContainerName: bootNodes.consensus?.containerName,
+          targetNodeId: bootNodes.consensus?.id,
+        });
+        setGhosts((current) => [...current, executionGhost, consensusGhost]);
+        return;
+      }
+
+      // addWorkbench: 現行の RPC 接続先は固定なので、既存ワークベンチの
+      // rpcTargetNodeId を「新しく追加するワークベンチも同じ対象に繋がる」
+      // 近似値として使う（connectionTargets.ts 参照）。解決できなければ
+      // 省略する（§4-5）。
+      const rpcTarget = resolveRpcTargetNode(
+        Object.values(stateRef.current.entities),
+      );
       const ghost = createGhostNode({
         commandId,
-        kind,
-        label,
-        index,
+        kind: "workbench",
+        label: command.label,
+        index: nextIndex(),
+        targetContainerName: rpcTarget?.containerName,
+        targetNodeId: rpcTarget?.id,
       });
       setGhosts((current) => [...current, ghost]);
     },
@@ -222,5 +276,5 @@ export function useCommands(
     [dispatch],
   );
 
-  return { state, status, operations, actions, ghosts };
+  return { state, status, hasReceivedSnapshot, operations, actions, ghosts };
 }

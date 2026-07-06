@@ -1,4 +1,4 @@
-import type { Command } from "@chainviz/shared";
+import type { Command, WorldStateSnapshot } from "@chainviz/shared";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -73,5 +73,74 @@ describe("useWorldState command wiring", () => {
     const send = result.current.sendCommand;
     unmount();
     expect(send({ action: "removeNode", nodeId: "x" })).toBeUndefined();
+  });
+});
+
+describe("useWorldState hasReceivedSnapshot (Issue #123 regression)", () => {
+  const emptySnapshot: WorldStateSnapshot = {
+    chainType: "ethereum",
+    timestamp: 0,
+    entities: [],
+    edges: [],
+  };
+
+  it("starts false even after status becomes connected, before a snapshot arrives", () => {
+    // 実クライアントの実際の順序: onopen(→status="connected") が先に発火し、
+    // スナップショットは別メッセージとして後から届く。この間隙を再現する。
+    let captured: ChainvizClientHandlers | null = null;
+    const factory: ClientFactory = (handlers) => {
+      captured = handlers;
+      return fakeClient(handlers).client;
+    };
+
+    const { result } = renderHook(() => useWorldState(factory));
+
+    act(() => {
+      captured?.onStatusChange?.("connected");
+    });
+
+    expect(result.current.status).toBe("connected");
+    expect(result.current.hasReceivedSnapshot).toBe(false);
+  });
+
+  it("becomes true only once the snapshot message actually arrives", () => {
+    let captured: ChainvizClientHandlers | null = null;
+    const factory: ClientFactory = (handlers) => {
+      captured = handlers;
+      return fakeClient(handlers).client;
+    };
+
+    const { result } = renderHook(() => useWorldState(factory));
+
+    act(() => {
+      captured?.onStatusChange?.("connected");
+    });
+    expect(result.current.hasReceivedSnapshot).toBe(false);
+
+    act(() => {
+      captured?.onSnapshot?.(emptySnapshot);
+    });
+    expect(result.current.hasReceivedSnapshot).toBe(true);
+  });
+
+  it("stays true across a later disconnect (does not require re-deriving the baseline)", () => {
+    let captured: ChainvizClientHandlers | null = null;
+    const factory: ClientFactory = (handlers) => {
+      captured = handlers;
+      return fakeClient(handlers).client;
+    };
+
+    const { result } = renderHook(() => useWorldState(factory));
+
+    act(() => {
+      captured?.onStatusChange?.("connected");
+      captured?.onSnapshot?.(emptySnapshot);
+    });
+    expect(result.current.hasReceivedSnapshot).toBe(true);
+
+    act(() => {
+      captured?.onStatusChange?.("disconnected");
+    });
+    expect(result.current.hasReceivedSnapshot).toBe(true);
   });
 });
