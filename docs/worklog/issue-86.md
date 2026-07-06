@@ -236,3 +236,38 @@
     別クライアント対応時にはデバッグログの追加を検討する余地がある。
   - `docs/WORKLOG.md` の #86 索引行が「…の設計」のままだが、ファイルは
     実装・テスト強化まで含む（表記のみの些事）。
+
+### 2026-07-06 Issue #86 動作検証（合格）
+
+- 担当: 検証（QA）
+- ブランチ: issue-86-tx-failed-status
+- 結果: **合格**。docs/PLAN.md バックログ #86 の完了条件を実環境で満たすことを確認した。
+- 検証環境: `profiles/ethereum` のスタック（reth ×2 + lighthouse beacon/validator ×2 +
+  workbench）が稼働中で、ホスト公開ポート 8545 で `eth_blockNumber` が 0x49c → 0x49e と
+  進行していることを確認（チェーンは正常に前進）。ビルド済みの collector 本体を
+  `node packages/collector/dist/index.js` で起動（WebSocket 4000 / ロギングプロキシ 4001）。
+  ワークベンチの `ETH_RPC_URL` は `http://host.docker.internal:4001`（起動した collector の
+  ロギングプロキシ）を指しており、ワークベンチからの tx は実際にプロキシ経由で reth に
+  到達している。WebSocket クライアントでスナップショット + 差分を監視した。
+- 検証1（通常送金 tx: pending → included）:
+  - ワークベンチから `cast send --mnemonic ... --mnemonic-index 0 <A1> --value 1ether` を送信。
+    receipt は status 1 (success) / blockNumber 1269 / blockHash 0xdad4610a... / txHash 0xec420687...。
+  - collector の配信: `entityAdded`（tx 0xec420687... status=pending, blockHash なし）→
+    `entityUpdated`（{"status":"included","blockHash":"0xdad4610a..."}）を受信。receipt の
+    blockHash と一致。想定どおり pending → included（blockHash 付き）へ遷移した。
+- 検証2（実行失敗 tx: pending → failed）:
+  - ワークベンチから `cast send --mnemonic ... --mnemonic-index 0 --gas-limit 100000 --create 0xfe`
+    を送信（先頭 INVALID オペコード）。receipt は status 0 (failed) / blockNumber 1281 /
+    blockHash 0xead7230e... / txHash 0x5c704f89...。
+  - collector の配信: `entityAdded`（tx 0x5c704f89... status=pending, blockHash なし）→
+    `entityUpdated`（{"status":"failed","blockHash":"0xead7230e..."}）を受信。receipt の
+    blockHash と一致。想定どおり pending → failed（blockHash 付き）へ遷移した。取り込まれた
+    が実行失敗した tx が failed として区別されることを実データで確認。
+  - なお genesis 衝突は発生せず（スタックは有効な genesis で稼働中だったため
+    `docker compose down -v` は不要だった）。
+- 検証3（静的チェック）: `pnpm lint && pnpm build && pnpm test` を全パッケージで実行し
+  exit 0（collector 522 tests / frontend 411 tests、いずれも green）。
+- collector ログにエラー・例外・unhandledRejection は無し。tx 送信中も poll 失敗や
+  subscription 失敗のログは出ていない。
+- 結論: 完了条件（通常 tx が pending→included、失敗 tx が pending→failed、いずれも
+  blockHash 付きで実環境の collector から差分配信される）を満たす。差し戻し無し。
