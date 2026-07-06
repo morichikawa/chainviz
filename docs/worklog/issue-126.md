@@ -1,0 +1,69 @@
+### 2026-07-06 Issue #126 pnpm dev:down --dockerが動的追加コンテナを削除しない不具合の修正
+- 担当: node-env
+- ブランチ: issue-126-cleanup-dynamic-containers
+- 内容:
+  - `scripts/dev-down.sh --docker` は従来 `docker compose down` を呼ぶだけで、
+    docker-compose.yml に定義されたサービス(reth1/reth2/beacon1/beacon2/
+    validator1/validator2/workbench)しか対象にしていなかった。collector が
+    `addNode`/`addWorkbench` で動的に作成したコンテナ(reth3、beacon3、任意名の
+    ワークベンチ等)は compose 定義に存在しないため対象外となり、削除されずに
+    残り続けていた。
+  - `scripts/dev-down.sh` に `compose_project_name`(`docker compose config
+    --format json` の `name` フィールドから、実際にdocker composeが使う
+    プロジェクト名を取得する。値をスクリプトにハードコードせず、
+    `COMPOSE_PROJECT_NAME` 環境変数や `-p` 指定による上書きも含めて
+    docker compose自身の解決結果を単一の情報源とする)と
+    `cleanup_dynamic_containers`(`com.chainviz.managed=true` かつ対象
+    プロジェクトの `com.docker.compose.project` ラベルを持つ残存コンテナを
+    `docker ps -a --filter` で検出し `docker rm -f` する)を追加した。
+  - `cleanup_dynamic_containers` は `docker compose down` より**前**に呼ぶ。
+    動的追加コンテナは compose のネットワークに接続されたままのため、先に
+    削除しておかないと「ネットワークに接続中のエンドポイントが残っている」
+    状態になり、`docker compose down` 側のネットワーク削除自体が
+    `Resource is still in use` エラーで失敗しうることを実機検証で確認した
+    (下記「決定事項・注意点」参照)。
+  - 動的追加コンテナは専用ボリュームを持たず、既存の共有ボリューム
+    (genesis/clpeer/elpeer)を読み取り専用でbind mountするのみ
+    (`packages/collector/src/adapters/ethereum/node-lifecycle.ts` 参照)。その
+    ため今回の対応はコンテナ削除のみで、ボリューム削除は追加不要と判断した
+    (ボリューム自体の削除は既存どおり `docker compose down -v` の役割のまま)。
+- 決定事項・注意点:
+  - プロジェクト名の取得に `jq` を使わず `node -e` でJSONを厳密にパースする
+    実装にした。開発環境には `jq` が入っていない前提で(実機で確認)、node は
+    このリポジトリの必須依存のため常に利用できる。
+  - `packages/collector/src/adapters/ethereum/node-lifecycle.ts` の
+    `DEFAULTS.composeProject` は `"chainviz-ethereum"` に固定されており
+    (env で上書きされない)、`profiles/ethereum/docker-compose.yml` の
+    トップレベル `name: chainviz-ethereum` と常に一致する。この2箇所が
+    将来ズレると動的追加コンテナのラベルと `dev-down.sh` の検出対象が
+    食い違うため、どちらかを変更する際はもう片方も確認すること。
+  - 実機検証は本番の `profiles/ethereum`(reth/lighthouseイメージ)を直接
+    使わず、同じロジックを同じプロジェクト構成(名前・ラベル体系)で再現した
+    軽量な合成 docker-compose(alpineイメージ、独立したproject名・subnet)を
+    一時的に組み、次の3パターンを確認した:
+    1. 修正前の挙動の再現: 合成composeを起動した状態で `com.chainviz.managed=
+       true` ラベル付きダミーコンテナ(reth3相当)を手動で追加し、素の
+       `docker compose down` を実行 → ダミーコンテナが削除されず残り、かつ
+       ネットワーク削除も `Resource is still in use` で失敗することを確認
+       (Issue本文の報告どおりの不具合を再現できた)。
+    2. 修正後の `dev-down.sh --docker` を同じ残存状態に対して実行 →
+       ダミーコンテナ・compose定義コンテナ・ネットワークがすべて削除され
+       クリーンな状態になることを確認。
+    3. 動的追加コンテナが存在しない通常時に `dev-down.sh --docker` を実行
+       しても既存の動作(compose定義コンテナ・ネットワークの削除)が壊れて
+       いないことを確認(回帰確認)。
+  - 検証中の事故: 実機確認の初期段階で、`profiles/ethereum` の本物の
+    docker-compose.yml に対して誤って `COMPOSE_PROJECT_NAME` の上書きを
+    付け忘れたまま `docker compose down` を実行してしまい、既に稼働していた
+    共有の `chainviz-ethereum` プロジェクト(本worktreeとは別ディレクトリで
+    稼働中だった環境)のコンテナ・ネットワークを誤って削除してしまった
+    (ボリュームは `-v` を付けていないため無事だった)。その後同スタックは
+    (本担当以外の手により)`docker compose up -d` で復旧し、ブロック生成も
+    継続していることを確認した。全worktreeの `profiles/ethereum/
+    docker-compose.yml` は `name: chainviz-ethereum` を共有しているため、
+    どのworktreeから `docker compose down/up` を実行しても同じ実体に対する
+    操作になる。以降の実機検証はすべて本物のプロジェクトに触れない合成
+    composeで行った。次にこの種の検証を行う担当は、本物の
+    `profiles/ethereum` に対して `docker compose down`(プロジェクト名の
+    上書きなし)を実行する前に、他worktree・他セッションが同じ
+    `chainviz-ethereum` プロジェクトを使用中でないか必ず確認すること。
