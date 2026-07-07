@@ -445,11 +445,13 @@ describe("computeBlockPulses", () => {
       const [segment] = computeBlockPulses(block(shared), [elReth1Geth1]);
       expect(segment).toMatchObject({
         edgeId: "el-shared",
-        // reth1(1000) が先、geth1(1500) が後。端点は [小, 大] = [geth1, reth1]
-        // に正規化済みだが、実際の先着はreth1なのでfrom=reth1・to=geth1の
-        // 正方向(逆走ではない)になる。
+        // edge(source=geth1, target=reth1)だが、実際にはtarget側(reth1,1000)
+        // が先に受信し、source側(geth1,1500)が後。target が先着の場合の
+        // 実装の意味論(fromNodeId=edge.target, toNodeId=edge.source,
+        // reverse=true)により、from=reth1・to=geth1・reverse=trueになる。
         fromNodeId: "p/reth1",
         toNodeId: "p/geth1",
+        reverse: true,
         // 実差分 500ms（フロア 450ms を超えるので実データがそのまま出る）。
         durationMs: 500,
         startDelayMs: 0,
