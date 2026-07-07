@@ -129,6 +129,43 @@ genesis の生成は **共有ボリュームに対して初回だけ** 行う。
 付けない場合)は共有ボリュームを残すため、`up`し直しても同じタイムスタンプの
 genesisがそのまま使われる。
 
+### 長時間停止後の再起動と weak subjectivity(Issue #139)
+
+`beacon1/2`は起動のたびにデータディレクトリを初期化して genesis からやり直す
+(前述のとおり)。このため、genesis 生成時刻から実時間で **weak subjectivity
+period**(このプロファイルの設定では概算 4.6 時間。lighthouse が mainnet
+プリセットで使う `MIN_VALIDATOR_WITHDRAWABILITY_DELAY`(256 epoch)を
+slot time 2 秒で秒数換算した値が支配的)を超えて `docker compose up -d`
+すると、lighthouse が
+
+```
+CRIT  Failed to start beacon node  reason: "Failed to build beacon chain: The current head state is
+outside the weak subjectivity period. ..."
+```
+
+という CRIT で起動を拒否する(PC のシャットダウン・スリープ等でコンテナが
+長時間停止した状態から再起動しようとした場合など)。`lighthouse-bn.sh` は
+`--ignore-ws-check` を付けてこの安全チェックを意図的に無効化している。
+chainviz は外部非公開の使い捨てローカル学習用環境であり、このチェックが
+守ろうとしている long range attack のリスクは実質的に無関係と判断した
+(外部公開する運用に変える場合は再検討が必要)。
+
+**このフラグだけでは救えないケースがある**。genesis 生成時刻からの経過時間が
+長くなるほど、起動時に genesis から現在の slot まで空きスロットを再構築する
+処理量が増える。この処理は 1 slot(2 秒)以内に完了する必要があり、経過時間が
+ある閾値を超えると `--ignore-ws-check` を付けても beacon が起動はするものの
+head が genesis から一切進まず、`Producing block at incorrect slot` /
+`Timed out waiting for fork choice before proposal` を繰り返しながら高 CPU
+負荷でハングし続け、ブロック生成が再開しないことを実機検証で確認している
+(検証内容は `docs/worklog/issue-139.md` を参照)。この閾値は実行マシンの
+CPU 性能に依存し固定値ではないが、検証環境では weak subjectivity period
+(4.6 時間)よりずっと手前の 1.5〜2 時間程度で既に再現した。
+
+genesis からの経過時間が長く、`docker compose up -d` 後もブロック番号が
+進まない(`docker compose logs beacon1 beacon2` で `head_slot` が 0 のまま
+`current_slot` だけ増え続ける)場合は、`docker compose down -v` で
+共有ボリュームを破棄し、genesis を作り直すこと(チェーンの進行状態は失われる)。
+
 ## P2P 接続について
 
 - **CL(合意層)の P2P は接続済み**。`beacon1` が bootnode として自分の ENR を
