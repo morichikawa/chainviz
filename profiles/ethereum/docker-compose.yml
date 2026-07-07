@@ -42,6 +42,12 @@ services:
   genesis:
     image: ethpandaops/ethereum-genesis-generator:master
     entrypoint: ["/bin/sh", "/scripts/generate-genesis.sh"]
+    environment:
+      # ホスト側のシェルで指定した上書き値をコンテナへ伝える(Issue #148)。
+      # composeのenvironment:に列挙しないとシェル前置き(VAR=... docker
+      # compose up)だけではコンテナ内に渡らないため、既定値付きで明示する。
+      GENESIS_LIVE_THRESHOLD_SEC: ${GENESIS_LIVE_THRESHOLD_SEC:-60}
+      GENESIS_DOWNTIME_RESET_SEC: ${GENESIS_DOWNTIME_RESET_SEC:-600}
     volumes:
       - genesis:/data
       # 再生成時に down -v 相当のクリーンさにするため rw でマウントし、
@@ -66,6 +72,8 @@ services:
       RETH_ROLE: boot
       RETH_P2P_IP: 172.28.1.1
       HEARTBEAT_NODE_NAME: reth1 # ハートビートファイル名(Issue #148)
+      HEARTBEAT_INTERVAL_SEC: ${HEARTBEAT_INTERVAL_SEC:-10}
+      GENESIS_SUSPEND_DETECT_SEC: ${GENESIS_SUSPEND_DETECT_SEC:-600}
     labels:
       com.chainviz.p2p-role: "bootnode"
     volumes:
@@ -91,6 +99,8 @@ services:
       ENR_ADDRESS: 172.28.2.1
       EXECUTION_ENDPOINT: http://reth1:8551
       HEARTBEAT_NODE_NAME: beacon1 # ハートビートファイル名(Issue #148)
+      HEARTBEAT_INTERVAL_SEC: ${HEARTBEAT_INTERVAL_SEC:-10}
+      GENESIS_SUSPEND_DETECT_SEC: ${GENESIS_SUSPEND_DETECT_SEC:-600}
     labels:
       com.chainviz.p2p-role: "bootnode"
     volumes:
@@ -114,6 +124,8 @@ services:
       KEYS_DIR: /genesis/keys/node0
       BEACON_NODE: http://beacon1:5052
       FEE_RECIPIENT: "0x8943545177806ED17B9F23F0a21ee5948eCaa776"
+      HEARTBEAT_INTERVAL_SEC: ${HEARTBEAT_INTERVAL_SEC:-10}
+      GENESIS_SUSPEND_DETECT_SEC: ${GENESIS_SUSPEND_DETECT_SEC:-600}
     volumes:
       - genesis:/genesis:ro
       - vc1data:/data
@@ -134,6 +146,8 @@ services:
       RETH_ROLE: peer
       RETH_P2P_IP: 172.28.1.2
       HEARTBEAT_NODE_NAME: reth2 # ハートビートファイル名(Issue #148)
+      HEARTBEAT_INTERVAL_SEC: ${HEARTBEAT_INTERVAL_SEC:-10}
+      GENESIS_SUSPEND_DETECT_SEC: ${GENESIS_SUSPEND_DETECT_SEC:-600}
     volumes:
       - genesis:/genesis:ro
       - reth2data:/data
@@ -157,6 +171,8 @@ services:
       ENR_ADDRESS: 172.28.2.2
       EXECUTION_ENDPOINT: http://reth2:8551
       HEARTBEAT_NODE_NAME: beacon2 # ハートビートファイル名(Issue #148)
+      HEARTBEAT_INTERVAL_SEC: ${HEARTBEAT_INTERVAL_SEC:-10}
+      GENESIS_SUSPEND_DETECT_SEC: ${GENESIS_SUSPEND_DETECT_SEC:-600}
     volumes:
       - genesis:/genesis:ro
       - beacon2data:/data
@@ -176,6 +192,8 @@ services:
       KEYS_DIR: /genesis/keys/node1
       BEACON_NODE: http://beacon2:5052
       FEE_RECIPIENT: "0x8943545177806ED17B9F23F0a21ee5948eCaa776"
+      HEARTBEAT_INTERVAL_SEC: ${HEARTBEAT_INTERVAL_SEC:-10}
+      GENESIS_SUSPEND_DETECT_SEC: ${GENESIS_SUSPEND_DETECT_SEC:-600}
     volumes:
       - genesis:/genesis:ro
       - vc2data:/data
