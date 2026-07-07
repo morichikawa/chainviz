@@ -353,6 +353,9 @@ export class EthereumAdapter implements ChainAdapter {
    * B 層: 各 Execution ノードの eth_subscribe(newHeads) を購読し、Collector が
    * ブロックを受信した実時刻をブロック単位で束ねて onBlock へ渡す。到達対象は
    * Docker の観測値から一度だけ列挙し、各ノードへ永続 WebSocket を張る。
+   * 受信 1 回につき target.receivedAtKeys の全キー（beacon と Execution
+   * 自身、または Execution 自身のみ）へ同一時刻で記録することで、CL エッジ・
+   * EL エッジの両方にブロック伝播パルスが乗るようにする（Issue #141）。
    */
   async subscribeBlocks(onBlock: (block: BlockEntity) => void): Promise<void> {
     const observations = await this.poller.pollOnce();
@@ -363,7 +366,7 @@ export class EthereumAdapter implements ChainAdapter {
         target.wsUrl,
         (header) => {
           const block = this.blockTracker.record(
-            target.receivedAtKey,
+            target.receivedAtKeys,
             header,
             this.now(),
           );
