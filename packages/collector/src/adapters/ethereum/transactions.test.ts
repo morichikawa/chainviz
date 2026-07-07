@@ -364,6 +364,121 @@ describe("TransactionLifecycleTracker.recordInclusion createdContractAddress (Is
   });
 });
 
+describe("TransactionLifecycleTracker.recordPending contractCall (Issue #162)", () => {
+  it("attaches a decoded contractCall when provided", () => {
+    const tracker = new TransactionLifecycleTracker();
+    const entity = tracker.recordPending({
+      hash: "0xt1",
+      from: "0xa",
+      to: "0xcontract",
+      contractCall: {
+        contractAddress: "0xcontract",
+        functionName: "transfer",
+        args: [{ name: "to", value: "0xb" }],
+      },
+    });
+    expect(entity?.contractCall).toEqual({
+      contractAddress: "0xcontract",
+      functionName: "transfer",
+      args: [{ name: "to", value: "0xb" }],
+    });
+  });
+
+  it("omits contractCall when not provided (ordinary tx / uncataloged destination)", () => {
+    const tracker = new TransactionLifecycleTracker();
+    const entity = tracker.recordPending({ hash: "0xt1", from: "0xa", to: "0xb" });
+    expect(entity).not.toHaveProperty("contractCall");
+  });
+});
+
+describe("TransactionLifecycleTracker.recordInclusion contractCall/contractEvents (Issue #162)", () => {
+  it("carries forward the contractCall recorded at pending time when a tx is included", () => {
+    const tracker = new TransactionLifecycleTracker();
+    tracker.recordPending({
+      hash: "0xt1",
+      from: "0xa",
+      to: "0xcontract",
+      contractCall: { contractAddress: "0xcontract", functionName: "mint" },
+    });
+    const changed = tracker.recordInclusion("0xblock", [
+      { hash: "0xt1", from: "0xa", to: "0xcontract", status: "included" },
+    ]);
+    expect(changed[0].contractCall).toEqual({
+      contractAddress: "0xcontract",
+      functionName: "mint",
+    });
+  });
+
+  it("does not invent a contractCall for a tx that was never observed pending (pending-skip constraint)", () => {
+    // pending を経ずに取り込みだけを観測した tx は contractCall が付かない
+    // (docs/ARCHITECTURE.md §4 の制約)。
+    const tracker = new TransactionLifecycleTracker();
+    const changed = tracker.recordInclusion("0xblock", [
+      { hash: "0xnew", from: "0xa", to: "0xcontract", status: "included" },
+    ]);
+    expect(changed[0]).not.toHaveProperty("contractCall");
+  });
+
+  it("attaches decoded contractEvents from the receipt logs", () => {
+    const tracker = new TransactionLifecycleTracker();
+    const changed = tracker.recordInclusion("0xblock", [
+      {
+        hash: "0xt1",
+        from: "0xa",
+        to: "0xcontract",
+        status: "included",
+        contractEvents: [
+          { contractAddress: "0xcontract", eventName: "Transfer", args: [] },
+        ],
+      },
+    ]);
+    expect(changed[0].contractEvents).toEqual([
+      { contractAddress: "0xcontract", eventName: "Transfer", args: [] },
+    ]);
+  });
+
+  it("omits contractEvents entirely when the tx emitted no events (empty array)", () => {
+    const tracker = new TransactionLifecycleTracker();
+    const changed = tracker.recordInclusion("0xblock", [
+      { hash: "0xt1", from: "0xa", to: "0xb", status: "included", contractEvents: [] },
+    ]);
+    expect(changed[0]).not.toHaveProperty("contractEvents");
+  });
+
+  it("omits contractEvents when the field is not provided at all (back-compat)", () => {
+    const tracker = new TransactionLifecycleTracker();
+    const changed = tracker.recordInclusion("0xblock", [
+      { hash: "0xt1", from: "0xa", to: "0xb", status: "included" },
+    ]);
+    expect(changed[0]).not.toHaveProperty("contractEvents");
+  });
+
+  it("replaces contractEvents with the newest block's decode result on a reorg (does not merge across blocks)", () => {
+    const tracker = new TransactionLifecycleTracker();
+    tracker.recordInclusion("0xblockA", [
+      {
+        hash: "0xt1",
+        from: "0xa",
+        to: "0xb",
+        status: "included",
+        contractEvents: [{ contractAddress: "0xb", eventName: "Old" }],
+      },
+    ]);
+    const changed = tracker.recordInclusion("0xblockB", [
+      {
+        hash: "0xt1",
+        from: "0xa",
+        to: "0xb",
+        status: "included",
+        contractEvents: [{ contractAddress: "0xb", eventName: "New" }],
+      },
+    ]);
+    expect(changed[0].contractEvents).toEqual([
+      { contractAddress: "0xb", eventName: "New" },
+    ]);
+  });
+});
+
 describe("TransactionLifecycleTracker eviction", () => {
   it("drops the oldest tracked txs once maxTxs is exceeded", () => {
     const tracker = new TransactionLifecycleTracker(2);

@@ -323,7 +323,7 @@ runWorkbenchOperation コマンド・ChainAdapter.subscribeContracts）は設計
 - [x] コントラクトカタログの読み込みとデプロイ検知・追跡を実装し
       ContractEntityをworld-stateへ配信する（subscribeContracts）
       [#161](https://github.com/morichikawa/chainviz/issues/161)
-- [ ] カタログのABIで関数呼び出し・イベントログを復号しTransactionEntityの
+- [x] カタログのABIで関数呼び出し・イベントログを復号しTransactionEntityの
       contractCall/contractEventsに載せる
       [#162](https://github.com/morichikawa/chainviz/issues/162)
 - [x] runWorkbenchOperationコマンド（transfer/deployContract/callContract）
