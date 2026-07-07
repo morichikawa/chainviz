@@ -77,6 +77,7 @@ interface JsonRpcMessage {
   result?: unknown;
   method?: string;
   params?: { subscription?: string; result?: unknown };
+  error?: { code: number; message: string };
 }
 
 /**
@@ -98,6 +99,34 @@ export function parseSubscriptionResult(raw: string): unknown | undefined {
 }
 
 /**
+ * WebSocket から届いた 1 フレームを解釈し、eth_subscribe リクエストへの
+ * JSON-RPC エラー応答（例: ノードが未対応メソッドを `-32601` で拒否する場合）
+ * であればその error オブジェクトを返す。この関数を呼ぶ側の接続では
+ * eth_subscribe しかリクエストを送らないため、応答の id が一致するかどうかは
+ * 見ず、error フィールドの有無だけで判定する（再接続で eth_subscribe を
+ * 複数回送っていても、届いた応答が eth_subscribe 由来のエラーであることに
+ * 変わりはなく、単純な判定で十分なため）。エラーでない・解釈できない場合は
+ * undefined を返す。
+ */
+export function parseSubscribeError(
+  raw: string,
+): { code: number; message: string } | undefined {
+  let message: JsonRpcMessage;
+  try {
+    message = JSON.parse(raw) as JsonRpcMessage;
+  } catch {
+    return undefined;
+  }
+  // JSON-RPC 2.0仕様上success応答にerrorは含まれないはずだが、
+  // `error: null`を常に含める実装が実在するため、オブジェクトでない
+  // (nullを含む)場合は「エラーなし」として扱う。
+  if (typeof message.error !== "object" || message.error === null) {
+    return undefined;
+  }
+  return message.error;
+}
+
+/**
  * eth_subscribe の共通配線。指定 URL へ接続し subscribeParams で購読を開始、
  * 通知が届くたびに onResult を呼ぶ。newHeads / newPendingTransactions で
  * subscribeParams と result の型だけが異なるので、この関数に集約する。
@@ -109,6 +138,16 @@ export function parseSubscriptionResult(raw: string): unknown | undefined {
  * onResult/onError は再接続後も同じコールバックがそのまま使われる。
  * closedByCaller フラグで「呼び出し側の意図的な close」と
  * 「ノード側都合の切断」を区別し、後者のときだけ再接続する。
+ *
+ * eth_subscribe 自体の拒否（Issue #143）: ノードが eth_subscribe
+ * リクエストを（未対応メソッド等の理由で）JSON-RPC エラーとして拒否した
+ * 場合、接続自体は張られたままで "close"/"error" イベントは発火しない。
+ * この応答は eth_subscription 通知の形を取らないため
+ * parseSubscriptionResult では検知できず、そのままでは購読が失敗した
+ * ことに誰も気づけない。message ハンドラで parseSubscribeError を先に
+ * 試し、エラー応答であれば onError を呼ぶ。再接続後に eth_subscribe を
+ * 送り直した際も同じ message ハンドラを通るため、同様にエラーを検知
+ * できる。
  */
 function subscribe<T>(
   wsUrl: string,
@@ -137,7 +176,22 @@ function subscribe<T>(
     });
 
     current.on("message", (data) => {
-      const result = parseSubscriptionResult(data.toString());
+      const raw = data.toString();
+      const subscribeError = parseSubscribeError(raw);
+      if (subscribeError !== undefined) {
+        // ノードが eth_subscribe リクエスト自体をエラーで拒否した場合
+        // （例: 未対応メソッドで -32601）。接続は張られたままで
+        // "close"/"error" イベントは発火しないため、ここで検知して
+        // onError に伝えないと購読が失敗したまま呼び出し側が気づけない
+        // （Issue #143）。
+        onError?.(
+          new Error(
+            `eth_subscribe rejected: ${subscribeError.message} (code ${subscribeError.code})`,
+          ),
+        );
+        return;
+      }
+      const result = parseSubscriptionResult(raw);
       if (result !== undefined) onResult(result as T);
     });
 
