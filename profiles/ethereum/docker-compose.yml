@@ -9,8 +9,11 @@
 #
 # genesis は初回起動時に genesis サービスが現在時刻で生成し、共有ボリュームに
 # 残す(詳細は README.md「genesis の扱い」)。以降の起動では既存の genesis を
-# 再利用し、再生成しない(冪等)。まっさらな chain で始めたいときは
-# `docker compose down -v` でボリュームごと破棄する。
+# 再利用し、通常は再生成しない(冪等)。ただし全ノードが一定時間(既定 10 分)
+# 以上停止していたことをハートビート(`heartbeat` ボリューム)から検知した
+# 場合は、genesis を現在時刻で自動再生成する(README.md「長時間停止後の
+# 再起動と weak subjectivity」、Issue #148)。まっさらな chain で始めたい
+# ときは `docker compose down -v` でボリュームごと破棄する。
 
 name: chainviz-ethereum
 
@@ -25,6 +28,8 @@ volumes:
   genesis: # 生成済み genesis / jwt / バリデーター鍵の共有先
   clpeer: # beacon ノード間で bootnode ENR を受け渡す
   elpeer: # reth ノード間で bootnode enode を受け渡す
+  heartbeat: # 各ノードの生存報告置き場(Issue #148)。genesis サービスが
+    # この中の最新更新時刻を見て、全ノード停止からの再起動かどうかを判定する
   reth1data:
   reth2data:
   beacon1data:
@@ -39,6 +44,12 @@ services:
     entrypoint: ["/bin/sh", "/scripts/generate-genesis.sh"]
     volumes:
       - genesis:/data
+      # 再生成時に down -v 相当のクリーンさにするため rw でマウントし、
+      # bootnode の enode/ENR 受け渡しファイルも一緒に削除できるようにする
+      # (Issue #148)。ノード側の :ro マウントは変更しない。
+      - clpeer:/clpeer
+      - elpeer:/elpeer
+      - heartbeat:/heartbeat
       - ./values.env:/config/values.env:ro
       - ./scripts/generate-genesis.sh:/scripts/generate-genesis.sh:ro
     networks:
@@ -54,12 +65,14 @@ services:
     environment:
       RETH_ROLE: boot
       RETH_P2P_IP: 172.28.1.1
+      HEARTBEAT_NODE_NAME: reth1 # ハートビートファイル名(Issue #148)
     labels:
       com.chainviz.p2p-role: "bootnode"
     volumes:
       - genesis:/genesis:ro
       - reth1data:/data
       - elpeer:/elpeer
+      - heartbeat:/heartbeat # 生存報告の書き出し先(Issue #148)
       - ./scripts/reth-node.sh:/scripts/reth-node.sh:ro
     ports:
       - "8545:8545" # JSON-RPC(ホストから叩けるように公開)
@@ -77,12 +90,14 @@ services:
       BEACON_ROLE: boot
       ENR_ADDRESS: 172.28.2.1
       EXECUTION_ENDPOINT: http://reth1:8551
+      HEARTBEAT_NODE_NAME: beacon1 # ハートビートファイル名(Issue #148)
     labels:
       com.chainviz.p2p-role: "bootnode"
     volumes:
       - genesis:/genesis:ro
       - beacon1data:/data
       - clpeer:/clpeer
+      - heartbeat:/heartbeat # 生存報告の書き出し先(Issue #148)
       - ./scripts/lighthouse-bn.sh:/scripts/lighthouse-bn.sh:ro
     ports:
       - "5052:5052" # Beacon HTTP API
@@ -118,10 +133,12 @@ services:
     environment:
       RETH_ROLE: peer
       RETH_P2P_IP: 172.28.1.2
+      HEARTBEAT_NODE_NAME: reth2 # ハートビートファイル名(Issue #148)
     volumes:
       - genesis:/genesis:ro
       - reth2data:/data
       - elpeer:/elpeer:ro
+      - heartbeat:/heartbeat # 生存報告の書き出し先(Issue #148)
       - ./scripts/reth-node.sh:/scripts/reth-node.sh:ro
     networks:
       chain:
@@ -139,10 +156,12 @@ services:
       BEACON_ROLE: peer
       ENR_ADDRESS: 172.28.2.2
       EXECUTION_ENDPOINT: http://reth2:8551
+      HEARTBEAT_NODE_NAME: beacon2 # ハートビートファイル名(Issue #148)
     volumes:
       - genesis:/genesis:ro
       - beacon2data:/data
       - clpeer:/clpeer:ro
+      - heartbeat:/heartbeat # 生存報告の書き出し先(Issue #148)
       - ./scripts/lighthouse-bn.sh:/scripts/lighthouse-bn.sh:ro
     networks:
       chain:
