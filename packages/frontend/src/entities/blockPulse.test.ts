@@ -346,6 +346,116 @@ describe("computeBlockPulses", () => {
     expect(segments.map((s) => s.edgeId)).toEqual(["peer-a-c"]);
     expect(segments[0].durationMs).toBe(600);
   });
+
+  // --- Issue #141: CL/EL キー混在の receivedAt でのレイヤ分離 ---
+  // collector が同じ newHeads 受信 1 回を「beacon の stableId（CL エッジ用の
+  // エイリアス）」と「Execution 自身の stableId（EL エッジ用）」の両方へ記録
+  // するようになった。frontend は変更不要と設計判断されたので、その判断を
+  // 裏付ける（＝ CL エッジは beacon キーだけ・EL エッジは EL キーだけを読み、
+  // 互いに干渉しない）ことを固定する。
+  describe("mixed CL/EL keys (Issue #141)", () => {
+    // 実 profile と collector 統合テスト（peer-block-adapter.test.ts）が出す形と
+    // 同じ receivedAt。beacon1/reth1 が 1000、beacon2/reth2 が 1200。
+    const mixedReceivedAt = {
+      "p/beacon1": 1000,
+      "p/reth1": 1000,
+      "p/beacon2": 1200,
+      "p/reth2": 1200,
+    };
+    const clEdge = edge("p/beacon1", "p/beacon2", "cl-edge");
+    const elEdge = edge("p/reth1", "p/reth2", "el-edge");
+
+    it("keeps CL-edge pulse identical whether or not EL keys are present (regression)", () => {
+      // 設計判断「frontend 変更不要」の核心。CL エッジの出力は、receivedAt に
+      // EL キーを足しても、beacon キーだけの block と完全に一致する。
+      const clOnly = computeBlockPulses(
+        block({ "p/beacon1": 1000, "p/beacon2": 1200 }),
+        [clEdge],
+      );
+      const withElKeys = computeBlockPulses(block(mixedReceivedAt), [clEdge]);
+      expect(withElKeys).toEqual(clOnly);
+      expect(withElKeys[0]).toMatchObject({
+        edgeId: "cl-edge",
+        fromNodeId: "p/beacon1",
+        toNodeId: "p/beacon2",
+        reverse: false,
+        startDelayMs: 0,
+        // 実差分 200ms はフロア未満なので最低表示時間まで引き上げ。
+        durationMs: MIN_PULSE_DURATION_MS,
+      });
+    });
+
+    it("drives CL and EL edges independently from a single mixed block", () => {
+      // 1 つの block から CL エッジ・EL エッジ両方にパルスが立ち、それぞれが
+      // 対応するレイヤの端点キーだけを読む（Issue #141 が実現した見え方）。
+      const segments = computeBlockPulses(block(mixedReceivedAt), [
+        clEdge,
+        elEdge,
+      ]);
+      expect(segments.map((s) => s.edgeId)).toEqual(["cl-edge", "el-edge"]);
+      const byId = new Map(segments.map((s) => [s.edgeId, s]));
+      expect(byId.get("cl-edge")).toMatchObject({
+        fromNodeId: "p/beacon1",
+        toNodeId: "p/beacon2",
+      });
+      expect(byId.get("el-edge")).toMatchObject({
+        fromNodeId: "p/reth1",
+        toNodeId: "p/reth2",
+      });
+    });
+
+    it("reads EL-edge timing from EL keys only, ignoring the beacon aliases", () => {
+      // 端点集合が互いに素なので、EL エッジは beacon キーを一切見ない。beacon と
+      // reth の時刻を（実運用では起きないが）わざと食い違わせ、EL エッジの
+      // durationMs が reth 時刻の実差分（500ms、フロア450msを超えるためフロアが
+      // 効かず実差分がそのまま出る）から算出されることを証明する。beacon 時刻
+      // （999/999、差0ms）を読んでいたら durationMs は MIN_PULSE_DURATION_MS
+      // （フロア）になるはずだが、実際は500msになりreth時刻ベースだと分かる。
+      const skewed = {
+        "p/beacon1": 999,
+        "p/reth1": 1000,
+        "p/beacon2": 999,
+        "p/reth2": 1500,
+      };
+      const [elSegment] = computeBlockPulses(block(skewed), [elEdge]);
+      expect(elSegment).toMatchObject({
+        edgeId: "el-edge",
+        fromNodeId: "p/reth1",
+        toNodeId: "p/reth2",
+        // 1500 - 1000 = 500ms（beacon 側の 999/999 を読んでいれば差0msで
+        // フロア450msになるはずだが、実際は500msなのでreth時刻を読んでいる
+        // ことの証明になる）。
+        durationMs: 500,
+      });
+      // t0 = 全キーの min = 999(beacon)。reth1 の出発遅延 = 1000 - 999 = 1。
+      expect(elSegment.startDelayMs).toBe(1);
+    });
+
+    it("emits an EL pulse from real receive diff when a beacon key is shared across EL nodes", () => {
+      // peer-block-adapter.test.ts の「reth1 と geth1 が beacon1 を共有」ケースに
+      // 対応する receivedAt。beacon1 は共有キー(1000 固定)、reth1/geth1 は自身の
+      // 実受信時刻。EL エッジ reth1-geth1 は実差分 500ms でパルス対象になる
+      // （本 Issue が解決した「EL-EL エッジにパルスが走る」挙動）。
+      const shared = {
+        "p/beacon1": 1000,
+        "p/reth1": 1000,
+        "p/geth1": 1500,
+      };
+      const elReth1Geth1 = edge("p/geth1", "p/reth1", "el-shared");
+      const [segment] = computeBlockPulses(block(shared), [elReth1Geth1]);
+      expect(segment).toMatchObject({
+        edgeId: "el-shared",
+        // reth1(1000) が先、geth1(1500) が後。端点は [小, 大] = [geth1, reth1]
+        // に正規化済みだが、実際の先着はreth1なのでfrom=reth1・to=geth1の
+        // 正方向(逆走ではない)になる。
+        fromNodeId: "p/reth1",
+        toNodeId: "p/geth1",
+        // 実差分 500ms（フロア 450ms を超えるので実データがそのまま出る）。
+        durationMs: 500,
+        startDelayMs: 0,
+      });
+    });
+  });
 });
 
 describe("pulseSeenKey", () => {

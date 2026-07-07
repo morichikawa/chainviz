@@ -60,7 +60,17 @@ function finiteReceiptTimes(block: BlockEntity): number[] {
   return Object.values(block.receivedAt).filter((t) => Number.isFinite(t));
 }
 
-/** ブロックの受信時刻のうち最も早いもの（= 波の起点 t0）。未受信なら null。 */
+/**
+ * ブロックの受信時刻のうち最も早いもの（= 波の起点 t0）。未受信なら null。
+ *
+ * Issue #141: `receivedAt` にはCL(beacon)キーとEL(reth)キーが混在しうる。
+ * 通常のEthereumプロファイル構成（全executionノードがbeaconを伴う）では
+ * CLキーとELキーは同一受信イベントの複製（同じ時刻）なのでt0は変わらない。
+ * ただしbeaconを持たないEL onlyノードが存在する構成では、そのELキーが
+ * 最速受信になりt0がCL側より早まりうる。これは「ブロックがネットワーク
+ * 全体で最初に観測された時刻」として妥当な挙動であり、実プロファイル
+ * （全ノードがbeacon対）では発生しない。
+ */
 export function waveOriginTime(block: BlockEntity): number | null {
   const times = finiteReceiptTimes(block);
   if (times.length === 0) return null;
