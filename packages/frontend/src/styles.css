@@ -433,14 +433,30 @@ body {
   stroke-opacity: 0.85;
 }
 
+/* パルスがエッジパス上を始点→終点へ走る共通キーフレーム(Issue #125)。
+   SMILのanimateMotionはbegin未指定だと文書タイムライン0秒起点で解決され、
+   動的挿入時には再生済み扱い→fill=freezeで終端に固定され一度も動かない。
+   CSSアニメーションは要素挿入時に開始されるためこの問題がない。 */
+@keyframes pulse-travel {
+  from {
+    offset-distance: 0%;
+  }
+  to {
+    offset-distance: 100%;
+  }
+}
+
 /* ブロック伝播パルス（エッジ上を走る光の点）。実データに基づく所要時間で
-   animateMotion がパスを辿る。色は紐と区別できる明るい発光にする。
-   グロー半径を広げ、ダーク背景でも波の伝播がより追いやすいようにした。
-   Issue #32。 */
+   offset-path 上を走る（Issue #125。旧 animateMotion から移行）。色は紐と
+   区別できる明るい発光にする。グロー半径を広げ、ダーク背景でも波の伝播が
+   より追いやすいようにした。Issue #32。 */
 .peer-pulse {
   fill: #eaf4ff;
   filter: drop-shadow(0 0 5px #6cb2ff) drop-shadow(0 0 10px #6cb2ff);
   pointer-events: none;
+  animation-name: pulse-travel;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
 }
 
 /* --- ワークベンチ → ノードの操作エッジ（RPC 呼び出し） --- */
@@ -452,11 +468,15 @@ body {
 }
 
 /* 操作パルス（エッジ上を走る光の点）。ブロック伝播パルスと区別できるよう、
-   マゼンタの発光にする。 */
+   マゼンタの発光にする。offset-path 上を走る仕組みは .peer-pulse と共通
+   （pulse-travel キーフレーム。Issue #125）。 */
 .operation-pulse {
   fill: #ffd9ee;
   filter: drop-shadow(0 0 5px var(--op-edge)) drop-shadow(0 0 10px var(--op-edge));
   pointer-events: none;
+  animation-name: pulse-travel;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
 }
 
 /* --- B層: ネットワーク凡例 + ピア接続ホバーポップオーバー(Issue #124) --- */

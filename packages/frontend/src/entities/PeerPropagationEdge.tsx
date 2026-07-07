@@ -10,7 +10,9 @@ import type { PeerFlowEdge } from "./peerEdge.js";
 /**
  * B層のピア接続（紐）を描くカスタムエッジ。通常時は `BaseEdge` で紐を1本
  * 引くだけだが、`data.pulses` に伝播パルスが載っている間は、その光の点を
- * SVG の `animateMotion` でエッジ上に走らせる。
+ * CSS の `offset-path`（styles.css の `pulse-travel` キーフレーム）で
+ * エッジ上に走らせる（Issue #125。旧 SVG `animateMotion` から移行。要素の
+ * 動的挿入時に開始時刻がずれて即終端固定される SMIL のバグを回避するため）。
  *
  * パルスの進行方向・所要時間は `blockPulse.ts` が実データから算出し、
  * `useBlockPulses` が実時間にスケジュールして `data.pulses` へ流し込む。
@@ -59,17 +61,20 @@ export function PeerPropagationEdge({
       {pulses.map((pulse) => (
         // r は初期値(4)よりわずかに大きくし、ダーク背景での視認性を高めた
         // （Issue #32、CSS 側の drop-shadow 拡大とあわせて調整）。
-        <circle key={pulse.key} className="peer-pulse" r={5}>
-          <animateMotion
-            dur={`${pulse.durationMs}ms`}
-            repeatCount="1"
-            fill="freeze"
-            calcMode="linear"
-            keyPoints={pulse.reverse ? "1;0" : "0;1"}
-            keyTimes="0;1"
-            path={edgePath}
-          />
-        </circle>
+        // アニメーションは CSS の offset-path（styles.css の pulse-travel）で
+        // 行う。SMIL の animateMotion は begin 未指定だと文書タイムライン
+        // 0秒起点で解決され、動的挿入時には再生済み扱いとなり fill=freeze で
+        // 終端に固定されて一度も動かない（Issue #125）。
+        <circle
+          key={pulse.key}
+          className="peer-pulse"
+          r={5}
+          style={{
+            offsetPath: `path("${edgePath}")`,
+            animationDuration: `${pulse.durationMs}ms`,
+            animationDirection: pulse.reverse ? "reverse" : "normal",
+          }}
+        />
       ))}
       {hovered && (
         <EdgeLabelRenderer>
