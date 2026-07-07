@@ -221,6 +221,16 @@ services:
     # 参照しないため無害。
     env_file:
       - ./values.env
+    # サンプルコントラクト(ChainvizToken / Counter)の Foundry プロジェクトを
+    # マウントする(docs/ARCHITECTURE.md §4「コントラクトカタログ」、
+    # README.md「サンプルコントラクト」参照)。working_dir を合わせておくと
+    # `docker compose exec workbench sh` で入った直後に forge build /
+    # forge create をそのまま打てる。out/cache はビルドのたびにコンテナ内で
+    # 生成される成果物なので、ホスト側にも書き戻るがコミットはしない
+    # (.gitignore で除外)。
+    working_dir: /contracts
+    volumes:
+      - ./contracts:/contracts
     # ロギングプロキシ(collector)はコンテナではなくホスト上のプロセスとして
     # ポート 4001 で待ち受ける(collector 本体の WebSocket は 4000 番)。
     # コンテナからホストへ到達するために host-gateway を host.docker.internal
