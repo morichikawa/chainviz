@@ -11,20 +11,32 @@
 # 経由で peer ノードへ渡す」方式で行う。ノードイメージに HTTP クライアントが
 # 無いため、lighthouse が書き出す enr.dat をファイルとして受け渡す。
 #
-# --ignore-ws-check(Issue #139):
+# --ignore-ws-check(Issue #139、Issue #148 で前提が変わった点に注意):
 #   このスクリプトは起動のたびに /data を初期化して genesis からやり直すため
 #   (下記参照)、genesis 生成時刻から実時間で weak subjectivity period
 #   (このプロファイルの設定では概算 4.6 時間。256 epoch という mainnet
 #   プリセット固定値 + わずかな churn 猶予を、slot time 2 秒で秒数換算した値)
 #   を超えて `docker compose up -d` すると、lighthouse が
 #   "the current head state is outside the weak subjectivity period" という
-#   CRIT で起動を拒否する(長時間の PC シャットダウン・スリープ後に再起動
-#   しようとした場合など)。chainviz は外部非公開の使い捨てローカル学習用
+#   CRIT で起動を拒否する。chainviz は外部非公開の使い捨てローカル学習用
 #   環境であり、long range attack のリスクは実質的に無関係なため、この
-#   安全チェックを意図的に無効化する。既知のリスク・トレードオフ、および
-#   このフラグだけでは救えないケース(genesis からの経過時間が長すぎる場合、
-#   起動はするがブロック生成が再開しないまま高 CPU 負荷でハングし続ける
-#   ことを実機検証で確認済み)は docs/worklog/issue-139.md を参照。
+#   安全チェックを意図的に無効化する。
+#
+#   Issue #148 で generate-genesis.sh がスタック全体の長時間停止(既定10分
+#   超)を検知して genesis を自動再生成するようになったため、通常の
+#   `docker compose down` → `up` の流れではこの CRIT はほぼ発生しなくなった
+#   (genesis 時刻が都度引き直されるため)。ただし `restart-node.sh` による
+#   稼働中スタックへの単体ノード再起動では genesis サービスが走らず再生成
+#   されないため、長時間稼働中のスタックに対しては従来どおり genesis が
+#   古いままで CRIT になり得る。このフラグはそのパスの保険として維持する。
+#
+#   このフラグだけでは救えないケースも残る: genesis からの経過時間が長い
+#   ほど、起動時に genesis から現在の slot まで空きスロットを再構築する
+#   処理量が増える。この処理が実時間の slot 進行に追いつけないほど経過時間が
+#   長いと、起動はするもののブロック生成が再開しないまま高 CPU 負荷で
+#   ハングし続けることを実機検証で確認済み(docs/worklog/issue-139.md)。
+#   Issue #148 の自動再生成はこのケースの発生条件(全ノードが10分以上停止)
+#   を検知して genesis 時刻を引き直すことで回避する(docs/worklog/issue-148.md)。
 set -e
 # COMMON を単語分割で引数へ展開する際に、'*'(--http-allow-origin の値)が
 # カレントディレクトリのファイル名に glob 展開されないよう glob を無効化する。
@@ -53,6 +65,57 @@ COMMON="--testnet-dir /genesis/metadata \
   --disable-packet-filter \
   --allow-insecure-genesis-sync \
   --ignore-ws-check"
+
+# --- ハートビート + watchdog(Issue #148: 長時間停止からの自動復旧) ---
+#
+# generate-genesis.sh が「スタック全体が停止していたか」を判定するための
+# 生存信号を /heartbeat/<自分の識別名> に書き出し続ける。加えて、稼働した
+# まま PC がサスペンドした場合に自ノードを止める watchdog も兼ねる。
+# しきい値の根拠は docs/worklog/issue-148.md「3-4. しきい値と、その前提」
+# 参照:
+#   HEARTBEAT_INTERVAL_SEC(既定10秒) — LIVE_THRESHOLD(60秒)の1/6。
+#     touch のみなのでコストは無視できる
+#   GENESIS_SUSPEND_DETECT_SEC(既定600秒) — 10秒間隔のループがこれだけ
+#     止まるのはサスペンド/`docker pause` 以外にありえない(通常の
+#     スケジューラのジッタは高々数秒)
+#
+# /heartbeat がマウントされていない場合(collector の addNode で動的追加
+# されたコンテナは heartbeat ボリュームを持たない)は、ループをスキップした
+# 旨を1行ログに出して続行する(set -e でコンテナが死なないようガードする)。
+#
+# ハートビートファイル名は判定(最新 mtime)に使うだけなので命名は自由だが、
+# docker compose のデフォルトのコンテナホスト名はコンテナ再作成のたびに
+# 変わる短い ID になり読みづらい(実機確認済み)。HEARTBEAT_NODE_NAME
+# (docker-compose.yml で beacon1 等のサービス名を渡す)があればそちらを使い、
+# 無ければ hostname にフォールバックする。
+HEARTBEAT_DIR=/heartbeat
+HEARTBEAT_INTERVAL_SEC="${HEARTBEAT_INTERVAL_SEC:-10}"
+GENESIS_SUSPEND_DETECT_SEC="${GENESIS_SUSPEND_DETECT_SEC:-600}"
+
+if [ -d "$HEARTBEAT_DIR" ] && [ -w "$HEARTBEAT_DIR" ]; then
+  HEARTBEAT_FILE="${HEARTBEAT_DIR}/${HEARTBEAT_NODE_NAME:-$(hostname)}"
+  (
+    prev="$(date +%s)"
+    while true; do
+      touch "$HEARTBEAT_FILE" 2>/dev/null || true
+      sleep "$HEARTBEAT_INTERVAL_SEC"
+      now="$(date +%s)"
+      delta=$(( now - prev ))
+      if [ "$delta" -gt "$GENESIS_SUSPEND_DETECT_SEC" ]; then
+        # サスペンドと判断。ハートビートは触らず stale なままにし、
+        # poison マーカーだけを書いて自ノードを止める。次回 up 時に
+        # generate-genesis.sh がこのマーカーを見て再生成する(3-3)。
+        echo "[beacon-heartbeat] ${delta}秒の空白を検知(閾値 ${GENESIS_SUSPEND_DETECT_SEC}秒)。サスペンドと判断し自ノードを停止する"
+        touch "${HEARTBEAT_DIR}/suspend-detected" 2>/dev/null || true
+        kill -TERM 1
+        exit 0
+      fi
+      prev="$now"
+    done
+  ) &
+else
+  echo "[beacon-heartbeat] ${HEARTBEAT_DIR} が無い/書き込めない(動的追加ノード等)ためハートビート/watchdogをスキップする"
+fi
 
 if [ "$BEACON_ROLE" = "boot" ]; then
   # 古い ENR を消し、lighthouse が新しい enr.dat を書いたら共有ボリュームへ複製

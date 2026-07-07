@@ -62,6 +62,57 @@ COMMON="--chain /genesis/metadata/genesis.json \
   --color never \
   ${NAT_OPT}"
 
+# --- ハートビート + watchdog(Issue #148: 長時間停止からの自動復旧) ---
+#
+# generate-genesis.sh が「スタック全体が停止していたか」を判定するための
+# 生存信号を /heartbeat/<自分の識別名> に書き出し続ける。加えて、稼働した
+# まま PC がサスペンドした場合に自ノードを止める watchdog も兼ねる。
+# しきい値の根拠は docs/worklog/issue-148.md「3-4. しきい値と、その前提」
+# 参照:
+#   HEARTBEAT_INTERVAL_SEC(既定10秒) — LIVE_THRESHOLD(60秒)の1/6。
+#     touch のみなのでコストは無視できる
+#   GENESIS_SUSPEND_DETECT_SEC(既定600秒) — 10秒間隔のループがこれだけ
+#     止まるのはサスペンド/`docker pause` 以外にありえない(通常の
+#     スケジューラのジッタは高々数秒)
+#
+# /heartbeat がマウントされていない場合(collector の addNode で動的追加
+# されたコンテナは heartbeat ボリュームを持たない)は、ループをスキップした
+# 旨を1行ログに出して続行する(set -e でコンテナが死なないようガードする)。
+#
+# ハートビートファイル名は判定(最新 mtime)に使うだけなので命名は自由だが、
+# docker compose のデフォルトのコンテナホスト名はコンテナ再作成のたびに
+# 変わる短い ID になり読みづらい(実機確認済み)。HEARTBEAT_NODE_NAME
+# (docker-compose.yml で reth1 等のサービス名を渡す)があればそちらを使い、
+# 無ければ hostname にフォールバックする。
+HEARTBEAT_DIR=/heartbeat
+HEARTBEAT_INTERVAL_SEC="${HEARTBEAT_INTERVAL_SEC:-10}"
+GENESIS_SUSPEND_DETECT_SEC="${GENESIS_SUSPEND_DETECT_SEC:-600}"
+
+if [ -d "$HEARTBEAT_DIR" ] && [ -w "$HEARTBEAT_DIR" ]; then
+  HEARTBEAT_FILE="${HEARTBEAT_DIR}/${HEARTBEAT_NODE_NAME:-$(hostname)}"
+  (
+    prev="$(date +%s)"
+    while true; do
+      touch "$HEARTBEAT_FILE" 2>/dev/null || true
+      sleep "$HEARTBEAT_INTERVAL_SEC"
+      now="$(date +%s)"
+      delta=$(( now - prev ))
+      if [ "$delta" -gt "$GENESIS_SUSPEND_DETECT_SEC" ]; then
+        # サスペンドと判断。ハートビートは触らず stale なままにし、
+        # poison マーカーだけを書いて自ノードを止める。次回 up 時に
+        # generate-genesis.sh がこのマーカーを見て再生成する(3-3)。
+        echo "[reth-heartbeat] ${delta}秒の空白を検知(閾値 ${GENESIS_SUSPEND_DETECT_SEC}秒)。サスペンドと判断し自ノードを停止する"
+        touch "${HEARTBEAT_DIR}/suspend-detected" 2>/dev/null || true
+        kill -TERM 1
+        exit 0
+      fi
+      prev="$now"
+    done
+  ) &
+else
+  echo "[reth-heartbeat] ${HEARTBEAT_DIR} が無い/書き込めない(動的追加ノード等)ためハートビート/watchdogをスキップする"
+fi
+
 if [ "$RETH_ROLE" = "boot" ]; then
   if [ -z "$RETH_P2P_IP" ]; then
     echo "[reth] boot ノードには RETH_P2P_IP が必須" >&2
