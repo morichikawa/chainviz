@@ -1,0 +1,17 @@
+# chainviz サンプルコントラクト — Foundry プロジェクト設定
+#
+# ここに置くのは docs/ARCHITECTURE.md §4「コントラクトカタログ」で決めた
+# サンプルコントラクト（ChainvizToken / Counter）のソース一式。
+# 外部ライブラリ（OpenZeppelin 等）には依存しない自己完結実装のため、
+# lib/ は空のままでよい（forge install は不要）。
+
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+# forge(svm)が初回ビルド時にこのバージョンの solc バイナリを自動
+# ダウンロードして使う(ワークベンチイメージに solc は同梱されていない。
+# ghcr.io/foundry-rs/foundry:latest / forge 1.7.1 で実機確認済み)。
+# ソース側の pragma は `^0.8.24` なので、このバージョンを上げる場合は
+# pragma の下限とずれないよう合わせて見直すこと。
+solc_version = "0.8.24"

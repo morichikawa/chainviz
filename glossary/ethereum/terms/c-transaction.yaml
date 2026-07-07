@@ -119,3 +119,136 @@ gas:
       higher fees tend to be picked from the mempool into a block sooner.
   layer: c-transaction
   relatedTerms: [transaction, mempool, wei]
+
+contract:
+  name:
+    ja: スマートコントラクト
+    en: Smart contract
+  definition:
+    ja: >-
+      チェーンに配置され、EVM 上で全ノードが同じように実行するプログラム。EOA と
+      違いコードを持ち、呼び出されるとそのロジックを実行して状態を変える。
+      特定のサーバーではなく全ノードが同じ実行をすることで、特定の誰かを
+      信頼せずに支払い条件やトークンの台帳のようなルールを自動執行できる。
+      それが仲介者なしの約束事を可能にする理由。chainviz ではコントラクト
+      カードの種別ラベルとして表示され、「全ノードで実行」ピルとセットで見える。
+    en: >-
+      A program placed on the chain and executed identically by the EVM on
+      every node. Unlike an EOA it holds code, and calling it runs that logic and
+      changes state. Because every node runs the same execution instead of a
+      single server, rules such as payment conditions or a token ledger can be
+      enforced automatically without trusting any one party — the reason
+      contracts make intermediary-free agreements possible. chainviz shows it
+      as the type label on the contract card, alongside the "runs on every
+      node" pill.
+  layer: c-transaction
+  relatedTerms: [evm, deploy, abi, token]
+
+deploy:
+  name:
+    ja: デプロイ
+    en: Deploy
+  definition:
+    ja: >-
+      コントラクトのコードをチェーン上に配置するトランザクション。実行すると
+      新しいアドレスが割り当てられ、以後は誰でもそのアドレスへ tx を送って
+      呼び出せるようになる。開発時には Foundry や Hardhat といったツールで
+      コンパイルしたコードをこの形で送り出す。chainviz では操作パネルの
+      「デプロイ」タブから実行でき、確定するとコントラクト行に新しいカードが
+      現れる。デプロイした人のアドレスはポップオーバーとデプロイエッジの
+      ラベルにも使われる。
+    en: >-
+      A transaction that places a contract's compiled code on the chain. Once
+      it is included, a new address is assigned and anyone can call it by
+      sending a tx to that address afterward. Developers typically compile
+      the code with a tool such as Foundry or Hardhat before sending it this
+      way. chainviz lets you run this from the "Deploy" tab of the operation
+      panel; once the tx is included, a new card appears in the contract row.
+      The deployer's address also labels the popover and the deploy edge.
+  layer: c-transaction
+  relatedTerms: [contract, transaction, eoa]
+
+abi:
+  name:
+    ja: ABI（アプリケーションバイナリインターフェース）
+    en: ABI (Application Binary Interface)
+  definition:
+    ja: >-
+      チェーン上に記録されているのは生のバイト列だけで、関数名や引数名は
+      載っていない。ABI はコントラクトの呼び出し口の形を定義したもので、
+      そのバイト列と人が読める名前を橋渡しする。chainviz はカタログに
+      載っているコントラクトの ABI を使って関数呼び出しやイベントを人が
+      読める形に復号している。カタログに無いコントラクトは「未知の
+      コントラクト」として区別され、復号できない生の識別子だけが表示される。
+    en: >-
+      Only raw bytes are recorded on the chain — function and argument names
+      are not. The ABI defines the shape of a contract's call interface,
+      bridging those bytes and human-readable names. chainviz decodes
+      function calls and events using the ABI of cataloged contracts. A
+      contract that is not in the catalog is shown as "unknown", with only
+      its raw, undecoded identifiers displayed.
+  layer: c-transaction
+  relatedTerms: [contract, event-log]
+
+event-log:
+  name:
+    ja: イベントログ
+    en: Event log
+  definition:
+    ja: >-
+      コントラクトが実行中にチェーン上へ書き残す記録。状態を1つずつ読みに
+      行くより安価に「何が起きたか」を外部へ知らせる仕組みで、アプリが
+      チェーンの変化を追う主要な手段になっている。chainviz ではコントラクト
+      カードの「直近の呼び出し・イベント」チップとして表示され、ABI で復号
+      できればイベント名と引数が、できなければ生の識別子が出る。
+    en: >-
+      A record a contract writes to the chain while it executes. It is a
+      cheaper way to announce "what happened" than reading state field by
+      field, and it is the main way applications track changes on the chain.
+      chainviz shows these as chips under "Recent calls & events" on the
+      contract card, with a decoded event name and arguments when the ABI is
+      known, or a raw identifier when it is not.
+  layer: c-transaction
+  relatedTerms: [contract, abi]
+
+evm:
+  name:
+    ja: EVM（Ethereum Virtual Machine）
+    en: EVM (Ethereum Virtual Machine)
+  definition:
+    ja: >-
+      全ノードが搭載する、同一の仕様で動く仮想計算機。コントラクトのコードは
+      ここで実行される。同じ tx を同じ順序で実行すれば必ず同じ結果になる
+      ことが保証されており、これが全ノードの状態が一致する（＝コントラクトが
+      どこか1か所のサーバーで動いているのではない）ことの根拠になる。
+      chainviz ではコントラクトカードの「全ノードで実行」ピルがこの事実を表す。
+    en: >-
+      The virtual machine every node runs, built to the same specification,
+      where a contract's code executes. Running the same tx in the same
+      order is guaranteed to produce the same result, which is why every
+      node's state ends up identical — a contract does not run on any single
+      server. chainviz represents this with the "runs on every node" pill on
+      the contract card.
+  layer: c-transaction
+  relatedTerms: [contract]
+
+token:
+  name:
+    ja: トークン
+    en: Token
+  definition:
+    ja: >-
+      コントラクトが管理する残高の台帳。ETH のようなプロトコル本体の通貨とは
+      違い、コントラクト内部の帳簿として各アドレスの残高を記録する。ERC20
+      という共通の呼び出し口のおかげで、どのウォレット・アプリからも同じ
+      方法で残高照会や送金ができる。chainviz ではウォレットカードのトークン
+      残高チップと、コントラクトカードのサブタイトル（シンボル表示）に使われる。
+    en: >-
+      A ledger of balances that a contract manages. Unlike ETH, the network's
+      native currency, it records each address's balance as an internal
+      bookkeeping entry inside the contract. Thanks to the common ERC20
+      interface, any wallet or app can query balances or transfer tokens the
+      same way. chainviz uses it for the token balance chips on the wallet
+      card and the symbol shown in the contract card's subtitle.
+  layer: c-transaction
+  relatedTerms: [contract, transaction]

@@ -4,3 +4,10 @@ dist/
 .env
 .env.local
 .dev-pids/
+
+# Foundry ビルド成果物(profiles/ethereum/contracts/。ソースと
+# catalog.json はコミットするが、out/cache/lib はビルドのたびに生成される
+# ためコミットしない)
+profiles/*/contracts/out/
+profiles/*/contracts/cache/
+profiles/*/contracts/lib/
