@@ -228,14 +228,16 @@ describe("world-state entities", () => {
       address: "0x00000000000000000000000000000000000c0de",
       chainType: "ethereum",
       name: "ChainvizToken",
-      catalogKey: "chainviz-token",
+      // カタログキーは Solidity のコントラクト名そのまま（PascalCase）を使う
+      // 実装（profiles/ethereum/contracts/catalog.json）に合わせる（Issue #161）。
+      catalogKey: "ChainvizToken",
       deployerAddress: "0x0000000000000000000000000000000000a11ce",
       createdByTxHash: "0xdeadbeef",
       token: { symbol: "CVT", decimals: 18 },
     };
     const roundTripped = JSON.parse(JSON.stringify(contract)) as ContractEntity;
     expect(roundTripped.name).toBe("ChainvizToken");
-    expect(roundTripped.catalogKey).toBe("chainviz-token");
+    expect(roundTripped.catalogKey).toBe("ChainvizToken");
     expect(roundTripped.token).toEqual({ symbol: "CVT", decimals: 18 });
   });
 

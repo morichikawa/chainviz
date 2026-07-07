@@ -1279,6 +1279,153 @@ describe("EthereumNodeLifecycle.runWorkbenchOperation", () => {
     });
   });
 
+  describe("onContractDeployed callback (Issue #161/#163 integration)", () => {
+    it("calls onContractDeployed with the deployed address and contractKey after a successful deployContract", async () => {
+      const ops = fakeOps({
+        managedContainers: [workbenchContainer("Alice", "wb-cid", 1)],
+        exec: async () => ({
+          exitCode: 0,
+          stdout: [
+            "Deployed to: 0x2222222222222222222222222222222222222222",
+            "Transaction hash: 0x3333333333333333333333333333333333333333333333333333333333333333",
+          ].join("\n"),
+          stderr: "",
+        }),
+      });
+      const onContractDeployed = vi.fn();
+      const lifecycle = new EthereumNodeLifecycle(ops, {
+        ...configWithMnemonic(),
+        onContractDeployed,
+      });
+      const deploy: WorkbenchOperation = {
+        type: "deployContract",
+        contractKey: "ChainvizToken",
+      };
+      await lifecycle.runWorkbenchOperation("chainviz-ethereum/Alice", deploy);
+
+      expect(onContractDeployed).toHaveBeenCalledTimes(1);
+      expect(onContractDeployed).toHaveBeenCalledWith(
+        "0x2222222222222222222222222222222222222222",
+        "ChainvizToken",
+      );
+    });
+
+    it("does not call onContractDeployed when the deployed address could not be parsed from stdout", async () => {
+      const ops = fakeOps({
+        managedContainers: [workbenchContainer("Alice", "wb-cid", 1)],
+        exec: async () => ({
+          exitCode: 0,
+          stdout: "some unrecognized forge output format\n",
+          stderr: "",
+        }),
+      });
+      const onContractDeployed = vi.fn();
+      const lifecycle = new EthereumNodeLifecycle(ops, {
+        ...configWithMnemonic(),
+        onContractDeployed,
+      });
+      const deploy: WorkbenchOperation = {
+        type: "deployContract",
+        contractKey: "ChainvizToken",
+      };
+      await lifecycle.runWorkbenchOperation("chainviz-ethereum/Alice", deploy);
+
+      expect(onContractDeployed).not.toHaveBeenCalled();
+    });
+
+    it("does not call onContractDeployed for non-deployContract operations", async () => {
+      const ops = fakeOps({
+        managedContainers: [workbenchContainer("Alice", "wb-cid", 1)],
+        exec: async () => ({
+          exitCode: 0,
+          stdout: "transactionHash         0xabc123\n",
+          stderr: "",
+        }),
+      });
+      const onContractDeployed = vi.fn();
+      const lifecycle = new EthereumNodeLifecycle(ops, {
+        ...configWithMnemonic(),
+        onContractDeployed,
+      });
+      await lifecycle.runWorkbenchOperation("chainviz-ethereum/Alice", transfer);
+
+      expect(onContractDeployed).not.toHaveBeenCalled();
+    });
+
+    it("does not throw when onContractDeployed is not configured", async () => {
+      const ops = fakeOps({
+        managedContainers: [workbenchContainer("Alice", "wb-cid", 1)],
+        exec: async () => ({
+          exitCode: 0,
+          stdout: [
+            "Deployed to: 0x2222222222222222222222222222222222222222",
+            "Transaction hash: 0x3333333333333333333333333333333333333333333333333333333333333333",
+          ].join("\n"),
+          stderr: "",
+        }),
+      });
+      const lifecycle = new EthereumNodeLifecycle(ops, configWithMnemonic());
+      const deploy: WorkbenchOperation = {
+        type: "deployContract",
+        contractKey: "ChainvizToken",
+      };
+      await expect(
+        lifecycle.runWorkbenchOperation("chainviz-ethereum/Alice", deploy),
+      ).resolves.toEqual({
+        deployedAddress: "0x2222222222222222222222222222222222222222",
+        txHash:
+          "0x3333333333333333333333333333333333333333333333333333333333333333",
+      });
+    });
+
+    it("still returns the successful outcome and logs the error when onContractDeployed throws (Issue #161 QA follow-up)", async () => {
+      // onContractDeployed の呼び出し連鎖（registerContractDeployment →
+      // onContract → store.applyContract → server.broadcastDiff）のどこかで
+      // 例外が投げられても、オンチェーンで既に成功しているデプロイを
+      // commandResult 上で失敗として返してはならない。
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const ops = fakeOps({
+        managedContainers: [workbenchContainer("Alice", "wb-cid", 1)],
+        exec: async () => ({
+          exitCode: 0,
+          stdout: [
+            "Deployed to: 0x2222222222222222222222222222222222222222",
+            "Transaction hash: 0x3333333333333333333333333333333333333333333333333333333333333333",
+          ].join("\n"),
+          stderr: "",
+        }),
+      });
+      const onContractDeployed = vi.fn(() => {
+        throw new Error("broadcastDiff failed: socket closed");
+      });
+      const lifecycle = new EthereumNodeLifecycle(ops, {
+        ...configWithMnemonic(),
+        onContractDeployed,
+      });
+      const deploy: WorkbenchOperation = {
+        type: "deployContract",
+        contractKey: "ChainvizToken",
+      };
+
+      const result = await lifecycle.runWorkbenchOperation(
+        "chainviz-ethereum/Alice",
+        deploy,
+      );
+
+      expect(result).toEqual({
+        deployedAddress: "0x2222222222222222222222222222222222222222",
+        txHash:
+          "0x3333333333333333333333333333333333333333333333333333333333333333",
+      });
+      expect(onContractDeployed).toHaveBeenCalledTimes(1);
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("onContractDeployed callback failed"),
+        expect.any(Error),
+      );
+      errorSpy.mockRestore();
+    });
+  });
+
   it("throws with the stderr detail and logs it when the exec exits non-zero", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const ops = fakeOps({

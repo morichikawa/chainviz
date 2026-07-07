@@ -320,7 +320,7 @@ runWorkbenchOperation コマンド・ChainAdapter.subscribeContracts）は設計
 - [x] eth_getBlockReceiptsの正規化を拡張しコントラクト作成
       （contractAddress）とイベントログ（logs）を取得する
       [#160](https://github.com/morichikawa/chainviz/issues/160)
-- [ ] コントラクトカタログの読み込みとデプロイ検知・追跡を実装し
+- [x] コントラクトカタログの読み込みとデプロイ検知・追跡を実装し
       ContractEntityをworld-stateへ配信する（subscribeContracts）
       [#161](https://github.com/morichikawa/chainviz/issues/161)
 - [ ] カタログのABIで関数呼び出し・イベントログを復号しTransactionEntityの
@@ -444,6 +444,9 @@ runWorkbenchOperation コマンド・ChainAdapter.subscribeContracts）は設計
 - [x] beaconStableIdForExecutionがdocker composeプロジェクトをスコープ
       しない(複数プロジェクト同時観測時にキー混線の恐れ)
       [#153](https://github.com/morichikawa/chainviz/issues/153)
+- [ ] collectorのcomposeProjectが"chainviz-ethereum"にハードコードされ
+      環境変数での上書き口が無く、QA検証時に独立した合成環境で
+      ワークベンチ経由の操作(runWorkbenchOperation等)を検証できない
 
 ## 運用ルール（全ステップ共通）
 

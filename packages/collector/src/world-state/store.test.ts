@@ -1,5 +1,6 @@
 import type {
   BlockEntity,
+  ContractEntity,
   NodeEntity,
   PeerEdge,
   TransactionEntity,
@@ -633,5 +634,74 @@ describe("WorldStateStore.applyTransaction", () => {
       store.applyInfra([node({ ip: "172.28.1.1" })]);
       expect(store.findNodeByIp("172.28.9.9")).toBeUndefined();
     });
+  });
+});
+
+function contractEntity(
+  overrides: Partial<ContractEntity> = {},
+): ContractEntity {
+  return {
+    kind: "contract",
+    address: "0xc0de",
+    chainType: "ethereum",
+    ...overrides,
+  };
+}
+
+describe("WorldStateStore.applyContract", () => {
+  it("adds an unknown contract (address only) on first detection", () => {
+    const store = new WorldStateStore();
+    const diff = store.applyContract(contractEntity());
+    expect(diff).toEqual([{ type: "entityAdded", entity: contractEntity() }]);
+    expect(store.getSnapshot().entities).toContainEqual(contractEntity());
+  });
+
+  it("emits an update with only the changed fields when catalog info is filled in later", () => {
+    const store = new WorldStateStore();
+    store.applyContract(contractEntity());
+    const diff = store.applyContract(
+      contractEntity({ name: "ChainvizToken", catalogKey: "ChainvizToken" }),
+    );
+    expect(diff).toEqual([
+      {
+        type: "entityUpdated",
+        id: "0xc0de",
+        patch: { name: "ChainvizToken", catalogKey: "ChainvizToken" },
+      },
+    ]);
+    const stored = store
+      .getSnapshot()
+      .entities.find((e) => e.kind === "contract") as ContractEntity;
+    expect(stored.name).toBe("ChainvizToken");
+  });
+
+  it("emits no diff when the same contract is applied unchanged", () => {
+    const store = new WorldStateStore();
+    store.applyContract(contractEntity());
+    expect(store.applyContract(contractEntity())).toEqual([]);
+  });
+
+  it("tracks multiple distinct contracts by address", () => {
+    const store = new WorldStateStore();
+    store.applyContract(contractEntity({ address: "0xa" }));
+    store.applyContract(contractEntity({ address: "0xb" }));
+    expect(
+      store.getSnapshot().entities.filter((e) => e.kind === "contract"),
+    ).toHaveLength(2);
+  });
+
+  it("keeps contracts separate from infra entities, blocks, txs and edges", () => {
+    const store = new WorldStateStore();
+    store.applyInfra([node()]);
+    store.applyPeers([edge()]);
+    store.applyBlock(block());
+    store.applyTransaction(tx());
+    store.applyContract(contractEntity());
+    const snapshot = store.getSnapshot();
+    expect(snapshot.entities.filter((e) => e.kind === "node")).toHaveLength(1);
+    expect(snapshot.entities.filter((e) => e.kind === "contract")).toHaveLength(
+      1,
+    );
+    expect(snapshot.edges).toHaveLength(1);
   });
 });

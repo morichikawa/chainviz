@@ -4,6 +4,7 @@
 import type {
   BlockEntity,
   ChainType,
+  ContractEntity,
   DiffEvent,
   NodeEntity,
   PeerEdge,
@@ -74,7 +75,7 @@ export class WorldStateStore {
    * （他のエンティティは触らない）。返り値は適用した差分イベント。
    */
   applyBlock(block: BlockEntity): DiffEvent[] {
-    return this.applyHashKeyed(block);
+    return this.applyKeyed(block);
   }
 
   /**
@@ -84,16 +85,28 @@ export class WorldStateStore {
    * 差分イベント。
    */
   applyTransaction(tx: TransactionEntity): DiffEvent[] {
-    return this.applyHashKeyed(tx);
+    return this.applyKeyed(tx);
   }
 
   /**
-   * ハッシュをキーに持つ単一エンティティ（block / transaction）を取り込む
-   * 共通処理。既存の同一ハッシュのエンティティとだけ差分を取り、他のエンティ
-   * ティやエッジには触れない。
+   * C 層（新 Phase 4）のコントラクトのデプロイ検知・内容更新（ContractEntity）を
+   * 取り込む。コントラクトはアドレスをキーとするエンティティなので、既存の
+   * 同一アドレスとの差分だけを計算する（「未知」→カタログ照合済みへの更新は
+   * entityUpdated として出る）。返り値は適用した差分イベント。
    */
-  private applyHashKeyed(entity: BlockEntity | TransactionEntity): DiffEvent[] {
-    const existing = this.entities.get(entity.hash);
+  applyContract(contract: ContractEntity): DiffEvent[] {
+    return this.applyKeyed(contract);
+  }
+
+  /**
+   * 安定キー（block/transaction はハッシュ、contract はアドレス。entityId
+   * 参照）を持つ単一エンティティを取り込む共通処理。既存の同一キーの
+   * エンティティとだけ差分を取り、他のエンティティやエッジには触れない。
+   */
+  private applyKeyed(
+    entity: BlockEntity | TransactionEntity | ContractEntity,
+  ): DiffEvent[] {
+    const existing = this.entities.get(entityId(entity));
     const prev = existing ? [existing] : [];
     const diff = computeDiff(prev, [entity]);
     for (const event of diff) this.applyEvent(event);

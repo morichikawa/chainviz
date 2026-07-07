@@ -90,6 +90,19 @@ export interface EthereumNodeLifecycleConfig {
    * resolveWorkbenchRpcUrl()）が解決した値を必須で渡す。
    */
   ethRpcUrl: string;
+  /**
+   * runWorkbenchOperation の deployContract が成功し、デプロイ先アドレスを
+   * 得られた場合に呼び出すコールバック（Issue #161/#163 の統合）。
+   * EthereumAdapter.registerContractDeployment 相当を呼ぶことで、デプロイ先
+   * アドレスとカタログキーの対応を C 層のコントラクト追跡（ContractTracker）へ
+   * 登録し、GUI の定型操作からのデプロイもカタログ照合（name/catalogKey/token
+   * 付与）の対象にする。EthereumNodeLifecycle は EthereumAdapter を直接
+   * 参照せず（両者は index.ts の main() で並行に組み立てられており、相互に
+   * import すると循環依存になる）、コールバック注入のみで結合する。未指定
+   * なら呼び出しをスキップし、デプロイは従来どおり「未知のコントラクト」として
+   * 検知されるだけになる。
+   */
+  onContractDeployed?: (address: string, contractKey: string) => void;
 }
 
 const DEFAULTS = {
@@ -103,7 +116,11 @@ const DEFAULTS = {
   foundryImage: "ghcr.io/foundry-rs/foundry:latest",
 } as const;
 
-type ResolvedConfig = Required<EthereumNodeLifecycleConfig>;
+// onContractDeployed は DEFAULTS に既定値を持たない任意のコールバックなので
+// Required<> の対象から除外する（未指定時は undefined のまま保持する）。
+type ResolvedConfig = Required<
+  Omit<EthereumNodeLifecycleConfig, "onContractDeployed">
+>;
 
 interface ManagedContainer {
   stableId: string;
@@ -214,6 +231,10 @@ function slug(value: string): string {
 
 export class EthereumNodeLifecycle implements NodeLifecycle {
   private readonly cfg: ResolvedConfig;
+  private readonly onContractDeployed?: (
+    address: string,
+    contractKey: string,
+  ) => void;
   private readonly nodes: ManagedNode[] = [];
   private readonly workbenches: ManagedWorkbench[] = [];
   private workbenchSeq = 0;
@@ -222,7 +243,9 @@ export class EthereumNodeLifecycle implements NodeLifecycle {
     private readonly ops: DockerOperations,
     config: EthereumNodeLifecycleConfig,
   ) {
-    this.cfg = { ...DEFAULTS, ...config };
+    const { onContractDeployed, ...rest } = config;
+    this.cfg = { ...DEFAULTS, ...rest };
+    this.onContractDeployed = onContractDeployed;
   }
 
   /**
@@ -491,7 +514,31 @@ export class EthereumNodeLifecycle implements NodeLifecycle {
         `${describeOperation(operation)} failed on workbench ${workbenchId}: ${detail}`,
       );
     }
-    return parseOperationOutcome(operation, result.stdout);
+    const outcome = parseOperationOutcome(operation, result.stdout);
+    // deployContract が成功し、デプロイ先アドレスを抽出できた場合は、
+    // カタログ照合（name/catalogKey/token 付与）のためデプロイ先アドレスと
+    // カタログキーの対応を登録する（Issue #161/#163 の統合）。forge create の
+    // 出力形式が変わる等でアドレスを抽出できなかった場合は、既存の
+    // parseOperationOutcome の方針（付随情報が取れなかっただけ扱い）に
+    // 合わせて登録もスキップする（操作自体は成功しているため throw はしない）。
+    if (operation.type === "deployContract" && outcome.deployedAddress) {
+      // onContractDeployed（カタログ登録 → onContract → store.applyContract →
+      // server.broadcastDiff という呼び出し連鎖）は付随処理であり、デプロイ
+      // 自体はこの時点で既にオンチェーンで成功している。連鎖のどこかで例外が
+      // 投げられても、それを理由にオンチェーンで成功したデプロイを
+      // commandResult 上で失敗扱いにしない（parseOperationOutcome が付随情報の
+      // 抽出失敗を成功扱いにしている既存方針と揃える）。ただし握りつぶさず、
+      // 具体的なエラー内容は必ずログに残す。
+      try {
+        this.onContractDeployed?.(outcome.deployedAddress, operation.contractKey);
+      } catch (err) {
+        console.error(
+          `[ethereum] onContractDeployed callback failed for ${outcome.deployedAddress} (contractKey=${operation.contractKey}) on ${workbenchId}:`,
+          err,
+        );
+      }
+    }
+    return outcome;
   }
 
   /**

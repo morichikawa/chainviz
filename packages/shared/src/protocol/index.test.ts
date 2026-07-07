@@ -5,9 +5,13 @@ describe("protocol commands", () => {
   it("builds a runWorkbenchOperation command for each operation type", () => {
     // WorkbenchOperation は type で判別する discriminated union。各バリアントの
     // 固有フィールドへ安全に絞り込めること（コンパイル時の検証を兼ねる）。
+    // contractKey は型上は任意の string だが、実装（collector の
+    // ContractAdapter・profiles/ethereum/contracts/catalog.json）は Solidity の
+    // コントラクト名そのまま（PascalCase）をキーとして使うため、例もそれに
+    // 合わせる（Issue #161 で kebab-case との不一致を解消）。
     const operations: WorkbenchOperation[] = [
       { type: "transfer", to: "0x0b0b", amount: "1000000000000000000" },
-      { type: "deployContract", contractKey: "chainviz-token" },
+      { type: "deployContract", contractKey: "ChainvizToken" },
       {
         type: "callContract",
         contractAddress: "0x0c0de",
@@ -29,7 +33,7 @@ describe("protocol commands", () => {
 
     expect(described).toEqual([
       "transfer 1000000000000000000 to 0x0b0b",
-      "deploy chainviz-token",
+      "deploy ChainvizToken",
       "call 0x0c0de.transfer(0x0b0b,1000000000000000000)",
     ]);
   });
@@ -92,11 +96,11 @@ describe("protocol commands", () => {
   it("round-trips the deployContract variant through JSON", () => {
     const operation: WorkbenchOperation = {
       type: "deployContract",
-      contractKey: "chainviz-token",
+      contractKey: "ChainvizToken",
     };
     const parsed = JSON.parse(JSON.stringify(operation)) as WorkbenchOperation;
     if (parsed.type !== "deployContract") throw new Error("unexpected type");
-    expect(parsed.contractKey).toBe("chainviz-token");
+    expect(parsed.contractKey).toBe("ChainvizToken");
   });
 
   it("preserves a callContract with an empty args array (no-arg function)", () => {
