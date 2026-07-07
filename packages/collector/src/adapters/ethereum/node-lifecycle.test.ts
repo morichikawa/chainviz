@@ -1,11 +1,13 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import type { WorkbenchOperation } from "@chainviz/shared";
 import { describe, expect, it, vi } from "vitest";
 import type {
   ContainerSpec,
   CreatedContainer,
   DockerOperations,
+  ExecResult,
   LabeledContainer,
 } from "../../docker/operations.js";
 import { walletTrackingDisabledWarning } from "./mnemonic.js";
@@ -27,6 +29,7 @@ function fakeOps(
     createFails?: (spec: ContainerSpec) => boolean;
     stopAndRemoveFails?: (id: string) => boolean;
     managedContainers?: LabeledContainer[];
+    exec?: (containerId: string, cmd: string[]) => Promise<ExecResult>;
   } = {},
 ): DockerOperations & {
   created: ContainerSpec[];
@@ -52,6 +55,14 @@ function fakeOps(
     usedNetworkIps: vi.fn(async (): Promise<string[]> => opts.usedIps ?? []),
     listContainersByLabels: vi.fn(
       async (): Promise<LabeledContainer[]> => opts.managedContainers ?? [],
+    ),
+    exec: vi.fn(
+      opts.exec ??
+        (async (): Promise<ExecResult> => ({
+          exitCode: 0,
+          stdout: "",
+          stderr: "",
+        })),
     ),
   };
 }
@@ -1107,5 +1118,350 @@ describe("EthereumNodeLifecycle workbench commands", () => {
     ops.stopAndRemove = original;
     await lifecycle.removeWorkbench("chainviz-ethereum/Alice");
     expect(ops.removed).toEqual(["cid-1"]);
+  });
+});
+
+describe("EthereumNodeLifecycle.runWorkbenchOperation", () => {
+  /** mnemonic 付きの一時 profileDir を用意し、そこを指す config を返す。 */
+  function configWithMnemonic(mnemonic = "alpha bravo charlie"): typeof config {
+    const dir = mkdtempSync(path.join(tmpdir(), "chainviz-profile-"));
+    writeFileSync(
+      path.join(dir, "values.env"),
+      `export EL_AND_CL_MNEMONIC="${mnemonic}"\n`,
+    );
+    return { ...config, profileDir: dir };
+  }
+
+  /** compose ラベル一式を持つワークベンチコンテナのフェイク観測値。 */
+  function workbenchContainer(
+    service: string,
+    id: string,
+    walletIndex?: number,
+  ): LabeledContainer {
+    const labels: Record<string, string> = {
+      "com.docker.compose.project": "chainviz-ethereum",
+      "com.docker.compose.service": service,
+    };
+    if (walletIndex !== undefined) {
+      labels[WALLET_INDEX_LABEL] = String(walletIndex);
+    }
+    return { id, labels };
+  }
+
+  const transfer: WorkbenchOperation = {
+    type: "transfer",
+    to: "0x8943545177806ED17B9F23F0a21ee5948eCaa776",
+    amount: "1000000000000000000",
+  };
+
+  it("throws when the profile mnemonic is unavailable, without touching Docker", async () => {
+    const ops = fakeOps();
+    const lifecycle = new EthereumNodeLifecycle(ops, {
+      ...config,
+      profileDir: "/nonexistent/profile/dir",
+    });
+    await expect(
+      lifecycle.runWorkbenchOperation("chainviz-ethereum/Alice", transfer),
+    ).rejects.toThrow(/mnemonic not found/);
+    expect(ops.listContainersByLabels).not.toHaveBeenCalled();
+    expect(ops.exec).not.toHaveBeenCalled();
+  });
+
+  it("throws when the target workbench cannot be found", async () => {
+    const ops = fakeOps({ managedContainers: [] });
+    const lifecycle = new EthereumNodeLifecycle(ops, configWithMnemonic());
+    await expect(
+      lifecycle.runWorkbenchOperation("chainviz-ethereum/ghost", transfer),
+    ).rejects.toThrow(/workbench chainviz-ethereum\/ghost not found/);
+    expect(ops.exec).not.toHaveBeenCalled();
+  });
+
+  it("scopes the workbench search to this chain profile's compose project", async () => {
+    const ops = fakeOps({
+      managedContainers: [workbenchContainer("Alice", "wb-cid", 3)],
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, configWithMnemonic());
+    await lifecycle.runWorkbenchOperation("chainviz-ethereum/Alice", transfer);
+    expect(ops.listContainersByLabels).toHaveBeenCalledWith({
+      "com.docker.compose.project": "chainviz-ethereum",
+    });
+  });
+
+  it("execs the built cast command in the resolved managed workbench's container", async () => {
+    const mnemonic = "alpha bravo charlie";
+    const ops = fakeOps({
+      managedContainers: [workbenchContainer("Alice", "wb-cid", 3)],
+    });
+    const lifecycle = new EthereumNodeLifecycle(
+      ops,
+      configWithMnemonic(mnemonic),
+    );
+    await lifecycle.runWorkbenchOperation("chainviz-ethereum/Alice", transfer);
+
+    expect(ops.exec).toHaveBeenCalledWith("wb-cid", [
+      "cast",
+      "send",
+      "--rpc-url",
+      config.ethRpcUrl,
+      "--mnemonic",
+      mnemonic,
+      "--mnemonic-index",
+      "3",
+      "--value",
+      "1000000000000000000",
+      "0x8943545177806ED17B9F23F0a21ee5948eCaa776",
+    ]);
+  });
+
+  it("defaults to wallet index 0 for a static/unmanaged workbench (no wallet-index label)", async () => {
+    // docker-compose.yml の静的な `workbench` サービスは com.chainviz の
+    // ラベルを持たないため、addWorkbench 由来ではなくてもプリマインの
+    // 先頭アカウント（既定インデックス 0）で操作できる必要がある。
+    const ops = fakeOps({
+      managedContainers: [workbenchContainer("workbench", "static-wb-cid")],
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, configWithMnemonic());
+    await lifecycle.runWorkbenchOperation(
+      "chainviz-ethereum/workbench",
+      transfer,
+    );
+    const call = (ops.exec as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      string[],
+    ];
+    expect(call[0]).toBe("static-wb-cid");
+    const indexFlagPos = call[1].indexOf("--mnemonic-index");
+    expect(call[1][indexFlagPos + 1]).toBe("0");
+  });
+
+  it("returns the parsed txHash on a successful transfer", async () => {
+    const ops = fakeOps({
+      managedContainers: [workbenchContainer("Alice", "wb-cid", 1)],
+      exec: async () => ({
+        exitCode: 0,
+        stdout: "transactionHash         0xabc123\n",
+        stderr: "",
+      }),
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, configWithMnemonic());
+    const result = await lifecycle.runWorkbenchOperation(
+      "chainviz-ethereum/Alice",
+      transfer,
+    );
+    expect(result).toEqual({ txHash: "0xabc123" });
+  });
+
+  it("returns the parsed txHash and deployedAddress on a successful deployContract", async () => {
+    const ops = fakeOps({
+      managedContainers: [workbenchContainer("Alice", "wb-cid", 1)],
+      exec: async () => ({
+        exitCode: 0,
+        stdout: [
+          "Deployed to: 0x2222222222222222222222222222222222222222",
+          "Transaction hash: 0x3333333333333333333333333333333333333333333333333333333333333333",
+        ].join("\n"),
+        stderr: "",
+      }),
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, configWithMnemonic());
+    const deploy: WorkbenchOperation = {
+      type: "deployContract",
+      contractKey: "src/Counter.sol:Counter",
+    };
+    const result = await lifecycle.runWorkbenchOperation(
+      "chainviz-ethereum/Alice",
+      deploy,
+    );
+    expect(result).toEqual({
+      deployedAddress: "0x2222222222222222222222222222222222222222",
+      txHash:
+        "0x3333333333333333333333333333333333333333333333333333333333333333",
+    });
+  });
+
+  it("throws with the stderr detail and logs it when the exec exits non-zero", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const ops = fakeOps({
+      managedContainers: [workbenchContainer("Alice", "wb-cid", 1)],
+      exec: async () => ({
+        exitCode: 1,
+        stdout: "",
+        stderr: "Error: insufficient funds for gas * price + value",
+      }),
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, configWithMnemonic());
+    await expect(
+      lifecycle.runWorkbenchOperation("chainviz-ethereum/Alice", transfer),
+    ).rejects.toThrow(/insufficient funds for gas/);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("insufficient funds for gas"),
+    );
+    errorSpy.mockRestore();
+  });
+
+  it("falls back to stdout, then the bare exit code, when stderr is empty", async () => {
+    const ops = fakeOps({
+      managedContainers: [workbenchContainer("Alice", "wb-cid", 1)],
+      exec: async () => ({ exitCode: 2, stdout: "", stderr: "" }),
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, configWithMnemonic());
+    await expect(
+      lifecycle.runWorkbenchOperation("chainviz-ethereum/Alice", transfer),
+    ).rejects.toThrow(/exit code 2/);
+  });
+
+  it("builds the correct forge create command for deployContract", async () => {
+    const mnemonic = "alpha bravo charlie";
+    const ops = fakeOps({
+      managedContainers: [workbenchContainer("Alice", "wb-cid", 1)],
+    });
+    const lifecycle = new EthereumNodeLifecycle(
+      ops,
+      configWithMnemonic(mnemonic),
+    );
+    const deploy: WorkbenchOperation = {
+      type: "deployContract",
+      contractKey: "src/Counter.sol:Counter",
+    };
+    await lifecycle.runWorkbenchOperation("chainviz-ethereum/Alice", deploy);
+    expect(ops.exec).toHaveBeenCalledWith("wb-cid", [
+      "forge",
+      "create",
+      "src/Counter.sol:Counter",
+      "--root",
+      "/contracts",
+      "--rpc-url",
+      config.ethRpcUrl,
+      "--mnemonic",
+      mnemonic,
+      "--mnemonic-index",
+      "1",
+      "--broadcast",
+    ]);
+  });
+
+  it("appends --constructor-args as the last tokens when a deployContract carries constructorArgs", async () => {
+    const mnemonic = "alpha bravo charlie";
+    const ops = fakeOps({
+      managedContainers: [workbenchContainer("Alice", "wb-cid", 1)],
+    });
+    const lifecycle = new EthereumNodeLifecycle(
+      ops,
+      configWithMnemonic(mnemonic),
+    );
+    const deploy: WorkbenchOperation = {
+      type: "deployContract",
+      contractKey: "src/ChainvizToken.sol:ChainvizToken",
+      constructorArgs: ["1000000000000000000000000"],
+    };
+    await lifecycle.runWorkbenchOperation("chainviz-ethereum/Alice", deploy);
+    expect(ops.exec).toHaveBeenCalledWith("wb-cid", [
+      "forge",
+      "create",
+      "src/ChainvizToken.sol:ChainvizToken",
+      "--root",
+      "/contracts",
+      "--rpc-url",
+      config.ethRpcUrl,
+      "--mnemonic",
+      mnemonic,
+      "--mnemonic-index",
+      "1",
+      "--broadcast",
+      "--constructor-args",
+      "1000000000000000000000000",
+    ]);
+  });
+
+  it("propagates an exec rejection (e.g. the workbench container is not running)", async () => {
+    // exec 自体が reject する（非ゼロ終了ではなく、コンテナ停止等で exec 作成に
+    // 失敗する）ケースでも、runWorkbenchOperation は握りつぶさず伝播させる。
+    const ops = fakeOps({
+      managedContainers: [workbenchContainer("Alice", "wb-cid", 1)],
+      exec: async () => {
+        throw new Error("container is not running");
+      },
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, configWithMnemonic());
+    await expect(
+      lifecycle.runWorkbenchOperation("chainviz-ethereum/Alice", transfer),
+    ).rejects.toThrow(/container is not running/);
+  });
+
+  it("passes a value carrying shell metacharacters through to exec as a single argument", async () => {
+    // 端から端まで（コマンド組み立て → exec 呼び出し）のインジェクション回帰。
+    // 危険な宛先文字列でも、exec には配列の 1 要素として渡り、シェル文字列に
+    // 連結されないこと。
+    const danger = "0xabc; rm -rf / #";
+    let capturedCmd: string[] = [];
+    const ops = fakeOps({
+      managedContainers: [workbenchContainer("Alice", "wb-cid", 1)],
+      exec: async (_id, cmd) => {
+        capturedCmd = cmd;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, configWithMnemonic());
+    await lifecycle.runWorkbenchOperation("chainviz-ethereum/Alice", {
+      type: "transfer",
+      to: danger,
+      amount: "1",
+    });
+    expect(capturedCmd[capturedCmd.length - 1]).toBe(danger);
+    expect(capturedCmd.filter((t) => t === danger)).toHaveLength(1);
+  });
+
+  it("includes --value in order when a callContract carries an amount", async () => {
+    const ops = fakeOps({
+      managedContainers: [workbenchContainer("Alice", "wb-cid", 1)],
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, configWithMnemonic());
+    const call: WorkbenchOperation = {
+      type: "callContract",
+      contractAddress: "0x0c0de",
+      functionName: "deposit()",
+      args: [],
+      amount: "500",
+    };
+    await lifecycle.runWorkbenchOperation("chainviz-ethereum/Alice", call);
+    const cmd = (ops.exec as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[1] as string[];
+    const valuePos = cmd.indexOf("--value");
+    expect(valuePos).toBeGreaterThan(-1);
+    expect(cmd[valuePos + 1]).toBe("500");
+    // --value / 金額の後に、宛先コントラクト・関数シグネチャが続く。
+    expect(cmd.slice(valuePos + 2)).toEqual(["0x0c0de", "deposit()"]);
+  });
+
+  it("builds the correct cast send command for callContract", async () => {
+    const mnemonic = "alpha bravo charlie";
+    const ops = fakeOps({
+      managedContainers: [workbenchContainer("Alice", "wb-cid", 1)],
+    });
+    const lifecycle = new EthereumNodeLifecycle(
+      ops,
+      configWithMnemonic(mnemonic),
+    );
+    const call: WorkbenchOperation = {
+      type: "callContract",
+      contractAddress: "0x0c0de",
+      functionName: "transfer(address,uint256)",
+      args: ["0x0b0b", "500"],
+    };
+    await lifecycle.runWorkbenchOperation("chainviz-ethereum/Alice", call);
+    expect(ops.exec).toHaveBeenCalledWith("wb-cid", [
+      "cast",
+      "send",
+      "--rpc-url",
+      config.ethRpcUrl,
+      "--mnemonic",
+      mnemonic,
+      "--mnemonic-index",
+      "1",
+      "0x0c0de",
+      "transfer(address,uint256)",
+      "0x0b0b",
+      "500",
+    ]);
   });
 });
