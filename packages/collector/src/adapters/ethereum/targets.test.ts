@@ -286,10 +286,10 @@ describe("executionTargets", () => {
     );
   });
 
-  it("uses the first matching beacon for the shared node key when several exist", () => {
+  it("uses the same-project beacon for the shared node key even when a different project's beacon is observed first", () => {
     // 別プロジェクトの beacon1 が観測に混ざってノード群キー "1" を共有する
-    // 場合、receivedAtKeys の beacon キーは beaconStableIdForExecution が
-    // 最初に見つけた beacon になる（現状の観測順依存の挙動を固定）。
+    // 場合でも、receivedAtKeys の beacon キーは execution と同じ docker
+    // compose プロジェクトに属する beacon にスコープされる（Issue #153）。
     const beaconOther = obs({
       stableId: "other-project/beacon1",
       labels: { "com.docker.compose.service": "beacon1" },
@@ -299,8 +299,56 @@ describe("executionTargets", () => {
     });
     const [target] = executionTargets([obs(), beaconOther, beacon1]);
     expect(target.receivedAtKeys).toEqual([
-      "other-project/beacon1",
+      "chainviz-ethereum/beacon1",
       "chainviz-ethereum/reth1",
+    ]);
+  });
+
+  it("keeps receivedAt beacon keys within each project when multiple projects are observed together", () => {
+    // executionTargets 経由でも Issue #153 のスコープが働くことを end-to-end で
+    // 固定する。2 プロジェクトが同時観測され、観測順で別プロジェクトの beacon が
+    // 先に来ても、各 reth の receivedAtKeys の beacon キーは同一プロジェクトの
+    // beacon になる（クロスプロジェクトのエッジが発生しない）。
+    const rethA = obs({
+      stableId: "proj-a/reth1",
+      labels: { "com.docker.compose.service": "reth1" },
+      ip: "172.28.11.1",
+    });
+    const rethB = obs({
+      stableId: "proj-b/reth1",
+      labels: { "com.docker.compose.service": "reth1" },
+      ip: "172.28.11.2",
+    });
+    const beaconA = obs({
+      stableId: "proj-a/beacon1",
+      labels: { "com.docker.compose.service": "beacon1" },
+      image: "sigp/lighthouse:latest",
+      ip: "172.28.10.1",
+      processes: [{ command: "lighthouse bn", name: "lighthouse" }],
+    });
+    const beaconB = obs({
+      stableId: "proj-b/beacon1",
+      labels: { "com.docker.compose.service": "beacon1" },
+      image: "sigp/lighthouse:latest",
+      ip: "172.28.10.2",
+      processes: [{ command: "lighthouse bn", name: "lighthouse" }],
+    });
+    // beacon を先に、しかもプロジェクト順を入れ替えて観測させる。
+    const targets = executionTargets([beaconB, beaconA, rethA, rethB]);
+    expect(
+      targets.map((t) => ({
+        stableId: t.stableId,
+        receivedAtKeys: t.receivedAtKeys,
+      })),
+    ).toEqual([
+      {
+        stableId: "proj-a/reth1",
+        receivedAtKeys: ["proj-a/beacon1", "proj-a/reth1"],
+      },
+      {
+        stableId: "proj-b/reth1",
+        receivedAtKeys: ["proj-b/beacon1", "proj-b/reth1"],
+      },
     ]);
   });
 
@@ -440,10 +488,30 @@ describe("beaconStableIdForExecution", () => {
     ).toBe("chainviz-ethereum/beacon1");
   });
 
-  it("returns the first beacon encountered when several share the node key", () => {
-    // 同じサービス名 beacon1 が別プロジェクトに複数存在する（キーがともに "1"）
-    // 場合、現状は観測順で最初に見つかった beacon を返す。対応付けは
-    // ノード群キーだけで行い、プロジェクト（stableId の接頭辞）は見ていない。
+  it("only matches a beacon within the same compose project, even if another project's beacon is observed first", () => {
+    // 同じサービス名 beacon1 が別プロジェクトにも存在する（ノード群キーは
+    // ともに "1" で一致する）場合でも、docker compose プロジェクト
+    // （stableId の "<project>/" 部分、projectOf()）が異なる beacon は対応
+    // 付けない。1 つの collector インスタンスが複数プロジェクトを同時に
+    // 観測する状況（通常運用では起きないが QA 検証等で発生しうる）でも、
+    // プロジェクト跨ぎの対応付けが起きないことを保証する（Issue #153）。
+    const beaconOther = obs({
+      stableId: "other-project/beacon1",
+      labels: { "com.docker.compose.service": "beacon1" },
+      image: "sigp/lighthouse:latest",
+      ip: "172.28.9.1",
+      processes: [{ command: "lighthouse bn", name: "lighthouse" }],
+    });
+    // 他プロジェクトの beacon が観測順で先に来ても、自プロジェクト
+    // （chainviz-ethereum）の beacon1 だけが選ばれる。
+    expect(
+      beaconStableIdForExecution(obs(), [beaconOther, beacon1]),
+    ).toBe("chainviz-ethereum/beacon1");
+  });
+
+  it("returns undefined when only a different project's beacon shares the node key", () => {
+    // 自プロジェクトに対応する beacon が存在せず、別プロジェクトの
+    // 同名サービスしか無い場合はフォールバック（undefined）する。
     const beaconOther = obs({
       stableId: "other-project/beacon1",
       labels: { "com.docker.compose.service": "beacon1" },
@@ -452,8 +520,116 @@ describe("beaconStableIdForExecution", () => {
       processes: [{ command: "lighthouse bn", name: "lighthouse" }],
     });
     expect(
-      beaconStableIdForExecution(obs(), [beaconOther, beacon1]),
-    ).toBe("other-project/beacon1");
+      beaconStableIdForExecution(obs(), [beaconOther]),
+    ).toBeUndefined();
+  });
+
+  it("scopes each execution to its own project's beacon across three mixed projects", () => {
+    // 3 プロジェクト（proj-a/proj-b/proj-c）がノード群キー "1" を共有した状態で
+    // 同時観測されても、各 execution は自プロジェクトの beacon にだけ対応する
+    // （Issue #153 のスコープが 2 プロジェクト超でも成立することを固定する）。
+    const beaconFor = (project: string, ip: string) =>
+      obs({
+        stableId: `${project}/beacon1`,
+        labels: { "com.docker.compose.service": "beacon1" },
+        image: "sigp/lighthouse:latest",
+        ip,
+        processes: [{ command: "lighthouse bn", name: "lighthouse" }],
+      });
+    const rethFor = (project: string, ip: string) =>
+      obs({
+        stableId: `${project}/reth1`,
+        labels: { "com.docker.compose.service": "reth1" },
+        ip,
+      });
+    const beaconA = beaconFor("proj-a", "172.28.10.1");
+    const beaconB = beaconFor("proj-b", "172.28.10.2");
+    const beaconC = beaconFor("proj-c", "172.28.10.3");
+    const rethA = rethFor("proj-a", "172.28.11.1");
+    const rethB = rethFor("proj-b", "172.28.11.2");
+    const rethC = rethFor("proj-c", "172.28.11.3");
+    // 観測順は意図的にプロジェクトを交錯させる（先に来た別プロジェクトの
+    // beacon を掴まないこと）。
+    const all = [beaconC, beaconA, beaconB, rethA, rethB, rethC];
+    expect(beaconStableIdForExecution(rethA, all)).toBe("proj-a/beacon1");
+    expect(beaconStableIdForExecution(rethB, all)).toBe("proj-b/beacon1");
+    expect(beaconStableIdForExecution(rethC, all)).toBe("proj-c/beacon1");
+  });
+
+  it("requires an exact project match, not a prefix match", () => {
+    // プロジェクト名がもう一方の接頭辞になっている（"chainviz" ⊂
+    // "chainviz-ethereum"）場合でも、projectOf は先頭セグメントの完全一致で
+    // 判定するので別プロジェクト扱いになり対応付けない。
+    const beaconPrefixProject = obs({
+      stableId: "chainviz/beacon1",
+      labels: { "com.docker.compose.service": "beacon1" },
+      image: "sigp/lighthouse:latest",
+      ip: "172.28.12.1",
+      processes: [{ command: "lighthouse bn", name: "lighthouse" }],
+    });
+    expect(
+      beaconStableIdForExecution(obs(), [beaconPrefixProject]),
+    ).toBeUndefined();
+  });
+
+  it("does not match a beacon whose stableId lacks a project prefix", () => {
+    // execution にはプロジェクト接頭辞があり、beacon 側の stableId には無い
+    // 場合、beacon の projectOf は stableId 全体（"beacon1"）になり
+    // execution のプロジェクト（"chainviz-ethereum"）と一致しないため
+    // 対応付けない。
+    const bareBeacon = obs({
+      stableId: "beacon1",
+      labels: { "com.docker.compose.service": "beacon1" },
+      image: "sigp/lighthouse:latest",
+      ip: "172.28.12.2",
+      processes: [{ command: "lighthouse bn", name: "lighthouse" }],
+    });
+    expect(
+      beaconStableIdForExecution(obs(), [bareBeacon]),
+    ).toBeUndefined();
+  });
+
+  it("does not match when neither execution nor beacon carries a project prefix", () => {
+    // プロジェクト接頭辞が無い（compose ラベルが揃わずコンテナ名に
+    // フォールバックした）stableId 同士では、projectOf がそれぞれ "reth1" /
+    // "beacon1" を返して一致しないため対応が取れない。プロジェクト接頭辞に
+    // 依存する現仕様の限界を固定する（通常運用の stableId は必ず
+    // "<project>/<service>" 形式なので実害は無い。詳細は worklog 参照）。
+    const bareReth = obs({
+      stableId: "reth1",
+      labels: { "com.docker.compose.service": "reth1" },
+    });
+    const bareBeacon = obs({
+      stableId: "beacon1",
+      labels: { "com.docker.compose.service": "beacon1" },
+      image: "sigp/lighthouse:latest",
+      ip: "172.28.12.3",
+      processes: [{ command: "lighthouse bn", name: "lighthouse" }],
+    });
+    expect(
+      beaconStableIdForExecution(bareReth, [bareReth, bareBeacon]),
+    ).toBeUndefined();
+  });
+
+  it("uses only the leading path segment as the project (extra slashes belong to the project boundary)", () => {
+    // computeStableId は "<project>/<service>" の 1 スラッシュ形式を作るが、
+    // projectOf は split("/")[0] で先頭セグメントのみをプロジェクトとみなす。
+    // 仮に stableId に想定外の追加スラッシュが含まれても、先頭セグメントが
+    // 一致すれば同一プロジェクト扱いになることを固定する。
+    const rethNested = obs({
+      stableId: "proj/extra/reth1",
+      labels: { "com.docker.compose.service": "reth1" },
+    });
+    const beaconNested = obs({
+      stableId: "proj/extra/beacon1",
+      labels: { "com.docker.compose.service": "beacon1" },
+      image: "sigp/lighthouse:latest",
+      ip: "172.28.12.4",
+      processes: [{ command: "lighthouse bn", name: "lighthouse" }],
+    });
+    expect(
+      beaconStableIdForExecution(rethNested, [rethNested, beaconNested]),
+    ).toBe("proj/extra/beacon1");
   });
 });
 
@@ -546,6 +722,31 @@ describe("executionPeerTargets", () => {
     expect(elNetworkId).toBe("weird-consensus-execution");
     expect(clNetworkId).toBe("weird-consensus-consensus");
     expect(elNetworkId).not.toBe(clNetworkId);
+  });
+
+  it("derives each execution peer target's networkId from its own project when several projects are observed together", () => {
+    // executionPeerTargets はノード横断の対応付けを一切せず、各 execution の
+    // networkId を自身の stableId から導く。複数プロジェクトが混在しても
+    // プロジェクトを跨いだ networkId の混線は起きない（このファイルで
+    // beaconStableIdForExecution 以外にプロジェクト・スコープ漏れが無いことの
+    // 確認を兼ねる）。
+    const rethA = obs({
+      stableId: "proj-a/reth1",
+      labels: { "com.docker.compose.service": "reth1" },
+      ip: "172.28.11.1",
+    });
+    const rethB = obs({
+      stableId: "proj-b/reth1",
+      labels: { "com.docker.compose.service": "reth1" },
+      ip: "172.28.11.2",
+    });
+    const targets = executionPeerTargets([rethA, rethB]);
+    expect(
+      targets.map((t) => ({ stableId: t.stableId, networkId: t.networkId })),
+    ).toEqual([
+      { stableId: "proj-a/reth1", networkId: "proj-a-execution" },
+      { stableId: "proj-b/reth1", networkId: "proj-b-execution" },
+    ]);
   });
 
   it("keeps EL/CL networkIds distinct even across different projects (suffix guarantees separation)", () => {

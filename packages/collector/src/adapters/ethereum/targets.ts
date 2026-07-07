@@ -165,10 +165,15 @@ function serviceNodeKey(service: string): string | undefined {
 /**
  * Execution コンテナと同じ論理ノードを構成する beacon コンテナの stableId を
  * 導く。compose サービス名から役割プレフィックスを剥がしたノード群キー
- * （"reth1" と "beacon1" はどちらも "1"）が一致し、かつ beacon サービスで
- * あるコンテナを探す。対応が取れなければ undefined（呼び出し側でフォール
- * バックする）。reth/beacon の対応付けは Ethereum 固有の知識なのでこの
- * アダプタ内に閉じ込める。
+ * （"reth1" と "beacon1" はどちらも "1"）が一致し、かつ同じ docker compose
+ * プロジェクト（`projectOf()`）に属し、かつ beacon サービスであるコンテナを
+ * 探す。対応が取れなければ undefined（呼び出し側でフォールバックする）。
+ * プロジェクトでスコープするのは、1 つの collector インスタンスが複数の
+ * compose プロジェクトを同時に観測する状況（通常運用では起きないが QA 検証
+ * 等で発生しうる）で、ノード群キーだけが一致する別プロジェクトの beacon を
+ * 誤って対応付けないようにするため（Issue #153）。
+ * reth/beacon の対応付けは Ethereum 固有の知識なのでこのアダプタ内に
+ * 閉じ込める。
  */
 export function beaconStableIdForExecution(
   execution: ContainerObservation,
@@ -177,8 +182,10 @@ export function beaconStableIdForExecution(
   const execService = execution.labels[COMPOSE_SERVICE_LABEL] ?? "";
   const key = serviceNodeKey(execService);
   if (key === undefined) return undefined;
+  const project = projectOf(execution.stableId);
   for (const obs of observations) {
     if (!isBeaconService(obs)) continue;
+    if (projectOf(obs.stableId) !== project) continue;
     const service = obs.labels[COMPOSE_SERVICE_LABEL] ?? "";
     if (serviceNodeKey(service) === key) return obs.stableId;
   }
