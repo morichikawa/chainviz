@@ -254,6 +254,116 @@ describe("TransactionLifecycleTracker.recordInclusion", () => {
   });
 });
 
+describe("TransactionLifecycleTracker.recordInclusion createdContractAddress (Issue #160)", () => {
+  it("maps a non-null receipt contractAddress to createdContractAddress", () => {
+    const tracker = new TransactionLifecycleTracker();
+    const changed = tracker.recordInclusion("0xblock", [
+      {
+        hash: "0xdeploy",
+        from: "0xdeployer",
+        to: null,
+        status: "included",
+        contractAddress: "0xnewcontract",
+      },
+    ]);
+    expect(changed[0].createdContractAddress).toBe("0xnewcontract");
+  });
+
+  it("omits createdContractAddress for an ordinary tx (contractAddress null)", () => {
+    const tracker = new TransactionLifecycleTracker();
+    const changed = tracker.recordInclusion("0xblock", [
+      { hash: "0xt1", from: "0xa", to: "0xb", status: "included", contractAddress: null },
+    ]);
+    expect(changed[0].createdContractAddress).toBeUndefined();
+  });
+
+  it("omits createdContractAddress when the field is not provided at all (back-compat)", () => {
+    const tracker = new TransactionLifecycleTracker();
+    const changed = tracker.recordInclusion("0xblock", [
+      { hash: "0xt1", from: "0xa", to: "0xb", status: "included" },
+    ]);
+    expect(changed[0].createdContractAddress).toBeUndefined();
+    expect(changed[0]).not.toHaveProperty("createdContractAddress");
+  });
+
+  it("preserves an already-recorded createdContractAddress across a duplicate notification without it", () => {
+    // 別ノードからの重複通知で contractAddress が省略されても、
+    // 一度確定した作成先アドレスを失わない。
+    const tracker = new TransactionLifecycleTracker();
+    tracker.recordInclusion("0xblockA", [
+      {
+        hash: "0xdeploy",
+        from: "0xdeployer",
+        to: null,
+        status: "included",
+        contractAddress: "0xnewcontract",
+      },
+    ]);
+    // 同一 tx が別ブロックへ付け替わる通知（reorg 相当）で contractAddress が
+    // 省略されても、既存の値を保持する。
+    const changed = tracker.recordInclusion("0xblockB", [
+      { hash: "0xdeploy", from: "0xdeployer", to: null, status: "included" },
+    ]);
+    expect(changed[0].createdContractAddress).toBe("0xnewcontract");
+  });
+
+  it("maps a zero-address contractAddress to createdContractAddress (truthy string, not treated as absent)", () => {
+    // ゼロアドレスは falsy な空文字とは異なり truthy な文字列なので、
+    // createdContractAddress として載る（作成先が実際にゼロアドレスに
+    // なることは通常ないが、値の意味判定はこの層で行わない）。
+    const tracker = new TransactionLifecycleTracker();
+    const changed = tracker.recordInclusion("0xblock", [
+      {
+        hash: "0xdeploy",
+        from: "0xdeployer",
+        to: null,
+        status: "included",
+        contractAddress: "0x0000000000000000000000000000000000000000",
+      },
+    ]);
+    expect(changed[0].createdContractAddress).toBe(
+      "0x0000000000000000000000000000000000000000",
+    );
+  });
+
+  it("omits createdContractAddress when contractAddress is an empty string (falsy)", () => {
+    // 空文字は falsy なので createdContractAddress を載せない（省略と同じ扱い。
+    // 空文字を「作成先アドレス」として可視化に流さない防御）。
+    const tracker = new TransactionLifecycleTracker();
+    const changed = tracker.recordInclusion("0xblock", [
+      { hash: "0xt1", from: "0xa", to: "0xb", status: "included", contractAddress: "" },
+    ]);
+    expect(changed[0]).not.toHaveProperty("createdContractAddress");
+  });
+
+  it("lets a later non-null contractAddress overwrite a previously recorded one (documents current non-strict-immutability behavior)", () => {
+    // 特性化テスト: createdContractAddress の不変性は「省略時に既存値を保つ」
+    // ところまでで、後続通知が別の非 null 値を持つ場合は新しい値で上書きされる
+    // （contractAddress は sender+nonce から決まり同一 tx では変わらないため、
+    // 異なる値が来ること自体が本来あり得ないが、来た場合の実挙動を固定する）。
+    const tracker = new TransactionLifecycleTracker();
+    tracker.recordInclusion("0xblockA", [
+      {
+        hash: "0xdeploy",
+        from: "0xdeployer",
+        to: null,
+        status: "included",
+        contractAddress: "0xoriginal",
+      },
+    ]);
+    const changed = tracker.recordInclusion("0xblockB", [
+      {
+        hash: "0xdeploy",
+        from: "0xdeployer",
+        to: null,
+        status: "included",
+        contractAddress: "0xdifferent",
+      },
+    ]);
+    expect(changed[0].createdContractAddress).toBe("0xdifferent");
+  });
+});
+
 describe("TransactionLifecycleTracker eviction", () => {
   it("drops the oldest tracked txs once maxTxs is exceeded", () => {
     const tracker = new TransactionLifecycleTracker(2);

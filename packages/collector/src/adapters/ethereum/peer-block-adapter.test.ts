@@ -219,6 +219,10 @@ interface RawReceiptFixture {
   to: string | null;
   /** "0x1"(成功) / "0x0"(失敗)。省略時は成功扱い。 */
   status?: string;
+  /** コントラクト作成 tx でのみ非 null（Issue #160）。 */
+  contractAddress?: string | null;
+  /** tx が発したイベントログ（未復号の生データ、Issue #160）。 */
+  logs?: { address: string; topics: string[]; data: string }[];
 }
 
 /** eth_getTransactionByHash / eth_getBlockReceipts を固定データで返すスタブ。 */
@@ -1016,6 +1020,83 @@ describe("EthereumAdapter.subscribeTransactions", () => {
       status: "failed",
       blockHash: "0xblock1",
     });
+  });
+
+  it("surfaces the receipt's contractAddress as createdContractAddress end-to-end (Issue #160)", async () => {
+    // デプロイ tx（to: null）が取り込まれ、receipt.contractAddress が
+    // TransactionEntity.createdContractAddress へマッピングされることを、
+    // アダプタ経由（getBlockReceipts + recordInclusion）で確認する。
+    const poller = new DockerPoller(
+      clientFrom([rethFixture("reth1", "172.28.1.1")]),
+    );
+    const ws = controllableWsClient();
+    const rpc = stubRpcClient({
+      txs: { "0xdeploy": { hash: "0xdeploy", from: "0xdeployer", to: null } },
+      blocks: {
+        "0xblock1": [
+          {
+            transactionHash: "0xdeploy",
+            from: "0xdeployer",
+            to: null,
+            status: "0x1",
+            contractAddress: "0xnewcontract",
+          },
+        ],
+      },
+    });
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      ethRpcClient: rpc.client,
+    });
+    const txs: TransactionEntity[] = [];
+
+    await adapter.subscribeTransactions((t) => txs.push(t));
+    ws.emitPending("ws://172.28.1.1:8546", "0xdeploy");
+    await flushAsync();
+    ws.emit("ws://172.28.1.1:8546", header());
+    await flushAsync();
+
+    expect(txs).toHaveLength(2);
+    expect(txs[0].status).toBe("pending");
+    expect(txs[0].createdContractAddress).toBeUndefined();
+    expect(txs[1]).toEqual<TransactionEntity>({
+      kind: "transaction",
+      hash: "0xdeploy",
+      from: "0xdeployer",
+      to: null,
+      status: "included",
+      blockHash: "0xblock1",
+      createdContractAddress: "0xnewcontract",
+    });
+  });
+
+  it("omits createdContractAddress for an ordinary tx (contractAddress absent, Issue #160)", async () => {
+    const poller = new DockerPoller(
+      clientFrom([rethFixture("reth1", "172.28.1.1")]),
+    );
+    const ws = controllableWsClient();
+    const rpc = stubRpcClient({
+      txs: { "0xt1": { hash: "0xt1", from: "0xa", to: "0xb" } },
+      blocks: {
+        "0xblock1": [
+          { transactionHash: "0xt1", from: "0xa", to: "0xb", status: "0x1" },
+        ],
+      },
+    });
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      ethRpcClient: rpc.client,
+    });
+    const txs: TransactionEntity[] = [];
+
+    await adapter.subscribeTransactions((t) => txs.push(t));
+    ws.emitPending("ws://172.28.1.1:8546", "0xt1");
+    await flushAsync();
+    ws.emit("ws://172.28.1.1:8546", header());
+    await flushAsync();
+
+    expect(txs[1].createdContractAddress).toBeUndefined();
+    expect(txs[1]).not.toHaveProperty("createdContractAddress");
   });
 
   it("routes a mixed block end-to-end: success -> included, failed -> failed", async () => {

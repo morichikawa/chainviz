@@ -307,17 +307,17 @@ runWorkbenchOperation コマンド・ChainAdapter.subscribeContracts）は設計
 
 **node-env**:
 
-- [ ] サンプルコントラクト（最小ERC20のChainvizTokenとCounter）のFoundry
+- [x] サンプルコントラクト（最小ERC20のChainvizTokenとCounter）のFoundry
       プロジェクトを`profiles/ethereum/contracts/`に追加しワークベンチに
       マウントする
       [#158](https://github.com/morichikawa/chainviz/issues/158)
-- [ ] コントラクトカタログ（catalog.json: 表示名・ABI・tokenメタ情報）と
+- [x] コントラクトカタログ（catalog.json: 表示名・ABI・tokenメタ情報）と
       再生成スクリプト（build-catalog.sh）を追加する
       [#159](https://github.com/morichikawa/chainviz/issues/159)
 
 **collector**:
 
-- [ ] eth_getBlockReceiptsの正規化を拡張しコントラクト作成
+- [x] eth_getBlockReceiptsの正規化を拡張しコントラクト作成
       （contractAddress）とイベントログ（logs）を取得する
       [#160](https://github.com/morichikawa/chainviz/issues/160)
 - [ ] コントラクトカタログの読み込みとデプロイ検知・追跡を実装し
@@ -347,7 +347,7 @@ runWorkbenchOperation コマンド・ChainAdapter.subscribeContracts）は設計
       [#167](https://github.com/morichikawa/chainviz/issues/167)
 - [ ] ウォレットカードにトークン残高を表示する
       [#168](https://github.com/morichikawa/chainviz/issues/168)
-- [ ] C層拡張の用語データ（contract・デプロイ・ABI・イベントログ・EVM・
+- [x] C層拡張の用語データ（contract・デプロイ・ABI・イベントログ・EVM・
       トークン等）をglossaryへ追加する
       [#169](https://github.com/morichikawa/chainviz/issues/169)
 

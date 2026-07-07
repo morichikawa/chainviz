@@ -17,6 +17,12 @@ export interface TxDetail {
 /** ブロック取り込み時に確定した tx の情報（from/to に加え確定ステータスを持つ）。 */
 export interface TxInclusionDetail extends TxDetail {
   status: "included" | "failed";
+  /**
+   * receipt の contractAddress。コントラクト作成 tx でのみ非 null。省略時は
+   * null と同じ扱い（作成ではない）。TransactionEntity.createdContractAddress
+   * へマッピングされる（Issue #160）。
+   */
+  contractAddress?: string | null;
 }
 
 /**
@@ -57,6 +63,11 @@ export class TransactionLifecycleTracker {
    * blockHash・同じ status で記録済みの tx は変化なしとして返さない（同一ブロックを
    * 複数ノードが重複通知するケースのスキップ）。failed の tx にもブロックには
    * 取り込まれているため blockHash をセットする。
+   *
+   * receipt の contractAddress（コントラクト作成 tx でのみ非 null）は
+   * createdContractAddress として entity に載せる。一度確定した作成先アドレスは
+   * ブロックが変わらない限り変化しないため、以後の重複通知で省略されても
+   * （= undefined/null が来ても）既存の値を保持する（from/to の扱いと同様）。
    */
   recordInclusion(
     blockHash: string,
@@ -72,6 +83,7 @@ export class TransactionLifecycleTracker {
       ) {
         continue;
       }
+      const createdContractAddress = tx.contractAddress ?? existing?.createdContractAddress;
       const entity: TransactionEntity = {
         kind: "transaction",
         hash: tx.hash,
@@ -80,6 +92,7 @@ export class TransactionLifecycleTracker {
         to: existing ? existing.to : tx.to,
         status: tx.status,
         blockHash,
+        ...(createdContractAddress ? { createdContractAddress } : {}),
       };
       this.put(entity);
       changed.push(entity);

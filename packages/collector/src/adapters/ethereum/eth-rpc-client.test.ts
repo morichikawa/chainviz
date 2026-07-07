@@ -306,8 +306,22 @@ describe("getBlockReceipts", () => {
     await expect(
       getBlockReceipts(rpc, "http://x", "0xblock"),
     ).resolves.toEqual([
-      { transactionHash: "0xt1", from: "0xa", to: "0xb", succeeded: true },
-      { transactionHash: "0xt2", from: "0xc", to: null, succeeded: false },
+      {
+        transactionHash: "0xt1",
+        from: "0xa",
+        to: "0xb",
+        succeeded: true,
+        contractAddress: null,
+        logs: [],
+      },
+      {
+        transactionHash: "0xt2",
+        from: "0xc",
+        to: null,
+        succeeded: false,
+        contractAddress: null,
+        logs: [],
+      },
     ]);
     const [, init] = fetchMock.mock.calls[0] as unknown as [
       string,
@@ -335,7 +349,14 @@ describe("getBlockReceipts", () => {
     await expect(
       getBlockReceipts(rpc, "http://x", "0xblock"),
     ).resolves.toEqual([
-      { transactionHash: "0xt1", from: "0xa", to: "0xb", succeeded: true },
+      {
+        transactionHash: "0xt1",
+        from: "0xa",
+        to: "0xb",
+        succeeded: true,
+        contractAddress: null,
+        logs: [],
+      },
     ]);
   });
 
@@ -363,7 +384,14 @@ describe("getBlockReceipts", () => {
     await expect(
       getBlockReceipts(rpc, "http://x", "0xblock"),
     ).resolves.toEqual([
-      { transactionHash: "0xt1", from: "0xa", to: "0xb", succeeded: true },
+      {
+        transactionHash: "0xt1",
+        from: "0xa",
+        to: "0xb",
+        succeeded: true,
+        contractAddress: null,
+        logs: [],
+      },
     ]);
   });
 
@@ -422,7 +450,14 @@ describe("getBlockReceipts", () => {
     await expect(
       getBlockReceipts(rpc, "http://x", "0xblock"),
     ).resolves.toEqual([
-      { transactionHash: "0xt1", from: "0xa", to: "0xb", succeeded: true },
+      {
+        transactionHash: "0xt1",
+        from: "0xa",
+        to: "0xb",
+        succeeded: true,
+        contractAddress: null,
+        logs: [],
+      },
     ]);
   });
 
@@ -448,7 +483,14 @@ describe("getBlockReceipts", () => {
     await expect(
       getBlockReceipts(rpc, "http://x", "0xblock"),
     ).resolves.toEqual([
-      { transactionHash: "0xt2", from: "0xa", to: "0xb", succeeded: true },
+      {
+        transactionHash: "0xt2",
+        from: "0xa",
+        to: "0xb",
+        succeeded: true,
+        contractAddress: null,
+        logs: [],
+      },
     ]);
   });
 
@@ -472,8 +514,22 @@ describe("getBlockReceipts", () => {
     await expect(
       getBlockReceipts(rpc, "http://x", "0xblock"),
     ).resolves.toEqual([
-      { transactionHash: "0xt1", from: "0xa", to: null, succeeded: true },
-      { transactionHash: "0xt2", from: "0xa", to: null, succeeded: true },
+      {
+        transactionHash: "0xt1",
+        from: "0xa",
+        to: null,
+        succeeded: true,
+        contractAddress: null,
+        logs: [],
+      },
+      {
+        transactionHash: "0xt2",
+        from: "0xa",
+        to: null,
+        succeeded: true,
+        contractAddress: null,
+        logs: [],
+      },
     ]);
   });
 
@@ -496,7 +552,14 @@ describe("getBlockReceipts", () => {
     await expect(
       getBlockReceipts(rpc, "http://x", "0xblock"),
     ).resolves.toEqual([
-      { transactionHash: "0xt1", from: "0xa", to: "0xb", succeeded: true },
+      {
+        transactionHash: "0xt1",
+        from: "0xa",
+        to: "0xb",
+        succeeded: true,
+        contractAddress: null,
+        logs: [],
+      },
     ]);
   });
 
@@ -521,7 +584,14 @@ describe("getBlockReceipts", () => {
     await expect(
       getBlockReceipts(rpc, "http://x", "0xblock"),
     ).resolves.toEqual([
-      { transactionHash: "0xt1", from: "0xa", to: "0xb", succeeded: true },
+      {
+        transactionHash: "0xt1",
+        from: "0xa",
+        to: "0xb",
+        succeeded: true,
+        contractAddress: null,
+        logs: [],
+      },
     ]);
   });
 
@@ -551,7 +621,14 @@ describe("getBlockReceipts", () => {
     await expect(
       getBlockReceipts(rpc, "http://x", "0xblock"),
     ).resolves.toEqual([
-      { transactionHash: "0xt1", from: "0xa", to: "0xb", succeeded: true },
+      {
+        transactionHash: "0xt1",
+        from: "0xa",
+        to: "0xb",
+        succeeded: true,
+        contractAddress: null,
+        logs: [],
+      },
     ]);
   });
 
@@ -611,9 +688,483 @@ describe("getBlockReceipts", () => {
     await expect(
       getBlockReceipts(rpc, "http://x", "0xblock"),
     ).resolves.toEqual([
-      { transactionHash: "0xok1", from: "0xa", to: "0xb", succeeded: true },
-      { transactionHash: "0xbad", from: "0xc", to: null, succeeded: false },
-      { transactionHash: "0xok2", from: "0xe", to: "0xf", succeeded: true },
+      {
+        transactionHash: "0xok1",
+        from: "0xa",
+        to: "0xb",
+        succeeded: true,
+        contractAddress: null,
+        logs: [],
+      },
+      {
+        transactionHash: "0xbad",
+        from: "0xc",
+        to: null,
+        succeeded: false,
+        contractAddress: null,
+        logs: [],
+      },
+      {
+        transactionHash: "0xok2",
+        from: "0xe",
+        to: "0xf",
+        succeeded: true,
+        contractAddress: null,
+        logs: [],
+      },
     ]);
+  });
+
+  describe("contractAddress (contract creation detection, Issue #160)", () => {
+    it("surfaces a non-null contractAddress for a contract-creation receipt", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          fakeResponse({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              result: [
+                {
+                  transactionHash: "0xdeploy",
+                  from: "0xdeployer",
+                  to: null,
+                  status: "0x1",
+                  contractAddress: "0xnewcontract",
+                },
+              ],
+            }),
+          }),
+        ),
+      );
+      const rpc = createFetchEthRpcClient();
+      const receipts = await getBlockReceipts(rpc, "http://x", "0xblock");
+      expect(receipts?.[0].contractAddress).toBe("0xnewcontract");
+    });
+
+    it("defaults contractAddress to null for an ordinary (non-creation) tx", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          fakeResponse({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              result: [
+                { transactionHash: "0xt1", from: "0xa", to: "0xb", status: "0x1" },
+              ],
+            }),
+          }),
+        ),
+      );
+      const rpc = createFetchEthRpcClient();
+      const receipts = await getBlockReceipts(rpc, "http://x", "0xblock");
+      expect(receipts?.[0].contractAddress).toBeNull();
+    });
+
+    it("treats a non-string contractAddress field as null (defensive)", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          fakeResponse({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              result: [
+                {
+                  transactionHash: "0xt1",
+                  from: "0xa",
+                  to: "0xb",
+                  status: "0x1",
+                  contractAddress: 123,
+                },
+              ],
+            }),
+          }),
+        ),
+      );
+      const rpc = createFetchEthRpcClient();
+      const receipts = await getBlockReceipts(rpc, "http://x", "0xblock");
+      expect(receipts?.[0].contractAddress).toBeNull();
+    });
+
+    it("preserves a zero-address contractAddress verbatim as a non-null string", async () => {
+      // ゼロアドレスは正規のアドレス表記であり「作成なし」を意味する null とは
+      // 区別される。この層はアドレスの意味解釈をせず、文字列としてそのまま通す
+      // （ゼロアドレスかどうかの判定は消費側の責務）。
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          fakeResponse({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              result: [
+                {
+                  transactionHash: "0xt1",
+                  from: "0xa",
+                  to: null,
+                  status: "0x1",
+                  contractAddress: "0x0000000000000000000000000000000000000000",
+                },
+              ],
+            }),
+          }),
+        ),
+      );
+      const rpc = createFetchEthRpcClient();
+      const receipts = await getBlockReceipts(rpc, "http://x", "0xblock");
+      expect(receipts?.[0].contractAddress).toBe(
+        "0x0000000000000000000000000000000000000000",
+      );
+    });
+
+    it("preserves a mixed-case (EIP-55 checksummed) contractAddress without folding case", async () => {
+      // アドレスの大文字小文字は EIP-55 チェックサム情報を担う。この層で
+      // 小文字化などの正規化をすると checksum が壊れるため、受け取った表記を
+      // 一切変えずに通すことを確認する。
+      const checksummed = "0xAbC0000000000000000000000000000000000dEf";
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          fakeResponse({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              result: [
+                {
+                  transactionHash: "0xt1",
+                  from: "0xa",
+                  to: null,
+                  status: "0x1",
+                  contractAddress: checksummed,
+                },
+              ],
+            }),
+          }),
+        ),
+      );
+      const rpc = createFetchEthRpcClient();
+      const receipts = await getBlockReceipts(rpc, "http://x", "0xblock");
+      expect(receipts?.[0].contractAddress).toBe(checksummed);
+    });
+
+    it("surfaces both contractAddress and a non-null 'to' when a receipt carries both (no reconciliation)", async () => {
+      // 実際のチェーンでは作成 tx の to は必ず null であり両立しないが、万一
+      // 両方入った矛盾レシートが来ても、この層は一方を落とす防御をせず両者を
+      // そのまま通す（矛盾検出は消費側の判断に委ね、観測データを歪めない）。
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          fakeResponse({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              result: [
+                {
+                  transactionHash: "0xt1",
+                  from: "0xa",
+                  to: "0xrecipient",
+                  status: "0x1",
+                  contractAddress: "0xnewcontract",
+                },
+              ],
+            }),
+          }),
+        ),
+      );
+      const rpc = createFetchEthRpcClient();
+      const receipts = await getBlockReceipts(rpc, "http://x", "0xblock");
+      expect(receipts?.[0].to).toBe("0xrecipient");
+      expect(receipts?.[0].contractAddress).toBe("0xnewcontract");
+    });
+  });
+
+  describe("logs (raw event log passthrough, Issue #160)", () => {
+    it("normalizes logs into address/topics/data, untouched (no decoding)", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          fakeResponse({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              result: [
+                {
+                  transactionHash: "0xt1",
+                  from: "0xa",
+                  to: "0xb",
+                  status: "0x1",
+                  logs: [
+                    {
+                      address: "0xtoken",
+                      topics: ["0xddf252ad", "0xfrom", "0xto"],
+                      data: "0x00000000000000000000000000000000000000000000000000000000000003e8",
+                    },
+                  ],
+                },
+              ],
+            }),
+          }),
+        ),
+      );
+      const rpc = createFetchEthRpcClient();
+      const receipts = await getBlockReceipts(rpc, "http://x", "0xblock");
+      expect(receipts?.[0].logs).toEqual([
+        {
+          address: "0xtoken",
+          topics: ["0xddf252ad", "0xfrom", "0xto"],
+          data: "0x00000000000000000000000000000000000000000000000000000000000003e8",
+        },
+      ]);
+    });
+
+    it("defaults logs to an empty array when the field is missing", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          fakeResponse({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              result: [
+                { transactionHash: "0xt1", from: "0xa", to: "0xb", status: "0x1" },
+              ],
+            }),
+          }),
+        ),
+      );
+      const rpc = createFetchEthRpcClient();
+      const receipts = await getBlockReceipts(rpc, "http://x", "0xblock");
+      expect(receipts?.[0].logs).toEqual([]);
+    });
+
+    it("defaults logs to an empty array when the field is not an array (defensive)", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          fakeResponse({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              result: [
+                {
+                  transactionHash: "0xt1",
+                  from: "0xa",
+                  to: "0xb",
+                  status: "0x1",
+                  logs: "not-an-array",
+                },
+              ],
+            }),
+          }),
+        ),
+      );
+      const rpc = createFetchEthRpcClient();
+      const receipts = await getBlockReceipts(rpc, "http://x", "0xblock");
+      expect(receipts?.[0].logs).toEqual([]);
+    });
+
+    it("drops individual malformed log entries while keeping the valid ones", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          fakeResponse({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              result: [
+                {
+                  transactionHash: "0xt1",
+                  from: "0xa",
+                  to: "0xb",
+                  status: "0x1",
+                  logs: [
+                    { address: "0xgood", topics: ["0x1"], data: "0xabc" },
+                    { address: "0xbad", data: "0xabc" }, // topics 欠落 → 捨てる
+                    { topics: ["0x1"], data: "0xabc" }, // address 欠落 → 捨てる
+                    "not-an-object", // オブジェクトでない要素 → 捨てる
+                  ],
+                },
+              ],
+            }),
+          }),
+        ),
+      );
+      const rpc = createFetchEthRpcClient();
+      const receipts = await getBlockReceipts(rpc, "http://x", "0xblock");
+      expect(receipts?.[0].logs).toEqual([
+        { address: "0xgood", topics: ["0x1"], data: "0xabc" },
+      ]);
+    });
+
+    it("filters non-string entries out of topics while keeping the log", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          fakeResponse({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              result: [
+                {
+                  transactionHash: "0xt1",
+                  from: "0xa",
+                  to: "0xb",
+                  status: "0x1",
+                  logs: [
+                    { address: "0xtoken", topics: ["0x1", 42, "0x2"], data: "0xabc" },
+                  ],
+                },
+              ],
+            }),
+          }),
+        ),
+      );
+      const rpc = createFetchEthRpcClient();
+      const receipts = await getBlockReceipts(rpc, "http://x", "0xblock");
+      expect(receipts?.[0].logs).toEqual([
+        { address: "0xtoken", topics: ["0x1", "0x2"], data: "0xabc" },
+      ]);
+    });
+
+    it("keeps an anonymous-event log whose topics array is empty", async () => {
+      // 匿名イベント（indexed 引数なし）は topics が空配列になる。空配列は
+      // 正当なログであり、topics 欠落（= 不正で破棄）とは区別して保持する。
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          fakeResponse({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              result: [
+                {
+                  transactionHash: "0xt1",
+                  from: "0xa",
+                  to: "0xb",
+                  status: "0x1",
+                  logs: [{ address: "0xtoken", topics: [], data: "0xabc" }],
+                },
+              ],
+            }),
+          }),
+        ),
+      );
+      const rpc = createFetchEthRpcClient();
+      const receipts = await getBlockReceipts(rpc, "http://x", "0xblock");
+      expect(receipts?.[0].logs).toEqual([
+        { address: "0xtoken", topics: [], data: "0xabc" },
+      ]);
+    });
+
+    it("keeps a log whose topics are all non-strings, collapsing topics to empty", async () => {
+      // topics が配列でありさえすれば（型が正しくない要素だけでも）ログ自体は
+      // 保持し、topics を空配列に畳む（1 件の型ノイズでログを丸ごと諦めない）。
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          fakeResponse({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              result: [
+                {
+                  transactionHash: "0xt1",
+                  from: "0xa",
+                  to: "0xb",
+                  status: "0x1",
+                  logs: [
+                    { address: "0xtoken", topics: [1, 2, null, {}], data: "0xabc" },
+                  ],
+                },
+              ],
+            }),
+          }),
+        ),
+      );
+      const rpc = createFetchEthRpcClient();
+      const receipts = await getBlockReceipts(rpc, "http://x", "0xblock");
+      expect(receipts?.[0].logs).toEqual([
+        { address: "0xtoken", topics: [], data: "0xabc" },
+      ]);
+    });
+
+    it("drops a log whose address is numeric and one whose data is numeric (non-string types)", async () => {
+      // address / data はいずれも文字列必須。数値型で来た要素は個別に破棄し、
+      // 型の正しいログだけを残す（レシート全体はクラッシュさせない）。
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          fakeResponse({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              result: [
+                {
+                  transactionHash: "0xt1",
+                  from: "0xa",
+                  to: "0xb",
+                  status: "0x1",
+                  logs: [
+                    { address: 123, topics: ["0x1"], data: "0xabc" }, // address 数値 → 捨てる
+                    { address: "0xtoken", topics: ["0x1"], data: 999 }, // data 数値 → 捨てる
+                    { address: "0xgood", topics: ["0x1"], data: "0xdef" }, // 正常 → 残す
+                  ],
+                },
+              ],
+            }),
+          }),
+        ),
+      );
+      const rpc = createFetchEthRpcClient();
+      const receipts = await getBlockReceipts(rpc, "http://x", "0xblock");
+      expect(receipts?.[0].logs).toEqual([
+        { address: "0xgood", topics: ["0x1"], data: "0xdef" },
+      ]);
+    });
+
+    it("normalizes a large logs array without dropping or crashing on any entry", async () => {
+      // 多数のイベントを発する tx（バッチ mint 等）でも、全ログが順序を保って
+      // 正規化されることを確認する（件数上限による切り捨てが無いこと）。
+      const bigLogs = Array.from({ length: 500 }, (_, i) => ({
+        address: `0xtoken${i}`,
+        topics: [`0xtopic${i}`],
+        data: `0xdata${i}`,
+      }));
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          fakeResponse({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              result: [
+                {
+                  transactionHash: "0xt1",
+                  from: "0xa",
+                  to: "0xb",
+                  status: "0x1",
+                  logs: bigLogs,
+                },
+              ],
+            }),
+          }),
+        ),
+      );
+      const rpc = createFetchEthRpcClient();
+      const receipts = await getBlockReceipts(rpc, "http://x", "0xblock");
+      expect(receipts?.[0].logs).toHaveLength(500);
+      expect(receipts?.[0].logs[0]).toEqual({
+        address: "0xtoken0",
+        topics: ["0xtopic0"],
+        data: "0xdata0",
+      });
+      expect(receipts?.[0].logs[499]).toEqual({
+        address: "0xtoken499",
+        topics: ["0xtopic499"],
+        data: "0xdata499",
+      });
+    });
   });
 });
