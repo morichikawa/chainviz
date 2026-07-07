@@ -293,6 +293,13 @@ export async function main(port: number = DEFAULT_PORT): Promise<void> {
   const lifecycle = new EthereumNodeLifecycle(createDockerOperations(docker), {
     profileDir,
     ethRpcUrl: resolveWorkbenchRpcUrl(),
+    // GUI の定型操作（runWorkbenchOperation の deployContract）が成功した
+    // デプロイについて、デプロイ先アドレスとカタログキーの対応を adapter の
+    // コントラクト追跡へ登録する（Issue #161/#163 の統合）。lifecycle と
+    // adapter は互いを import せず、このコールバック注入だけで結合する
+    // （循環依存を避けるため）。
+    onContractDeployed: (address, contractKey) =>
+      adapter.registerContractDeployment(address, contractKey),
   });
   // com.chainviz.managed ラベルから、前回起動時に addNode/addWorkbench で
   // 作成した既存コンテナを回収し、レジストリ（this.nodes/this.workbenches）を

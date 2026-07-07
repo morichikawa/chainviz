@@ -4,10 +4,12 @@
 // 得られた情報だけを扱い、JSON-RPC の取得自体は呼び出し側（アダプタ）が行う。
 //
 // カタログとの照合は2経路（docs/ARCHITECTURE.md §4 参照）:
-// - runWorkbenchOperation の deployContract 経由のデプロイは、コマンド処理側が
-//   デプロイ先アドレスとカタログキーの対応を registerDeployment で登録するため
-//   確実に照合できる（Issue #163 が呼び出す想定）。デプロイ検知（ブロック取り込み
-//   観測）とこの登録のどちらが先に届いても正しく合流するよう、両方の順序を扱う
+// - runWorkbenchOperation の deployContract 経由のデプロイは、コマンド処理側
+//   （EthereumNodeLifecycle）がデプロイ先アドレスとカタログキーの対応を
+//   EthereumAdapter.registerContractDeployment 経由で registerDeployment に
+//   登録するため確実に照合できる（Issue #161/#163 の統合）。デプロイ検知
+//   （ブロック取り込み観測）とこの登録のどちらが先に届いても正しく合流するよう、
+//   両方の順序を扱う
 // - 手動 forge create 等、登録の無いデプロイは「未知のコントラクト」（address の
 //   みを持つ ContractEntity）として扱う。デプロイ済みバイトコードとの照合による
 //   特定はここでは行わない（ARCHITECTURE.md の決定: 必須にしない）
@@ -20,6 +22,19 @@ export interface ContractDeployment {
   address: string;
   deployerAddress: string;
   createdByTxHash: string;
+}
+
+/**
+ * コントラクトアドレスを小文字へ正規化する。同一コントラクトのアドレスでも
+ * 入力元によって表記が食い違う（実測: reth の eth_getBlockReceipts の
+ * contractAddress は全小文字、forge create の "Deployed to:" 行は EIP-55
+ * チェックサム表記で大小混在）ため、ContractTracker が Map キー・
+ * ContractEntity.address として扱う表記をここで一本化する。tx.to 等の
+ * RPC 由来アドレスも同様に小文字表記であるため、フロント側で他のアドレス
+ * フィールドと突き合わせる際の表記もこれで揃う。
+ */
+function normalizeAddress(address: string): string {
+  return address.toLowerCase();
 }
 
 export class ContractTracker {
@@ -46,20 +61,21 @@ export class ContractTracker {
    * あればその場で適用して返す。
    */
   recordDeployment(deployment: ContractDeployment): ContractEntity | null {
-    if (this.contracts.has(deployment.address)) return null;
+    const address = normalizeAddress(deployment.address);
+    if (this.contracts.has(address)) return null;
     let entity: ContractEntity = {
       kind: "contract",
-      address: deployment.address,
+      address,
       chainType: this.chainType,
       deployerAddress: deployment.deployerAddress,
       createdByTxHash: deployment.createdByTxHash,
     };
-    const pendingKey = this.pendingCatalogKeys.get(deployment.address);
+    const pendingKey = this.pendingCatalogKeys.get(address);
     if (pendingKey) {
       entity = this.applyCatalog(entity, pendingKey);
-      this.pendingCatalogKeys.delete(deployment.address);
+      this.pendingCatalogKeys.delete(address);
     }
-    this.contracts.set(deployment.address, entity);
+    this.contracts.set(address, entity);
     return entity;
   }
 
@@ -78,7 +94,8 @@ export class ContractTracker {
    *   （呼び出し側のバグの可能性があるため警告ログを残す。エラーを
    *   握りつぶさない）
    */
-  registerDeployment(address: string, contractKey: string): ContractEntity | null {
+  registerDeployment(rawAddress: string, contractKey: string): ContractEntity | null {
+    const address = normalizeAddress(rawAddress);
     if (!this.catalog?.[contractKey]) {
       this.log(
         `[ethereum] registerDeployment: unknown catalog key "${contractKey}" for ${address}; ignoring`,
@@ -98,7 +115,7 @@ export class ContractTracker {
 
   /** 現在追跡しているコントラクトの状態（テスト・確認用）。 */
   get(address: string): ContractEntity | undefined {
-    return this.contracts.get(address);
+    return this.contracts.get(normalizeAddress(address));
   }
 
   private applyCatalog(entity: ContractEntity, contractKey: string): ContractEntity {

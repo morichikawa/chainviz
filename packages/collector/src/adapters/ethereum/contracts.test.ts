@@ -76,6 +76,63 @@ describe("ContractTracker.recordDeployment", () => {
     expect(entity?.name).toBe("Counter");
     expect(entity?.token).toBeUndefined();
   });
+
+  it("applies the most recent pending key when registerDeployment is called twice before detection", () => {
+    // 検知前に同じアドレスへ 2 回登録した場合（例: 誤操作で別コントラクトの
+    // キーを重ねて登録）、最後に登録したキーが適用される（後勝ち）。
+    const tracker = new ContractTracker("ethereum", catalog);
+    expect(tracker.registerDeployment("0xnew", "Counter")).toBeNull();
+    expect(tracker.registerDeployment("0xnew", "ChainvizToken")).toBeNull();
+
+    const entity = tracker.recordDeployment({
+      address: "0xnew",
+      deployerAddress: "0xdeployer",
+      createdByTxHash: "0xtx1",
+    });
+    expect(entity?.catalogKey).toBe("ChainvizToken");
+    expect(entity?.name).toBe("ChainvizToken");
+  });
+
+  it("returns null on a duplicate recordDeployment even after a pending key was applied", () => {
+    const tracker = new ContractTracker("ethereum", catalog);
+    tracker.registerDeployment("0xnew", "ChainvizToken");
+    const first = tracker.recordDeployment({
+      address: "0xnew",
+      deployerAddress: "0xdeployer",
+      createdByTxHash: "0xtx1",
+    });
+    expect(first?.catalogKey).toBe("ChainvizToken");
+
+    const second = tracker.recordDeployment({
+      address: "0xnew",
+      deployerAddress: "0xdeployer",
+      createdByTxHash: "0xtx1",
+    });
+    expect(second).toBeNull();
+    // 追跡中の状態は初回のカタログ適用済みエンティティのまま。
+    expect(tracker.get("0xnew")?.catalogKey).toBe("ChainvizToken");
+  });
+
+  it("consumes the pending key so a later duplicate deployment stays unaffected", () => {
+    // pendingCatalogKeys は適用時に delete される。別アドレスの登録が
+    // 混ざっても取り違えないことを確認する。
+    const tracker = new ContractTracker("ethereum", catalog);
+    tracker.registerDeployment("0xaaa", "ChainvizToken");
+    tracker.registerDeployment("0xbbb", "Counter");
+
+    const a = tracker.recordDeployment({
+      address: "0xaaa",
+      deployerAddress: "0xd",
+      createdByTxHash: "0xt",
+    });
+    const b = tracker.recordDeployment({
+      address: "0xbbb",
+      deployerAddress: "0xd",
+      createdByTxHash: "0xt",
+    });
+    expect(a?.catalogKey).toBe("ChainvizToken");
+    expect(b?.catalogKey).toBe("Counter");
+  });
 });
 
 describe("ContractTracker.registerDeployment (after detection)", () => {
@@ -141,11 +198,113 @@ describe("ContractTracker.registerDeployment (after detection)", () => {
     });
     expect(entity?.name).toBeUndefined();
   });
+
+  it("re-catalogs an already-cataloged contract when registered with a different key", () => {
+    // 一度カタログ照合済みのコントラクトを別のキーで再登録した場合、name /
+    // catalogKey はその場で新しいカタログ情報に差し替わる（entityUpdated 相当を
+    // 返す）。誤登録の訂正など、めったに起きない経路の現状を固定する。
+    const tracker = new ContractTracker("ethereum", catalog);
+    tracker.recordDeployment({
+      address: "0xnew",
+      deployerAddress: "0xdeployer",
+      createdByTxHash: "0xtx1",
+    });
+    tracker.registerDeployment("0xnew", "ChainvizToken");
+
+    const updated = tracker.registerDeployment("0xnew", "Counter");
+    expect(updated?.catalogKey).toBe("Counter");
+    expect(updated?.name).toBe("Counter");
+    expect(tracker.get("0xnew")?.catalogKey).toBe("Counter");
+    // 既知の限界（報告済み）: applyCatalog は既存エンティティへスプレッドで
+    // 上書きするだけなので、トークン付き（ChainvizToken）からトークン無し
+    // （Counter）へ切り替えても、前回の token フィールドが残留する。トークン
+    // 付きコントラクトを別のトークン無しコントラクトのキーで再登録するのは
+    // 通常運用では発生しない経路のため、現状の挙動をそのまま固定する。
+    expect(updated?.token).toEqual({ symbol: "CVZ", decimals: 18 });
+  });
+
+  it("ignores and logs an empty-string catalog key", () => {
+    // 空文字キーはカタログに存在しないため、unknown key と同じ縮退経路を通る
+    // （pending 登録もされない）。
+    const log = vi.fn();
+    const tracker = new ContractTracker("ethereum", catalog, log);
+    expect(tracker.registerDeployment("0xnew", "")).toBeNull();
+    expect(log).toHaveBeenCalledWith(
+      expect.stringContaining("unknown catalog key"),
+    );
+    const entity = tracker.recordDeployment({
+      address: "0xnew",
+      deployerAddress: "0xdeployer",
+      createdByTxHash: "0xtx1",
+    });
+    expect(entity?.name).toBeUndefined();
+  });
 });
 
 describe("ContractTracker.get", () => {
   it("returns undefined for an address that has not been recorded", () => {
     const tracker = new ContractTracker("ethereum", catalog);
     expect(tracker.get("0xabsent")).toBeUndefined();
+  });
+});
+
+describe("ContractTracker address casing normalization (Issue #161 review follow-up)", () => {
+  // 実測（reth + foundry, chainviz-reviewer 2026-07-07）: forge create の
+  // "Deployed to:" 行は EIP-55 チェックサム表記（大小混在）、reth の
+  // eth_getBlockReceipts の contractAddress は全小文字。同一コントラクトの
+  // はずのこの2つの表記が食い違うと、GUI からの deployContract
+  // （registerDeployment 経由・チェックサム表記）とブロック取り込みの検知
+  // （recordDeployment 経由・小文字表記）が別アドレスとして扱われ、
+  // catalogKey が反映されない。
+  const checksummed = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
+  const lowercased = "0x5fbdb2315678afecb367f032d93f642f64180aa3";
+
+  it("applies a catalog key registered with checksummed casing to a deployment detected with lowercase casing", () => {
+    const tracker = new ContractTracker("ethereum", catalog);
+    expect(tracker.registerDeployment(checksummed, "ChainvizToken")).toBeNull();
+
+    const entity = tracker.recordDeployment({
+      address: lowercased,
+      deployerAddress: "0xdeployer",
+      createdByTxHash: "0xtx1",
+    });
+    expect(entity).toEqual({
+      kind: "contract",
+      address: lowercased,
+      chainType: "ethereum",
+      deployerAddress: "0xdeployer",
+      createdByTxHash: "0xtx1",
+      name: "ChainvizToken",
+      catalogKey: "ChainvizToken",
+      token: { symbol: "CVZ", decimals: 18 },
+    });
+    // 同一コントラクトとして 1 件だけ追跡されている（casing 違いで別アドレス
+    // として二重登録されていない）。
+    expect(tracker.get(checksummed)?.catalogKey).toBe("ChainvizToken");
+    expect(tracker.get(lowercased)?.catalogKey).toBe("ChainvizToken");
+  });
+
+  it("applies a catalog key registered with lowercase casing to a deployment already detected with checksummed casing", () => {
+    const tracker = new ContractTracker("ethereum", catalog);
+    tracker.recordDeployment({
+      address: checksummed,
+      deployerAddress: "0xdeployer",
+      createdByTxHash: "0xtx1",
+    });
+
+    const updated = tracker.registerDeployment(lowercased, "ChainvizToken");
+    expect(updated?.address).toBe(lowercased);
+    expect(updated?.catalogKey).toBe("ChainvizToken");
+    expect(tracker.get(checksummed)).toEqual(updated);
+  });
+
+  it("get() normalizes casing so a checksummed lookup finds an entry recorded with lowercase casing", () => {
+    const tracker = new ContractTracker("ethereum", catalog);
+    tracker.recordDeployment({
+      address: lowercased,
+      deployerAddress: "0xdeployer",
+      createdByTxHash: "0xtx1",
+    });
+    expect(tracker.get(checksummed)).toEqual(tracker.get(lowercased));
   });
 });

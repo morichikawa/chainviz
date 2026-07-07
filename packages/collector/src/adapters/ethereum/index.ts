@@ -544,9 +544,11 @@ export class EthereumAdapter implements ChainAdapter {
 
   /**
    * runWorkbenchOperation(deployContract) 経由のデプロイについて、デプロイ先
-   * アドレスとカタログキーの対応を登録する（Issue #163 がデプロイ実行後に
-   * 呼び出す想定。ChainAdapter インターフェースには含めず、EthereumAdapter
-   * 固有の拡張 API とする）。
+   * アドレスとカタログキーの対応を登録する（EthereumNodeLifecycle が
+   * デプロイ成功時に呼び出す。両者を直接結合すると循環依存になるため、
+   * index.ts の main() が組み立て時にコールバックとして注入している。
+   * ChainAdapter インターフェースには含めず、EthereumAdapter 固有の
+   * 拡張 API とする）。
    *
    * 登録の結果、追跡中のコントラクトが「未知」から「カタログ既知」へ更新
    * された場合は、購読済みの onContract コールバックへその場で

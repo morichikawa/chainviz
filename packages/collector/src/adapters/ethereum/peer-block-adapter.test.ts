@@ -1694,4 +1694,90 @@ describe("EthereumAdapter.subscribeContracts (Issue #161)", () => {
       adapter.registerContractDeployment("0xnewcontract", "ChainvizToken"),
     ).not.toThrow();
   });
+
+  it("emits a separate contract for each deployment tx in a single block", async () => {
+    // 1 ブロックに複数のコントラクト作成 tx が含まれるケース。receipts を
+    // 走査してそれぞれ別の ContractEntity として配信する（1 件だけ・
+    // 取り違えが起きない）。
+    const poller = new DockerPoller(
+      clientFrom([rethFixture("reth1", "172.28.1.1")]),
+    );
+    const ws = controllableWsClient();
+    const rpc = stubRpcClient({
+      blocks: {
+        "0xblock1": [
+          {
+            transactionHash: "0xdeployA",
+            from: "0xdeployerA",
+            to: null,
+            status: "0x1",
+            contractAddress: "0xcontractA",
+          },
+          {
+            transactionHash: "0xordinary",
+            from: "0xa",
+            to: "0xb",
+            status: "0x1",
+          },
+          {
+            transactionHash: "0xdeployB",
+            from: "0xdeployerB",
+            to: null,
+            status: "0x1",
+            contractAddress: "0xcontractB",
+          },
+        ],
+      },
+    });
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      ethRpcClient: rpc.client,
+    });
+    const contracts: ContractEntity[] = [];
+
+    await adapter.subscribeTransactions(() => {});
+    await adapter.subscribeContracts((c) => contracts.push(c));
+    ws.emit("ws://172.28.1.1:8546", header());
+    await flushAsync();
+
+    // ContractTracker はアドレスを小文字に正規化する（Issue #161 レビュー
+    // 差し戻し: reth の receipt が小文字、forge の "Deployed to:" がチェックサム
+    // 表記であるための合流対応）ため、入力が大小混在でも小文字で配信される。
+    expect(contracts.map((c) => c.address)).toEqual([
+      "0xcontracta",
+      "0xcontractb",
+    ]);
+    expect(contracts.map((c) => c.deployerAddress)).toEqual([
+      "0xdeployerA",
+      "0xdeployerB",
+    ]);
+  });
+
+  it("does not emit or throw when registerContractDeployment is called with an unknown catalog key", async () => {
+    // アダプタ層の registerContractDeployment に、カタログに無いキーが渡って
+    // きても（コマンド処理側のバグ・カタログ更新漏れなど）、tracker が null を
+    // 返し onContract は呼ばれない（黙って握りつぶすのではなく tracker 側で
+    // 警告ログを出す。ここでは配信が起きないことと例外が起きないことを固定）。
+    const poller = new DockerPoller(
+      clientFrom([rethFixture("reth1", "172.28.1.1")]),
+    );
+    const ws = controllableWsClient();
+    const rpc = stubRpcClient({ blocks: {} });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      ethRpcClient: rpc.client,
+      catalog: testCatalog,
+    });
+    const contracts: ContractEntity[] = [];
+
+    await adapter.subscribeTransactions(() => {});
+    await adapter.subscribeContracts((c) => contracts.push(c));
+
+    expect(() =>
+      adapter.registerContractDeployment("0xnewcontract", "NoSuchKey"),
+    ).not.toThrow();
+    expect(contracts).toEqual([]);
+    warnSpy.mockRestore();
+  });
 });
