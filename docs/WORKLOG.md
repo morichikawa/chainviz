@@ -92,4 +92,5 @@
 | #158 | Issue #158 サンプルコントラクト(ChainvizToken/Counter)のFoundryプロジェクト追加 | [2026-07-07](worklog/issue-158.md) |
 | #160 | Issue #160 eth_getBlockReceiptsの正規化を拡張しコントラクト作成とイベントログを取得する | [2026-07-07](worklog/issue-160.md) |
 | #159 | Issue #159 コントラクトカタログ(catalog.json)と再生成スクリプト(build-catalog.sh)の追加 | [2026-07-07](worklog/issue-159.md) |
+| #163 | Issue #163 runWorkbenchOperationコマンド(transfer/deployContract/callContract)を実装 | [2026-07-07](worklog/issue-163.md) |
 | - | 特定Issueに紐付かない記録(PLAN.md/CLAUDE.md更新等) | [2026-07-05〜2026-07-07](worklog/meta.md) |

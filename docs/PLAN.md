@@ -326,7 +326,7 @@ runWorkbenchOperation コマンド・ChainAdapter.subscribeContracts）は設計
 - [ ] カタログのABIで関数呼び出し・イベントログを復号しTransactionEntityの
       contractCall/contractEventsに載せる
       [#162](https://github.com/morichikawa/chainviz/issues/162)
-- [ ] runWorkbenchOperationコマンド（transfer/deployContract/callContract）
+- [x] runWorkbenchOperationコマンド（transfer/deployContract/callContract）
       をワークベンチコンテナ内のcast/forge実行として実装する
       [#163](https://github.com/morichikawa/chainviz/issues/163)
 - [ ] 追跡中トークンコントラクトの残高をポーリングし

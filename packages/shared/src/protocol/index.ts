@@ -19,6 +19,12 @@ export type WorkbenchOperation =
       /** チェーンプロファイルのコントラクトカタログに載っているコントラクトのデプロイ。 */
       type: "deployContract";
       contractKey: string;
+      /**
+       * コンストラクタ引数（省略時は引数なし）。callContract.args と同様に
+       * 文字列で受け渡し、型解釈（数値・アドレス等への変換）はカタログの
+       * インターフェース定義を持つアダプタ側が行う。
+       */
+      constructorArgs?: string[];
     }
   | {
       /** デプロイ済みコントラクトの関数呼び出し（トークンの transfer 等）。 */

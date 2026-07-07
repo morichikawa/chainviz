@@ -327,7 +327,12 @@ type Command =
 // （Ethereum なら wei）の 10 進文字列
 type WorkbenchOperation =
   | { type: "transfer"; to: string; amount: string } // ネイティブ通貨の送金
-  | { type: "deployContract"; contractKey: string } // カタログ掲載コントラクトのデプロイ
+  | {
+      type: "deployContract"; // カタログ掲載コントラクトのデプロイ
+      contractKey: string;
+      constructorArgs?: string[]; // コンストラクタ引数（省略時は引数なし）。
+      // callContract.args と同様に文字列で受け渡す
+    }
   | {
       type: "callContract"; // デプロイ済みコントラクトの関数呼び出し
       contractAddress: string;

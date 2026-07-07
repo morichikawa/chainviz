@@ -21,7 +21,11 @@
 // ことで両者が同じ論理ノードとして対応付く。
 
 import path from "node:path";
-import type { NodeLifecycle } from "../../commands/lifecycle.js";
+import type { WorkbenchOperation } from "@chainviz/shared";
+import type {
+  NodeLifecycle,
+  WorkbenchOperationResult,
+} from "../../commands/lifecycle.js";
 import type {
   ContainerSpec,
   DockerOperations,
@@ -38,6 +42,11 @@ import {
   WALLET_INDEX_LABEL,
   workbenchWalletIndex,
 } from "./wallet-derivation.js";
+import {
+  buildOperationCommand,
+  describeOperation,
+  parseOperationOutcome,
+} from "./workbench-operations.js";
 
 export { parseMnemonic } from "./mnemonic.js";
 
@@ -440,6 +449,80 @@ export class EthereumNodeLifecycle implements NodeLifecycle {
     await this.ops.stopAndRemove(workbench.containerId);
     const current = this.workbenches.indexOf(workbench);
     if (current !== -1) this.workbenches.splice(current, 1);
+  }
+
+  /**
+   * ワークベンチコンテナ内で定型操作（送金・コントラクトデプロイ・コントラクト
+   * 呼び出し）を cast / forge の実行として行う（Issue #163）。ワークベンチが
+   * 使う RPC 接続先（this.cfg.ethRpcUrl）は常にロギングプロキシ経由のため、
+   * ここで実行する cast/forge の RPC 呼び出しも既存の観測経路（操作エッジ・
+   * tx ライフサイクル）へ特別な配線なしにそのまま乗る
+   * （docs/ARCHITECTURE.md §3）。
+   */
+  async runWorkbenchOperation(
+    workbenchId: string,
+    operation: WorkbenchOperation,
+  ): Promise<WorkbenchOperationResult> {
+    const mnemonic = this.readMnemonic();
+    if (!mnemonic) {
+      throw new Error(
+        "mnemonic not found in profile values.env; cannot sign workbench operations",
+      );
+    }
+    const container = await this.findWorkbenchContainer(workbenchId);
+    const cmd = buildOperationCommand(operation, {
+      mnemonic,
+      walletIndex: container.walletIndex,
+      ethRpcUrl: this.cfg.ethRpcUrl,
+    });
+    const result = await this.ops.exec(container.containerId, cmd);
+    if (result.exitCode !== 0) {
+      const detail =
+        result.stderr.trim() ||
+        result.stdout.trim() ||
+        `exit code ${result.exitCode}`;
+      // 握りつぶさず、具体的な失敗内容（cast/forge の stderr 等）をログへ
+      // 残したうえで、同じ内容を呼び出し元（CommandHandler → commandResult）
+      // にも伝える（CLAUDE.md「エラーを握りつぶすコードを見逃さない」）。
+      console.error(
+        `[ethereum] workbench operation failed (${describeOperation(operation)}) on ${workbenchId}: ${detail}`,
+      );
+      throw new Error(
+        `${describeOperation(operation)} failed on workbench ${workbenchId}: ${detail}`,
+      );
+    }
+    return parseOperationOutcome(operation, result.stdout);
+  }
+
+  /**
+   * workbenchId（安定 ID "<project>/<service>"）から、cast/forge を実行する
+   * コンテナ ID とウォレット導出インデックスを解決する。collector が
+   * addWorkbench で作成した managed ワークベンチだけでなく、
+   * docker-compose.yml の静的ワークベンチ（`workbench` サービス。managed
+   * ラベルを持たない）も対象にする必要があるため、this.workbenches
+   * （managed のみを追跡するメモリ上のレジストリ）には頼らず、compose project
+   * ラベルだけでコンテナを走査して stableId の一致で絞り込む（Docker の
+   * ラベルを単一の真実の情報源とする Issue #65 の方針と同じ）。ウォレット
+   * 導出インデックスもコンテナのラベル（無ければ既定 0）から決めるため、
+   * 静的ワークベンチは自動的に既定インデックス（プリマインの先頭アカウント）
+   * を使うことになる。
+   */
+  private async findWorkbenchContainer(
+    workbenchId: string,
+  ): Promise<{ containerId: string; walletIndex: number }> {
+    const containers = await this.ops.listContainersByLabels({
+      [COMPOSE_PROJECT_LABEL]: this.cfg.composeProject,
+    });
+    for (const container of containers) {
+      const service = container.labels[COMPOSE_SERVICE_LABEL];
+      if (!service) continue;
+      if (`${this.cfg.composeProject}/${service}` !== workbenchId) continue;
+      return {
+        containerId: container.id,
+        walletIndex: workbenchWalletIndex(container.labels),
+      };
+    }
+    throw new Error(`workbench ${workbenchId} not found`);
   }
 
   // --- コンテナ構成の組み立て（Ethereum 固有）---

@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import type Docker from "dockerode";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -371,6 +372,173 @@ describe("createDockerOperations", () => {
     const result = await ops.listContainersByLabels({ foo: "bar" });
 
     expect(result).toEqual([{ id: "cid-1", labels: {} }]);
+  });
+});
+
+describe("createDockerOperations exec", () => {
+  /**
+   * dockerode の exec.start() が返す多重化ストリームと、それを分離する
+   * exec.modem.demuxStream を模す。実際の demuxStream は Docker のフレーム
+   * ヘッダをパースして stdout/stderr に振り分けるが、ここではその内部実装は
+   * 対象外（dockerode 自体のテストではない）なので、渡された stdout/stderr の
+   * Writable に直接書き込み、その後ソースストリーム側で "end" を発火して
+   * 呼び出し元の待受（stream.on("end", ...)）を解決させる。
+   */
+  function fakeExecObject(opts: {
+    stdout?: string;
+    stderr?: string;
+    exitCode?: number | null;
+    streamError?: Error;
+  }): { exec: ReturnType<typeof vi.fn>; execObject: unknown } {
+    const streamSource = new EventEmitter();
+    const start = vi.fn().mockResolvedValue(streamSource);
+    const exitCode = opts.exitCode === undefined ? 0 : opts.exitCode;
+    const inspect = vi.fn().mockResolvedValue({ ExitCode: exitCode });
+    const demuxStream = vi.fn(
+      (
+        _src: unknown,
+        stdout: NodeJS.WritableStream,
+        stderr: NodeJS.WritableStream,
+      ) => {
+        if (opts.stdout) stdout.write(Buffer.from(opts.stdout));
+        if (opts.stderr) stderr.write(Buffer.from(opts.stderr));
+        process.nextTick(() => {
+          if (opts.streamError) streamSource.emit("error", opts.streamError);
+          else streamSource.emit("end");
+        });
+      },
+    );
+    const execObject = { start, inspect, modem: { demuxStream } };
+    const exec = vi.fn().mockResolvedValue(execObject);
+    return { exec, execObject };
+  }
+
+  it("execs a command in a running container and returns stdout/stderr/exitCode", async () => {
+    const { exec } = fakeExecObject({
+      stdout: "transactionHash   0xabc123\n",
+      exitCode: 0,
+    });
+    const getContainer = vi.fn().mockReturnValue({ exec });
+    const docker = { getContainer } as unknown as Docker;
+
+    const ops = createDockerOperations(docker);
+    const result = await ops.exec("cid-1", ["cast", "send", "0xabc"]);
+
+    expect(getContainer).toHaveBeenCalledWith("cid-1");
+    expect(result).toEqual({
+      exitCode: 0,
+      stdout: "transactionHash   0xabc123\n",
+      stderr: "",
+    });
+  });
+
+  it("passes the command as an array (Cmd), never a concatenated shell string", async () => {
+    // コマンドインジェクション防止の核心: 引数はトークンごとの配列のまま
+    // dockerode の Cmd へ渡す（呼び出し側が文字列連結して渡さないことの回帰）。
+    const { exec } = fakeExecObject({});
+    const getContainer = vi.fn().mockReturnValue({ exec });
+    const docker = { getContainer } as unknown as Docker;
+
+    const ops = createDockerOperations(docker);
+    const suspicious = "0xabc; rm -rf /";
+    await ops.exec("cid-1", ["cast", "send", suspicious]);
+
+    expect(exec).toHaveBeenCalledWith({
+      Cmd: ["cast", "send", suspicious],
+      AttachStdout: true,
+      AttachStderr: true,
+    });
+    // 1つの配列要素として渡っており、シェル文字列に結合されていないこと。
+    const call = exec.mock.calls[0]?.[0] as { Cmd: string[] };
+    expect(call.Cmd).toHaveLength(3);
+    expect(call.Cmd[2]).toBe(suspicious);
+  });
+
+  it("captures stderr separately from stdout", async () => {
+    const { exec } = fakeExecObject({
+      stdout: "",
+      stderr: "Error: insufficient funds for gas * price + value\n",
+      exitCode: 1,
+    });
+    const getContainer = vi.fn().mockReturnValue({ exec });
+    const docker = { getContainer } as unknown as Docker;
+
+    const ops = createDockerOperations(docker);
+    const result = await ops.exec("cid-1", ["cast", "send"]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toBe(
+      "Error: insufficient funds for gas * price + value\n",
+    );
+    expect(result.stdout).toBe("");
+  });
+
+  it("captures stdout and stderr together on a non-zero exit (both demux branches)", async () => {
+    // 標準出力・標準エラーの両方に出力があるケース。demux した 2 本の
+    // PassThrough をどちらも取りこぼさず、終了コードと併せて返すこと。
+    const { exec } = fakeExecObject({
+      stdout: "partial progress...\n",
+      stderr: "Error: reverted\n",
+      exitCode: 1,
+    });
+    const getContainer = vi.fn().mockReturnValue({ exec });
+    const docker = { getContainer } as unknown as Docker;
+
+    const ops = createDockerOperations(docker);
+    const result = await ops.exec("cid-1", ["forge", "create"]);
+    expect(result).toEqual({
+      exitCode: 1,
+      stdout: "partial progress...\n",
+      stderr: "Error: reverted\n",
+    });
+  });
+
+  it("reports a non-zero exit code without throwing", async () => {
+    const { exec } = fakeExecObject({ exitCode: 127 });
+    const getContainer = vi.fn().mockReturnValue({ exec });
+    const docker = { getContainer } as unknown as Docker;
+
+    const ops = createDockerOperations(docker);
+    const result = await ops.exec("cid-1", ["forge", "create"]);
+    expect(result.exitCode).toBe(127);
+  });
+
+  it("falls back to exitCode -1 when the inspect result has a null ExitCode", async () => {
+    const { exec } = fakeExecObject({ exitCode: null });
+    const getContainer = vi.fn().mockReturnValue({ exec });
+    const docker = { getContainer } as unknown as Docker;
+
+    const ops = createDockerOperations(docker);
+    const result = await ops.exec("cid-1", ["cast", "send"]);
+    expect(result.exitCode).toBe(-1);
+  });
+
+  it("propagates a stream error instead of resolving with partial output", async () => {
+    const { exec } = fakeExecObject({ streamError: new Error("stream broke") });
+    const getContainer = vi.fn().mockReturnValue({ exec });
+    const docker = { getContainer } as unknown as Docker;
+
+    const ops = createDockerOperations(docker);
+    await expect(ops.exec("cid-1", ["cast", "send"])).rejects.toThrow(
+      /stream broke/,
+    );
+  });
+
+  it("propagates a failure creating the exec (e.g. container not running)", async () => {
+    const exec = vi
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new Error("container is not running"), {
+          statusCode: 409,
+        }),
+      );
+    const getContainer = vi.fn().mockReturnValue({ exec });
+    const docker = { getContainer } as unknown as Docker;
+
+    const ops = createDockerOperations(docker);
+    await expect(ops.exec("cid-1", ["cast", "send"])).rejects.toThrow(
+      /container is not running/,
+    );
   });
 });
 
