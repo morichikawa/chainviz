@@ -6,6 +6,7 @@ import type {
   ChainType,
   DiffEvent,
   PeerEdge,
+  TokenBalance,
   WalletEntity,
   WorldStateEntity,
 } from "@chainviz/shared";
@@ -104,6 +105,39 @@ export interface WalletObservation {
   balance?: string;
   /** undefined なら既存値を維持する。 */
   nonce?: number;
+  /**
+   * このポーリング周期で取得できたトークン残高（追跡中のトークンコントラクト
+   * のうち、balanceOf の取得に成功したものだけ）。追跡中のトークンコントラクト
+   * が 1 つも無ければ undefined（トークン残高のポーリング自体を行わない。
+   * Issue #164）。1 件以上のトークンが追跡されているが個別の取得に失敗した
+   * ものは、この配列から単に外れる（配列自体は undefined にしない）。
+   * mergeTokenBalances が「取得できた分だけ上書きし、取得できなかった分は
+   * 既存値を維持する」形でエンティティへ反映する。
+   */
+  tokenBalances?: TokenBalance[];
+}
+
+/**
+ * 前回の tokenBalances（before）と、今回のポーリングで取得できた分だけの
+ * tokenBalances（observed）を、コントラクトアドレス単位でマージする。
+ * - observed が undefined（追跡中のトークンコントラクトが無い）→ before を
+ *   そのまま返す（変化なし）
+ * - observed にある contractAddress は最新値で上書き・追加。observed に
+ *   無い（今回取得できなかった）contractAddress は before の値を維持する
+ * - マージ結果が空配列になる場合は undefined を返す（トークンが追跡されて
+ *   いるがこのウォレットの残高がまだ一度も取得できていない状態を、
+ *   「トークン残高 0 件」と区別する。WalletEntity.tokenBalances の
+ *   「省略 = 情報なし」という約束を保つ）
+ */
+function mergeTokenBalances(
+  before: TokenBalance[] | undefined,
+  observed: TokenBalance[] | undefined,
+): TokenBalance[] | undefined {
+  if (observed === undefined) return before;
+  const merged = new Map((before ?? []).map((tb) => [tb.contractAddress, tb]));
+  for (const tb of observed) merged.set(tb.contractAddress, tb);
+  const result = [...merged.values()];
+  return result.length > 0 ? result : undefined;
 }
 
 /**
@@ -113,9 +147,11 @@ export interface WalletObservation {
  * entityRemoved にせず、ownerWorkbenchId を null に更新して残す。
  *
  * - observed にあり prev に無い → 残高・nonce が取れていれば entityAdded、
- *   まだ取れていない（balance が undefined）ものは追加を保留（イベントなし）
+ *   まだ取れていない（balance が undefined）ものは追加を保留（イベントなし）。
+ *   tokenBalances は取得できていれば新規エンティティにも載せる
  * - observed と prev の両方にあり内容が変化 → entityUpdated（変化分のみ）。
- *   balance / nonce が undefined の観測は既存値を維持する
+ *   balance / nonce が undefined の観測は既存値を維持する。tokenBalances は
+ *   コントラクト単位で mergeTokenBalances によりマージする
  * - prev にあり observed に無く、かつ ownerWorkbenchId が非 null → 所有者を
  *   null に更新（entityUpdated）。既に null なら何もしない
  */
@@ -134,6 +170,7 @@ export function computeWalletDiff(
       // 残高・nonce がまだ取れていない新規ウォレットは、誤解を招く暫定値
       // （0）を見せないよう、値が取れる次周期まで追加を保留する。
       if (obs.balance === undefined || obs.nonce === undefined) continue;
+      const tokenBalances = mergeTokenBalances(undefined, obs.tokenBalances);
       const entity: WalletEntity = {
         kind: "wallet",
         address: obs.address,
@@ -143,15 +180,21 @@ export function computeWalletDiff(
         isSmartAccount: false,
         ownerWorkbenchId: obs.ownerWorkbenchId,
         recentTxHashes: [],
+        ...(tokenBalances ? { tokenBalances } : {}),
       };
       events.push({ type: "entityAdded", entity });
       continue;
     }
+    const tokenBalances = mergeTokenBalances(
+      before.tokenBalances,
+      obs.tokenBalances,
+    );
     const after: WalletEntity = {
       ...before,
       ownerWorkbenchId: obs.ownerWorkbenchId,
       balance: obs.balance ?? before.balance,
       nonce: obs.nonce ?? before.nonce,
+      ...(tokenBalances ? { tokenBalances } : {}),
     };
     const patch = fieldPatch(before, after);
     if (patch) events.push({ type: "entityUpdated", id: obs.address, patch });

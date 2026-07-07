@@ -125,6 +125,21 @@ export function createFetchEthRpcClient(timeoutMs = 3000): EthRpcClient {
 }
 
 /**
+ * eth_call を実行し、戻り値（16 進の生データ）をそのまま返す。ABI エンコード/
+ * デコード（呼び出す関数の選択・引数の組み立て・戻り値の解釈）はこの層では
+ * 行わず、呼び出し側（例: erc20.ts の balanceOf 照会）が担う。cast call が
+ * 使うのと同じ RPC で、宛先・calldata の意味論に関わらず汎用に使える（Issue #164）。
+ */
+export async function ethCall(
+  rpc: EthRpcClient,
+  url: string,
+  to: string,
+  data: string,
+): Promise<string> {
+  return rpc.call<string>(url, "eth_call", [{ to, data }, "latest"]);
+}
+
+/**
  * eth_getBalance の結果（16 進 wei）を 10 進の wei 文字列にして返す。
  * WalletEntity.balance は wei を文字列で保持する（精度落ち防止）ため、
  * BigInt を経由して桁落ちなく変換する。

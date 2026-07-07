@@ -487,4 +487,276 @@ describe("computeWalletDiff", () => {
       },
     ]);
   });
+
+  describe("tokenBalances (Issue #164)", () => {
+    it("does not add tokenBalances to a new wallet when no token contracts are tracked", () => {
+      const events = computeWalletDiff([], [observed()], "ethereum");
+      expect(events).toEqual([{ type: "entityAdded", entity: wallet() }]);
+      const added = events[0];
+      if (added.type === "entityAdded" && added.entity.kind === "wallet") {
+        expect(added.entity.tokenBalances).toBeUndefined();
+      }
+    });
+
+    it("attaches tokenBalances to a newly added wallet when available", () => {
+      const events = computeWalletDiff(
+        [],
+        [
+          observed({
+            tokenBalances: [{ contractAddress: "0xtoken", amount: "500" }],
+          }),
+        ],
+        "ethereum",
+      );
+      expect(events).toEqual([
+        {
+          type: "entityAdded",
+          entity: wallet({
+            tokenBalances: [{ contractAddress: "0xtoken", amount: "500" }],
+          }),
+        },
+      ]);
+    });
+
+    it("emits an update carrying the new token balance for an existing wallet", () => {
+      const prev = [wallet()];
+      const events = computeWalletDiff(
+        prev,
+        [
+          observed({
+            tokenBalances: [{ contractAddress: "0xtoken", amount: "500" }],
+          }),
+        ],
+        "ethereum",
+      );
+      expect(events).toEqual([
+        {
+          type: "entityUpdated",
+          id: "0xabc",
+          patch: {
+            tokenBalances: [{ contractAddress: "0xtoken", amount: "500" }],
+          },
+        },
+      ]);
+    });
+
+    it("overwrites the amount for a contract address that was already known", () => {
+      const prev = [
+        wallet({
+          tokenBalances: [{ contractAddress: "0xtoken", amount: "100" }],
+        }),
+      ];
+      const events = computeWalletDiff(
+        prev,
+        [
+          observed({
+            tokenBalances: [{ contractAddress: "0xtoken", amount: "200" }],
+          }),
+        ],
+        "ethereum",
+      );
+      expect(events).toEqual([
+        {
+          type: "entityUpdated",
+          id: "0xabc",
+          patch: {
+            tokenBalances: [{ contractAddress: "0xtoken", amount: "200" }],
+          },
+        },
+      ]);
+    });
+
+    it("adds a brand-new contract address while updating an existing one in the same round", () => {
+      // 既存 tokenBalances に A だけがある状態で、今回 A（更新）と B（新規）の
+      // 両方が観測できたケース。A は上書き、B は追加され、両方が残る。
+      const prev = [
+        wallet({
+          tokenBalances: [{ contractAddress: "0xtokenA", amount: "1" }],
+        }),
+      ];
+      const events = computeWalletDiff(
+        prev,
+        [
+          observed({
+            tokenBalances: [
+              { contractAddress: "0xtokenA", amount: "5" },
+              { contractAddress: "0xtokenB", amount: "7" },
+            ],
+          }),
+        ],
+        "ethereum",
+      );
+      expect(events).toEqual([
+        {
+          type: "entityUpdated",
+          id: "0xabc",
+          patch: {
+            tokenBalances: [
+              { contractAddress: "0xtokenA", amount: "5" },
+              { contractAddress: "0xtokenB", amount: "7" },
+            ],
+          },
+        },
+      ]);
+    });
+
+    it("appends a new contract address after the existing ones without disturbing their order", () => {
+      // 既存 A, B があり、今回 C（新規）だけが観測できた。A・B は前回値を維持し、
+      // C が末尾に追加される（Map の挿入順 = before の順 → 追加分）。
+      const prev = [
+        wallet({
+          tokenBalances: [
+            { contractAddress: "0xtokenA", amount: "1" },
+            { contractAddress: "0xtokenB", amount: "2" },
+          ],
+        }),
+      ];
+      const events = computeWalletDiff(
+        prev,
+        [
+          observed({
+            tokenBalances: [{ contractAddress: "0xtokenC", amount: "3" }],
+          }),
+        ],
+        "ethereum",
+      );
+      expect(events).toEqual([
+        {
+          type: "entityUpdated",
+          id: "0xabc",
+          patch: {
+            tokenBalances: [
+              { contractAddress: "0xtokenA", amount: "1" },
+              { contractAddress: "0xtokenB", amount: "2" },
+              { contractAddress: "0xtokenC", amount: "3" },
+            ],
+          },
+        },
+      ]);
+    });
+
+    it("merges token balances independently per wallet in a single diff pass", () => {
+      // 2 つのウォレットが別々の tokenBalances を持ち、それぞれ独立にマージ
+      // される（片方の観測がもう片方に混ざらない）ことを確認する。
+      const walletA = wallet({
+        address: "0xA",
+        tokenBalances: [{ contractAddress: "0xtoken", amount: "1" }],
+      });
+      const walletB = wallet({
+        address: "0xB",
+        tokenBalances: [{ contractAddress: "0xtoken", amount: "100" }],
+      });
+      const events = computeWalletDiff(
+        [walletA, walletB],
+        [
+          observed({
+            address: "0xA",
+            tokenBalances: [{ contractAddress: "0xtoken", amount: "2" }],
+          }),
+          observed({
+            address: "0xB",
+            tokenBalances: [{ contractAddress: "0xtoken", amount: "200" }],
+          }),
+        ],
+        "ethereum",
+      );
+      expect(events).toContainEqual({
+        type: "entityUpdated",
+        id: "0xA",
+        patch: { tokenBalances: [{ contractAddress: "0xtoken", amount: "2" }] },
+      });
+      expect(events).toContainEqual({
+        type: "entityUpdated",
+        id: "0xB",
+        patch: { tokenBalances: [{ contractAddress: "0xtoken", amount: "200" }] },
+      });
+      expect(events).toHaveLength(2);
+    });
+
+    it("preserves a uint256-scale token amount through the merge as an opaque string", () => {
+      // マージはアドレス単位の Map 差し替えのみで、amount は文字列のまま扱う。
+      // 巨大値でも数値化・桁落ちが起きないことを確認する（erc20 層の精度保持と
+      // 合わせた end-to-end の裏づけ）。
+      const huge = (2n ** 256n - 1n).toString(10);
+      const prev = [wallet()];
+      const events = computeWalletDiff(
+        prev,
+        [
+          observed({
+            tokenBalances: [{ contractAddress: "0xtoken", amount: huge }],
+          }),
+        ],
+        "ethereum",
+      );
+      expect(events).toEqual([
+        {
+          type: "entityUpdated",
+          id: "0xabc",
+          patch: { tokenBalances: [{ contractAddress: "0xtoken", amount: huge }] },
+        },
+      ]);
+    });
+
+    it("keeps the previous balance for a token contract missing from this round's observation (partial RPC failure)", () => {
+      // トークン A・B の両方を追跡中だが、今回は A しか取れなかったケース。
+      // B は既存値を維持し、A だけが上書きされる。
+      const prev = [
+        wallet({
+          tokenBalances: [
+            { contractAddress: "0xtokenA", amount: "1" },
+            { contractAddress: "0xtokenB", amount: "2" },
+          ],
+        }),
+      ];
+      const events = computeWalletDiff(
+        prev,
+        [
+          observed({
+            tokenBalances: [{ contractAddress: "0xtokenA", amount: "9" }],
+          }),
+        ],
+        "ethereum",
+      );
+      expect(events).toEqual([
+        {
+          type: "entityUpdated",
+          id: "0xabc",
+          patch: {
+            tokenBalances: [
+              { contractAddress: "0xtokenA", amount: "9" },
+              { contractAddress: "0xtokenB", amount: "2" },
+            ],
+          },
+        },
+      ]);
+    });
+
+    it("emits nothing extra when tokenBalances is undefined (no tracked token contracts) and the wallet is otherwise unchanged", () => {
+      const prev = [wallet()];
+      const events = computeWalletDiff(prev, [observed()], "ethereum");
+      expect(events).toEqual([]);
+    });
+
+    it("does not resurrect tokenBalances as an empty array when every fetch fails for a still-unknown wallet", () => {
+      // 追跡中のトークンはあるが、まだ一度もこのウォレットの残高が取れていない
+      // （tokenBalances は observed に空配列で来る）場合、[] を見せず省略のまま
+      // にする（「トークン残高0件」と「情報なし」を区別する）。
+      const prev = [wallet()];
+      const events = computeWalletDiff(
+        prev,
+        [observed({ tokenBalances: [] })],
+        "ethereum",
+      );
+      expect(events).toEqual([]);
+    });
+
+    it("leaves tokenBalances unset for a brand new wallet when the token balance fetch failed entirely", () => {
+      const events = computeWalletDiff(
+        [],
+        [observed({ tokenBalances: [] })],
+        "ethereum",
+      );
+      expect(events).toEqual([{ type: "entityAdded", entity: wallet() }]);
+    });
+  });
 });

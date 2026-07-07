@@ -119,6 +119,18 @@ export class ContractTracker {
   }
 
   /**
+   * 現在追跡中（デプロイ検知済み）かつカタログの token メタ情報
+   * （symbol/decimals）を持つコントラクトのアドレス一覧を返す（正規化済み・
+   * 小文字表記）。WalletTracker がトークン残高ポーリングの対象を決めるために
+   * 使う（Issue #164）。トークンが 1 つも追跡されていなければ空配列。
+   */
+  tokenContractAddresses(): string[] {
+    return [...this.contracts.values()]
+      .filter((entity) => entity.token !== undefined)
+      .map((entity) => entity.address);
+  }
+
+  /**
    * address が追跡中かつカタログ照合済み（catalogKey 確定）のコントラクト
    * であれば、対応する CatalogEntry（ABI を含む）を返す。未追跡・カタログ
    * 未照合（「未知のコントラクト」）なら undefined を返す（呼び出し側 =
