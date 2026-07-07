@@ -329,7 +329,7 @@ runWorkbenchOperation コマンド・ChainAdapter.subscribeContracts）は設計
 - [x] runWorkbenchOperationコマンド（transfer/deployContract/callContract）
       をワークベンチコンテナ内のcast/forge実行として実装する
       [#163](https://github.com/morichikawa/chainviz/issues/163)
-- [ ] 追跡中トークンコントラクトの残高をポーリングし
+- [x] 追跡中トークンコントラクトの残高をポーリングし
       WalletEntity.tokenBalancesへ反映する
       [#164](https://github.com/morichikawa/chainviz/issues/164)
 
