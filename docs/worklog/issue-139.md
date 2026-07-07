@@ -187,3 +187,41 @@
   対応方針の範囲では完了と判断し、このままQA・マージへ進める。
 - ハング閾値以上の長時間停止への根本対応(checkpoint sync等)はIssue #148
   で別途対応する。
+
+### 2026-07-07 Issue #139 QA検証(qa)
+
+- 担当: qa
+- 結果: **合格**(承認済みスコープ「ハング閾値未満の停止からの再起動でblock生成が
+  再開する」を満たすことを独立した合成環境で実機確認した)
+- 検証環境の分離: メインworktree(`/home/zoe/workspace/chainviz`)で稼働中の
+  本物の`chainviz-ethereum`スタックには一切触れていない。検証はscratchpadに
+  `profiles/ethereum`一式をコピーし、プロジェクト名`chainviz-wsqa139`・
+  サブネット`172.97.0.0/16`・ポート公開なしの独立composeプロジェクトで
+  行った。単一ノード構成(genesis + reth1 + beacon1 + validator1)。破壊的操作
+  (down -v)は自分の`chainviz-wsqa139`プロジェクトにのみ実行し、検証後に完全
+  破棄。本物の`chainviz-ethereum`は検証前後で`docker compose ls`が
+  running(7)のまま、blockも8666→8761と正常進行し影響が無いことを確認した。
+  並行して稼働していた別QAの`chainviz-qa141`にも触れていない。
+- 再現手法: 実装担当と同じ「genesis時刻を過去にずらす」手法。
+  `generate-genesis.sh`の検証用コピーに`TEST_GENESIS_TIMESTAMP_OFFSET_SEC`
+  を読む分岐を追加し(本番スクリプトには入れていない)、genesis時刻を
+  「現在時刻 - オフセット秒」に固定した。実行環境は20 vCPU(worklog記載の
+  検証環境と同じ)。
+- 検証内容(オフセット2700秒 = 45分。ハング閾値1.5〜1.8時間より十分下、
+  典型的な中程度の停止想定):
+  - beacon1が`--ignore-ws-check`付きで起動し、weak subjectivity関連の
+    CRITは一切出ずに`Beacon chain initialized` / `Block production enabled`
+    まで到達することを確認(CRIT/weak subjectivity のログ件数は0)。
+  - 起動直後`head_slot: 0, current_slot: 1342`(2700/2≈1350 slotと整合)から、
+    genesisからの再構築が進み、約90秒で`head_slot == current_slot`
+    (1361==1361)まで追いつき、以降`Sync state: Synced`を維持したまま
+    current_slotに遅延なく追従することを確認。
+  - reth側で`Block added to canonical chain` / `Canonical chain committed`
+    がblock number 8→13→16→20→27→40と約2秒間隔で継続的に増加し、
+    ブロック生成が実際に再開・継続することを確認した。
+- 判定: Issue #139の承認済みスコープ(部分的解決。ハング閾値未満の停止からの
+  再起動をblock生成再開まで含めて解消する)の完了条件を満たす。長時間停止
+  (WS period約4.6時間超)での再構築ハングはIssue #148のスコープであり、
+  本検証では本物スタックへのCPU負荷を避けるため意図的に高負荷のハング
+  シナリオ(オフセット>WS period)は再走させていない。当該CRITの再現・
+  フラグ無し時の失敗は実装担当・reviewerが記録済み。
