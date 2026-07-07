@@ -444,6 +444,9 @@ runWorkbenchOperation コマンド・ChainAdapter.subscribeContracts）は設計
 - [x] beaconStableIdForExecutionがdocker composeプロジェクトをスコープ
       しない(複数プロジェクト同時観測時にキー混線の恐れ)
       [#153](https://github.com/morichikawa/chainviz/issues/153)
+- [ ] collectorのcomposeProjectが"chainviz-ethereum"にハードコードされ
+      環境変数での上書き口が無く、QA検証時に独立した合成環境で
+      ワークベンチ経由の操作(runWorkbenchOperation等)を検証できない
 
 ## 運用ルール（全ステップ共通）
 
