@@ -5,13 +5,22 @@
 // （eth_subscribe / eth_getTransactionByHash 等）はこのファイルには持ち込まず、
 // 呼び出し側（アダプタ）が用意した正規化済みの入力だけを扱う。
 
-import type { TransactionEntity } from "@chainviz/shared";
+import type { ContractCall, ContractEvent, TransactionEntity } from "@chainviz/shared";
 
 /** 追跡に必要な tx の最小情報（from/to は正規化済み）。 */
 export interface TxDetail {
   hash: string;
   from: string;
   to: string | null;
+  /**
+   * この tx が追跡中のコントラクト宛ての関数呼び出しであるとアダプタが
+   * 判定・復号できた場合の呼び出し内容。呼び出し側（EthereumAdapter）が
+   * pending 検知時に eth_getTransactionByHash の input をカタログ ABI で
+   * 復号した結果をそのまま渡す。カタログ照合済みなら関数名・引数付きで、
+   * 追跡中だが未カタログなら rawFunctionId のみで載る。宛先が未追跡、
+   * または input に関数セレクタが無い場合は省略する（Issue #162）。
+   */
+  contractCall?: ContractCall;
 }
 
 /** ブロック取り込み時に確定した tx の情報（from/to に加え確定ステータスを持つ）。 */
@@ -23,6 +32,14 @@ export interface TxInclusionDetail extends TxDetail {
    * へマッピングされる（Issue #160）。
    */
   contractAddress?: string | null;
+  /**
+   * receipt.logs をカタログ ABI で復号した結果（Issue #162）。呼び出し側が
+   * ブロック取り込みのたびに receipt.logs から作り直して渡す（pending 時の
+   * contractCall と異なり、状態遷移をまたいで保持されるものではなく毎回
+   * 上書きする）。イベントが無い tx では空配列を渡してよい（recordInclusion
+   * 側で contractEvents フィールド自体を省略する）。
+   */
+  contractEvents?: ContractEvent[];
 }
 
 /**
@@ -49,6 +66,7 @@ export class TransactionLifecycleTracker {
       from: detail.from,
       to: detail.to,
       status: "pending",
+      ...(detail.contractCall ? { contractCall: detail.contractCall } : {}),
     };
     this.put(entity);
     return entity;
@@ -68,6 +86,14 @@ export class TransactionLifecycleTracker {
    * createdContractAddress として entity に載せる。一度確定した作成先アドレスは
    * ブロックが変わらない限り変化しないため、以後の重複通知で省略されても
    * （= undefined/null が来ても）既存の値を保持する（from/to の扱いと同様）。
+   *
+   * contractCall（pending 検知時にカタログ ABI で復号した関数呼び出し。
+   * Issue #162）は、ここでは再計算せず既存の値をそのまま引き継ぐ（inclusion
+   * 側は receipt から関数呼び出しの input を取得しないため）。contractEvents
+   * （receipt.logs をカタログ ABI で復号した結果）はブロック取り込みのたびに
+   * 呼び出し側が渡した最新の値で置き換える（空配列が渡された場合は
+   * フィールド自体を省略し、「イベントなし」の tx を contractEvents: [] で
+   * 埋め尽くさない）。
    */
   recordInclusion(
     blockHash: string,
@@ -93,6 +119,10 @@ export class TransactionLifecycleTracker {
         status: tx.status,
         blockHash,
         ...(createdContractAddress ? { createdContractAddress } : {}),
+        ...(existing?.contractCall ? { contractCall: existing.contractCall } : {}),
+        ...(tx.contractEvents && tx.contractEvents.length > 0
+          ? { contractEvents: tx.contractEvents }
+          : {}),
       };
       this.put(entity);
       changed.push(entity);

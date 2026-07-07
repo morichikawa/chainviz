@@ -169,6 +169,7 @@ describe("getTransactionByHash", () => {
             to: "0xrecipient",
             value: "0x1",
             nonce: "0x0",
+            input: "0xa9059cbb",
           },
         }),
       }),
@@ -180,6 +181,7 @@ describe("getTransactionByHash", () => {
         hash: "0xtx",
         from: "0xsender",
         to: "0xrecipient",
+        input: "0xa9059cbb",
       },
     );
     // JSON-RPC の method/params が正しく組まれている。
@@ -208,7 +210,70 @@ describe("getTransactionByHash", () => {
     const rpc = createFetchEthRpcClient();
     await expect(
       getTransactionByHash(rpc, "http://x", "0xtx"),
-    ).resolves.toEqual({ hash: "0xtx", from: "0xsender", to: null });
+    ).resolves.toEqual({ hash: "0xtx", from: "0xsender", to: null, input: "0x" });
+  });
+
+  describe("input (call data for contract call decoding, Issue #162)", () => {
+    it("defaults input to '0x' when the field is missing", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          fakeResponse({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              result: { hash: "0xtx", from: "0xsender", to: "0xrecipient" },
+            }),
+          }),
+        ),
+      );
+      const rpc = createFetchEthRpcClient();
+      const result = await getTransactionByHash(rpc, "http://x", "0xtx");
+      expect(result?.input).toBe("0x");
+    });
+
+    it("defaults input to '0x' when the field is not a string (defensive)", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          fakeResponse({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              result: {
+                hash: "0xtx",
+                from: "0xsender",
+                to: "0xrecipient",
+                input: 12345,
+              },
+            }),
+          }),
+        ),
+      );
+      const rpc = createFetchEthRpcClient();
+      const result = await getTransactionByHash(rpc, "http://x", "0xtx");
+      expect(result?.input).toBe("0x");
+    });
+
+    it("passes through a full call-data input verbatim", async () => {
+      const input =
+        "0xa9059cbb000000000000000000000000000000000000000000000000000000000000aaaa00000000000000000000000000000000000000000000000000000000000003e8";
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          fakeResponse({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              result: { hash: "0xtx", from: "0xsender", to: "0xrecipient", input },
+            }),
+          }),
+        ),
+      );
+      const rpc = createFetchEthRpcClient();
+      const result = await getTransactionByHash(rpc, "http://x", "0xtx");
+      expect(result?.input).toBe(input);
+    });
   });
 
   it("returns null when the tx is unknown (result: null)", async () => {

@@ -8,7 +8,9 @@
 import type {
   BlockEntity,
   ChainAdapter,
+  ContractCall,
   ContractEntity,
+  ContractEvent,
   InfraEntity,
   NodeEntity,
   PeerEdge,
@@ -29,6 +31,7 @@ import { BlockPropagationTracker } from "./blocks.js";
 import type { ContractCatalog } from "./catalog.js";
 import { classifyContainer } from "./classify.js";
 import { ContractTracker } from "./contracts.js";
+import { decodeContractCall, decodeContractEvent } from "./decode.js";
 import { MANAGED_LABEL, P2P_ROLE_LABEL } from "./labels.js";
 import {
   fetchConnectedExecutionPeerIdentities,
@@ -39,6 +42,7 @@ import {
   getBlockReceipts,
   getTransactionByHash,
   type EthRpcClient,
+  type RpcLog,
   type RpcTransactionReceipt,
 } from "./eth-rpc-client.js";
 import {
@@ -446,9 +450,15 @@ export class EthereumAdapter implements ChainAdapter {
   }
 
   /**
-   * newPendingTransactions で得た tx ハッシュの詳細（from/to）を HTTP JSON-RPC で
-   * 取得し、pending として記録する。まだ伝播していない等で詳細が取れない場合は
-   * 何もしない。取得失敗はログして握り、購読自体は継続させる。
+   * newPendingTransactions で得た tx ハッシュの詳細（from/to/input）を HTTP
+   * JSON-RPC で取得し、pending として記録する。まだ伝播していない等で詳細が
+   * 取れない場合は何もしない。取得失敗はログして握り、購読自体は継続させる。
+   *
+   * 宛先（to）が追跡中のコントラクトであれば、input をカタログ照合の有無に
+   * 関わらず TransactionEntity.contractCall へ反映する（カタログ未照合なら
+   * rawFunctionId のみを持つ ContractCall になる。詳細は resolveContractCall
+   * 参照。Issue #162）。追加の RPC 呼び出しは発生しない（input は既に
+   * 呼んでいる eth_getTransactionByHash のレスポンスに含まれる）。
    */
   private async handlePendingTx(
     rpcUrl: string,
@@ -458,11 +468,46 @@ export class EthereumAdapter implements ChainAdapter {
     try {
       const detail = await getTransactionByHash(this.ethRpc, rpcUrl, hash);
       if (!detail) return;
-      const entity = this.txTracker.recordPending(detail);
+      const contractCall = this.resolveContractCall(detail.to, detail.input);
+      const entity = this.txTracker.recordPending({
+        hash: detail.hash,
+        from: detail.from,
+        to: detail.to,
+        ...(contractCall ? { contractCall } : {}),
+      });
       if (entity) onTx(entity);
     } catch (err) {
       console.error(`[ethereum] failed to fetch pending tx ${hash}:`, err);
     }
+  }
+
+  /**
+   * 宛先アドレスが追跡中のコントラクト（ContractTracker が ContractEntity を
+   * 保持している = デプロイ済みと確認できている）であれば、input をカタログ
+   * 照合の有無に関わらず ContractCall へ変換して返す（Issue #162、レビュー
+   * 差し戻し 2026-07-07）。
+   *
+   * 判定は「追跡中か」（`contractTracker.get(to)`）であり、「カタログ照合
+   * 済みか」（`getCatalogEntry(to)`）ではない点に注意。カタログ未照合の
+   * 「未知のコントラクト」（docs/ARCHITECTURE.md §6.4）宛てでも、追跡さえ
+   * されていれば decodeContractCall が rawFunctionId のみの ContractCall を
+   * 返す（decodeContractEvent と対称。以前は catalogEntry が無いことを理由に
+   * ここで即座に undefined を返しており、追跡中だが未カタログの宛先に
+   * rawFunctionId すら載らない非対称なバグがあった）。
+   *
+   * 宛先がコントラクト作成（null）・そもそも追跡すらされていない（通常の
+   * EOA 宛てなど）場合は undefined（呼び出し側は TransactionEntity.
+   * contractCall を省略する。フロントは to と ContractEntity.address の
+   * 照合でコントラクト宛て表示にフォールバックできる）。
+   */
+  private resolveContractCall(
+    to: string | null,
+    input: string,
+  ): ContractCall | undefined {
+    if (!to) return undefined;
+    if (!this.contractTracker.get(to)) return undefined;
+    const catalogEntry = this.contractTracker.getCatalogEntry(to);
+    return decodeContractCall(catalogEntry, to, input);
   }
 
   /**
@@ -474,10 +519,11 @@ export class EthereumAdapter implements ChainAdapter {
    *
    * receipt の contractAddress（コントラクト作成 tx でのみ非 null）は
    * TransactionEntity.createdContractAddress へマッピングする（Issue #160）。
-   * receipt.logs（未復号のイベントログ）はこの receipts に既に含まれており、
-   * カタログ ABI による復号（TransactionEntity.contractEvents への反映）は
-   * 後続 Issue #162 がこの同じ receipts を使って行う想定（追加の RPC 呼び出しは
-   * 発生しない。Issue #86 の方針を維持）。
+   * receipt.logs（未復号のイベントログ）は、発行元コントラクトがカタログ
+   * 照合済みであればその ABI で復号し、TransactionEntity.contractEvents へ
+   * 反映する（Issue #162）。追加の RPC 呼び出しは発生しない（logs は既に
+   * 呼んでいる eth_getBlockReceipts のレスポンスに含まれる。Issue #86 の
+   * 方針を維持）。
    */
   private async handleBlockInclusion(
     rpcUrl: string,
@@ -503,9 +549,10 @@ export class EthereumAdapter implements ChainAdapter {
           status: r.succeeded ? "included" : "failed",
           // コントラクト作成 tx でのみ非 null。TransactionEntity.
           // createdContractAddress へマッピングされる（Issue #160）。
-          // receipt.logs（未復号のイベントログ）は receipts に保持されており、
-          // カタログ ABI での復号は後続 Issue #162 がここで扱う。
           contractAddress: r.contractAddress,
+          // 発行元（log.address）ごとにカタログ照合を試み、可能なら ABI で
+          // 復号する（Issue #162）。
+          contractEvents: this.decodeReceiptLogs(r.logs),
         })),
       );
       for (const entity of changed) onTx(entity);
@@ -581,6 +628,19 @@ export class EthereumAdapter implements ChainAdapter {
       });
       if (entity) this.onContract?.(entity);
     }
+  }
+
+  /**
+   * receipt.logs（未復号）を、発行元（log.address）ごとにカタログ照合を
+   * 試みたうえで ContractEvent[] へ復号する（Issue #162）。ログ 1 件ごとに
+   * 発行元が異なりうる（tx が呼び出した先のコントラクトが、別のコントラクト
+   * を呼び出してイベントを発する場合がある）ため、tx.to ではなく各ログの
+   * address で個別に照合する。
+   */
+  private decodeReceiptLogs(logs: RpcLog[]): ContractEvent[] {
+    return logs.map((log) =>
+      decodeContractEvent(this.contractTracker.getCatalogEntry(log.address), log),
+    );
   }
 
   /**

@@ -15,7 +15,7 @@
 //   特定はここでは行わない（ARCHITECTURE.md の決定: 必須にしない）
 
 import type { ChainType, ContractEntity } from "@chainviz/shared";
-import type { ContractCatalog } from "./catalog.js";
+import type { CatalogEntry, ContractCatalog } from "./catalog.js";
 
 /** receipt から得られる、コントラクト作成 tx の最小情報。 */
 export interface ContractDeployment {
@@ -116,6 +116,21 @@ export class ContractTracker {
   /** 現在追跡しているコントラクトの状態（テスト・確認用）。 */
   get(address: string): ContractEntity | undefined {
     return this.contracts.get(normalizeAddress(address));
+  }
+
+  /**
+   * address が追跡中かつカタログ照合済み（catalogKey 確定）のコントラクト
+   * であれば、対応する CatalogEntry（ABI を含む）を返す。未追跡・カタログ
+   * 未照合（「未知のコントラクト」）なら undefined を返す（呼び出し側 =
+   * 関数呼び出し/イベントログの復号ロジックは、ABI が無いので復号を諦める。
+   * Issue #162）。ABI はここで初めて呼び出し側へ渡るが、渡す先は同じ
+   * ChainAdapter 実装配下の復号ロジックに限られ、ワールドステートには
+   * 一切漏らさない。
+   */
+  getCatalogEntry(address: string): CatalogEntry | undefined {
+    const entity = this.contracts.get(normalizeAddress(address));
+    if (!entity?.catalogKey) return undefined;
+    return this.catalog?.[entity.catalogKey];
   }
 
   private applyCatalog(entity: ContractEntity, contractKey: string): ContractEntity {

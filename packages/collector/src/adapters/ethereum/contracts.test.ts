@@ -248,6 +248,55 @@ describe("ContractTracker.get", () => {
   });
 });
 
+describe("ContractTracker.getCatalogEntry (Issue #162)", () => {
+  it("returns the CatalogEntry (with ABI) for a cataloged, tracked contract", () => {
+    const tracker = new ContractTracker("ethereum", catalog);
+    tracker.registerDeployment("0xtoken", "ChainvizToken");
+    tracker.recordDeployment({
+      address: "0xtoken",
+      deployerAddress: "0xdeployer",
+      createdByTxHash: "0xtx1",
+    });
+    expect(tracker.getCatalogEntry("0xtoken")).toBe(catalog.ChainvizToken);
+  });
+
+  it("normalizes address casing the same way as get()", () => {
+    const tracker = new ContractTracker("ethereum", catalog);
+    tracker.registerDeployment("0xABCDEF", "Counter");
+    tracker.recordDeployment({
+      address: "0xabcdef",
+      deployerAddress: "0xdeployer",
+      createdByTxHash: "0xtx1",
+    });
+    expect(tracker.getCatalogEntry("0xABCDEF")).toBe(catalog.Counter);
+  });
+
+  it("returns undefined for an untracked address", () => {
+    const tracker = new ContractTracker("ethereum", catalog);
+    expect(tracker.getCatalogEntry("0xabsent")).toBeUndefined();
+  });
+
+  it("returns undefined for a tracked but uncataloged (unknown) contract", () => {
+    const tracker = new ContractTracker("ethereum", catalog);
+    tracker.recordDeployment({
+      address: "0xunknown",
+      deployerAddress: "0xdeployer",
+      createdByTxHash: "0xtx1",
+    });
+    expect(tracker.getCatalogEntry("0xunknown")).toBeUndefined();
+  });
+
+  it("returns undefined when there is no catalog at all (catalog load failed at startup)", () => {
+    const tracker = new ContractTracker("ethereum", undefined);
+    tracker.recordDeployment({
+      address: "0xtoken",
+      deployerAddress: "0xdeployer",
+      createdByTxHash: "0xtx1",
+    });
+    expect(tracker.getCatalogEntry("0xtoken")).toBeUndefined();
+  });
+});
+
 describe("ContractTracker address casing normalization (Issue #161 review follow-up)", () => {
   // 実測（reth + foundry, chainviz-reviewer 2026-07-07）: forge create の
   // "Deployed to:" 行は EIP-55 チェックサム表記（大小混在）、reth の

@@ -896,7 +896,7 @@ describe("EthereumAdapter.subscribeTransactions", () => {
     );
     const ws = controllableWsClient();
     const rpc = stubRpcClient({
-      txs: { "0xt1": { hash: "0xt1", from: "0xa", to: "0xb" } },
+      txs: { "0xt1": { hash: "0xt1", from: "0xa", to: "0xb", input: "0x" } },
     });
     const adapter = new EthereumAdapter(poller, {
       ethWsClient: ws.client,
@@ -945,7 +945,7 @@ describe("EthereumAdapter.subscribeTransactions", () => {
     );
     const ws = controllableWsClient();
     const rpc = stubRpcClient({
-      txs: { "0xt1": { hash: "0xt1", from: "0xa", to: "0xb" } },
+      txs: { "0xt1": { hash: "0xt1", from: "0xa", to: "0xb", input: "0x" } },
       blocks: {
         "0xblock1": [
           {
@@ -988,7 +988,7 @@ describe("EthereumAdapter.subscribeTransactions", () => {
     );
     const ws = controllableWsClient();
     const rpc = stubRpcClient({
-      txs: { "0xt1": { hash: "0xt1", from: "0xa", to: null } },
+      txs: { "0xt1": { hash: "0xt1", from: "0xa", to: null, input: "0x" } },
       blocks: {
         "0xblock1": [
           {
@@ -1033,7 +1033,7 @@ describe("EthereumAdapter.subscribeTransactions", () => {
     );
     const ws = controllableWsClient();
     const rpc = stubRpcClient({
-      txs: { "0xdeploy": { hash: "0xdeploy", from: "0xdeployer", to: null } },
+      txs: { "0xdeploy": { hash: "0xdeploy", from: "0xdeployer", to: null, input: "0x" } },
       blocks: {
         "0xblock1": [
           {
@@ -1078,7 +1078,7 @@ describe("EthereumAdapter.subscribeTransactions", () => {
     );
     const ws = controllableWsClient();
     const rpc = stubRpcClient({
-      txs: { "0xt1": { hash: "0xt1", from: "0xa", to: "0xb" } },
+      txs: { "0xt1": { hash: "0xt1", from: "0xa", to: "0xb", input: "0x" } },
       blocks: {
         "0xblock1": [
           { transactionHash: "0xt1", from: "0xa", to: "0xb", status: "0x1" },
@@ -1465,7 +1465,7 @@ describe("EthereumAdapter.subscribeContracts (Issue #161)", () => {
     );
     const ws = controllableWsClient();
     const rpc = stubRpcClient({
-      txs: { "0xdeploy": { hash: "0xdeploy", from: "0xdeployer", to: null } },
+      txs: { "0xdeploy": { hash: "0xdeploy", from: "0xdeployer", to: null, input: "0x" } },
       blocks: {
         "0xblock1": [
           {

@@ -18,6 +18,13 @@ export interface RpcTransaction {
   from: string;
   /** コントラクト作成 tx では to は null。 */
   to: string | null;
+  /**
+   * tx の呼び出しデータ（16 進文字列）。コントラクト関数呼び出しの復号
+   * （カタログ ABI による decodeFunctionData。Issue #162）にのみ使う、
+   * チェーン固有の生データ。フィールドが欠落・非文字列の場合は "0x"
+   * （呼び出しデータなし）として扱う。
+   */
+  input: string;
 }
 
 /**
@@ -66,6 +73,7 @@ interface RawTransaction {
   hash?: unknown;
   from?: unknown;
   to?: unknown;
+  input?: unknown;
 }
 
 interface RawReceipt {
@@ -152,7 +160,10 @@ function normalizeTransaction(raw: unknown): RpcTransaction | null {
   const tx = raw as RawTransaction;
   if (typeof tx.hash !== "string" || typeof tx.from !== "string") return null;
   const to = typeof tx.to === "string" ? tx.to : null;
-  return { hash: tx.hash, from: tx.from, to };
+  // input が欠落・非文字列（想定外のノード実装等）の場合は「呼び出しデータなし」
+  // と同じ "0x" にフォールバックする（復号側は関数呼び出しではないと解釈する）。
+  const input = typeof tx.input === "string" ? tx.input : "0x";
+  return { hash: tx.hash, from: tx.from, to, input };
 }
 
 /**
