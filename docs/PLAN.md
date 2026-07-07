@@ -286,7 +286,7 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
 
 ## ステップ 8: Phase4実装 — C層拡張（コントラクト呼び出し・イベントログ可視化）
 
-GitHub: milestone（Issue化の際に作成し、ここにリンクを埋める）
+GitHub: [milestone](https://github.com/morichikawa/chainviz/milestone/7)
 
 CONCEPT.mdロードマップの新Phase 4（C層 完成）: ステップ7で範囲外とした
 コントラクト呼び出し・イベントログの可視化と、送金・デプロイ等の定型操作の
@@ -303,40 +303,53 @@ runWorkbenchOperation コマンド・ChainAdapter.subscribeContracts）は設計
       情報の見せ方・文言。「コントラクトは全ノードで実行される」の伝え方を
       含む）→ 設計済み。`docs/ARCHITECTURE.md` §6 が成果物（frontend への
       着手指示を兼ねる）。§6.10 の判断4点は確定済み
+      [#157](https://github.com/morichikawa/chainviz/issues/157)
 
 **node-env**:
 
 - [ ] サンプルコントラクト（最小ERC20のChainvizTokenとCounter）のFoundry
       プロジェクトを`profiles/ethereum/contracts/`に追加しワークベンチに
       マウントする
+      [#158](https://github.com/morichikawa/chainviz/issues/158)
 - [ ] コントラクトカタログ（catalog.json: 表示名・ABI・tokenメタ情報）と
       再生成スクリプト（build-catalog.sh）を追加する
+      [#159](https://github.com/morichikawa/chainviz/issues/159)
 
 **collector**:
 
 - [ ] eth_getBlockReceiptsの正規化を拡張しコントラクト作成
       （contractAddress）とイベントログ（logs）を取得する
+      [#160](https://github.com/morichikawa/chainviz/issues/160)
 - [ ] コントラクトカタログの読み込みとデプロイ検知・追跡を実装し
       ContractEntityをworld-stateへ配信する（subscribeContracts）
+      [#161](https://github.com/morichikawa/chainviz/issues/161)
 - [ ] カタログのABIで関数呼び出し・イベントログを復号しTransactionEntityの
       contractCall/contractEventsに載せる
+      [#162](https://github.com/morichikawa/chainviz/issues/162)
 - [ ] runWorkbenchOperationコマンド（transfer/deployContract/callContract）
       をワークベンチコンテナ内のcast/forge実行として実装する
+      [#163](https://github.com/morichikawa/chainviz/issues/163)
 - [ ] 追跡中トークンコントラクトの残高をポーリングし
       WalletEntity.tokenBalancesへ反映する
+      [#164](https://github.com/morichikawa/chainviz/issues/164)
 
 **frontend**:
 
 - [ ] ContractEntityのカード表示とポップオーバー（未知のコントラクトの
       表示を含む）を実装する
+      [#165](https://github.com/morichikawa/chainviz/issues/165)
 - [ ] コントラクト呼び出し・イベントログの可視化（復号済み関数名・引数・
       イベントの表示と、tx確定時のコントラクトカードへのアニメーション）を
       実装する
+      [#166](https://github.com/morichikawa/chainviz/issues/166)
 - [ ] ワークベンチカードから定型操作（送金・デプロイ・コントラクト呼び出し）
       を実行するUIを実装する
+      [#167](https://github.com/morichikawa/chainviz/issues/167)
 - [ ] ウォレットカードにトークン残高を表示する
+      [#168](https://github.com/morichikawa/chainviz/issues/168)
 - [ ] C層拡張の用語データ（contract・デプロイ・ABI・イベントログ・EVM・
       トークン等）をglossaryへ追加する
+      [#169](https://github.com/morichikawa/chainviz/issues/169)
 
 **成果物**: 動くPhase 4デモ
 **完了条件**: CONCEPT.md「ロードマップ」Phase 4の記述どおりに動作する
