@@ -177,3 +177,219 @@ Playwright(headless Chromium)で `circle.peer-pulse` の画面座標を50〜60ms
 - `gapX` の最終値: 本設計の推奨は420。より控えめ(400)や余裕を持たせる
   (450)の選択もあるが、現行カード幅の前提では420で十分な視認性が得られる
 - スコープ外発見1・2のIssue起票の要否
+
+### 2026-07-07 Issue #125 実装(SMIL→CSS offset-path化・gapX拡大)
+
+- 担当: frontend
+- ブランチ: issue-125-ux-design-pulse-visibility
+- 内容: UX設計(上記)の実装仕様どおりに着手した。統括判断で
+  `OperationPulseEdge` の同バグ修正も本Issueに含め、`gapX` は420を採用した。
+
+#### 変更内容
+
+1. `packages/frontend/src/styles.css`
+   - `.peer-edge` セクションに共通キーフレーム `@keyframes pulse-travel`
+     (`offset-distance: 0% → 100%`)を追加
+   - `.peer-pulse` / `.operation-pulse` に
+     `animation-name: pulse-travel; animation-timing-function: linear;
+     animation-fill-mode: forwards;` を追加(色・発光などの既存宣言は変更なし)
+2. `packages/frontend/src/entities/PeerPropagationEdge.tsx` /
+   `packages/frontend/src/entities/OperationPulseEdge.tsx`
+   - `<circle>` の子要素だった `<animateMotion>` を削除し、`<circle>` の
+     インライン `style` で `offsetPath` / `animationDuration` /
+     `animationDirection`(PeerPropagationEdgeのみ、reverse対応)を渡す形に
+     変更。パルスの見た目(r=5・発光)・生成消滅のスケジューリング
+     (`useBlockPulses` / `useOperationPulses`)・タイミング計算
+     (`blockPulse.ts`)は一切変更していない
+   - コンポーネント冒頭のコメントを、SMIL前提の説明からCSS
+     offset-path前提の説明に更新した
+3. `packages/frontend/src/entities/infraNode.ts`
+   - `DEFAULT_GRID.gapX` を 260 → 420 に変更。値の根拠と前提条件
+     (カード実測最大幅・コンテナ名の長さに依存する点)をコードコメントに
+     明記した。`gapY` は変更していない
+
+#### テスト
+
+- `packages/frontend/src/entities/PeerPropagationEdge.test.tsx`: 既存の
+  「animateMotionの属性を検証するテスト」を「animateMotion要素が存在
+  しないこと」「`style.animationDuration` / `style.animationDirection`
+  (reverse時・normal時の両方)/ `style.offsetPath` を検証するテスト」に
+  置き換えた
+- `packages/frontend/src/entities/OperationPulseEdge.test.tsx`: 既存テスト
+  ファイルが無かったため新規作成。パルス0件/複数件の描画、
+  `animateMotion`要素が無いこと、`animationDuration` / `offsetPath` の
+  検証を行う
+- `infraNode.test.ts` は `DEFAULT_GRID.gapX` をシンボリック参照している
+  既存テストのみで、値変更(260→420)によって壊れないことを確認済み
+  (追加テストは不要と判断)
+- 修正前のコード(`animateMotion`構造)に一時的に戻して新規テストを実行し、
+  実際に失敗する(＝修正前のバグを検出できる)ことを確認してから、修正後の
+  コードに戻して全テストが通ることを再確認した(CLAUDE.mdの回帰テスト
+  検証ルールに従う)
+- jsdom(`cssstyle`パッケージ)は `animation-duration` / `animation-direction`
+  / `offset-path` のいずれも標準プロパティとして認識し、
+  `element.style.xxx` で読み書きできることを事前に確認した上で
+  `offsetPath` の検証もテストに含めた(ワークログ記載の懸念とは異なり、
+  今回のjsdomバージョンでは無視されなかった)
+
+#### ビルド・動作確認
+
+- `pnpm --filter @chainviz/frontend build`(`tsc -b`)・
+  `pnpm --filter @chainviz/frontend test`(vitest run)ともに成功
+  (48ファイル768テスト)
+- `pnpm --filter @chainviz/frontend dev`をポート5273(既存の
+  収集悟起動分・利用者の既存環境のport 4000/5173とは別ポート)で起動し、
+  配信されるCSS(`/src/styles.css`)・コンポーネントソース
+  (`/src/entities/PeerPropagationEdge.tsx`)をcurlで取得して、
+  `pulse-travel`キーフレーム・`animation-name`等の追加、および
+  `animateMotion`要素(コメント以外)が実際に無くなっていることを確認した
+- Playwrightによる「実際に画面上を移動すること」の実機確認は本
+  worktreeでは実施できなかった。ヘッドレスChromiumの実行に必要な共有
+  ライブラリ(`libnspr4.so`等)がこの環境に無く、`apt-get download`も
+  candidateが見つからずインストールできなかった(sudoも使えない)。
+  UX設計時(体験優)には同様のPlaywright手順で修正前の凍結が実測
+  確認されており、修正後のコード自体はCSSアニメーションの標準的な
+  記法(offset-path + animation-fill-mode: forwards)に沿っているため、
+  最終的な実機での移動確認は検証大地(QA)に委ねる
+
+#### 次の担当への申し送り
+
+- worklog記載の「Issueスコープ外の発見」のうち、発見2(collectorの
+  eth_subscribe再購読が無い)は既にIssue #135として起票済み。発見1
+  (`BlockEntity.receivedAt`がbeacon側stableIdにしか記録されずreth間
+  エッジではパルスが走らない)はまだIssue化されていない。本Issueの
+  スコープ外(collector側の変更が必要)のため未対応のまま
+- QAは実環境+Playwrightで `circle.peer-pulse` /
+  `circle.operation-pulse` の `getBoundingClientRect()` を450ms
+  (operationは900ms)間サンプリングし、座標が始点側から到達先側へ
+  単調に変化することを確認してほしい(本worklog冒頭のUX設計時の観測
+  手順と同じ)
+
+### 2026-07-07 Issue #125 テスト強化(異常系・境界値の追加)
+
+- 担当: tester
+- ブランチ: issue-125-ux-design-pulse-visibility
+- 内容: 実装担当が書いた基本テスト(ハッピーパス中心)に対し、CSS
+  offset-path化・gapX拡大の変更点を対象に異常系・境界値のテストを追加した。
+  実装コードは変更していない(既存実装に対するテスト追加のみ)。
+
+#### 追加したテストの観点
+
+`packages/frontend/src/entities/PeerPropagationEdge.test.tsx`
+
+- 複数パルス同時存在時の独立性: 向き・所要時間の異なる3パルスを描画し、
+  文書順(描画順)で各circleが自分のパルスの `animationDuration` /
+  `animationDirection` を持ち、隣のパルスの値と混線しないことを検証
+- 同一エッジ上の全パルスが同じ `offsetPath` を指すことの不変条件
+- エッジ形状変化時の追従(ノードドラッグ相当): 同じ `pulse.key` を保った
+  まま `targetX/Y` を変えて再レンダーし、走行中パルスの `offsetPath` が
+  古いパスのまま取り残されず新しいパスへ更新されることを検証
+- `durationMs` の境界値(0 / 1 / 123.5 / 10_000_000)で `animationDuration`
+  文字列が `${durationMs}ms` としてそのまま生成されること(jsdom の cssstyle
+  が時間値を正規化・丸めしないことを事前に確認済み)
+- `reverse` フラグ境界: フラグ欠落(undefined)を防御的に渡された場合も
+  falsy として `normal` に落ちること(true/false/omitted の3系統を網羅)
+
+`packages/frontend/src/entities/OperationPulseEdge.test.tsx`
+
+- 複数パルス同時存在時の `durationMs` 独立性(混線しないこと)
+- 操作パルスは常に source→target のため `animationDirection` を一切設定
+  しない(空文字のまま)ことの固定
+- 同一エッジ上の全パルスが同じ `offsetPath` を指すこと
+- エッジ形状変化時の `offsetPath` 追従(再レンダー)
+- `durationMs` 境界値での `animationDuration` 文字列生成
+
+`packages/frontend/src/entities/infraNode.test.ts`
+
+- `DEFAULT_GRID` の横間隔退行ガード: gapX が UX設計で実測されたカード最大幅
+  (約285フローpx)を上回り、隣接カード間に紐が見える距離を確保していること
+  (旧 gapX=260 への巻き戻しを検出)。値そのものの固定ではなく、UXの根拠
+  (カード幅との差)に紐付けて表現した
+- gapX > gapY(横間隔だけ広げた設計意図)の固定
+- gapX 変更で別グリッドセルどうしの座標が衝突(positionKey 重複)しないこと
+
+#### 回帰検出の確認
+
+- 追加テストのうち「複数パルスの独立性」「offset-path の再レンダー追従」が
+  実際に不具合を検出できることを、実装を一時的に壊して確認した(offsetPath
+  を固定文字列に差し替え・animationDirection を reverse 無視に固定した状態で
+  該当テストが失敗し、元に戻すと通ることを確認)。確認後は実装ファイルを
+  バックアップと突き合わせて完全に復元済み
+
+#### ビルド・テスト
+
+- `pnpm --filter @chainviz/frontend build`(tsc -b)成功
+- `pnpm --filter @chainviz/frontend test` 成功(48ファイル。768→787テスト、
+  +19テスト)
+
+#### 実装のバグ
+
+- 今回追加した観点の範囲では、既存実装にバグは見つからなかった(追加した
+  境界値・異常系テストはいずれも修正後の実装で通る)
+
+### 2026-07-07 Issue #125 静的レビュー(合格)
+
+- 担当: reviewer
+- ブランチ: issue-125-ux-design-pulse-visibility
+- 結果: **合格**。指摘事項なし(コミット分割の推奨あり。下記)
+
+#### 確認内容
+
+1. **CSS offset-path 化が SMIL の凍結バグを解消する設計か**: 前提は正しい。
+   SMIL の `animateMotion` は `begin` 未指定だと文書タイムライン0秒起点で
+   解決されるのに対し、CSS アニメーションは要素にスタイルが適用された
+   時点(= 動的挿入時)に開始される。加えて、パルスの `key` は
+   `useBlockPulses`(`...#${seqRef.current++}`)・`useOperationPulses`
+   (`op-pulse-${signal.seq}`)ともに毎回一意に生成されるため、React は
+   パルスごとに新しい `<circle>` を挿入し、アニメーションは必ず 0% から
+   再生される。`animation-direction: reverse` + `fill-mode: forwards` の
+   終端が始点(0%)になる点も UX 設計時のプロトタイプで実測済みと記録
+   されており、整合している
+2. **gapX 420 の前提条件の明記**: `infraNode.ts` の `DEFAULT_GRID` 直上の
+   コメントに、カード実測最大幅(約285フローpx)・`containerName` の長さに
+   幅が依存すること(min-width 190px / max-width なし)・命名が大幅に長く
+   なった場合は見直しが必要であることが明記されている。CLAUDE.md の
+   固定値ルールを満たす。テスト側(`infraNode.test.ts`)も値の丸暗記では
+   なく「gapX − 実測最大幅 ≥ 100px」という UX 根拠に紐付けた退行ガードに
+   なっており良い
+3. **変更範囲の限定**: `blockPulse.ts` / `useBlockPulses.ts` /
+   `useOperationPulses.ts` は無変更(git diff で確認)。
+   `MIN_PULSE_DURATION_MS` 等のタイミング計算・スケジューリングに
+   変更なし。UX 設計の「変更しないもの」の範囲が守られている
+4. **ビルド・テスト**: リポジトリ全体で `pnpm lint` / `pnpm build` /
+   `pnpm test` すべて成功(shared 13 / e2e 34 / collector 638 /
+   frontend 787 テスト)
+5. **テストの質**: animateMotion 不在の固定・duration/direction/offsetPath
+   の検証・複数パルスの独立性・再レンダー時の offset-path 追従・境界値と、
+   jsdom で検証可能な範囲を適切にカバーしている。実装担当・tester とも
+   「実装を一時的に壊してテストが失敗すること」を確認済みと記録されて
+   おり、意味のないテストになっていない
+6. **境界・エラー処理**: frontend は collector の WebSocket 経由のデータを
+   描くのみで境界違反なし。テスト中の `eth_call` は既存設計(観測された
+   操作名を不透明な文字列として運ぶ `OperationEdgeData.operation`)の
+   サンプル値であり本変更由来ではない。今回の変更に catch 節はなく
+   エラー握りつぶしの懸念なし
+7. **docs との齟齬**: `docs/ARCHITECTURE.md` / `docs/CONCEPT.md` はパルスを
+   概念レベル(SMIL 等の実装詳細に踏み込まない)でのみ記述しており齟齬なし
+
+#### コミット粒度についての統括への申し送り
+
+- コミット済みは UX 設計 docs の1件のみで、実装・テスト強化・PLAN.md
+  更新はすべて未コミット。CLAUDE.md の「1つの変更内容 = 1コミット」に
+  従い、最低限以下の単位に分けてコミットすることを推奨する:
+  1. fix(frontend): SMIL→CSS offset-path 化(PeerPropagationEdge.tsx /
+     OperationPulseEdge.tsx / styles.css と対応するテストの置き換え・新規)
+  2. fix(frontend): DEFAULT_GRID.gapX 260→420(infraNode.ts)—
+     アニメーション修正とは別の関心事のため分ける
+  3. test(frontend): tester によるテスト強化19件
+  4. docs: worklog 追記 + PLAN.md チェック
+- 実装担当分のテスト変更と tester 分の追加が同一テストファイルに混在して
+  いるため、厳密に分けるなら `git add -p` が必要。テスト変更を1コミットに
+  まとめる判断は統括に委ねる
+
+#### QA への申し送り(実装担当の申し送りの補足)
+
+- `offset-path` を SVG 要素に適用できないブラウザではパルスがパス上を
+  走らず原点付近に静止する退化があり得る。QA の実機確認は UX 設計時と
+  同じ Chromium 系で、`circle.peer-pulse` の座標が始点側から到達先側へ
+  単調に変化することを確認してほしい
