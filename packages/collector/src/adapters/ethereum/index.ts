@@ -453,6 +453,13 @@ export class EthereumAdapter implements ChainAdapter {
    * included/failed へ遷移させる（未追跡の tx は included/failed として新規
    * 追加）。receipt の succeeded(false)を world-state の "failed" へ、それ以外を
    * "included" へマッピングする。取得失敗はログして握り、購読自体は継続させる。
+   *
+   * receipt の contractAddress（コントラクト作成 tx でのみ非 null）は
+   * TransactionEntity.createdContractAddress へマッピングする（Issue #160）。
+   * receipt.logs（未復号のイベントログ）はこの receipts に既に含まれており、
+   * カタログ ABI による復号（TransactionEntity.contractEvents への反映）は
+   * 後続 Issue #162 がこの同じ receipts を使って行う想定（追加の RPC 呼び出しは
+   * 発生しない。Issue #86 の方針を維持）。
    */
   private async handleBlockInclusion(
     rpcUrl: string,
@@ -476,6 +483,11 @@ export class EthereumAdapter implements ChainAdapter {
           from: r.from,
           to: r.to,
           status: r.succeeded ? "included" : "failed",
+          // コントラクト作成 tx でのみ非 null。TransactionEntity.
+          // createdContractAddress へマッピングされる（Issue #160）。
+          // receipt.logs（未復号のイベントログ）は receipts に保持されており、
+          // カタログ ABI での復号は後続 Issue #162 がここで扱う。
+          contractAddress: r.contractAddress,
         })),
       );
       for (const entity of changed) onTx(entity);

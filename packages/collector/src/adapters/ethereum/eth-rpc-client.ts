@@ -21,6 +21,18 @@ export interface RpcTransaction {
 }
 
 /**
+ * receipt.logs 1 件分の未復号の生データ。イベント名・引数への復号は
+ * チェーンプロファイルのコントラクトカタログの ABI を要するため、この層では
+ * 行わない（復号は呼び出し側 = 後続のコントラクトカタログ照合ロジックの責務。
+ * Issue #162）。
+ */
+export interface RpcLog {
+  address: string;
+  topics: string[];
+  data: string;
+}
+
+/**
  * eth_getBlockReceipts から取り出す tx receipt の最小限の情報。succeeded は
  * receipt の status（0x0/0x1）から解釈した実行結果であり、world-state の語彙
  *（included/failed）へのマッピングは呼び出し側（アダプタ）が行う。
@@ -32,6 +44,17 @@ export interface RpcTransactionReceipt {
   to: string | null;
   /** receipt.status が "0x0" のときだけ false。それ以外（0x1・欠落・不正値）は true。 */
   succeeded: boolean;
+  /**
+   * コントラクト作成 tx でのみ非 null（作成されたコントラクトのアドレス）。
+   * それ以外の通常の tx や、フィールド自体が欠落している場合は null。
+   */
+  contractAddress: string | null;
+  /**
+   * tx の実行中にコントラクトが発したイベントログ（未復号の生データ）。
+   * logs フィールドが欠落・不正な形の場合は空配列（ログなしと区別しない。
+   * 復号側は「イベントが無かった」のと同じ扱いで安全側に倒れる）。
+   */
+  logs: RpcLog[];
 }
 
 interface JsonRpcResponse<T> {
@@ -50,6 +73,14 @@ interface RawReceipt {
   from?: unknown;
   to?: unknown;
   status?: unknown;
+  contractAddress?: unknown;
+  logs?: unknown;
+}
+
+interface RawLog {
+  address?: unknown;
+  topics?: unknown;
+  data?: unknown;
 }
 
 /** グローバル fetch を用いた EthRpcClient 実装。 */
@@ -138,6 +169,20 @@ export async function getTransactionByHash(
   return normalizeTransaction(raw);
 }
 
+/**
+ * 生の JSON-RPC log オブジェクトを RpcLog へ正規化する（不正なら null）。
+ * topics は配列であることだけを要求し、文字列でない要素は個別に捨てる
+ * （1 件のノイズでログ全体を諦めない）。
+ */
+function normalizeLog(raw: unknown): RpcLog | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const log = raw as RawLog;
+  if (typeof log.address !== "string" || typeof log.data !== "string") return null;
+  if (!Array.isArray(log.topics)) return null;
+  const topics = log.topics.filter((t): t is string => typeof t === "string");
+  return { address: log.address, topics, data: log.data };
+}
+
 /** 生の JSON-RPC receipt オブジェクトを RpcTransactionReceipt へ正規化する（不正なら null）。 */
 function normalizeReceipt(raw: unknown): RpcTransactionReceipt | null {
   if (typeof raw !== "object" || raw === null) return null;
@@ -153,15 +198,32 @@ function normalizeReceipt(raw: unknown): RpcTransactionReceipt | null {
   // （証拠なしに failed 表示をしない保守的判断。status 欠落は pre-Byzantium の
   // receipt 形式で、本プロファイルの devnet では実際には起きない）。
   const succeeded = receipt.status !== "0x0";
-  return { transactionHash: receipt.transactionHash, from: receipt.from, to, succeeded };
+  // コントラクト作成 tx でのみ non-null。文字列でなければ（欠落・null 含め）
+  // 「作成ではない」として null に倒す。
+  const contractAddress =
+    typeof receipt.contractAddress === "string" ? receipt.contractAddress : null;
+  const rawLogs = Array.isArray(receipt.logs) ? receipt.logs : [];
+  const logs = rawLogs
+    .map((l) => normalizeLog(l))
+    .filter((l): l is RpcLog => l !== null);
+  return {
+    transactionHash: receipt.transactionHash,
+    from: receipt.from,
+    to,
+    succeeded,
+    contractAddress,
+    logs,
+  };
 }
 
 /**
  * eth_getBlockReceipts でブロックに含まれる全 tx の receipt を取得する。
- * receipt には transactionHash / from / to / status がすべて含まれるため、
- * 1 回の呼び出しでブロック内 tx 一覧と各 tx の成否を同時に得られる（tx 本体を
- * 別途 eth_getBlockByHash で取得する必要がない）。未知のブロックでは null を
- * 返す（JSON-RPC では result=null で返る）。空ブロックは空配列を返す。
+ * receipt には transactionHash / from / to / status に加え contractAddress /
+ * logs も含まれるため、1 回の呼び出しでブロック内 tx 一覧・各 tx の成否・
+ * コントラクト作成の検知・イベントログ（未復号）まで同時に得られる（tx 本体を
+ * 別途 eth_getBlockByHash で取得する必要がなく、ブロックあたりの RPC 呼び出し
+ * 回数は増えない。Issue #86 の方針を維持。Issue #160）。未知のブロックでは
+ * null を返す（JSON-RPC では result=null で返る）。空ブロックは空配列を返す。
  */
 export async function getBlockReceipts(
   rpc: EthRpcClient,
