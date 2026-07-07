@@ -92,6 +92,18 @@ export interface OperationEdge {
 /** キャンバス上でエッジ（紐）として描画されるものの総称。kind で判別する。 */
 export type WorldStateEdge = PeerEdge | OperationEdge;
 
+/**
+ * ウォレットが保有するトークン残高 1 件。トークンの表示情報（symbol /
+ * decimals）は対応する ContractEntity（contractAddress で引く）の token
+ * メタ情報が持ち、ここでは重複させない。
+ */
+export interface TokenBalance {
+  /** トークンを管理するコントラクトのアドレス（ContractEntity.address に対応）。 */
+  contractAddress: string;
+  /** トークンの最小単位での残高（10 進文字列。balance と同じく精度落ち防止）。 */
+  amount: string;
+}
+
 export interface WalletEntity {
   kind: "wallet";
   address: string;
@@ -101,6 +113,13 @@ export interface WalletEntity {
   isSmartAccount: boolean;
   ownerWorkbenchId: string | null;
   recentTxHashes: string[];
+  /**
+   * 追跡中のトークンコントラクト（チェーンプロファイルのコントラクトカタログに
+   * 載っているもの）の残高一覧。トークンが 1 つもデプロイされていない環境・
+   * フィールド未付与の旧スナップショットでは省略（省略 = 情報なし。フロントは
+   * トークン残高の表示自体を出さない側に倒す）。
+   */
+  tokenBalances?: TokenBalance[];
 }
 
 export interface BlockEntity {
@@ -112,6 +131,45 @@ export interface BlockEntity {
   receivedAt: Record<string, number>;
 }
 
+/**
+ * 復号済みの引数 1 件。値は表示用に文字列化して持つ（大きな数値の精度落ちを
+ * 防ぎ、チェーンごとの型体系をワールドステートに持ち込まないため）。
+ */
+export interface DecodedArgument {
+  name: string;
+  value: string;
+}
+
+/**
+ * tx によるコントラクト関数呼び出しの内容。関数名・引数はチェーンプロファイルの
+ * コントラクトカタログ（インターフェース定義）で復号できた場合のみ入る。
+ * 復号できない呼び出しは rawFunctionId（チェーン依存の生の識別子。解釈・表示は
+ * OperationEdge.operation と同じくフロントのチェーンプロファイル表現セットの
+ * 責務）だけを持つ。
+ */
+export interface ContractCall {
+  /** 呼び出し先コントラクトのアドレス（ContractEntity.address に対応）。 */
+  contractAddress: string;
+  functionName?: string;
+  args?: DecodedArgument[];
+  /** 復号できなかった場合に残す、呼び出し先関数のチェーン依存の生の識別子。 */
+  rawFunctionId?: string;
+}
+
+/**
+ * tx の実行中にコントラクトが発したイベント（ログ）1 件。イベント名・引数は
+ * カタログで復号できた場合のみ入り、復号できないイベントは rawEventId
+ * （チェーン依存の生の識別子）だけを持つ。
+ */
+export interface ContractEvent {
+  /** イベントを発したコントラクトのアドレス。 */
+  contractAddress: string;
+  eventName?: string;
+  args?: DecodedArgument[];
+  /** 復号できなかった場合に残す、イベント種別のチェーン依存の生の識別子。 */
+  rawEventId?: string;
+}
+
 export interface TransactionEntity {
   kind: "transaction";
   hash: string;
@@ -119,12 +177,59 @@ export interface TransactionEntity {
   to: string | null;
   status: "pending" | "included" | "failed";
   blockHash?: string;
+  /**
+   * この tx がコントラクト関数呼び出しである場合の呼び出し内容。追跡中の
+   * コントラクト宛てで、かつ入力データを観測できた場合のみ入る（pending を
+   * 経ずブロック取り込みだけを観測した tx では省略されることがある）。
+   * 省略時もフロントは to が ContractEntity のアドレスに一致するかで
+   * 「コントラクト宛ての tx」の判定はできる。
+   */
+  contractCall?: ContractCall;
+  /**
+   * この tx がコントラクトを新規作成（デプロイ）した場合の作成先アドレス。
+   * ブロック取り込み結果（receipt 相当の観測）から得られた場合のみ入る。
+   */
+  createdContractAddress?: string;
+  /**
+   * この tx の実行中にコントラクトが発したイベント一覧。ブロック取り込みが
+   * 確定した後（status が included / failed になった後）にのみ入る。
+   */
+  contractEvents?: ContractEvent[];
 }
 
+/**
+ * チェーン上にデプロイされたスマートコントラクト。特定の 1 ノードの中で
+ * 動くものではなく「チェーンに複製され、全ノードが同じ実行をするプログラム」
+ * であり、WalletEntity と同じくチェーン側の状態なので、ノード・ワークベンチの
+ * 削除とは無関係に、一度現れたら削除しない。
+ */
 export interface ContractEntity {
   kind: "contract";
   address: string;
-  abiRef?: string;
+  chainType: ChainType;
+  /**
+   * 人が読める表示名（例: "ChainvizToken"）。チェーンプロファイルの
+   * コントラクトカタログで特定できた場合のみ入る。カタログ外のコントラクト
+   * （ユーザーが独自にデプロイしたもの）では省略され、フロントは
+   * 「未知のコントラクト」として存在だけを表示する。
+   */
+  name?: string;
+  /**
+   * チェーンプロファイルのコントラクトカタログ上のキー。関数呼び出し・
+   * イベントの復号に使うインターフェース定義（EVM の ABI 等のチェーン固有
+   * データ）はカタログ側（アダプタが読むデータファイル）が持ち、ワールド
+   * ステートには載せない（ChainAdapter 境界）。
+   */
+  catalogKey?: string;
+  /** デプロイした主体（ウォレットアドレス）。デプロイを観測できた場合のみ。 */
+  deployerAddress?: string;
+  /** このコントラクトを作成した tx のハッシュ。デプロイを観測できた場合のみ。 */
+  createdByTxHash?: string;
+  /**
+   * トークンを管理するコントラクトである場合の表示メタ情報。
+   * WalletEntity.tokenBalances の amount はこの decimals で解釈する。
+   */
+  token?: { symbol: string; decimals: number };
 }
 
 export interface UserOperationEntity {

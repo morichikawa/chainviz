@@ -1,11 +1,18 @@
 import { describe, expect, it } from "vitest";
 import type {
+  ContractCall,
+  ContractEntity,
+  ContractEvent,
+  DecodedArgument,
   NodeEntity,
   OperationEdge,
   PeerEdge,
+  TokenBalance,
+  TransactionEntity,
   WalletEntity,
   WorkbenchEntity,
   WorldStateEdge,
+  WorldStateEntity,
   WorldStateSnapshot,
 } from "./entities.js";
 
@@ -213,6 +220,163 @@ describe("world-state entities", () => {
     expect(parsed.rpcTargetNodeId).toBeUndefined();
   });
 
+  it("represents a cataloged contract with metadata, preserved across JSON", () => {
+    // collector → frontend は WebSocket 上で JSON にシリアライズされて渡る。
+    // カタログ由来のメタ情報（name / catalogKey / token）が往復で崩れないこと。
+    const contract: ContractEntity = {
+      kind: "contract",
+      address: "0x00000000000000000000000000000000000c0de",
+      chainType: "ethereum",
+      name: "ChainvizToken",
+      catalogKey: "chainviz-token",
+      deployerAddress: "0x0000000000000000000000000000000000a11ce",
+      createdByTxHash: "0xdeadbeef",
+      token: { symbol: "CVT", decimals: 18 },
+    };
+    const roundTripped = JSON.parse(JSON.stringify(contract)) as ContractEntity;
+    expect(roundTripped.name).toBe("ChainvizToken");
+    expect(roundTripped.catalogKey).toBe("chainviz-token");
+    expect(roundTripped.token).toEqual({ symbol: "CVT", decimals: 18 });
+  });
+
+  it("represents an unknown contract with only address (all catalog fields omitted)", () => {
+    // カタログ外のコントラクト（ユーザーが独自にデプロイしたもの）。
+    // 省略フィールドは JSON にキー自体が現れず、「未知のコントラクト」として
+    // 表示する判定（name が無い）に安全に倒れる。
+    const unknown: ContractEntity = {
+      kind: "contract",
+      address: "0x000000000000000000000000000000000000f00d",
+      chainType: "ethereum",
+    };
+    const serialized = JSON.stringify(unknown);
+    expect(serialized).not.toContain("catalogKey");
+    expect(serialized).not.toContain("name");
+    const parsed = JSON.parse(serialized) as ContractEntity;
+    expect(parsed.name).toBeUndefined();
+  });
+
+  it("carries decoded contract call and events on a transaction", () => {
+    const tx: TransactionEntity = {
+      kind: "transaction",
+      hash: "0x1234",
+      from: "0x0000000000000000000000000000000000a11ce",
+      to: "0x00000000000000000000000000000000000c0de",
+      status: "included",
+      blockHash: "0xabc",
+      contractCall: {
+        contractAddress: "0x00000000000000000000000000000000000c0de",
+        functionName: "transfer",
+        args: [
+          { name: "to", value: "0x0000000000000000000000000000000000000b0b" },
+          { name: "amount", value: "1000000000000000000" },
+        ],
+      },
+      contractEvents: [
+        {
+          contractAddress: "0x00000000000000000000000000000000000c0de",
+          eventName: "Transfer",
+          args: [
+            { name: "from", value: "0x0000000000000000000000000000000000a11ce" },
+            { name: "to", value: "0x0000000000000000000000000000000000000b0b" },
+            { name: "value", value: "1000000000000000000" },
+          ],
+        },
+      ],
+    };
+    const roundTripped = JSON.parse(JSON.stringify(tx)) as TransactionEntity;
+    expect(roundTripped.contractCall?.functionName).toBe("transfer");
+    expect(roundTripped.contractEvents).toHaveLength(1);
+    expect(roundTripped.contractEvents?.[0].args?.[2].value).toBe(
+      "1000000000000000000",
+    );
+  });
+
+  it("keeps only the raw identifiers when a call/event cannot be decoded", () => {
+    // 復号できない呼び出し・イベントはチェーン依存の生の識別子だけを持つ
+    // （解釈・表示はフロントのチェーンプロファイル表現セットの責務）。
+    const tx: TransactionEntity = {
+      kind: "transaction",
+      hash: "0x5678",
+      from: "0x0000000000000000000000000000000000a11ce",
+      to: "0x000000000000000000000000000000000000f00d",
+      status: "included",
+      contractCall: {
+        contractAddress: "0x000000000000000000000000000000000000f00d",
+        rawFunctionId: "0xa9059cbb",
+      },
+      contractEvents: [
+        {
+          contractAddress: "0x000000000000000000000000000000000000f00d",
+          rawEventId: "0xddf252ad",
+        },
+      ],
+    };
+    expect(tx.contractCall?.functionName).toBeUndefined();
+    expect(tx.contractCall?.rawFunctionId).toBe("0xa9059cbb");
+    expect(tx.contractEvents?.[0].eventName).toBeUndefined();
+  });
+
+  it("treats a legacy transaction without contract fields as a plain transfer", () => {
+    // フィールド未付与の旧スナップショット互換。省略はすべて「情報なし」で、
+    // フロントは to と ContractEntity のアドレス照合ができない限り
+    // コントラクト関連の表示を出さない側に倒れる。
+    const legacy: TransactionEntity = {
+      kind: "transaction",
+      hash: "0x9999",
+      from: "0x0000000000000000000000000000000000a11ce",
+      to: "0x0000000000000000000000000000000000000b0b",
+      status: "pending",
+    };
+    expect(legacy.contractCall).toBeUndefined();
+    expect(legacy.createdContractAddress).toBeUndefined();
+    expect(legacy.contractEvents).toBeUndefined();
+    const serialized = JSON.stringify(legacy);
+    expect(serialized).not.toContain("contractCall");
+    expect(serialized).not.toContain("contractEvents");
+  });
+
+  it("records the created contract address on a deployment transaction", () => {
+    const deployTx: TransactionEntity = {
+      kind: "transaction",
+      hash: "0xdep1",
+      from: "0x0000000000000000000000000000000000a11ce",
+      to: null, // コントラクト作成 tx は to を持たない
+      status: "included",
+      createdContractAddress: "0x00000000000000000000000000000000000c0de",
+    };
+    const roundTripped = JSON.parse(JSON.stringify(deployTx)) as TransactionEntity;
+    expect(roundTripped.to).toBeNull();
+    expect(roundTripped.createdContractAddress).toBe(
+      "0x00000000000000000000000000000000000c0de",
+    );
+  });
+
+  it("carries wallet token balances, omitted when not tracked", () => {
+    const withTokens: WalletEntity = {
+      kind: "wallet",
+      address: "0x0000000000000000000000000000000000a11ce",
+      chainType: "ethereum",
+      balance: "1000",
+      nonce: 1,
+      isSmartAccount: false,
+      ownerWorkbenchId: "workbench-alice",
+      recentTxHashes: [],
+      tokenBalances: [
+        {
+          contractAddress: "0x00000000000000000000000000000000000c0de",
+          amount: "5000000000000000000",
+        },
+      ],
+    };
+    const roundTripped = JSON.parse(JSON.stringify(withTokens)) as WalletEntity;
+    expect(roundTripped.tokenBalances?.[0].amount).toBe("5000000000000000000");
+
+    // トークン未追跡・旧スナップショットでは省略（キー自体が現れない）。
+    const withoutTokens: WalletEntity = { ...withTokens };
+    delete withoutTokens.tokenBalances;
+    expect(JSON.stringify(withoutTokens)).not.toContain("tokenBalances");
+  });
+
   it("represents a workbench-to-node call as an OperationEdge", () => {
     const edge: OperationEdge = {
       kind: "operation",
@@ -258,5 +422,195 @@ describe("world-state entities", () => {
       "node-1->node-2",
       "workbench-alice->node-1:call",
     ]);
+  });
+
+  it("discriminates a ContractEntity within the WorldStateEntity union by kind", () => {
+    // Phase 4 で ContractEntity は既に WorldStateEntity 共用体のメンバー。
+    // kind による絞り込みで contract 固有フィールドへ安全に到達できること
+    // （コンパイル時の検証を兼ねる）。他メンバーと取り違えないことを確認する。
+    const contract: WorldStateEntity = {
+      kind: "contract",
+      address: "0x00000000000000000000000000000000000c0de",
+      chainType: "ethereum",
+      name: "ChainvizToken",
+    };
+    const wallet: WorldStateEntity = {
+      kind: "wallet",
+      address: "0x0000000000000000000000000000000000a11ce",
+      chainType: "ethereum",
+      balance: "0",
+      nonce: 0,
+      isSmartAccount: false,
+      ownerWorkbenchId: null,
+      recentTxHashes: [],
+    };
+    const entities: WorldStateEntity[] = [contract, wallet];
+
+    const names = entities.map((entity) => {
+      switch (entity.kind) {
+        case "contract":
+          return `contract:${entity.name ?? "unknown"}`;
+        case "wallet":
+          return `wallet:${entity.address}`;
+        default:
+          return `other:${entity.kind}`;
+      }
+    });
+
+    expect(names).toEqual([
+      "contract:ChainvizToken",
+      "wallet:0x0000000000000000000000000000000000a11ce",
+    ]);
+  });
+
+  it("accepts a ContractCall carrying only contractAddress (neither decoded nor raw)", () => {
+    // contractAddress 以外はすべて optional。関数名も rawFunctionId も付かない
+    // 呼び出し（宛先だけ判っている最小ケース）が型として成立し、フロントは
+    // 名前が無い＝関数名を出さない側に安全に倒れることを確認する。
+    const bare: ContractCall = {
+      contractAddress: "0x00000000000000000000000000000000000c0de",
+    };
+    const serialized = JSON.stringify(bare);
+    expect(serialized).not.toContain("functionName");
+    expect(serialized).not.toContain("rawFunctionId");
+    expect(serialized).not.toContain("args");
+    const parsed = JSON.parse(serialized) as ContractCall;
+    expect(parsed.contractAddress).toBe(
+      "0x00000000000000000000000000000000000c0de",
+    );
+    expect(parsed.functionName).toBeUndefined();
+    expect(parsed.rawFunctionId).toBeUndefined();
+  });
+
+  it("accepts a ContractEvent carrying only contractAddress", () => {
+    const bare: ContractEvent = {
+      contractAddress: "0x00000000000000000000000000000000000c0de",
+    };
+    const serialized = JSON.stringify(bare);
+    expect(serialized).not.toContain("eventName");
+    expect(serialized).not.toContain("rawEventId");
+    const parsed = JSON.parse(serialized) as ContractEvent;
+    expect(parsed.eventName).toBeUndefined();
+    expect(parsed.rawEventId).toBeUndefined();
+  });
+
+  it("distinguishes a decoded no-arg call (empty args array) from an omitted args", () => {
+    // 引数ゼロの関数（例: increment()）を復号できたケースは args: [] を持つ。
+    // これは「復号できず args 自体が無い」ケースと意味が異なる。空配列が
+    // JSON 往復で保持され、[] と undefined を取り違えないことを確認する。
+    const decodedNoArgs: ContractCall = {
+      contractAddress: "0x00000000000000000000000000000000000c0de",
+      functionName: "increment",
+      args: [],
+    };
+    const roundTripped = JSON.parse(
+      JSON.stringify(decodedNoArgs),
+    ) as ContractCall;
+    expect(roundTripped.args).toEqual([]);
+    expect(roundTripped.args).toHaveLength(0);
+    expect(roundTripped.args).not.toBeUndefined();
+
+    const notDecoded: ContractCall = {
+      contractAddress: "0x00000000000000000000000000000000000c0de",
+      rawFunctionId: "0xd09de08a",
+    };
+    expect(notDecoded.args).toBeUndefined();
+  });
+
+  it("keeps a DecodedArgument value as a string, avoiding numeric precision loss", () => {
+    // 大きな整数は数値化せず文字列で持つ設計。JSON 往復でも文字列のまま崩れ
+    // ないこと、名前・値ともに空文字を許容する境界を確認する。
+    const huge: DecodedArgument = {
+      name: "amount",
+      value: "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+    };
+    const roundTripped = JSON.parse(JSON.stringify(huge)) as DecodedArgument;
+    expect(typeof roundTripped.value).toBe("string");
+    expect(roundTripped.value).toBe(huge.value);
+
+    // 引数名が空（匿名引数など）でも型として成立する境界。
+    const anonymous: DecodedArgument = { name: "", value: "0" };
+    expect(anonymous.name).toBe("");
+  });
+
+  it("preserves a token with zero decimals across JSON (falsy 0 must survive)", () => {
+    // decimals: 0 のトークン（NFT 相当・整数トークン）。0 は falsy だが
+    // JSON.stringify は数値 0 を保持する。amount の解釈がずれないよう、
+    // 0 がキーごと欠落しないことを確認する。
+    const contract: ContractEntity = {
+      kind: "contract",
+      address: "0x00000000000000000000000000000000000c0de",
+      chainType: "ethereum",
+      token: { symbol: "PT", decimals: 0 },
+    };
+    const serialized = JSON.stringify(contract);
+    expect(serialized).toContain('"decimals":0');
+    const parsed = JSON.parse(serialized) as ContractEntity;
+    expect(parsed.token?.decimals).toBe(0);
+  });
+
+  it("carries multiple token balances and distinguishes an empty array from omission", () => {
+    // 複数トークンの残高一覧、および「追跡中だが残高ゼロ件（空配列）」と
+    // 「トークン未追跡（省略）」の区別。空配列は JSON 往復で保持される。
+    const balances: TokenBalance[] = [
+      {
+        contractAddress: "0x00000000000000000000000000000000000c0de",
+        amount: "5000000000000000000",
+      },
+      {
+        contractAddress: "0x000000000000000000000000000000000000f00d",
+        amount: "0",
+      },
+    ];
+    const wallet: WalletEntity = {
+      kind: "wallet",
+      address: "0x0000000000000000000000000000000000a11ce",
+      chainType: "ethereum",
+      balance: "1000",
+      nonce: 1,
+      isSmartAccount: false,
+      ownerWorkbenchId: "workbench-alice",
+      recentTxHashes: [],
+      tokenBalances: balances,
+    };
+    const roundTripped = JSON.parse(JSON.stringify(wallet)) as WalletEntity;
+    expect(roundTripped.tokenBalances).toHaveLength(2);
+    // 残高ゼロは "0" として保持される（キーは残る）。
+    expect(roundTripped.tokenBalances?.[1].amount).toBe("0");
+
+    // 追跡中だが 0 件（空配列）は省略（undefined）と区別される。
+    const emptyTracked: WalletEntity = { ...wallet, tokenBalances: [] };
+    const emptyRoundTripped = JSON.parse(
+      JSON.stringify(emptyTracked),
+    ) as WalletEntity;
+    expect(emptyRoundTripped.tokenBalances).toEqual([]);
+    expect(emptyRoundTripped.tokenBalances).not.toBeUndefined();
+  });
+
+  it("distinguishes an included tx with no events (empty array) from an undecoded tx", () => {
+    // ブロック取り込み確定後にイベントが 1 件も無い tx は contractEvents: []。
+    // これは「まだ確定前でイベント情報が無い（省略）」と意味が異なる。
+    const noEvents: TransactionEntity = {
+      kind: "transaction",
+      hash: "0xabcd",
+      from: "0x0000000000000000000000000000000000a11ce",
+      to: "0x00000000000000000000000000000000000c0de",
+      status: "included",
+      contractEvents: [],
+    };
+    const roundTripped = JSON.parse(
+      JSON.stringify(noEvents),
+    ) as TransactionEntity;
+    expect(roundTripped.contractEvents).toEqual([]);
+    expect(roundTripped.contractEvents).not.toBeUndefined();
+
+    const pending: TransactionEntity = {
+      kind: "transaction",
+      hash: "0xabcd",
+      from: "0x0000000000000000000000000000000000a11ce",
+      to: "0x00000000000000000000000000000000000c0de",
+      status: "pending",
+    };
+    expect(pending.contractEvents).toBeUndefined();
   });
 });

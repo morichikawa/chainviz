@@ -87,6 +87,10 @@ export const messages = {
     ja: "ワークベンチの削除に失敗しました",
     en: "Failed to remove workbench",
   },
+  "command.error.runWorkbenchOperation": {
+    ja: "ワークベンチ操作の実行に失敗しました",
+    en: "Failed to run workbench operation",
+  },
   "command.error.unknown": {
     ja: "コマンドの実行に失敗しました",
     en: "Command failed",

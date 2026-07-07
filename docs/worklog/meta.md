@@ -1165,3 +1165,262 @@
   - QA(chainviz-qa)はdocsのみの変更のため省略可とする依頼元の判断を
     了承(CLAUDE.mdの例外規定に該当)。
   - push・PR作成・マージは統括の判断に委ねる。
+
+### 2026-07-07 新Phase 4（C層拡張: コントラクト可視化）の設計
+
+- 担当: designer
+- ブランチ: design-phase4-contract-visibility
+- 内容: ユーザー要望（「支払い等の一般操作をGUIで」「コントラクトはどこで
+  動いているか・何の役割か・なぜ必要かを伝える」）を受け、Phase 3で範囲外と
+  していたコントラクト呼び出し・イベントログ可視化を新Phase 4として設計した。
+  - CONCEPT.md: ロードマップを振り直し（新Phase 4を挿入、旧Phase 4〜8を
+    Phase 5〜9へ）。C層の説明を具体化（コントラクトカード・カタログ復号・
+    定型操作）。未決事項にPhase繰り込み/ABIの扱い/「どこで動くか」の見せ方の
+    3決定を追記。
+  - ARCHITECTURE.md: §2にContractEntity拡張（name/catalogKey/deployer等・
+    削除しないチェーン側状態）、TransactionEntityのcontractCall/
+    createdContractAddress/contractEvents、WalletEntity.tokenBalancesを追加。
+    §3にrunWorkbenchOperationコマンド（transfer/deployContract/callContract。
+    ワークベンチ内cast/forge実行でRPCがロギングプロキシを自然に通る方式）。
+    §4にsubscribeContracts（省略可）とコントラクトカタログ
+    （profiles/ethereum/contracts/。ソースとcatalog.jsonをコミット、自動
+    デプロイはしない）を追記。
+  - packages/shared: 上記の型（DecodedArgument/ContractCall/ContractEvent/
+    TokenBalance/ContractEntity刷新/TransactionEntity拡張/
+    WorkbenchOperation/Command拡張/ChainAdapter.subscribeContracts?）を実装し
+    型テストを追加。Command網羅チェックに掛かるfrontendの機械的追従
+    （エラーメッセージキー追加・mockクライアントの未対応応答）のみ実施。
+    pnpm lint/build/test全パッケージ合格（shared 23・collector 719・
+    frontend 791・e2e 34）。
+  - PLAN.md: ステップ8（UX 1項目・node-env 2・collector 5・frontend 5）を
+    追加し、ステップ9以降の概要リストを振り直した。
+- 決定事項・注意点:
+  - デプロイ検知はeth_getBlockReceiptsの正規化拡張（receiptの
+    contractAddress/logs）で行い、ブロックあたりRPC回数を増やさない
+    （Issue #86の方針を維持）。関数呼び出しの復号はpending検知時の
+    eth_getTransactionByHashにinputを加えて行うため、pendingを経ず取り込み
+    のみ観測したtxはcontractCall（関数名）が付かないことがある。フロントは
+    toとContractEntity.addressの照合でフォールバックする。
+  - ABIはワールドステートに載せず、復号結果（関数名・引数・イベント名の
+    文字列）だけをチェーン非依存語彙で載せる（ChainAdapter境界）。復号
+    できないものはrawFunctionId/rawEventId（生識別子。解釈はフロントの
+    表現セット責務。OperationEdge.operationと同じ扱い）。
+  - ContractEntityはWalletEntity同様チェーン側状態として削除しない。新規
+    DiffEvent種別は追加しない（entityAdded/entityUpdatedに同乗）。
+  - deployContractコマンド経由のデプロイはコマンド処理側がアドレス→
+    カタログキーをアダプタへ登録して照合する。手動forge createは「未知の
+    コントラクト」表示（バイトコード照合による特定は実装時オプション）。
+  - collector起動時にカタログが読めない場合はコントラクト復号を無効化して
+    起動継続（mnemonic欠落時のウォレット追跡と同じ縮退。エラーはログ）。
+  - コントラクトカードのレイアウト・文言・色・定型操作UIの具体はUX担当
+    （chainviz-ux）が設計してからfrontendへ引き継ぐ（PLAN.mdステップ8の
+    先頭項目）。
+  - 実装時の追加事項: DockerOperationsにはexecが無いため、
+    runWorkbenchOperation実装時にコンテナ内コマンド実行口の追加が必要。
+    引数はシェル文字列連結ではなく配列で渡すこと（インジェクション防止）。
+
+### 2026-07-07 新Phase 4（C層拡張）のUX設計
+
+- 担当: ux
+- ブランチ: design-phase4-contract-visibility
+- 内容: PLAN.mdステップ8の先頭項目（コントラクトカード・定型操作・
+  イベントログ表示のUX設計）を実施した。成果物は
+  `docs/ARCHITECTURE.md` §6（frontendへの着手指示を兼ねる実装仕様）。
+  実装コードは書いていない。
+- 進め方: frontendをモックデータで起動し
+  （`pnpm --filter @chainviz/frontend dev`、VITE_COLLECTOR_URL未設定）、
+  Playwright（スクラッチパッドに都度導入。手順はissue-123.md §8と同じ。
+  chromiumの依存libはapt-get download+展開+LD_LIBRARY_PATHで解決）で
+  日英両言語の画面・ポップオーバー・操作エッジパルス・tx確定フラッシュを
+  実際に確認してから設計した。designerの設計（本ファイル前項・
+  ARCHITECTURE.md §2〜§4・shared型）と矛盾しないことを型定義ベースで
+  確認済み。
+- 設計の要点（詳細は ARCHITECTURE.md §6）:
+  - キャンバスに「コントラクト行」を新設（インフラ行・ウォレット行に続く
+    第3の帯。コントラクトはウォレットと同じ「チェーン側の状態」のため）。
+    配置・新着発光はIssue #123の流儀を踏襲。
+  - 「全ノードで実行される」は、(1)カード常設ピル（evm用語アンカー）、
+    (2)ポップオーバー冒頭の誤解防止文、(3)tx確定フラッシュと既存ブロック
+    伝播発光のタイミング同期、の3経路で伝える。コントラクト→ノードの
+    エッジは張らない（エッジ=実在の接続・呼び出しという既存の視覚語彙を
+    守る）。
+  - 未知のコントラクトは破線ボーダー+「カタログ外」ピル+ABI用語アンカー
+    付き説明で差別化。存在・呼び出し発生・デプロイエッジは既知と同様。
+  - 定型操作はワークベンチカード下部の「操作を実行…」ボタン→カード脇の
+    操作パネル（送金/デプロイ/呼び出しの3タブ）。確認ダイアログは挟まず、
+    結果は既存の観測経路（操作エッジパルス→pendingチップ→確定フラッシュ）
+    がそのまま見せる。デプロイのみ仮カード（#102の流儀）。
+  - tx チップのラベルを hash から「意味」（関数名/デプロイ/生ID）優先へ。
+    確定時に fromウォレット→コントラクトの揮発パルス+コントラクトカードの
+    確定フラッシュ。カードに「直近の呼び出し・イベント」チップ列
+    （txからの導出。専用フィールド不要）。
+  - トークン残高はWalletCardにチップ列で追加（ContractEntity.tokenとの
+    照合で解釈。照合できない分は非表示。tokenBalances無しなら行ごと出さず
+    Phase 3までの見た目を変えない）。
+  - glossary追加（contract/deploy/abi/event-log/evm/token）は「定義→
+    なぜ必要か→chainvizではどう見えるか」の3拍子で書き、全用語にUI上の
+    アンカーを対応させる（#124の教訓）。
+- 統括・ユーザーに確認が必要な判断（ARCHITECTURE.md §6.10。本文は推奨案で
+  記述済み）:
+  1. 「全ノードで実行」の表現（推奨: ピル+文言+同期。対案: 全ノードへの
+     薄いエッジ）
+  2. 操作フォーム定義の置き場所（推奨: フロント表現セット
+     chain-profiles/ethereum/ の静的データ。対案: プロトコル拡張で配布。
+     後者はshared型変更が要りdesigner調整）
+  3. 金額の入力単位（推奨: ETH入力+フロントでwei変換）
+  4. 操作パネルの形（推奨: カード脇ポップオーバー）
+- あわせて実施: PLAN.mdステップ8のUX項目へ成果物ポインタを追記
+  （チェックは統括に委ねる）。CONCEPT.md「体験イメージ」にコントラクト
+  カードの1項目を補強追記（決定事項の変更ではなく、C層の決定済み内容の
+  体験イメージへの反映）。
+- frontend実装への申し送り:
+  - モッククライアントの runWorkbenchOperation は現状 ok:false 固定
+    （designerのプレースホルダ）。UI実装と同じIssue内で成功シミュレー
+    ション（tx追加→確定→contract entityAdded→tokenBalances更新）へ
+    差し替えること（オフラインでのUX確認・QAに必要）。
+  - i18n文言はARCHITECTURE.md §6.8が初稿。語調の微調整は裁量、構成・意味の
+    変更は不可。英語文言はchainviz-i18nのレビュー対象。
+  - 各表示のダングリング参照ガード（deployerウォレット不在・ContractEntity
+    未観測のtokenBalance等）を必ず入れること（#123の申し送りと同じ流儀）。
+
+### 2026-07-07 新Phase 4（C層拡張）設計フェーズのレビュー
+
+- 担当: reviewer
+- ブランチ: design-phase4-contract-visibility（レビュー時点で未コミット）
+- 結果: 合格（コード・docsへの修正指示なし）
+- 確認内容:
+  - Phase番号の振り直し: CONCEPT.md（ロードマップ本文・比較TIPSの前提・
+    非EVM着手順・未決事項）、PLAN.md（冒頭のPhase 1〜9・ステップ9以降の
+    概要）、ARCHITECTURE.md（D層購読口のPhase 5参照）をgrepで全件照合し、
+    旧番号の取り残しが無いことを確認した。worklog内の旧Phase番号は過去の
+    記録であり書き換え対象外
+  - 設計原則: ABIはprofiles/ethereum/contracts/catalog.json（データファイル）
+    に置きアダプタだけが読む。ワールドステートには復号結果（関数名・引数・
+    イベント名の文字列）と生識別子（rawFunctionId/rawEventId。解釈はフロント
+    表現セットの責務でOperationEdge.operationと同じ既存パターン）のみが載り、
+    eth_*等のチェーン固有語彙・ABIそのものはsharedに漏れていない。
+    subscribeContractsは省略可でBitcoin等の既存/将来プロファイルに分岐を
+    強いない。カタログはデータとコードの分離に沿う
+  - shared型: abiRefの削除は全パッケージgrepで利用箇所ゼロを確認。
+    ContractEntity.chainType追加も既存の構築箇所が無く破壊なし。省略可
+    フィールドの意味論（省略=情報なし）がJSDocに明記されている
+  - frontendの機械的追従: ERROR_KEY（Record<Command["action"],...>の網羅）、
+    messages.tsのエラー文言、mockDataのswitch網羅の3点で過不足なし。
+    useCommands.tsの分岐は非網羅条件で影響なし。collector側のCommandHandlerは
+    default節でok:false+具体的なaction名を返すため、実装前に新コマンドが
+    届いても握りつぶしにならないことを確認した
+  - テストの質: entities.test.ts（省略と空配列の区別、decimals:0のfalsy境界、
+    巨大数値の文字列保持、JSON往復での省略キー脱落）、protocol/index.test.ts
+    （判別共用体の網羅・混在拒否。@ts-expect-errorはsharedのtsconfigが
+    includeにsrc全体を含むためtsc -bで実際に検証される）、
+    chain-profile/index.test.ts（subscribeContracts省略アダプタの型充足）は
+    いずれも契約を固定する意味のあるテストと判断
+  - pnpm lint / build / test 全パッケージ合格（shared 40 / collector 719 /
+    frontend 791 / e2e 34）
+- 指摘なしの観察事項（統括への申し送り）:
+  - 未コミットのためコミット粒度は未レビュー。コミット時は関心事ごと
+    （designer分のdocs+shared型+frontend追従 / ux分のdocs / tester分の
+    テスト強化）に分けること
+  - ARCHITECTURE.md §6.10の判断4点（全ノード実行の表現・操作フォーム定義の
+    置き場所・金額入力単位・操作パネルの形）が未確定。frontend実装着手前に
+    統括・ユーザーで確定が必要（PLAN.mdステップ8のUX項目のチェックは
+    確定後に付ける）
+  - mockDataのrunWorkbenchOperationはok:false固定のプレースホルダ。
+    ステップ8のfrontend実装で成功シミュレーションへ差し替えること
+    （UX担当の申し送りどおり）
+  - QA要否の判断: 実装ロジックを伴わない型定義+機械的追従のみで、実行時に
+    観測可能な動作変化が無い（新コマンドを送るUIが存在せず、collectorは
+    明示的に拒否する）。過去のdesign-issue-123-124-shared-typesと同じ
+    パターンであり、tester→reviewerで完結してよいと判断（最終判断は統括）
+### 2026-07-07 PLAN.mdステップ8へのIssueリンク追記のレビュー(reviewer 合格)
+
+- 担当: reviewer
+- 対象: ブランチ `design-phase4-contract-visibility`(未コミットの
+  `docs/PLAN.md` のみの変更。milestone #7 作成と Issue #157〜#169 の
+  起票に伴うリンク追記)
+- 内容:
+  - ステップ8(Phase4実装 — C層拡張)の全13チェックボックスへの
+    `[#番号](URL)` リンク追記と、milestoneプレースホルダ行の実URL化を
+    レビューした。結果は合格。
+  - `gh issue view` で #157〜#169 の全13件を照合: 各Issueのタイトルが
+    PLAN.mdの対応するチェックボックスの文言と1対1で正確に対応している
+    (UX 1件 #157 / node-env 2件 #158〜#159 / collector 5件 #160〜#164 /
+    frontend 5件 #165〜#169)。番号の割り当てにズレや取り違えは無い。
+  - 全13件が milestone #7「Phase 4: C層拡張(コントラクト可視化)」に
+    紐づいていることを確認(`gh api repos/.../milestones/7` で
+    open_issues: 13 とも一致)。milestoneリンクのURL
+    (https://github.com/morichikawa/chainviz/milestone/7)も実在する
+    正しいURLで、他ステップ(milestone 1〜6)と同じ書式。
+  - ラベルも妥当: #158〜#159 は node-env、#160〜#164 は collector、
+    #165〜#169 は frontend。#157(UX設計)は専用ラベルが無いため引き継ぎ先の
+    frontend ラベルで、PLAN.md上は **UX** 見出し配下に置かれており矛盾なし。
+  - リンクの書式・配置(チェックボックス本文の直後にインデント6スペースで
+    リンク行を置く)は、他ステップ・バックログの既存項目と一貫している。
+  - #157 のチェックボックスは `[x]`(設計済み)だがIssueはOPEN。クローズは
+    PR本文の `Closes #157` によるマージ時自動クローズに委ねる規約どおりで
+    問題なし(この`[x]`と「§6.10 の判断4点は確定済み」の記述自体は今回の
+    差分外の既存記述)。
+  - Issue本文も抜き取りで確認(#157/#160/#169): ARCHITECTURE.md §6 や
+    Issue #86 への参照など、設計成果物と整合する内容だった。
+  - `pnpm lint` がリポジトリ全体で通ることを確認した(exit 0)。
+- 決定事項・注意点:
+  - QA(chainviz-qa)はdocsのみの変更のため省略可とする依頼元の判断を
+    了承(CLAUDE.mdの例外規定に該当)。
+  - 未コミットの状態でのレビューのため、コミット時は docs のみの1コミット
+    (Conventional Commits の `docs:`)とすること。
+  - このブランチのPR作成時、#157 を閉じるなら本文に `Closes #157` を
+    Issueごとのキーワードで明記すること(統括への申し送り)。
+  - push・PR作成・マージは統括の判断に委ねる。
+
+
+### 2026-07-07 新Phase4(C層拡張)設計フェーズ PR #170 の実機検証(QA)
+
+- 担当: chainviz-qa
+- 対象: ブランチ design-phase4-contract-visibility / PR #170
+  (packages/shared の型変更 + packages/frontend の機械的追従 + docs)
+- 経緯: reviewer は「実行時に観測可能な動作変化が無い」としてQA省略を提案したが、
+  統括の判断で CLAUDE.md の例外規定(docs/・.claude/agents/ 配下のみ)の対象外
+  (packages のコード変更を含む)と整理され、実機検証を実施した。
+- 検証内容と結果(いずれも合格):
+  1. ビルド・lint・テストの独立再実行: `pnpm lint`(exit 0)、`pnpm build`
+     (shared/collector/frontend/e2e 全て成功)、`pnpm test` 全パッケージ green
+     (shared 40 / うち protocol 10・entities 26・chain-profile 2・events 2、
+     collector 719、frontend 791、e2e 34)。
+  2. frontend の実機起動確認: VITE_COLLECTOR_URL 未設定(モッククライアント)で
+     `build:web` → `vite preview` を起動し、ヘッドレス chromium で描画を確認。
+     ノードカード(chainviz-lighthouse-1 / reth-1 / reth-2)、reth 間の P2P
+     エッジ、ワークベンチ(alice)、ウォレット2件(EOA・残高/nonce・pending tx)、
+     所有エッジ、ワークベンチ→reth の操作エッジが全て描画され、Phase1〜3 の
+     既存機能に欠落・崩れは無い。DOM ダンプでも同要素の存在を確認し、
+     エラーオーバーレイ(vite-error-overlay 等)・非良性のコンソールエラーは
+     ゼロ(ResizeObserver loop の警告のみで無害)。
+  3. 型変更が既存 UI/ロジックと衝突しないこと: Command union への
+     runWorkbenchOperation 追加は collector の handler.ts が default ケースを
+     持つため未対応でも型エラーにならず(この設計フェーズでは collector 実装は
+     範囲外)、frontend の commandMessages.ts / i18n messages.ts / mockData.ts の
+     機械的追従もビルド・実行時ともに問題なし。mockData の runWorkbenchOperation
+     は ok:false(未サポート)を返すが、これを叩く UI はまだ無く(ステップ8の
+     frontend 範囲)既存表示に影響しない。
+  4. ContractEntity の abiRef 削除の波及確認: リポジトリ全体を grep し、
+     abiRef の参照が packages・docs のいずれにも残っていないことを確認
+     (置換漏れ・ダングリング参照なし)。
+  5. ドキュメント整合性: CONCEPT.md のロードマップ改番(新Phase4=コントラクト
+     可視化、旧Phase4以降を1つずつ後送り)、PLAN.md ステップ8、ARCHITECTURE.md
+     §2〜§6 が packages/shared の実コードと矛盾しないことをフィールド名単位で
+     照合(WorkbenchOperation / subscribeContracts / tokenBalances /
+     TokenBalance / contractCall / contractEvents / createdContractAddress /
+     catalogKey / deployerAddress / createdByTxHash / ContractCall /
+     ContractEvent / DecodedArgument / rawFunctionId / rawEventId、および
+     ContractEntity の形 chainType/name?/catalogKey?/token?{symbol,decimals})。
+     ARCHITECTURE.md 側にも旧 abiRef の記述は残っていない。
+- 判定: 合格。今回の型変更・機械的追従は既存の動くもの(Phase1〜3)を壊して
+  いない。新機能本体(コントラクトカード表示・デプロイ検知等)はこのPRの範囲外で
+  あり、未実装であること自体は失格理由にしない。
+- 注意点・申し送り:
+  - このステップ8には qa 担当と明記されたチェックボックスが無い(実装項目
+    #158〜#169 は今後の作業、#157 は UX が対応済み)ため、PLAN.md 側で QA が
+    付けるべきチェックは無い。
+  - push・PR作成・マージ・Issueクローズは統括の判断に委ねる(QAは実行しない)。
+  - ヘッドレス表示では日本語が豆腐(□)になったが、これは検証環境に CJK
+    フォントが無いためで、アプリの不具合ではない(ラテン文字・数値・
+    レイアウトは正常)。
