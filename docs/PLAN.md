@@ -347,7 +347,7 @@ runWorkbenchOperation コマンド・ChainAdapter.subscribeContracts）は設計
       [#167](https://github.com/morichikawa/chainviz/issues/167)
 - [ ] ウォレットカードにトークン残高を表示する
       [#168](https://github.com/morichikawa/chainviz/issues/168)
-- [ ] C層拡張の用語データ（contract・デプロイ・ABI・イベントログ・EVM・
+- [x] C層拡張の用語データ（contract・デプロイ・ABI・イベントログ・EVM・
       トークン等）をglossaryへ追加する
       [#169](https://github.com/morichikawa/chainviz/issues/169)
 
