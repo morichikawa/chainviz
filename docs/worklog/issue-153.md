@@ -208,3 +208,91 @@ project ラベルと service ラベルの両方が揃ったときのみスラッ
 
 push / PR 作成 / マージ / Issue クローズは統括に委ねる。QA（chainviz-qa）は
 未実施。
+
+### 2026-07-07 Issue #153 実機QA検証（合格）
+
+- 担当: QA（chainviz-qa）
+- ブランチ: issue-153-beacon-project-scope
+- 判定: 合格
+- 作業ディレクトリ: `/home/zoe/workspace/chainviz-wt-153`（メイン環境とは別 worktree）
+
+`docs/PLAN.md` の完了条件「同一 Docker daemon 上で複数の docker compose
+プロジェクトが同時に稼働していても、collector が各プロジェクトを正しく分離
+して扱い、プロジェクト跨ぎの beacon キー混入・cross-project エッジが発生
+しないこと」を実機で確認した。
+
+#### 検証環境の構成
+
+メインの `chainviz-ethereum` プロジェクト（7 コンテナ、reth1/reth2・
+beacon1/beacon2・validator1/validator2・workbench）が稼働中の同一 Docker
+daemon 上に、使い捨ての合成 compose プロジェクトを 2 つ同時に起動した:
+
+- `qa153a`（services: reth1, beacon1）
+- `qa153b`（services: reth1, beacon1）
+
+合成コンテナは alpine を `reth-node:qa153` / `lighthouse-node:qa153` へ
+タグ付けして使用（イメージ名で classifyContainer が reth / lighthouse と
+認識するようにするため。中身は `sleep` で実プロセスは無し）。compose が
+付与する `com.docker.compose.project` / `service` ラベルにより、stableId は
+それぞれ `qa153a/reth1`・`qa153a/beacon1`・`qa153b/reth1`・`qa153b/beacon1`
+となる。3 プロジェクト（chainviz-ethereum + qa153a + qa153b）が同時観測
+される状況を作り、ノード群キー "1" が 3 プロジェクトで衝突する（reth1 と
+beacon1 の残りが全て "1"）配置とした。
+
+#### 検証手順（メイン環境には一切書き込まない読み取り専用）
+
+worktree でビルドした collector の実コード（`DockerPoller.pollOnce()` =
+dockerode の `listContainers` による読み取り専用のポーリング）で実 daemon
+から観測値を取得し、修正版 `executionTargets()` /
+`beaconStableIdForExecution()` を適用した。メインの collector プロセス
+（pid 別、port 4000 で稼働中）には触れていない。Docker への操作は自分が
+起動した qa153a/qa153b の作成・削除のみで、chainviz-ethereum プロジェクトに
+対する書き込み・削除は一切していない。
+
+#### 結果（修正版コード）
+
+`executionTargets` の receivedAtKeys（stableId -> keys）:
+
+- `chainviz-ethereum/reth1 -> [chainviz-ethereum/beacon1, chainviz-ethereum/reth1]`
+- `chainviz-ethereum/reth2 -> [chainviz-ethereum/beacon2, chainviz-ethereum/reth2]`
+- `qa153a/reth1 -> [qa153a/beacon1, qa153a/reth1]`
+- `qa153b/reth1 -> [qa153b/beacon1, qa153b/reth1]`
+
+いずれの execution も beacon キーが自プロジェクトのものになっており、
+プロジェクト跨ぎの混入は 0 件。`beaconStableIdForExecution` を各 execution へ
+直接適用しても全て自プロジェクトの beacon を返した。さらに観測配列を並べ替え
+（qa153a/reth1 の探索時に別プロジェクト qa153b/beacon1 が先頭に来るよう配置）
+しても `qa153a/reth1 -> qa153a/beacon1` が返り、観測順に依存せず正しく
+スコープされることを確認した。
+
+#### 修正前コードでの不具合再現（このテストが不具合を検出できることの確認）
+
+修正コミット（`04d9102`）の親から取り出した修正前 `targets.ts` を同じ実
+daemon の観測値へ適用したところ、qa153b/beacon1 を先頭に並べ替えた配列で
+`qa153a/reth1 -> qa153b/beacon1`（cross-project leak）が再現した。
+修正版では同条件で `qa153a/reth1 -> qa153a/beacon1` となり、修正が実際に
+効いていることを確認した。
+
+#### 回帰確認（単一プロジェクト構成）
+
+合成 2 プロジェクトを除いても、稼働中の単一プロジェクト `chainviz-ethereum`
+の reth1->beacon1 / reth2->beacon2 の対応付けは従来どおり正しく成立して
+おり、既存動作の退行は無い。合成プロジェクト qa153a / qa153b も、それぞれ
+単独で見れば reth1->beacon1 が正しく対応する。
+
+#### ユニットテスト
+
+`src/adapters/ethereum/targets.test.ts` 55 件全通過（worktree で実行）。
+
+#### 後片付け
+
+検証に使った qa153a / qa153b の全コンテナ・ネットワークを
+`docker compose down -v` で削除し、`reth-node:qa153` /
+`lighthouse-node:qa153` のタグも削除した。残存が無いこと・chainviz-ethereum
+の 7 コンテナが健在であることを確認済み。検証スクリプトはスクラッチパッドの
+一時ファイルでコミットには含めない。
+
+#### 判定
+
+`docs/PLAN.md` の Issue #153 完了条件を満たしている。合格。push / PR 作成 /
+マージ / Issue クローズは統括に委ねる。
