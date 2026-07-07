@@ -386,6 +386,12 @@ mempool:
     値）、中継先の既定は既定ワークベンチが叩くノードの JSON-RPC
     エンドポイント。いずれも環境変数 `CHAINVIZ_PROXY_PORT` /
     `CHAINVIZ_PROXY_TARGET` で上書きできる。
+  - 確定（Issue #129）: `addWorkbench` で動的追加したワークベンチの
+    `ETH_RPC_URL` も、静的ワークベンチ（docker-compose.yml定義）と同様に
+    このロギングプロキシ経由に向ける。プロキシへ到達するホスト名は
+    環境変数 `CHAINVIZ_WORKBENCH_RPC_HOST`（既定 `host.docker.internal`、
+    Docker の host-gateway 予約名）で上書きでき、ホスト名を使う場合は
+    コンテナに `extra_hosts` で host-gateway を解決させる。
   - 確定（Issue #80）: プロキシが観測した RPC 呼び出し（`RpcObservation`）を
     `OperationEdge` へマッピングし、`operationObserved` イベントとして
     WebSocket で全クライアントへ passthrough 配信する。マッピングは
