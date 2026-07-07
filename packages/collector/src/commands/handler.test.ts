@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { CommandHandler } from "./handler.js";
-import type { NodeLifecycle } from "./lifecycle.js";
+import type { NodeLifecycle, WorkbenchOperationResult } from "./lifecycle.js";
 
 function fakeLifecycle(overrides: Partial<NodeLifecycle> = {}): NodeLifecycle {
   return {
@@ -8,6 +8,9 @@ function fakeLifecycle(overrides: Partial<NodeLifecycle> = {}): NodeLifecycle {
     removeNode: vi.fn(async () => {}),
     addWorkbench: vi.fn(async () => {}),
     removeWorkbench: vi.fn(async () => {}),
+    runWorkbenchOperation: vi.fn(
+      async (): Promise<WorkbenchOperationResult> => ({}),
+    ),
     ...overrides,
   };
 }
@@ -127,5 +130,98 @@ describe("CommandHandler", () => {
       label: "Alice",
     });
     expect(result).toEqual({ ok: false, error: "plain string failure" });
+  });
+
+  describe("runWorkbenchOperation", () => {
+    it("dispatches with the workbenchId and operation, unwrapped", async () => {
+      const lifecycle = fakeLifecycle();
+      const handler = new CommandHandler(lifecycle);
+
+      const result = await handler.handle({
+        action: "runWorkbenchOperation",
+        workbenchId: "chainviz-ethereum/Alice",
+        operation: { type: "transfer", to: "0x0b0b", amount: "1" },
+      });
+
+      expect(result).toEqual({ ok: true });
+      expect(lifecycle.runWorkbenchOperation).toHaveBeenCalledWith(
+        "chainviz-ethereum/Alice",
+        { type: "transfer", to: "0x0b0b", amount: "1" },
+      );
+    });
+
+    it("returns ok:true without leaking txHash/deployedAddress into commandResult", async () => {
+      // docs/ARCHITECTURE.md §3 の設計どおり、commandResult は ok/error のみ。
+      // 実際の反映は後続の diff（tx ライフサイクル購読）に委ねる。
+      const lifecycle = fakeLifecycle({
+        runWorkbenchOperation: vi.fn(async () => ({
+          txHash: "0xabc123",
+          deployedAddress: "0xdeadbeef",
+        })),
+      });
+      const handler = new CommandHandler(lifecycle);
+      const result = await handler.handle({
+        action: "runWorkbenchOperation",
+        workbenchId: "chainviz-ethereum/Alice",
+        operation: { type: "deployContract", contractKey: "counter" },
+      });
+      expect(result).toEqual({ ok: true });
+      expect(result).not.toHaveProperty("txHash");
+      expect(result).not.toHaveProperty("deployedAddress");
+    });
+
+    it("logs the outcome (including txHash) on success", async () => {
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const lifecycle = fakeLifecycle({
+        runWorkbenchOperation: vi.fn(async () => ({ txHash: "0xabc123" })),
+      });
+      const handler = new CommandHandler(lifecycle);
+      await handler.handle({
+        action: "runWorkbenchOperation",
+        workbenchId: "chainviz-ethereum/Alice",
+        operation: { type: "transfer", to: "0x0b0b", amount: "1" },
+      });
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("0xabc123"));
+      logSpy.mockRestore();
+    });
+
+    it("converts a thrown error (e.g. cast/forge exec failure) into a failing result", async () => {
+      const lifecycle = fakeLifecycle({
+        runWorkbenchOperation: vi.fn(async () => {
+          throw new Error(
+            "transfer 1 to 0x0b0b failed on workbench chainviz-ethereum/Alice: Error: insufficient funds",
+          );
+        }),
+      });
+      const handler = new CommandHandler(lifecycle);
+      const result = await handler.handle({
+        action: "runWorkbenchOperation",
+        workbenchId: "chainviz-ethereum/Alice",
+        operation: { type: "transfer", to: "0x0b0b", amount: "1" },
+      });
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/insufficient funds/);
+    });
+
+    it("dispatches callContract operations with all their fields intact", async () => {
+      const lifecycle = fakeLifecycle();
+      const handler = new CommandHandler(lifecycle);
+      const operation = {
+        type: "callContract" as const,
+        contractAddress: "0x0c0de",
+        functionName: "transfer(address,uint256)",
+        args: ["0x0b0b", "500"],
+        amount: "0",
+      };
+      await handler.handle({
+        action: "runWorkbenchOperation",
+        workbenchId: "chainviz-ethereum/Alice",
+        operation,
+      });
+      expect(lifecycle.runWorkbenchOperation).toHaveBeenCalledWith(
+        "chainviz-ethereum/Alice",
+        operation,
+      );
+    });
   });
 });
