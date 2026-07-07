@@ -1032,3 +1032,46 @@
   - QA(chainviz-qa)はdocsのみの変更のため省略可とする依頼元の判断を
     了承(CLAUDE.mdに明記された例外に該当)。
   - push・PR作成・マージは統括の判断に委ねる。
+
+### 2026-07-07 PLAN.mdバックログへのIssue #143追加のレビュー(reviewer 合格)
+
+- 担当: reviewer
+- ブランチ: docs-plan-add-143-backlog(コミット 5c7fc73)
+- 内容:
+  - `docs/PLAN.md` のバックログセクションへIssue #143(eth_subscribeの
+    エラー応答(JSON-RPCエラー)を検知できず、購読失敗に気づけない)を
+    1項目追加するdocsのみの変更をレビューした。結果は合格。
+  - `gh issue view 143` で照合: 状態はOPENで `[ ]`(未チェック)と一致。
+    PLAN.mdの行の文言はIssueタイトルそのままで正確。リンク先URLも
+    正しい。既存のバックログ項目(#125/#129/#135/#139/#141)と同じ
+    配置・書式で整合している。
+  - Issue本文の技術的主張をコードで裏取りした:
+    - `packages/collector/src/adapters/ethereum/eth-ws-client.ts` の
+      `parseSubscriptionResult()` は `message.method !== "eth_subscription"`
+      の場合に即 `undefined` を返す。ノードが `eth_subscribe` リクエスト
+      をJSON-RPCエラーで拒否した応答(`{id: 1, error: {...}}`)は
+      `method` を持たないため `undefined` になり、`subscribe()` 内の
+      `message` ハンドラで `onResult` が呼ばれない。主張どおり。
+    - `JsonRpcMessage` インターフェースには `error` フィールド自体が
+      定義されておらず、エラー応答を解釈する経路がどこにも無い。
+    - `onError` が呼ばれるのは `socket.on("error")`(トランスポート層の
+      エラー)のみで、接続確立後のJSON-RPCレベルの拒否では発火しない。
+      「購読ハンドルは見かけ上生きているが通知は永遠に届かない」という
+      記述は正確。
+    - Issue本文の「`eth_subscribe` リクエストのid(`id: 1` 固定)」も
+      `subscribe()` の送信コードと一致する。
+  - ラベルは collector。修正箇所が `packages/collector` の
+    `eth-ws-client.ts` なので妥当。
+  - 変更は `docs/PLAN.md` のみ3行の追加で、コミットは1件
+    (Conventional Commits形式の `docs:`)。「1変更=1コミット」
+    「チェックボックス1行=Issue 1つ」の規約に適合。
+  - `pnpm lint` がリポジトリ全体で通ることを確認した(exit 0)。
+- 決定事項・注意点:
+  - 対応方針(案)は「id: 1 に対応するレスポンスに `error` があれば
+    `onError` を呼ぶ」だが、実装時はIssue #135(切断時の自動再接続)と
+    修正箇所が同じ `subscribe()` に重なるため、両Issueの着手順・依存
+    関係を統括が調整するとよい(再接続時に購読リクエストを再送する
+    設計になれば、エラー検知も再送ごとに効く必要がある)。
+  - QA(chainviz-qa)はdocsのみの変更のため省略可とする依頼元の判断を
+    了承(CLAUDE.mdに明記された例外に該当)。
+  - push・PR作成・マージは統括の判断に委ねる。
