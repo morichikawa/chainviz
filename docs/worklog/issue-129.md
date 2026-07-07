@@ -167,3 +167,72 @@
     矛盾はしていないため合否には影響しない。
   - 実機での動作確認（動的ワークベンチ追加 → RPC 発行 → 操作エッジ描画）は
     未実施のため、chainviz-qa の検証が必須。
+
+### 2026-07-07 Issue #129 QA検証（chainviz-qa、合格）
+- 担当: qa
+- 判定: **合格**。PLAN.mdの完了条件「addWorkbenchで追加したワークベンチから
+  RPCを発行した際、操作エッジ(OperationEdge)が静的ワークベンチと同様に
+  描画されること」を、本番環境に触れない完全分離の合成環境で実機確認した。
+- 検証環境（本番 chainviz-ethereum / chainviz-wstest には一切触れていない）:
+  - 分離ネットワーク `chainviz-qa129_net`（subnet 172.30.129.0/24、本番の
+    172.28.0.0/16 と非重複）を新規作成。
+  - 合成ノード `qa129-reth1`（alpine、IP 172.30.129.10、compose service
+    ラベル `reth1`）を起動。classifyContainer が node/reth と判定し、A層
+    ポーリングで NodeEntity として登録される。固定 JSON-RPC 応答を返す
+    nc ループで転送先も用意した。
+  - 本worktreeのビルド済み collector モジュール（dist）を無改変で読み込む
+    QAハーネス（scratchpad）を作成し、本番 index.ts と同じ配線
+    （DockerPoller→EthereumAdapter→WorldStateStore→CollectorServer→
+    LoggingProxy→createOperationObserver）を、分離した
+    composeProject=`chainviz-qa129` / networkName=`chainviz-qa129_net` /
+    WebSocketポート4400 / プロキシポート4401 で起動した。
+    ethRpcUrl は本番同様 `resolveWorkbenchRpcUrl()` から導出させた
+    （CHAINVIZ_PROXY_PORT=4401 のため `http://host.docker.internal:4401`）。
+- 確認できた事実（完了条件の各項目）:
+  1. addWorkbench で作成したワークベンチコンテナ
+     `chainviz-qa129-qa-wb-1` を `docker inspect` した結果:
+     - `ETH_RPC_URL=http://host.docker.internal:4401`（reth 直結ではなく
+       ロギングプロキシ経由）。
+     - `HostConfig.ExtraHosts=["host.docker.internal:host-gateway"]`
+       （静的ワークベンチと同じ host-gateway 解決設定が付与されている）。
+     main→lifecycle→dockerode-operations の実配線で ExtraHosts が実コンテナへ
+     反映されることを実機で確認した（レビューで未実施だった項目）。
+  2. そのワークベンチ内から `cast rpc eth_blockNumber --rpc-url $ETH_RPC_URL`
+     を実行したところ、コンテナが `host.docker.internal` を実際に解決して
+     プロキシ（4401）へ到達し、ロギングプロキシが
+     `[proxy] rpc call from 172.30.129.2: eth_blockNumber` として観測した。
+     operation observer が呼び出し元IP（172.30.129.2＝ワークベンチ）と
+     転送先ホスト（172.30.129.10＝合成ノード）を world-state store で解決し、
+     WebSocket クライアントへ `operationObserved` を1件配信した。配信された
+     エッジは
+     `{kind:"operation", fromWorkbenchId:"chainviz-qa129/qa-wb",
+       toNodeId:"chainviz-qa129/reth1", operation:"eth_blockNumber",
+       observedAt:...}`
+     で、静的ワークベンチが生成する OperationEdge と同一形式。フロント側は
+     この operationObserved から操作エッジを描画する（既存 #80 の機構）ため、
+     動的追加ワークベンチでも静的と同様に操作エッジが描画される条件を満たす。
+     （`cast` コマンド自体は合成ノードの簡易応答の都合でクライアント側が
+     タイムアウトしたが、観測・配信はリクエスト受信時点で発火するため
+     完了条件の判定には影響しない。実RPCがプロキシに到達したこと自体が
+     操作エッジ描画の根拠となる。）
+  3. 回帰確認: #129 の実コミットは 9c058b2（collector 7ファイル）と
+     85b25ec（docs）のみで、`profiles/`（静的ワークベンチの docker-compose.yml）
+     や proxy/operation-observer 等の静的ワークベンチ経路のランタイムコードは
+     変更していない。本番の静的ワークベンチ `chainviz-ethereum-workbench-1` を
+     read-only で inspect し、`ETH_RPC_URL=http://host.docker.internal:4001` +
+     `ExtraHosts=["host.docker.internal:host-gateway"]` のまま running を確認。
+     静的ワークベンチの動作は影響を受けていない。
+- 片付け: 合成コンテナ（qa129-reth1・動的ワークベンチ）・ネットワーク
+  `chainviz-qa129_net`・一時ハーネスファイルを全て削除済み。残存 0 件、
+  本番 chainviz-ethereum / chainviz-wstest は無事。
+- 統括への申し送り（合否には影響しない・非ブロッキング）:
+  - `packages/collector/src/adapters/ethereum/index.ts` の pollInfra 直前の
+    JSDoc（「注意（実装ギャップ…）」）が #129 修正前の記述のまま残っている。
+    「動的追加ワークベンチは現状ロギングプロキシを経由せず reth1 直結」
+    「Issue #129 でプロキシ経由化されれば一致する」と書かれているが、本PRで
+    実際にプロキシ経由化されたため記述が古い。node-lifecycle.ts の
+    「既定 ETH_RPC_URL（reth1 直）」も既に廃止（ethRpcUrl は必須化）されている。
+    実害はないが sync-docs 観点でコメント更新が望ましい。
+  - PLAN.md の #129 チェックボックスは実装担当の docs コミット 85b25ec で
+    既に `[x]` に変更済みだった（本来は QA 合格後に QA が付ける運用）。
+    今回 QA が合格判定したため結果としては正しい状態。
