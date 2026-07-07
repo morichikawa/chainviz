@@ -139,3 +139,34 @@
     `eth-ws-client.*` は触れられていないが、`docs/PLAN.md` / `docs/WORKLOG.md`
     は双方で編集されているため、マージ時にこの2ファイルで衝突する可能性が
     高い。統括はマージ前に rebase 等での解消を想定しておくこと。
+
+### 2026-07-07 Issue #143 QA検証(合格)
+- 担当: qa
+- 検証方法: メイン作業ディレクトリで稼働中の本番docker環境には一切触れず、
+  独立した合成環境で検証した。collectorパッケージをビルドし、ephemeralな
+  WebSocketサーバー(ws の WebSocketServer, port 0)を立てて、ビルド済みの
+  `createWsEthClient` を実プロセスとして接続・購読させ、サーバー側から
+  実際のJSON-RPCフレームを返して振る舞いを観測した。
+- 検証したシナリオと結果:
+  1. eth_subscribe拒否 → onError: サーバーが eth_subscribe リクエストに対し
+     `{ error: { code: -32601, message: "the method eth_subscribe does not
+     exist/is not available" } }` を返すと、onError が
+     `Error("eth_subscribe rejected: ... (code -32601)")` で呼ばれることを
+     実機で確認。onHeader は呼ばれない。完了条件「呼び出し側の onError
+     コールバックが呼ばれ、購読失敗に気づける」を満たす。合格。
+  2. error:null を含む success 応答でクラッシュしない(回帰確認):
+     `{ result: "0xsub1", error: null }` を返し、続けて通常の
+     eth_subscription 通知を送るシナリオで、process の uncaughtException が
+     発生しないこと(ハーネスに uncaughtException リスナーを仕込んで監視)、
+     onError が呼ばれないこと、後続のブロック通知が正常に onHeader へ
+     届くことを確認。統括が修正したクラッシュバグが再発していない。合格。
+  3. 正常な eth_subscription 通知が壊れていない: newHeads(ブロックヘッダ)と
+     newPendingTransactions(txハッシュ)を同一クライアントで購読し、
+     サーバーから通常の通知を送ると、それぞれ onHeader / onTxHash に正しい
+     ペイロードが届くことを確認。既存のブロック伝播・mempool監視機能に
+     影響が無い。合格。
+- 判定: docs/PLAN.md の Issue #143 完了条件を満たしている。合格。
+- 後片付け: 合成環境のWebSocketサーバーは各シナリオ終了時に close 済み、
+  ハーネスプロセスは process.exit で終了。一時ファイルは削除し、worktreeの
+  作業ツリーはクリーン。本番docker環境(chainviz-ethereum-*)は read-only の
+  docker ps 以外触れていない。
