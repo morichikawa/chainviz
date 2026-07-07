@@ -537,6 +537,311 @@ mempool:
   solana: { ja: "リーダーへ直接転送しため込まない", en: "..." }
 ```
 
+## 6. Phase 4（C層拡張）の UX 設計
+
+`docs/PLAN.md` ステップ8の UX 項目（コントラクトカード・定型操作・イベント
+ログ表示の UX 設計）の成果物。frontend 担当はこの節をそのまま着手指示として
+使える。設計にあたっては frontend をモックデータで起動し（Playwright での
+操作・スクリーンショット確認）、既存 UI の流儀（カードの構成・ポップ
+オーバー・GlossaryTerm アンカー・仮カード・新着発光・エッジの色体系）を
+実際に確認した。文言（i18n）は初稿であり、実装時に語調を揃える微調整は
+frontend の裁量でよい（構成・意味を変える変更は不可）。
+
+### 6.1 何が伝わっていないか（設計の動機）
+
+Phase 3 までの画面を実際に操作して確認した課題:
+
+1. **コントラクトという存在が画面に一切ない**。tx はウォレットカード上の
+   hash チップでしか見えず、素の送金なのかコントラクト呼び出しなのか
+   区別できない。「どこでスマコンが動いているのか」に答える要素がゼロ
+2. **操作の起点が GUI にない**。tx を起こすにはワークベンチコンテナ内で
+   cast を手で叩くしかなく、「支払いのような一般的な操作」を体験できない。
+   ワークベンチカードは観測結果の表示のみで「操作できる場所」に見えない
+3. **tx の中身（何をしたか）がどこにも出ない**。WalletPopover の tx 一覧も
+   hash + status のみ
+4. 初学者の「スマートコントラクトはどこかのサーバーで動いている」という
+   誤解を防ぐ手がかりが（作る前から）必要（CONCEPT.md の決定事項）
+
+### 6.2 キャンバスの情報構造: 「チェーン側の状態」の帯にコントラクト行を足す
+
+現状のキャンバスは上段 = インフラ行（ノード・ワークベンチ、`DEFAULT_GRID`
+originY=0）、下段 = ウォレット行（`WALLET_GRID` originY=520）という
+「観測対象のマシン／チェーン側の状態」の帯構造になっている。コントラクトは
+ウォレットと同じ「チェーン側の状態」（削除されない・コンテナの持ち物では
+ない）なので、この帯構造を保ってウォレット行のさらに一段下に
+**コントラクト行**を新設する。
+
+- `CONTRACT_GRID` = `DEFAULT_GRID` + originY（ウォレット行のカード実測高さと
+  重ならない値。目安 1040。実装時に実測で確定してよい）
+- 配置・新着の流儀は Issue #123 の配置ルールに従う: エンティティ初出時に
+  空きスロットを確定して即 layout 保存（既存カードを動かさない）、
+  到着から一定時間の新着発光（`infra-card--new` と同じ仕組み）を当てる
+- レイアウト永続化のキーは `address`（ウォレットと同じ安定識別子）
+
+### 6.3 コントラクトカード
+
+カードの構成（上から。WalletCard と同型の構造）:
+
+- **ヘッダ**: 種別ラベル「コントラクト」（GlossaryTerm: `contract`）＋
+  「全ノードで実行」ピル（GlossaryTerm: `evm`。bootnode バッジと同型の
+  見た目、コントラクト色）。**削除ボタンは置かない**（チェーン側の状態で
+  削除できない。「削除できないものに削除 UI を出さない」Issue #103 の
+  流儀と一貫）
+- **名前**: `name`（例: ChainvizToken）。無ければ「未知のコントラクト」（6.4）
+- **サブタイトル**: `shortHex(address)`。`token` があれば「· トークン
+  {symbol}」を続ける（GlossaryTerm: `token`）
+- **直近の呼び出し・イベント**: チップ列（6.6）
+
+**「特定ノードではなく全ノードで実行される」の伝え方**は次の3経路で行う:
+
+1. **常設ピル**（視覚）: ヘッダの「全ノードで実行」。ホバーで `evm` の
+   用語解説がその場で出る
+2. **ポップオーバー冒頭の説明文**（文言）: 「チェーンに複製され、全ノードが
+   同じ実行をするプログラムです。特定のサーバーやノードの中では動いて
+   いません」を、フィールド一覧より先に 1 行置く
+3. **確定の瞬間の同期**（動き）: 呼び出し tx がブロックに取り込まれた瞬間、
+   既存のブロック伝播発光で全ノードカードが光る。同じ確定検知でコントラクト
+   カードにも確定フラッシュ（6.6）を当てるため、「コントラクトの実行」と
+   「全ノードへのブロック到達」が同時の出来事として見える。新しい演出は
+   作らず、タイミングの一致だけで見せる
+
+**ノードへのエッジは張らない**。本アプリのエッジ（紐）は「実在する接続・
+実在した呼び出し」（P2P ピア・所有・RPC 呼び出し）だけを表す語彙として
+確立しており、コントラクト→ノードの恒久エッジはどの実在の通信にも対応
+しない。全ノードへ薄いエッジを張る案は「特定ノード群と接続している」という
+逆の誤解とノード増加時の線の氾濫を招くため採らない。
+
+**ポップオーバー**（WalletPopover と同型。観測できなかったフィールドは
+行ごと省略する既存の流儀に従う）:
+
+| 行 | 内容 |
+| --- | --- |
+| （説明文） | 上記 2. の誤解防止文（muted 表示） |
+| アドレス | `shortHex(address, 10, 6)` |
+| デプロイした人 | `shortHex(deployerAddress)`（ラベルに GlossaryTerm: `deploy`） |
+| 作成 tx | `shortHex(createdByTxHash)` |
+| トークン | `{symbol} / decimals {decimals}`（`token` がある場合のみ） |
+
+**デプロイエッジ（常設）**: `deployerAddress` に一致するウォレットカードが
+キャンバス上に存在する場合のみ、ウォレット → コントラクトの細線を描く
+（コントラクト色・低彩度。所有エッジのアンバー破線と混同しない見た目に
+する）。ホバーで「{address} がデプロイしたコントラクト」のポップオーバー
+（PeerEdgePopover と同型、GlossaryTerm: `deploy`）。ダングリング参照
+ガード必須（一致するウォレットが無ければ描かない。手動デプロイや追跡外
+アドレスからのデプロイはここで自然に落ちる）。
+
+### 6.4 未知のコントラクトの差別化
+
+カタログで特定できないコントラクト（`name` 省略）は「存在は確かだが中身を
+解釈できない」ことを見た目で示す:
+
+- カード枠を**破線ボーダー + muted 色**にし、ヘッダに「カタログ外」ピルを
+  追加する（既知カードとひと目で区別できる）
+- 名前は「未知のコントラクト」（i18n）。アドレスがサブタイトルに出るのは
+  既知と同じ
+- ポップオーバーの説明文を差し替える: 「chainviz のカタログに載っていない
+  ため、関数やイベントの意味（ABI）を復号できません。存在と呼び出しの
+  発生だけを表示します」（GlossaryTerm: `abi`）
+- アクティビティチップは `rawFunctionId` / `rawEventId` の短縮表示（6.6）
+- 「全ノードで実行」ピル・デプロイエッジ・確定フラッシュは既知と同様に
+  出す（未知でも事実は同じであり、差別化は「解釈できるか」の一点に絞る）
+
+### 6.5 定型操作（送金・デプロイ・コントラクト呼び出し）の UI フロー
+
+操作は「必ずワークベンチという実体から発する」（§3 の設計判断）ため、
+UI の起点もワークベンチカードに置く。ツールバー（環境全体の操作）ではなく
+カード（個体への操作）に置くことで、「誰の操作か」が押す前から明確になる。
+
+**起点**: ワークベンチカード下部に全幅ボタン「操作を実行…」（nodrag）。
+
+- ホバー/フォーカスで予告（ActionHint と同型）: 「このワークベンチの中で
+  開発ツール（cast / forge）を実行します。RPC 呼び出しは {rpcTarget} に
+  送られ、通常の操作と同じように観測・表示されます」。`rpcTargetNodeId` を
+  解決できない場合は generic 文言（既存 Issue #123 のフォールバック流儀）
+
+**操作パネル**: ボタン押下でカード脇に開くインタラクティブなポップオーバー
+（nodrag / nowheel。Esc・外側クリック・×で閉じる。見た目は infra-popover
+系に揃える）。上部に3つの操作タブ:
+
+1. **送金**（`WorkbenchOperation: transfer`）
+   - 宛先: キャンバス上の既存ウォレットから選択（表示は `shortHex` ＋
+     所有ワークベンチのラベル）。自由入力（アドレス直打ち）も可
+   - 金額: **ETH 単位の 10 進入力**（例: `0.5`）。フロントが wei 文字列へ
+     変換してコマンドを送る（プロトコルの `amount` は最小単位のまま）
+   - 実行ボタン「送金する」。フォーム末尾に予告文: 「tx は mempool に入り、
+     ブロックに取り込まれると確定します」（GlossaryTerm: `mempool`）
+2. **デプロイ**（`deployContract`）
+   - コントラクト選択: カタログ掲載分（表示名＋一言説明。例:
+     ChainvizToken「最小の ERC20 トークン」/ Counter「一番単純な学習用
+     コントラクト」）
+   - 実行ボタン「デプロイする」。予告文: 「ソースからコンパイルした
+     コントラクトを配置する tx が送られ、取り込まれるとコントラクト
+     カードが現れます」（GlossaryTerm: `deploy`）
+3. **コントラクト呼び出し**（`callContract`）
+   - 対象: キャンバス上のデプロイ済み・**カタログ既知**のコントラクトのみ
+     選択肢に出す（未知のコントラクトはインターフェース不明でフォームを
+     作れないため GUI 対象外。cast を手で叩く道は塞がない）。既知の
+     コントラクトが 1 つも無い間は、タブ内にその旨と「先にデプロイする」
+     導線を出す
+   - 関数: フォーム定義（後述）からの選択。引数は引数名をラベルにした
+     テキスト入力（アドレス型の引数には既存ウォレットの候補を提示）。
+     payable な関数のみ金額欄を出す
+   - 実行ボタン「実行する」
+
+**実行後の流れ**:
+
+- パネルを閉じ、ワークベンチカードにスピナー＋「実行中…」を出す
+  （ツールバーの pending 表現と同型。`commandResult` で解除。二重送信
+  防止ではないので操作は引き続き可能）
+- 失敗は既存トースト（`command.error.runWorkbenchOperation` ＋ collector の
+  error 詳細）
+- **デプロイのみ**、コントラクト行へ仮カード「デプロイ中… {表示名}」を
+  置く（Issue #102 の仮カードの流儀）。`entityAdded`（contract）の
+  `catalogKey` 一致で置換し、対応が取れないときは FIFO 近似。
+  `commandResult` 失敗時は仮カードを消す
+- 成功の可視化は**追加配線なし**で既存機構がそのまま見せる: 操作エッジ
+  パルス（ロギングプロキシの実測）→ ウォレットの pending チップ → 確定
+  フラッシュ → 残高/トークン残高の変化・コントラクトカードの出現。
+  「GUI から押しても、cast を手で叩いたときと同じ観測が返ってくる」
+  一貫性がこの設計の軸で、確認ダイアログは挟まない（Issue #123 と同じ
+  判断。気軽に触れて、結果は観測で必ず見える）
+
+**操作フォーム定義の置き場所**: カタログキー →（表示名・一言説明・関数
+フォーム定義（関数名・引数名・入力種別・payable か））の静的データを、
+フロントのチェーンプロファイル表現セット `packages/frontend/src/
+chain-profiles/ethereum/`（§1 で予約済み。このとき新設）に置く。ABI その
+ものではなく「UI フォームの組み立てに必要な最小情報」であり、チェーン固有
+語彙の解釈をフロント表現セットが担う既存の責務分担（`OperationEdge.
+operation` と同じ）に沿う。カタログ（`profiles/ethereum/contracts/
+catalog.json`）との二重管理になる点は許容する（サンプルコントラクトは
+学習用に安定しており更新頻度が低い。乖離が問題になったら build-catalog.sh
+での生成に寄せる）。
+
+### 6.6 コントラクト呼び出し・イベントログの可視化
+
+- **ウォレットの tx チップのラベルを「意味」優先にする**。優先順:
+  `contractCall.functionName`（例: `transfer()`）→ `createdContractAddress`
+  があれば「デプロイ」→ `rawFunctionId` の短縮表示 → 従来どおり hash 短縮
+  （素の送金・情報なし）。ステータス色・pending 明滅・確定フラッシュは
+  従来のまま
+- **WalletPopover の tx 一覧**に呼び出し内容を追記する: 関数名（引数の
+  先頭 1〜2 個のプレビュー）＋ 宛先コントラクト名（未知なら短縮アドレス）
+- **確定時のコントラクトへのパルス**: 既存の確定検知
+  （`detectTxSettlements`）を流用し、確定した tx がコントラクト宛て
+  （`contractCall.contractAddress`、無ければ `to` と `ContractEntity.
+  address` の照合でフォールバック。§4 の制約に対応）またはデプロイ
+  （`createdContractAddress`）の場合、from のウォレットカード →
+  コントラクトカードへ**揮発パルスを1本**流す（`useOperationPulses` と
+  同型の一時エッジ。色はコントラクト色。表示時間は操作パルスと同程度）。
+  パルス完了のタイミングでコントラクトカードに**確定フラッシュ**（tx
+  チップの is-settling と同系の演出。failed の tx は失敗色のフラッシュ）
+  を当てる。ウォレットカードが無い（追跡外アドレスからの呼び出し）場合は
+  パルスを省きフラッシュのみ、コントラクトカードが無ければ何もしない
+  （ダングリングガード）
+- **コントラクトカードのアクティビティチップ列**: ワールドステートの tx
+  から `contractAddress` 照合で導出する（確定済みのみ・新しい順・上限は
+  ウォレットの tx チップと同じ 6 件）。専用フィールドの追加は不要
+  - **呼び出しチップ**: `functionName`（復号不能なら `rawFunctionId`
+    短縮）。ホバーで引数一覧（`DecodedArgument` の `name: value` を
+    1 行ずつ）
+  - **イベントチップ**: `eventName`（復号不能なら `rawEventId` 短縮）。
+    呼び出しチップと見分けられるスタイル（イベント側にプレフィックス
+    記号を付ける等）。ホバーで引数一覧
+  - 復号できていないチップのホバーには「カタログに定義が無いため復号
+    できません（生の識別子）」を出す（GlossaryTerm: `abi`）
+  - ラベルは「直近の呼び出し・イベント」（GlossaryTerm: `event-log`）。
+    1 件も無ければ「まだ呼び出しがありません」
+
+### 6.7 ウォレットのトークン残高
+
+- WalletCard の残高行（`… ETH · nonce n`）の下に**トークン残高チップ列**を
+  足す: `tokenBalances` の各件を `ContractEntity.token`（`contractAddress`
+  で照合）の `decimals` でフォーマットし「{amount} {symbol}」で表示。
+  ラベルは「トークン残高」（GlossaryTerm: `token`）
+- 対応する `ContractEntity` が未観測の `tokenBalance` は表示しない
+  （ダングリングガードの流儀。symbol 不明の生の数値を出して混乱させない）
+- `tokenBalances` が省略・空・全件照合不能なら行ごと出さない（Phase 3 まで
+  のカードの見た目を変えない）
+- WalletPopover にも「トークン残高」行（コントラクト名＋残高）を足す
+- `formatEther` は decimals 可変の `formatUnits` へ一般化して共用する
+- 残高変化の専用演出は付けない（ETH 残高の変化にも無く、一貫させる。
+  transfer の因果は tx チップ・確定フラッシュ側が示す）
+
+### 6.8 新設する i18n 文言（初稿）
+
+| キー | ja | en |
+| --- | --- | --- |
+| `card.contract` | コントラクト | Contract |
+| `contract.unknown` | 未知のコントラクト | Unknown contract |
+| `contract.badge.everyNode` | 全ノードで実行 | Runs on every node |
+| `contract.badge.uncataloged` | カタログ外 | Not in catalog |
+| `contract.popover.description` | チェーンに複製され、全ノードが同じ実行をするプログラムです。特定のサーバーやノードの中では動いていません | A program replicated on the chain; every node runs the same execution. It does not live on any single server or node. |
+| `contract.popover.unknownDescription` | chainviz のカタログに載っていないため、関数やイベントの意味（ABI）を復号できません。存在と呼び出しの発生だけを表示します | Not in the chainviz catalog, so function and event meanings (ABI) cannot be decoded. Only its existence and incoming calls are shown. |
+| `field.deployer` | デプロイした人 | Deployed by |
+| `field.createdByTx` | 作成 tx | Created by tx |
+| `field.token` | トークン | Token |
+| `field.tokenBalances` | トークン残高 | Token balances |
+| `contract.activity` | 直近の呼び出し・イベント | Recent calls & events |
+| `contract.noActivity` | まだ呼び出しがありません | No calls yet |
+| `contract.chip.undecoded` | カタログに定義が無いため復号できません（生の識別子） | Not in the catalog, so it cannot be decoded (raw identifier). |
+| `tx.chip.deploy` | デプロイ | Deploy |
+| `edge.deployedBy` | {address} がデプロイしたコントラクト | Contract deployed by {address} |
+| `action.workbenchOperations` | 操作を実行… | Run operation… |
+| `action.workbenchOperations.hint` | このワークベンチの中で開発ツール（cast / forge）を実行します。RPC 呼び出しは {rpcTarget} に送られ、通常の操作と同じように観測・表示されます | Runs developer tools (cast / forge) inside this workbench. Its RPC calls go to {rpcTarget} and are observed and displayed like any other operation. |
+| `action.workbenchOperations.hint.generic` | このワークベンチの中で開発ツール（cast / forge）を実行します。RPC 呼び出しは通常の操作と同じように観測・表示されます | Runs developer tools (cast / forge) inside this workbench. Its RPC calls are observed and displayed like any other operation. |
+| `operation.tab.transfer` | 送金 | Transfer |
+| `operation.tab.deploy` | デプロイ | Deploy |
+| `operation.tab.call` | コントラクト呼び出し | Call contract |
+| `operation.transfer.to` | 宛先 | To |
+| `operation.transfer.amount` | 金額（ETH） | Amount (ETH) |
+| `operation.transfer.submit` | 送金する | Send |
+| `operation.transfer.note` | tx は mempool に入り、ブロックに取り込まれると確定します | The tx enters the mempool and becomes final once included in a block. |
+| `operation.deploy.contract` | コントラクト | Contract |
+| `operation.deploy.submit` | デプロイする | Deploy |
+| `operation.deploy.note` | ソースからコンパイルしたコントラクトを配置する tx が送られ、取り込まれるとコントラクトカードが現れます | Sends a tx that places the compiled contract on chain; a contract card appears once it is included. |
+| `operation.call.target` | 対象コントラクト | Target contract |
+| `operation.call.function` | 関数 | Function |
+| `operation.call.amount` | 送金額（ETH、任意） | Amount (ETH, optional) |
+| `operation.call.submit` | 実行する | Call |
+| `operation.call.empty` | 呼び出せるコントラクトがまだありません。先に「デプロイ」タブからデプロイしてください | No callable contracts yet. Deploy one from the Deploy tab first. |
+| `operation.pending` | 実行中… | Running… |
+| `ghost.contract.deploying` | デプロイ中… {name} | Deploying… {name} |
+
+（カタログ掲載コントラクトの表示名・一言説明はチェーンプロファイル表現
+セット側のデータが持ち、`messages.ts` には入れない）
+
+### 6.9 用語解説（C層拡張）の方針
+
+定義文は既存 `glossary/ethereum/terms/c-transaction.yaml` と同じ3拍子
+「定義 → **なぜ必要か** → chainviz ではどう見えるか」で書く（ユーザー要望
+「なぜ必要なのかを伝えられるように」への直接の回答をここに置く）。
+アンカー（UI 上の登場箇所）が無い用語は存在しないのと同じ（Issue #124 の
+教訓）なので、追加する全用語に必ずアンカーを対応させる:
+
+| termKey | 主なアンカー | 定義に必ず含めるポイント |
+| --- | --- | --- |
+| `contract` | コントラクトカードの種別ラベル | チェーン上に置かれたプログラム。**特定のサーバーではなく全ノードが同じ実行をする**ことで、特定の誰かを信頼せずにルール（支払い条件・トークンの台帳など）を自動執行できる。それがなぜ必要か（仲介者なしの約束事） |
+| `deploy` | 操作パネルのデプロイタブ・ポップオーバーの「デプロイした人」・デプロイエッジ | プログラムをチェーン上に配置する tx。一度配置すると誰でも呼び出せる。関連サービス TIPS に Foundry / Hardhat（CONCEPT.md の決定済み方針） |
+| `abi` | 未知コントラクトの説明文・未復号チップのホバー | チェーン上にあるのはバイト列だけで、関数名・引数名は載っていない。ABI はその呼び出し口の形の定義で、バイト列と人が読める名前の橋渡し。chainviz はカタログの ABI で復号している（だから**カタログに無いと「未知」になる**） |
+| `event-log` | コントラクトカードの「直近の呼び出し・イベント」ラベル | コントラクトが実行中に書き残す記録。状態を直接読むより安価に「何が起きたか」を外部へ知らせる仕組みで、アプリがチェーンの変化を追う主要な手段 |
+| `evm` | 「全ノードで実行」ピル | 全ノードが搭載する同一の仮想計算機。同じ tx を同じ順で実行すれば必ず同じ結果になることが、全ノードの状態が一致する（＝コントラクトがどこか 1 か所で動いているのではない）ことの根拠 |
+| `token` | トークン残高ラベル・コントラクトカードのトークン表示 | コントラクトが管理する残高台帳。ETH と違いプロトコル本体の通貨ではなく、コントラクト内の帳簿。ERC20 という共通の呼び出し口のおかげで、どのウォレット・アプリからも同じ方法で扱える |
+
+### 6.10 決定事項（統括確認済み）
+
+以下4点はいずれも本文中の推奨案を採用として確定した(2026-07-07)。
+理由はいずれも各項目の本文(6.3/6.5)に記載済みのとおり。
+
+1. **「全ノードで実行」の表現**: ピル＋文言＋確定タイミングの同期（6.3）。
+   コントラクトから全ノードへ薄いエッジを張る案は不採用（「エッジ＝
+   実在の接続・呼び出し」という既存の視覚語彙を崩さないため）
+2. **操作フォーム定義の置き場所**: フロント表現セットの静的データ
+   （6.5）。collector がカタログ由来のフォームスキーマをプロトコルで
+   配る案は不採用（shared 型変更・ChainAdapter 境界の見直しが不要な
+   軽量な方を選んだ）
+3. **金額の入力単位**: ETH 単位入力＋フロントで wei 変換
+4. **操作パネルの形**: ワークベンチカード脇のポップオーバー
+
 ## 未確定のまま残す項目
 
 以下は実装しながら詰める（先回りして今は決めない）。

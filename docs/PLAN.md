@@ -299,9 +299,10 @@ runWorkbenchOperation コマンド・ChainAdapter.subscribeContracts）は設計
 
 **UX**（実装着手前に chainviz-ux が設計し、frontend に引き継ぐ）:
 
-- [ ] コントラクトカード・定型操作・イベントログ表示のUX設計（操作フロー・
+- [x] コントラクトカード・定型操作・イベントログ表示のUX設計（操作フロー・
       情報の見せ方・文言。「コントラクトは全ノードで実行される」の伝え方を
-      含む）
+      含む）→ 設計済み。`docs/ARCHITECTURE.md` §6 が成果物（frontend への
+      着手指示を兼ねる）。§6.10 の判断4点は確定済み
 
 **node-env**:
 
