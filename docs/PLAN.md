@@ -307,7 +307,7 @@ runWorkbenchOperation コマンド・ChainAdapter.subscribeContracts）は設計
 
 **node-env**:
 
-- [ ] サンプルコントラクト（最小ERC20のChainvizTokenとCounter）のFoundry
+- [x] サンプルコントラクト（最小ERC20のChainvizTokenとCounter）のFoundry
       プロジェクトを`profiles/ethereum/contracts/`に追加しワークベンチに
       マウントする
       [#158](https://github.com/morichikawa/chainviz/issues/158)
