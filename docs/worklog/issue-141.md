@@ -453,3 +453,70 @@ edge(source=p/geth1, target=p/reth1)）で `computeBlockPulses` を実行して
 - 静的レビューはこれで完了。実機での完了条件検証（EL-EL エッジに実際に
   パルスが走ること）は QA（chainviz-qa）の担当。
 - push / PR 作成 / マージ / Issue クローズは統括の判断・実行に委ねる。
+
+### 2026-07-07 Issue #141 実機検証（QA・合格）
+
+- 担当: qa（検証）
+- ブランチ: issue-141-el-block-pulse
+- 判定: **合格**。`docs/PLAN.md` の完了条件「reth(EL)同士のピアエッジ上でも、
+  実際のブロック受信タイミングに基づいたブロック伝播パルスが表示される」を
+  実機で確認した。
+
+## 検証環境（メイン環境を破壊しない独立した合成環境）
+
+- `profiles/ethereum` の compose を scratchpad へ複製し、プロジェクト名を
+  `chainviz-qa141`、サブネットを `172.29.0.0/16`、公開ポートを
+  `18545`(reth1 RPC)/`15052`(beacon1 API) に変更した使い捨て環境を
+  `docker compose up -d` で起動した（reth1/beacon1 + reth2/beacon2 の
+  2 ノード構成）。稼働中のメイン環境 `chainviz-ethereum`（project
+  172.28.0.0/16、collector 4000/4001・frontend 5173）には一切触れていない。
+- 修正版 collector は本ワークツリーで `pnpm build`（HEAD c1573fc を反映した
+  build marker を確認）した dist を、ポート 4100/4101 で起動した。frontend は
+  本ワークツリーの vite を `VITE_COLLECTOR_URL=ws://127.0.0.1:4100` で
+  ポート 5273 に起動した。
+
+## 確認内容
+
+1. collector 側データ（WebSocket 4100 を直接購読して確認）
+   - 合成環境のブロックが `receivedAt` に
+     `chainviz-qa141/reth1` と `chainviz-qa141/reth2`（EL 自身のキー、
+     Issue #141 で追加）を両方持ち、両者の受信時刻が実際に数 ms 異なる
+     （例: reth1=…191043 / reth2=…191040、差 -3〜+5ms）ことを、
+     複数ブロックにわたって観測した。従来からの beacon キー
+     （`chainviz-qa141/beacon1`・`beacon2`）も同時に記録されており、
+     設計どおり beacon キーは EL 受信時刻のエイリアスになっている
+     （beacon1 時刻 == reth1 時刻）。
+   - EL 間ピアエッジ `chainviz-qa141-execution:
+     chainviz-qa141/reth1 <-> chainviz-qa141/reth2` が存在することを確認。
+2. frontend 側の視覚的挙動（ヘッドレス Chromium で実画面を描画して確認）
+   - 実際に frontend を開き、React Flow が描画する
+     `data-id="peer-chainviz-qa141-execution::chainviz-qa141/reth1::chainviz-qa141/reth2"`
+     エッジ（reth 同士の EL エッジ）そのものの上に、ブロック伝播パルスの
+     `circle.peer-pulse`（`animateMotion dur=450ms`）が繰り返し現れることを
+     確認した（対象エッジに限定したポーリングで 329 サンプル中 73 サンプルで
+     パルス出現）。パルス時間が最小値 450ms フロアなのは、reth1/reth2 の
+     実受信差が数 ms でフロアに丸められるためであり、想定どおり（パルス自体は
+     実受信タイミングに基づいて起動している）。
+   - 回帰確認: CL(beacon)間エッジ（`chainviz-qa141-consensus`）のパルスも
+     従来どおり出続けている（394 サンプル中 92 サンプルでパルス出現）ことを
+     確認。EL エッジ追加で CL エッジのパルスが壊れていない。
+
+## 補足（本 Issue の欠陥ではないテスト構成上の注意）
+
+- 1 つの collector でメイン・合成の 2 プロジェクトを同時観測したため、
+  `beaconStableIdForExecution()` がプロジェクトをスコープせず全観測から
+  beacon をマッチする既存挙動により、稀にメイン reth のブロックに合成 beacon
+  キーが混ざる／`chainviz-ethereum/reth1 <-> chainviz-qa141/reth2` という
+  プロジェクト跨ぎの実行エッジが 1 本描かれる、という副作用が観測された。
+  ただしこれは「2 プロジェクトを 1 collector で観測する」本検証固有の構成に
+  よるもので、実運用の単一プロジェクト構成（各ノードキーに beacon が 1 つ
+  しか存在しない）では発生しない。EL 自身のキー（`obs.stableId`）は常に正しく
+  自プロジェクトにスコープされるため、本 Issue の EL-EL パルス検証
+  （reth1/reth2 キー）には影響しない。Issue #141 の範囲外の既存挙動であり、
+  本検証の合否には関係しない。
+- メイン環境は検証の前後で無傷（コンテナ 7 個稼働継続、reth1 のブロック高が
+  正常に進行、ピアはメイン reth2 のみでネットワーク混線なし、collector/
+  frontend のポート 4000/4001/5173 も稼働継続）であることを確認した。
+- 検証終了後、合成環境は `docker compose down -v` でコンテナ・ネットワーク・
+  ボリュームをすべて破棄し、自分が起動した collector(4100)/frontend(5273)
+  プロセスも停止した。
