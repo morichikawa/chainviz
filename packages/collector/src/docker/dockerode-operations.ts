@@ -51,6 +51,7 @@ export function toCreateOptions(
     HostConfig: {
       Binds: spec.binds,
       NetworkMode: spec.networkName,
+      ExtraHosts: spec.extraHosts,
     },
     NetworkingConfig: {
       EndpointsConfig: {

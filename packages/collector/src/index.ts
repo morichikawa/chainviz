@@ -86,6 +86,45 @@ export function resolveProxyTarget(
 }
 
 /**
+ * collector（ロギングプロキシ）自体が動いているホストを、ワークベンチ
+ * コンテナから見てどう名指すかの既定値。collector はコンテナではなくホスト
+ * マシン上のプロセスとして動くため、コンテナ内から到達するには Docker の
+ * host-gateway 予約名（Docker Engine 20.10+）を使う（静的ワークベンチの
+ * `profiles/ethereum/docker-compose.yml` と同じ仕組み。extra_hosts で
+ * この名前を host-gateway へ割り当てる必要がある）。
+ */
+export const DEFAULT_WORKBENCH_RPC_HOST = "host.docker.internal";
+
+/**
+ * ワークベンチコンテナから見た、ロギングプロキシへの到達ホスト名を解決する。
+ * 環境変数 CHAINVIZ_WORKBENCH_RPC_HOST があれば優先し、なければ
+ * DEFAULT_WORKBENCH_RPC_HOST を使う。collector が動くホストの参照名が
+ * 通常と異なる環境（合成テスト環境等）向けの上書き口。
+ */
+export function resolveWorkbenchRpcHost(
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const raw = env.CHAINVIZ_WORKBENCH_RPC_HOST;
+  if (raw === undefined || raw.trim() === "") return DEFAULT_WORKBENCH_RPC_HOST;
+  return raw.trim();
+}
+
+/**
+ * addWorkbench で動的に追加するワークベンチが叩く RPC 接続先 URL を解決する。
+ * 静的ワークベンチ（docker-compose.yml の `workbench` サービス）と同じく
+ * ロギングプロキシ（resolveWorkbenchRpcHost():resolveProxyPort()）を指す
+ * ようにし、プロキシを経由しない直結を避ける（Issue #129。直結だと
+ * ロギングプロキシがワークベンチの RPC 呼び出しを観測できず、操作エッジが
+ * 描画されない）。ポートはロギングプロキシの実際の待受設定
+ * （resolveProxyPort()）と常に一致させ、決め打ちの値を別途持たない。
+ */
+export function resolveWorkbenchRpcUrl(
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  return `http://${resolveWorkbenchRpcHost(env)}:${resolveProxyPort(env)}`;
+}
+
+/**
  * profiles/ethereum のホスト絶対パスを解決する。addNode/addWorkbench で
  * scripts/*.sh・values.env を bind mount / 読み込みするために必要。
  * 環境変数 CHAINVIZ_ETHEREUM_PROFILE_DIR で上書きでき、未設定なら
@@ -236,8 +275,13 @@ export async function main(port: number = DEFAULT_PORT): Promise<void> {
   const store = new WorldStateStore("ethereum");
 
   // 操作コマンド（ノード/ワークベンチの追加・削除）の処理を配線する。
+  // addWorkbench が作るワークベンチの RPC 接続先は、静的ワークベンチと
+  // 同様にロギングプロキシ経由にする（Issue #129）。ここで渡す URL は
+  // 上のロギングプロキシ起動設定（proxyTarget/resolveProxyPort()）と
+  // 別に決め打ちにせず、resolveWorkbenchRpcUrl() で同じ実行時設定から導出する。
   const lifecycle = new EthereumNodeLifecycle(createDockerOperations(docker), {
     profileDir,
+    ethRpcUrl: resolveWorkbenchRpcUrl(),
   });
   // com.chainviz.managed ラベルから、前回起動時に addNode/addWorkbench で
   // 作成した既存コンテナを回収し、レジストリ（this.nodes/this.workbenches）を

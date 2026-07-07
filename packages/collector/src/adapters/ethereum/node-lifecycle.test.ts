@@ -13,6 +13,8 @@ import {
   allocateNodeIndex,
   allocateWalletIndex,
   EthereumNodeLifecycle,
+  extractHost,
+  isIpv4Literal,
   parseMnemonic,
   parseNodeIndex,
 } from "./node-lifecycle.js";
@@ -54,7 +56,10 @@ function fakeOps(
   };
 }
 
-const config = { profileDir: "/repo/profiles/ethereum" };
+const config = {
+  profileDir: "/repo/profiles/ethereum",
+  ethRpcUrl: "http://host.docker.internal:4001",
+};
 
 describe("parseMnemonic", () => {
   it("extracts a double-quoted mnemonic from values.env content", () => {
@@ -213,6 +218,100 @@ describe("parseNodeIndex", () => {
 
   it("returns undefined for a service name that does not start with reth/beacon", () => {
     expect(parseNodeIndex("Alice-1")).toBeUndefined();
+  });
+});
+
+describe("extractHost", () => {
+  it("extracts the hostname from an http URL", () => {
+    expect(extractHost("http://host.docker.internal:4001")).toBe(
+      "host.docker.internal",
+    );
+  });
+
+  it("extracts an IPv4 host as-is", () => {
+    expect(extractHost("http://172.28.1.1:8545")).toBe("172.28.1.1");
+  });
+
+  it("returns undefined for an unparseable URL", () => {
+    expect(extractHost("not a url")).toBeUndefined();
+  });
+
+  it("returns undefined for an empty string", () => {
+    expect(extractHost("")).toBeUndefined();
+  });
+
+  it("returns undefined for a bare hostname with no scheme or authority", () => {
+    // "host.docker.internal" 単体は URL としてパースできず undefined。
+    expect(extractHost("host.docker.internal")).toBeUndefined();
+  });
+
+  it("returns an empty hostname for a scheme-less host:port string", () => {
+    // "host.docker.internal:4001" は URL 的には "host.docker.internal:" を
+    // スキーム、"4001" を opaque path とみなしてパースが成功してしまい、
+    // hostname は空文字列になる（undefined ではない）。呼び出し側の
+    // workbenchExtraHosts は空文字列を falsy として扱い extra_hosts を付与
+    // しないため実害は無いが、直感に反する挙動なので回帰対象として固定する。
+    expect(extractHost("host.docker.internal:4001")).toBe("");
+  });
+
+  it("drops the port and path, keeping only the hostname", () => {
+    expect(extractHost("http://host.docker.internal:4001/rpc?x=1")).toBe(
+      "host.docker.internal",
+    );
+  });
+
+  it("lowercases the hostname (URL host normalization)", () => {
+    // extra_hosts エントリの重複や大文字小文字の揺れを避けるため、URL 側で
+    // 正規化された小文字ホストが得られることを固定する。
+    expect(extractHost("http://Host.Docker.Internal:4001")).toBe(
+      "host.docker.internal",
+    );
+  });
+
+  it("keeps the brackets for an IPv6 literal host", () => {
+    // Node の URL は IPv6 リテラルを角括弧付きで返す。chainviz の Ethereum
+    // プロファイルは IPv4 帯（172.28.x.x）と host.docker.internal しか使わない
+    // ため実運用では通らない経路だが、現状の挙動を回帰対象として固定する。
+    expect(extractHost("http://[::1]:8545")).toBe("[::1]");
+  });
+});
+
+describe("isIpv4Literal", () => {
+  it("recognizes a dotted-quad IPv4 address", () => {
+    expect(isIpv4Literal("172.28.1.1")).toBe(true);
+  });
+
+  it("rejects a hostname", () => {
+    expect(isIpv4Literal("host.docker.internal")).toBe(false);
+  });
+
+  it("rejects an empty string", () => {
+    expect(isIpv4Literal("")).toBe(false);
+  });
+
+  it("rejects a three-group or five-group dotted number", () => {
+    expect(isIpv4Literal("1.2.3")).toBe(false);
+    expect(isIpv4Literal("1.2.3.4.5")).toBe(false);
+  });
+
+  it("rejects a dotted-quad that still carries a port suffix", () => {
+    // extractHost はホスト部だけを渡す想定なので通常は起きないが、万一
+    // "172.28.1.1:8545" が渡ってもホスト名扱い（= extra_hosts 付与）に
+    // 倒れることを固定する。
+    expect(isIpv4Literal("172.28.1.1:8545")).toBe(false);
+  });
+
+  it("rejects an IPv6 literal (with or without brackets)", () => {
+    expect(isIpv4Literal("::1")).toBe(false);
+    expect(isIpv4Literal("[::1]")).toBe(false);
+  });
+
+  it("classifies an out-of-range dotted-quad as an IPv4 literal (documented limitation)", () => {
+    // 現状の判定は各オクテットが 0..255 に収まるかまでは検査しない。
+    // ホスト名解決の要否を分けるだけの用途では、数字4組を「解決不要な
+    // リテラル」とみなしても実害が無いためこの緩さを許容している。
+    // 意図せぬ厳格化のデグレを検知できるよう現状を固定する。
+    expect(isIpv4Literal("999.999.999.999")).toBe(true);
   });
 });
 
@@ -736,7 +835,100 @@ describe("EthereumNodeLifecycle workbench commands", () => {
     expect(wb.image).toBe("ghcr.io/foundry-rs/foundry:latest");
     expect(wb.entrypoint).toEqual(["/bin/sh", "-c", "sleep infinity"]);
     expect(wb.labels?.["com.docker.compose.service"]).toBe("Alice");
-    expect(wb.env?.ETH_RPC_URL).toBe("http://172.28.1.1:8545");
+    // reth へ直結させず、必ずロギングプロキシ経由の URL を渡す（Issue #129）。
+    expect(wb.env?.ETH_RPC_URL).toBe(config.ethRpcUrl);
+  });
+
+  it("maps the proxy hostname to Docker's host-gateway so the container can reach it", async () => {
+    // 既定の ethRpcUrl は host.docker.internal（ホスト名）を指すため、
+    // extra_hosts で host-gateway へのマッピングが必要（静的ワークベンチの
+    // docker-compose.yml と同じ仕組み）。
+    const ops = fakeOps();
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+    await lifecycle.addWorkbench("Alice");
+    expect(ops.created[0]?.extraHosts).toEqual([
+      "host.docker.internal:host-gateway",
+    ]);
+  });
+
+  it("omits the host-gateway mapping when ethRpcUrl already points at a bare IP", async () => {
+    // IP リテラル直指定（例: テストや特殊な運用での上書き）ではホスト名解決が
+    // 不要なので、無意味な extra_hosts エントリを追加しない。
+    const ops = fakeOps();
+    const lifecycle = new EthereumNodeLifecycle(ops, {
+      ...config,
+      ethRpcUrl: "http://172.28.1.9:8545",
+    });
+    await lifecycle.addWorkbench("Alice");
+    expect(ops.created[0]?.extraHosts).toBeUndefined();
+  });
+
+  it("maps an arbitrary custom hostname (e.g. an env override) to host-gateway", async () => {
+    // CHAINVIZ_WORKBENCH_RPC_HOST 相当の上書きでも、ホスト名であれば
+    // host-gateway マッピングが付くこと（IPv4 リテラルとの分岐が値に
+    // 依存して正しく効くこと）を固定する。
+    const ops = fakeOps();
+    const lifecycle = new EthereumNodeLifecycle(ops, {
+      ...config,
+      ethRpcUrl: "http://custom-host:4001",
+    });
+    await lifecycle.addWorkbench("Alice");
+    expect(ops.created[0]?.extraHosts).toEqual(["custom-host:host-gateway"]);
+  });
+
+  it("maps the mapping using the normalized (lowercased, port-stripped) hostname", async () => {
+    // ETH_RPC_URL にポートや大文字が含まれても、extra_hosts エントリは
+    // 正規化済みホスト名だけで組み立てる。
+    const ops = fakeOps();
+    const lifecycle = new EthereumNodeLifecycle(ops, {
+      ...config,
+      ethRpcUrl: "http://Host.Docker.Internal:4001/rpc",
+    });
+    await lifecycle.addWorkbench("Alice");
+    expect(ops.created[0]?.extraHosts).toEqual([
+      "host.docker.internal:host-gateway",
+    ]);
+    // ETH_RPC_URL 自体は渡された文字列のまま（正規化しない）。
+    expect(ops.created[0]?.env?.ETH_RPC_URL).toBe(
+      "http://Host.Docker.Internal:4001/rpc",
+    );
+  });
+
+  it("omits extra_hosts (but still sets ETH_RPC_URL) when ethRpcUrl is unparseable", async () => {
+    // ホスト部を取り出せない壊れた URL でも addWorkbench は失敗せず、
+    // extra_hosts を付けないだけ（extractHost が undefined を返す分岐）。
+    const ops = fakeOps();
+    const lifecycle = new EthereumNodeLifecycle(ops, {
+      ...config,
+      ethRpcUrl: "not-a-url",
+    });
+    await lifecycle.addWorkbench("Alice");
+    expect(ops.created[0]?.extraHosts).toBeUndefined();
+    expect(ops.created[0]?.env?.ETH_RPC_URL).toBe("not-a-url");
+  });
+
+  it("omits extra_hosts when ethRpcUrl parses to an empty hostname (scheme-less host:port)", async () => {
+    // extractHost が空文字列を返すケース（"host:port" 形式）でも、
+    // workbenchExtraHosts は falsy 判定で extra_hosts を付与しない。
+    const ops = fakeOps();
+    const lifecycle = new EthereumNodeLifecycle(ops, {
+      ...config,
+      ethRpcUrl: "host.docker.internal:4001",
+    });
+    await lifecycle.addWorkbench("Alice");
+    expect(ops.created[0]?.extraHosts).toBeUndefined();
+    expect(ops.created[0]?.env?.ETH_RPC_URL).toBe("host.docker.internal:4001");
+  });
+
+  it("does not set extra_hosts on the reth/beacon specs of addNode", async () => {
+    // extraHosts はワークベンチ専用の配線であり、Issue #129 の ContainerSpec
+    // 追加がノード（reth/beacon）側のコンテナ生成に漏れていないことを固定する。
+    const ops = fakeOps();
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+    await lifecycle.addNode("ethereum");
+    for (const spec of ops.created) {
+      expect(spec.extraHosts).toBeUndefined();
+    }
   });
 
   it("assigns distinct wallet derivation indexes starting at 1", async () => {
@@ -878,6 +1070,7 @@ describe("EthereumNodeLifecycle workbench commands", () => {
   it("omits EL_AND_CL_MNEMONIC when values.env cannot be read", async () => {
     const ops = fakeOps();
     const lifecycle = new EthereumNodeLifecycle(ops, {
+      ...config,
       profileDir: "/nonexistent/profile/dir",
     });
     await lifecycle.addWorkbench("Alice");
@@ -891,7 +1084,7 @@ describe("EthereumNodeLifecycle workbench commands", () => {
       'export EL_AND_CL_MNEMONIC="alpha bravo charlie"\n',
     );
     const ops = fakeOps();
-    const lifecycle = new EthereumNodeLifecycle(ops, { profileDir: dir });
+    const lifecycle = new EthereumNodeLifecycle(ops, { ...config, profileDir: dir });
     await lifecycle.addWorkbench("Alice");
     expect(ops.created[0].env?.EL_AND_CL_MNEMONIC).toBe("alpha bravo charlie");
   });

@@ -70,8 +70,17 @@ export interface EthereumNodeLifecycleConfig {
   rethImage?: string;
   lighthouseImage?: string;
   foundryImage?: string;
-  /** 追加ワークベンチが叩く RPC。既定は reth1 の固定 IP。 */
-  ethRpcUrl?: string;
+  /**
+   * 追加ワークベンチが叩く RPC 接続先 URL。静的ワークベンチ
+   * （docker-compose.yml の `workbench` サービス）と同様に、reth へ直結
+   * させず必ずロギングプロキシ経由の URL を渡すこと（Issue #129）。直結
+   * させると、ロギングプロキシがワークベンチの RPC 呼び出しを観測できず
+   * 操作エッジが描画されなくなる。実際の値はロギングプロキシの待受設定
+   * （collector 側の resolveProxyPort()）に追従させる必要があるため、この
+   * アダプタ内では既定値を持たず呼び出し側（index.ts の
+   * resolveWorkbenchRpcUrl()）が解決した値を必須で渡す。
+   */
+  ethRpcUrl: string;
 }
 
 const DEFAULTS = {
@@ -83,7 +92,6 @@ const DEFAULTS = {
   rethImage: "ghcr.io/paradigmxyz/reth:latest",
   lighthouseImage: "sigp/lighthouse:latest",
   foundryImage: "ghcr.io/foundry-rs/foundry:latest",
-  ethRpcUrl: "http://172.28.1.1:8545",
 } as const;
 
 type ResolvedConfig = Required<EthereumNodeLifecycleConfig>;
@@ -170,6 +178,20 @@ export function allocateNodeIndex(
     return i;
   }
   return undefined;
+}
+
+/** URL 文字列からホスト部を取り出す。パースできなければ undefined。 */
+export function extractHost(url: string): string | undefined {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return undefined;
+  }
+}
+
+/** IPv4 リテラル表記（例: "172.28.1.1"）かどうか。ホスト名解決の要否判定に使う。 */
+export function isIpv4Literal(host: string): boolean {
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
 }
 
 /** ラベル値やコンテナ名に使えるよう文字列を安全化する。 */
@@ -483,7 +505,22 @@ export class EthereumNodeLifecycle implements NodeLifecycle {
       env,
       labels: this.workbenchLabels(service, walletIndex),
       networkName: this.cfg.networkName,
+      extraHosts: this.workbenchExtraHosts(),
     };
+  }
+
+  /**
+   * ethRpcUrl のホスト部がホスト名（IPv4 リテラルではない）なら、Docker の
+   * host-gateway 予約値へマップする extra_hosts エントリを返す。既定の
+   * ethRpcUrl は `host.docker.internal`（collector が動くホストマシンへの
+   * Docker 標準の到達名）を指すため、通常はこの分岐に該当する
+   * （profiles/ethereum/docker-compose.yml の静的ワークベンチと同じ仕組み）。
+   * IPv4 直指定（テストでの上書き等）ではホスト解決が不要なので undefined。
+   */
+  private workbenchExtraHosts(): string[] | undefined {
+    const host = extractHost(this.cfg.ethRpcUrl);
+    if (!host || isIpv4Literal(host)) return undefined;
+    return [`${host}:host-gateway`];
   }
 
   private nodeLabels(
