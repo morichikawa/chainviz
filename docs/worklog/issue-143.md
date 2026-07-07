@@ -100,3 +100,42 @@
   not crash」を有効化。collector 662件・frontend 787件全通過を確認。
 - コミットを3つに分割: `feat(collector)`実装、`test(collector)`テスト強化、
   `docs`worklog。
+
+### 2026-07-07 Issue #143 静的レビュー(合格)
+- 担当: reviewer
+- 確認内容:
+  - `parseSubscribeError` の判定を確認。`typeof message.error !== "object" ||
+    message.error === null` により、正当なエラーオブジェクト(`{code, message}`、
+    code/message の一方が欠けた不完全なオブジェクト、空オブジェクト `{}` も
+    含む)は引き続き「エラー応答」として検知され、`error: null` や error
+    フィールド自体が無い応答だけが「エラーなし」として除外されることを
+    テスト(境界値9件 + 統合8件)と実装の両面で確認した。
+  - Issue #135 の再接続ロジックとの相互作用: エラー検知は `connect()` 内の
+    同じ message ハンドラに実装されており、再接続後の `eth_subscribe` 再送が
+    拒否された場合も検知できる。「エラー応答後にノード都合で切断されても
+    再接続・再購読が働く」テストも存在し、再接続ロジックを壊していない。
+  - `packages/shared` の変更が無いことを差分(変更ファイルは collector 2件・
+    docs 3件のみ)で確認した。
+  - エラーの握りつぶし: 呼び出し側(`adapters/ethereum/index.ts`)は onError で
+    対象ノードの stableId とエラー内容を具体的に `console.error` しており、
+    汎用メッセージへのすり替えは無い。onError へ渡す Error にはエラーコードと
+    メッセージが含まれる。`error: null` を「エラーなし」扱いにするのは
+    JSON-RPC 2.0 のセマンティクス(success 応答)どおりで握りつぶしではない。
+  - `pnpm lint` / `pnpm build` / `pnpm test` をリポジトリ全体で実行し、
+    collector 662件・frontend 787件を含め全て成功(skip 無し。tester が
+    `it.skip` にしていた回帰テストが有効化済みであることも確認)。
+  - コミット粒度: feat(実装のみ)・test(テストのみ)・docs 2件の計4コミットで、
+    いずれも単一の関心事に収まっている。
+- 補足(合否に影響しない注意点):
+  - 中間コミット `49d6cbe`(feat)単体の時点では、旧テスト「エラー応答は無視
+    される(現状の挙動を記録)」がまだ残っているためテストが通らない。HEAD では
+    全通過しており pre-push フックも HEAD で走るため実害は無いが、bisect の
+    観点では feat と test を1コミットにするか順序を工夫する余地がある。
+  - `error` が文字列や数値など「null 以外の非オブジェクト」である不正応答は
+    「エラーなし」として静かに読み飛ばされる。JSON-RPC 2.0 仕様上 error は
+    オブジェクトであり実在の実装で問題になる可能性は低いが、意図はコード
+    コメントに明記済み。
+  - レビュー中に origin/main が先へ進んでいる(Issue #129 の PR #147 マージ)。
+    `eth-ws-client.*` は触れられていないが、`docs/PLAN.md` / `docs/WORKLOG.md`
+    は双方で編集されているため、マージ時にこの2ファイルで衝突する可能性が
+    高い。統括はマージ前に rebase 等での解消を想定しておくこと。
