@@ -88,4 +88,5 @@
 | #141 | Issue #141 reth(EL)同士のエッジにブロック伝播パルスが走らない(receivedAtの2キー記録設計) | [2026-07-07](worklog/issue-141.md) |
 | #153 | Issue #153 beaconStableIdForExecutionのdocker composeプロジェクト・スコープ漏れ修正 | [2026-07-07](worklog/issue-153.md) |
 | #148 | Issue #148 長時間停止後の再起動ハング(ハートビート+genesis自動再生成+サスペンドwatchdogの設計・実装) | [2026-07-07](worklog/issue-148.md) |
+| #160 | Issue #160 eth_getBlockReceiptsの正規化を拡張しコントラクト作成とイベントログを取得する | [2026-07-07](worklog/issue-160.md) |
 | - | 特定Issueに紐付かない記録(PLAN.md/CLAUDE.md更新等) | [2026-07-05〜2026-07-07](worklog/meta.md) |
