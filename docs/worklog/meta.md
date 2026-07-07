@@ -1120,3 +1120,48 @@
   - QA(chainviz-qa)はdocsのみの変更のため省略可とする依頼元の判断を
     了承(CLAUDE.mdの例外規定に該当)。
   - push・PR作成・マージは統括の判断に委ねる。
+
+### 2026-07-07 PLAN.mdバックログへのIssue #153追加のレビュー(reviewer 合格)
+
+- 担当: reviewer
+- 対象: ブランチ `docs-plan-add-153-backlog`(コミット c6f2513、
+  `docs/PLAN.md` のみ3行追加)
+- 内容:
+  - `docs/PLAN.md` のバックログセクションへIssue #153
+    (beaconStableIdForExecutionがdocker composeプロジェクトをスコープ
+    しない(複数プロジェクト同時観測時にキー混線の恐れ))を1項目追加する
+    docsのみの変更をレビューした。結果は合格。
+  - `gh issue view 153` で照合: 状態はOPENで `[ ]`(未チェック)と一致。
+    PLAN.mdの行の文言はIssueタイトルそのままで正確。リンク先URLも
+    正しい。既存のバックログ項目(#148)と同じ配置・書式で整合している。
+  - Issue本文の技術的主張をコードで裏取りした:
+    - `packages/collector/src/adapters/ethereum/targets.ts` の
+      `beaconStableIdForExecution()`(173〜186行)は、composeサービス名から
+      役割プレフィックスを剥がしたノード群キー(例: "reth1"/"beacon1" →
+      "1")の一致だけでbeaconを探しており、stableIdのプロジェクト部
+      (`projectOf()` は同ファイルに存在するがここでは未使用)を比較して
+      いない。Issueの主張どおり。
+    - 呼び出し元 `executionTargets()`(`index.ts` 経由)には観測値が
+      プロジェクトで絞り込まれずに渡るため、同一Docker daemon上に
+      同名サービス(reth1/beacon1)を持つ別プロジェクトが同居すると
+      プロジェクト跨ぎの対応付けが起こり得る。
+    - 既存テスト `targets.test.ts` の "returns the first beacon
+      encountered when several share the node key"(443行付近)が、
+      別プロジェクトのbeaconが観測順で先にあればそちらを返すという
+      現行挙動を明示的に文書化しており、Issueの内容と完全に一致する。
+    - 対応方針(案)の「プロジェクトでスコープする」は、既存の
+      `projectOf()` を流用できるため実現可能性も妥当。
+  - ラベルは collector。修正対象が `packages/collector` 内なので妥当。
+    milestoneは無し(バックログは特定ステップに紐づかない)で整合。
+  - 変更は `docs/PLAN.md` のみ3行の追加で、コミットは1件
+    (Conventional Commits形式の `docs:`)。「1変更=1コミット」
+    「チェックボックス1行=Issue 1つ」の規約に適合。
+  - `pnpm lint` がリポジトリ全体で通ることを確認した(exit 0)。
+- 決定事項・注意点:
+  - Issue本文の「実運用への影響」の記載どおり、通常運用(1 collectorが
+    1プロジェクトのみ観測)では発生しない低優先度の潜在バグ。着手時は
+    上記の既存テスト(現行挙動を文書化したもの)を「修正後は自プロジェクト
+    のbeaconのみ返す」という仕様のテストへ書き換えることになる点に注意。
+  - QA(chainviz-qa)はdocsのみの変更のため省略可とする依頼元の判断を
+    了承(CLAUDE.mdの例外規定に該当)。
+  - push・PR作成・マージは統括の判断に委ねる。
