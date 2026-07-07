@@ -34,6 +34,14 @@ export interface ContainerSpec {
   ipv4Address?: string;
   /** 公開（EXPOSE）する TCP ポート番号。 */
   exposedPorts?: number[];
+  /**
+   * コンテナの /etc/hosts に追記するエントリ（`docker run --add-host` 相当）。
+   * "hostname:ip" 形式（`host.docker.internal:host-gateway` のような Docker
+   * 標準の host-gateway 予約値を含む）。コンテナからホストマシン上のプロセス
+   * （例: collector が動かすロギングプロキシ）へ到達させたい場合に使う。
+   * Docker 共通の概念であり、チェーン固有の語彙は含まない。
+   */
+  extraHosts?: string[];
 }
 
 /** 作成したコンテナの参照。 */

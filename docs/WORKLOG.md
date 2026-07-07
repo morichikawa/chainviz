@@ -82,4 +82,5 @@
 | #123 | Issue #123 ノード/ワークベンチ追加時の追加先・接続先の予告(UX設計) | [2026-07-06](worklog/issue-123.md) |
 | #125 | Issue #125 ブロック伝播パルスが移動して見えない問題のUX設計(SMIL凍結の根本原因特定・CSS offset-path化・グリッド間隔) | [2026-07-06](worklog/issue-125.md) |
 | #135 | Issue #135 eth_subscribe WebSocket切断時の自動再接続 | [2026-07-07](worklog/issue-135.md) |
+| #129 | Issue #129 動的追加ワークベンチのRPCをロギングプロキシ経由にする | [2026-07-07](worklog/issue-129.md) |
 | - | 特定Issueに紐付かない記録(PLAN.md/CLAUDE.md更新等) | [2026-07-05〜2026-07-06](worklog/meta.md) |

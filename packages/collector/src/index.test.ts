@@ -6,10 +6,13 @@ import {
   DEFAULT_PORT,
   DEFAULT_PROXY_PORT,
   DEFAULT_PROXY_TARGET,
+  DEFAULT_WORKBENCH_RPC_HOST,
   installProcessSafetyNet,
   resolvePort,
   resolveProxyPort,
   resolveProxyTarget,
+  resolveWorkbenchRpcHost,
+  resolveWorkbenchRpcUrl,
   startLoggingProxy,
   startPollingLoop,
 } from "./index.js";
@@ -239,6 +242,90 @@ describe("resolveProxyTarget", () => {
     expect(
       resolveProxyTarget({ CHAINVIZ_PROXY_TARGET: " http://reth1:8545 " }),
     ).toBe("http://reth1:8545");
+  });
+});
+
+describe("resolveWorkbenchRpcHost", () => {
+  it("returns DEFAULT_WORKBENCH_RPC_HOST when the env var is unset or blank", () => {
+    expect(resolveWorkbenchRpcHost({})).toBe(DEFAULT_WORKBENCH_RPC_HOST);
+    expect(resolveWorkbenchRpcHost({ CHAINVIZ_WORKBENCH_RPC_HOST: "  " })).toBe(
+      DEFAULT_WORKBENCH_RPC_HOST,
+    );
+  });
+
+  it("defaults to host.docker.internal, matching the static workbench's compose config", () => {
+    expect(DEFAULT_WORKBENCH_RPC_HOST).toBe("host.docker.internal");
+  });
+
+  it("returns the trimmed override host when set", () => {
+    expect(
+      resolveWorkbenchRpcHost({ CHAINVIZ_WORKBENCH_RPC_HOST: " custom-host " }),
+    ).toBe("custom-host");
+  });
+
+  it("treats a whitespace-only override as unset (blank string is not a valid host)", () => {
+    // resolveProxyPort/resolveProxyTarget と同じ「空白のみは未設定扱い」に
+    // 揃っていることを固定する。空白ホストを採用すると URL が
+    // "http://:4001" のように壊れてしまうため。
+    expect(
+      resolveWorkbenchRpcHost({ CHAINVIZ_WORKBENCH_RPC_HOST: "\t\n " }),
+    ).toBe(DEFAULT_WORKBENCH_RPC_HOST);
+  });
+});
+
+describe("resolveWorkbenchRpcUrl", () => {
+  it("combines the workbench RPC host and the logging proxy port by default", () => {
+    expect(resolveWorkbenchRpcUrl({})).toBe(
+      `http://${DEFAULT_WORKBENCH_RPC_HOST}:${DEFAULT_PROXY_PORT}`,
+    );
+  });
+
+  it("produces exactly the static workbench's RPC URL by default", () => {
+    // profiles/ethereum/docker-compose.yml の workbench サービスは
+    // ETH_RPC_URL: http://host.docker.internal:4001 を指す。動的追加
+    // ワークベンチが静的ワークベンチと同じロギングプロキシ経由になっている
+    // ことを、生成 URL の一致で固定する（Issue #129 の主眼）。
+    expect(resolveWorkbenchRpcUrl({})).toBe("http://host.docker.internal:4001");
+  });
+
+  it("reflects overrides of both the host and the proxy port", () => {
+    expect(
+      resolveWorkbenchRpcUrl({
+        CHAINVIZ_WORKBENCH_RPC_HOST: "custom-host",
+        CHAINVIZ_PROXY_PORT: "4321",
+      }),
+    ).toBe("http://custom-host:4321");
+  });
+
+  it("reflects a host override while keeping the default proxy port", () => {
+    expect(
+      resolveWorkbenchRpcUrl({ CHAINVIZ_WORKBENCH_RPC_HOST: "custom-host" }),
+    ).toBe(`http://custom-host:${DEFAULT_PROXY_PORT}`);
+  });
+
+  it("reflects a proxy port override while keeping the default host", () => {
+    expect(resolveWorkbenchRpcUrl({ CHAINVIZ_PROXY_PORT: "4321" })).toBe(
+      `http://${DEFAULT_WORKBENCH_RPC_HOST}:4321`,
+    );
+  });
+
+  it("falls back to the default proxy port when the override is invalid", () => {
+    // resolveProxyPort の不正値フォールバックが URL 生成にもそのまま効き、
+    // "http://host:NaN" のような壊れた URL にならないことを固定する。
+    expect(resolveWorkbenchRpcUrl({ CHAINVIZ_PROXY_PORT: "abc" })).toBe(
+      `http://${DEFAULT_WORKBENCH_RPC_HOST}:${DEFAULT_PROXY_PORT}`,
+    );
+  });
+
+  it("stays consistent with resolveProxyPort so the workbench always hits the live proxy port", () => {
+    // ワークベンチが叩く URL のポートは、ロギングプロキシの実際の待受
+    // ポート（resolveProxyPort）と常に一致していなければ観測できない。
+    // 決め打ちの値を別途持たず resolveProxyPort に追従していることを、
+    // 同じ env での両者の突き合わせで固定する。
+    const env = { CHAINVIZ_PROXY_PORT: "4999" };
+    expect(resolveWorkbenchRpcUrl(env)).toBe(
+      `http://${resolveWorkbenchRpcHost(env)}:${resolveProxyPort(env)}`,
+    );
   });
 });
 

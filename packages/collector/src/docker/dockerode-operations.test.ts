@@ -94,6 +94,51 @@ describe("toCreateOptions", () => {
     expect(opts.HostConfig?.NetworkMode).toBe("the-net");
     expect(opts.NetworkingConfig?.EndpointsConfig?.["the-net"]).toBeDefined();
   });
+
+  it("maps extraHosts to HostConfig.ExtraHosts", () => {
+    const opts = toCreateOptions({
+      ...baseSpec,
+      extraHosts: ["host.docker.internal:host-gateway"],
+    });
+    expect(opts.HostConfig?.ExtraHosts).toEqual([
+      "host.docker.internal:host-gateway",
+    ]);
+  });
+
+  it("omits HostConfig.ExtraHosts when not provided", () => {
+    const opts = toCreateOptions(baseSpec);
+    expect(opts.HostConfig?.ExtraHosts).toBeUndefined();
+  });
+
+  it("passes through multiple extraHosts entries in order", () => {
+    const opts = toCreateOptions({
+      ...baseSpec,
+      extraHosts: ["host.docker.internal:host-gateway", "other:10.0.0.5"],
+    });
+    expect(opts.HostConfig?.ExtraHosts).toEqual([
+      "host.docker.internal:host-gateway",
+      "other:10.0.0.5",
+    ]);
+  });
+
+  it("passes an empty extraHosts array through as-is (no host-gateway synthesized)", () => {
+    // 空配列は「明示的に extra_hosts なし」を意味し、undefined と実質同じ。
+    // toCreateOptions は値を合成せずそのまま渡す（dockerode は空配列を無害に扱う）。
+    const opts = toCreateOptions({ ...baseSpec, extraHosts: [] });
+    expect(opts.HostConfig?.ExtraHosts).toEqual([]);
+  });
+
+  it("does not disturb other HostConfig fields when extraHosts is present", () => {
+    // ExtraHosts の追加が既存の Binds / NetworkMode 設定に副作用を与えない。
+    const opts = toCreateOptions({
+      ...baseSpec,
+      extraHosts: ["host.docker.internal:host-gateway"],
+    });
+    expect(opts.HostConfig?.Binds).toEqual([
+      "chainviz-ethereum_genesis:/genesis:ro",
+    ]);
+    expect(opts.HostConfig?.NetworkMode).toBe("chainviz-ethereum_chain");
+  });
 });
 
 describe("collectNetworkIps", () => {
