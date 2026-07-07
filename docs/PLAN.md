@@ -359,7 +359,7 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
       [#139](https://github.com/morichikawa/chainviz/issues/139)
 - [ ] reth(EL)同士のエッジにブロック伝播パルスが構造的に一切走らない
       [#141](https://github.com/morichikawa/chainviz/issues/141)
-- [ ] eth_subscribeのエラー応答(JSON-RPCエラー)を検知できず、購読失敗に
+- [x] eth_subscribeのエラー応答(JSON-RPCエラー)を検知できず、購読失敗に
       気づけない
       [#143](https://github.com/morichikawa/chainviz/issues/143)
 
