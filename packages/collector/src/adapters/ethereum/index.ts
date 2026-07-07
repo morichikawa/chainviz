@@ -154,12 +154,10 @@ export class EthereumAdapter implements ChainAdapter {
    * 限り（ブートノードの stableId 自体が変わっても）追従する。見つからない
    * 場合は省略する（旧スナップショット・解決不能との互換）。
    *
-   * 注意（実装ギャップ、Issue #123 §1 / #129）: 動的追加ワークベンチ
-   * （addWorkbench）は現状このロギングプロキシを経由せず、
-   * node-lifecycle.ts の既定 ETH_RPC_URL（reth1 直）へ直結する。既定値同士は
-   * 同一ホストのため通常運用では表示上正しいが、`CHAINVIZ_PROXY_TARGET` を
-   * 変更した環境では動的追加ワークベンチの実際の呼び出し先とここで解決する
-   * rpcTargetNodeId がずれ得る。Issue #129 でプロキシ経由化されれば一致する。
+   * 補足（Issue #129で解消済み）: 動的追加ワークベンチ（addWorkbench）も
+   * 静的ワークベンチと同じくロギングプロキシ経由になったため（node-lifecycle.ts
+   * の resolveWorkbenchRpcUrl 参照）、rpcTargetNodeId の解決先と実際の
+   * RPC呼び出し先は一致する。
    */
   async pollInfra(): Promise<Partial<WorldStateSnapshot>> {
     const observations = await this.poller.pollOnce();
