@@ -24,18 +24,24 @@ export class BlockPropagationTracker {
   constructor(private readonly maxBlocks = 200) {}
 
   /**
-   * ノード nodeId がブロック header を receivedAt(epoch ms) に受信したことを
-   * 記録し、マージ後の BlockEntity を返す。
+   * ブロック header を receivedAt(epoch ms) に受信したことを、nodeIds に
+   * 挙げたキーそれぞれへ記録し、マージ後の BlockEntity を返す。
+   * 同じ受信 1 回を複数キー（例: beacon の stableId と Execution 自身の
+   * stableId）へ同一時刻で記録するために、キーは配列で受け取る（Issue #141）。
+   * 1 回の呼び出しで 1 つの BlockEntity を返すことで、呼び出し側の
+   * 「受信 1 回 = onBlock 発火 1 回」という粒度を保つ。
    */
   record(
-    nodeId: string,
+    nodeIds: readonly string[],
     header: NewHeadHeader,
     receivedAt: number,
   ): BlockEntity {
     const existing = this.blocks.get(header.hash);
     const received: Record<string, number> = { ...(existing?.receivedAt ?? {}) };
-    // 同一ノードからの再通知では最初の時刻を保持する。
-    if (received[nodeId] === undefined) received[nodeId] = receivedAt;
+    // 同一キーからの再通知では最初の時刻を保持する。
+    for (const nodeId of nodeIds) {
+      if (received[nodeId] === undefined) received[nodeId] = receivedAt;
+    }
 
     const block: BlockEntity = {
       kind: "block",

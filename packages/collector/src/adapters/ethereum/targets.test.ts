@@ -144,13 +144,13 @@ describe("executionTargets", () => {
         stableId: "chainviz-ethereum/reth1",
         wsUrl: `ws://172.28.1.1:${EXECUTION_WS_PORT}`,
         rpcUrl: `http://172.28.1.1:${EXECUTION_RPC_PORT}`,
-        // 対応する beacon が観測値に無いので自身の stableId にフォールバック。
-        receivedAtKey: "chainviz-ethereum/reth1",
+        // 対応する beacon が観測値に無いので自身の stableId のみの1要素配列。
+        receivedAtKeys: ["chainviz-ethereum/reth1"],
       },
     ]);
   });
 
-  it("keys receivedAt to the matching beacon's stableId when present", () => {
+  it("keys receivedAt to both the matching beacon's stableId and its own when present", () => {
     // 実 profile と同じ ID 体系: reth1 <-> beacon1、reth2 <-> beacon2。
     const reth2 = obs({
       stableId: "chainviz-ethereum/reth2",
@@ -175,16 +175,16 @@ describe("executionTargets", () => {
     expect(
       targets.map((t) => ({
         stableId: t.stableId,
-        receivedAtKey: t.receivedAtKey,
+        receivedAtKeys: t.receivedAtKeys,
       })),
     ).toEqual([
       {
         stableId: "chainviz-ethereum/reth1",
-        receivedAtKey: "chainviz-ethereum/beacon1",
+        receivedAtKeys: ["chainviz-ethereum/beacon1", "chainviz-ethereum/reth1"],
       },
       {
         stableId: "chainviz-ethereum/reth2",
-        receivedAtKey: "chainviz-ethereum/beacon2",
+        receivedAtKeys: ["chainviz-ethereum/beacon2", "chainviz-ethereum/reth2"],
       },
     ]);
   });
@@ -222,7 +222,7 @@ describe("executionTargets", () => {
         stableId: "chainviz-ethereum/reth1",
         wsUrl: `ws://172.28.1.5:${EXECUTION_WS_PORT}`,
         rpcUrl: `http://172.28.1.5:${EXECUTION_RPC_PORT}`,
-        receivedAtKey: "chainviz-ethereum/reth1",
+        receivedAtKeys: ["chainviz-ethereum/reth1"],
       },
     ]);
   });
@@ -243,17 +243,17 @@ describe("executionTargets", () => {
     expect(
       targets.map((t) => ({
         stableId: t.stableId,
-        receivedAtKey: t.receivedAtKey,
+        receivedAtKeys: t.receivedAtKeys,
       })),
     ).toEqual([
       {
         stableId: "chainviz-ethereum/reth1",
-        receivedAtKey: "chainviz-ethereum/beacon1",
+        receivedAtKeys: ["chainviz-ethereum/beacon1", "chainviz-ethereum/reth1"],
       },
       {
-        // beacon2 は存在しないので自身の stableId にフォールバック。
+        // beacon2 は存在しないので自身の stableId のみの1要素配列にフォールバック。
         stableId: "chainviz-ethereum/reth2",
-        receivedAtKey: "chainviz-ethereum/reth2",
+        receivedAtKeys: ["chainviz-ethereum/reth2"],
       },
     ]);
   });
@@ -265,9 +265,42 @@ describe("executionTargets", () => {
       ip: "172.28.1.2",
     });
     const targets = executionTargets([obs(), reth2]);
-    expect(targets.map((t) => t.receivedAtKey)).toEqual([
+    expect(targets.map((t) => t.receivedAtKeys)).toEqual([
+      ["chainviz-ethereum/reth1"],
+      ["chainviz-ethereum/reth2"],
+    ]);
+  });
+
+  it("orders receivedAtKeys as [beacon, self] and keeps the two distinct (no self-aliasing)", () => {
+    // 契約: beacon 対応時は必ず [beacon の stableId, 自身の stableId] の順で、
+    // 自身の stableId が beacon キーと重複しない。beacon キーが CL エイリアス
+    // 用・自身キーが EL エッジ用という役割の前提を固定する。
+    const [target] = executionTargets([obs(), beacon1]);
+    expect(target.receivedAtKeys).toEqual([
+      "chainviz-ethereum/beacon1",
       "chainviz-ethereum/reth1",
-      "chainviz-ethereum/reth2",
+    ]);
+    expect(target.receivedAtKeys[0]).not.toBe(target.receivedAtKeys[1]);
+    expect(new Set(target.receivedAtKeys).size).toBe(
+      target.receivedAtKeys.length,
+    );
+  });
+
+  it("uses the first matching beacon for the shared node key when several exist", () => {
+    // 別プロジェクトの beacon1 が観測に混ざってノード群キー "1" を共有する
+    // 場合、receivedAtKeys の beacon キーは beaconStableIdForExecution が
+    // 最初に見つけた beacon になる（現状の観測順依存の挙動を固定）。
+    const beaconOther = obs({
+      stableId: "other-project/beacon1",
+      labels: { "com.docker.compose.service": "beacon1" },
+      image: "sigp/lighthouse:latest",
+      ip: "172.28.9.1",
+      processes: [{ command: "lighthouse bn", name: "lighthouse" }],
+    });
+    const [target] = executionTargets([obs(), beaconOther, beacon1]);
+    expect(target.receivedAtKeys).toEqual([
+      "other-project/beacon1",
+      "chainviz-ethereum/reth1",
     ]);
   });
 
@@ -286,7 +319,7 @@ describe("executionTargets", () => {
         stableId: "chainviz-ethereum/geth1",
         wsUrl: `ws://172.28.1.3:${EXECUTION_WS_PORT}`,
         rpcUrl: `http://172.28.1.3:${EXECUTION_RPC_PORT}`,
-        receivedAtKey: "chainviz-ethereum/beacon1",
+        receivedAtKeys: ["chainviz-ethereum/beacon1", "chainviz-ethereum/geth1"],
       },
     ]);
   });

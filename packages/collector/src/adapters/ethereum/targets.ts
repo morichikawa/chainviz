@@ -66,13 +66,23 @@ export interface ExecutionTarget {
    */
   rpcUrl: string;
   /**
-   * BlockEntity.receivedAt に記録する際のキーに使う安定識別子。
-   * 同じ論理ノードを構成する beacon（consensus）コンテナの stableId を
-   * 指す。PeerEdge の端点は beacon の stableId なので、受信時刻もそこへ
-   * 揃えることで伝播アニメーションが端点と一致する。対応する beacon が
-   * 見つからない場合は Execution ノード自身の stableId にフォールバックする。
+   * BlockEntity.receivedAt に記録する際のキー群。同じ `newHeads` 受信 1 回を
+   * 複数キー・同一時刻で記録することで、CL エッジ・EL エッジの両方に
+   * ブロック伝播パルスが乗るようにする（Issue #141）。
+   *
+   * - 対応する beacon（consensus）コンテナが見つかる場合:
+   *   `[beacon の stableId, Execution ノード自身の stableId]`。
+   *   beacon キーは CL エッジ（PeerEdge の端点が beacon の stableId）用、
+   *   自身のキーは EL エッジ（PeerEdge の端点が Execution 自身の stableId、
+   *   Issue #106）用。beacon キーの時刻は「同じ論理ノードの Execution が
+   *   受信した時刻」のエイリアスであり、CL の実受信時刻ではない。
+   * - 対応する beacon が見つからない場合: `[Execution ノード自身の stableId]`
+   *   のみ。
+   *
+   * beacon コンテナと Execution コンテナは stableId が構成上一致しないため、
+   * 2 要素になっても重複排除は不要。
    */
-  receivedAtKey: string;
+  receivedAtKeys: string[];
 }
 
 /** ノード群キーの導出時に取り除く役割プレフィックス。 */
@@ -179,7 +189,7 @@ export function beaconStableIdForExecution(
  * EL 間ピア接続の取得対象になる Execution ノードを観測値から抽出する。
  * execution クライアントであり IP が取れるコンテナだけを対象にする
  * （executionTargets と同じ選別基準。あちらはブロック購読用の WS URL と
- * receivedAtKey を持つのに対し、こちらはピア取得用の HTTP RPC URL と
+ * receivedAtKeys を持つのに対し、こちらはピア取得用の HTTP RPC URL と
  * networkId を持つ）。
  */
 export function executionPeerTargets(
@@ -224,8 +234,10 @@ export function executionRpcUrls(
 /**
  * ブロック受信時刻の購読対象になる Execution ノードを観測値から抽出する。
  * execution クライアントであり IP が取れるコンテナだけを対象にする。
- * receivedAt のキーには、同じ論理ノードの beacon の stableId を割り当てる
- * （見つからなければ Execution ノード自身の stableId）。
+ * receivedAtKeys には、同じ論理ノードの beacon の stableId が見つかれば
+ * `[beacon の stableId, 自身の stableId]`、見つからなければ
+ * `[自身の stableId]` を割り当てる（Issue #141。CL/EL 両エッジへ
+ * ブロック伝播パルスを乗せるため）。
  */
 export function executionTargets(
   observations: ContainerObservation[],
@@ -241,7 +253,10 @@ export function executionTargets(
       stableId: obs.stableId,
       wsUrl: `ws://${obs.ip}:${EXECUTION_WS_PORT}`,
       rpcUrl: `http://${obs.ip}:${EXECUTION_RPC_PORT}`,
-      receivedAtKey: beaconStableId ?? obs.stableId,
+      receivedAtKeys:
+        beaconStableId !== undefined
+          ? [beaconStableId, obs.stableId]
+          : [obs.stableId],
     });
   }
   return targets;
