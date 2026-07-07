@@ -1075,3 +1075,48 @@
   - QA(chainviz-qa)はdocsのみの変更のため省略可とする依頼元の判断を
     了承(CLAUDE.mdに明記された例外に該当)。
   - push・PR作成・マージは統括の判断に委ねる。
+
+### 2026-07-07 PLAN.mdバックログへのIssue #148追加のレビュー(reviewer 合格)
+
+- 担当: reviewer
+- ブランチ: docs-plan-add-148-backlog(コミット 22acde1)
+- 内容:
+  - `docs/PLAN.md` のバックログセクションへIssue #148(長時間停止後の
+    再起動で--ignore-ws-checkだけでは不十分(genesisからの再構築が
+    1 slot以内に収まらずハング))を1項目追加するdocsのみの変更を
+    レビューした。結果は合格。
+  - `gh issue view 148` で照合: 状態はOPENで `[ ]`(未チェック)と一致。
+    PLAN.mdの行の文言はIssueタイトルそのままで正確。リンク先URLも
+    正しい。既存のバックログ項目(#139/#141/#143)と同じ配置・書式で
+    整合している。
+  - Issue本文の技術的主張をリポジトリの実体で裏取りした:
+    - 「lighthouseは再起動のたびに`/data`を初期化してgenesisからやり直す」
+      は main の `profiles/ethereum/scripts/lighthouse-bn.sh` の
+      `find /data -mindepth 1 -delete`(Issue #41/#43由来)と一致。
+    - 「Issue #139で`--ignore-ws-check`フラグを追加」は未マージの
+      `issue-139-weak-subjectivity` ブランチの `lighthouse-bn.sh` に
+      実在する(#139のPRマージ後にmainへ入る)。
+    - ハング閾値(約1.5〜1.8時間)・weak subjectivity period(約4.6時間)・
+      検知方法(`head_slot`が0のまま)・復旧手段(`docker compose down -v`)
+      の記述は、同ブランチの `docs/worklog/issue-139.md` と
+      `profiles/ethereum/README.md` の検証記録・記載と一致。
+    - Issue本文が参照する `docs/worklog/issue-139.md` は現時点のmainには
+      無いが、#139ブランチ上に存在するため参照切れにはならない。
+  - ラベルは node-env。対応方針(checkpoint sync導入・`/data`初期化設計の
+    見直し)がいずれも `profiles/` 配下の変更なので妥当。milestoneは
+    無し(バックログは特定ステップに紐づかない)で整合。
+  - 変更は `docs/PLAN.md` のみ3行の追加で、コミットは1件
+    (Conventional Commits形式の `docs:`)。「1変更=1コミット」
+    「チェックボックス1行=Issue 1つ」の規約に適合。
+  - `pnpm lint` がリポジトリ全体で通ることを確認した(exit 0)。
+- 決定事項・注意点:
+  - Issue #148の対応方針の1つ「`/data`を再起動のたびに初期化しない設計への
+    変更」はIssue #43(EL/CL乖離)・#56(genesis再生成の不整合)を解決した
+    現行設計の前提を崩すため、着手時はIssue本文のとおりchainviz-designer
+    による設計検討を先行させること。
+  - Issue #148は#139の実機検証から派生した課題であり、#139のPRマージ前に
+    #148へ着手すると`--ignore-ws-check`が無い状態での作業になる。着手順は
+    #139のマージ後とするのが自然。
+  - QA(chainviz-qa)はdocsのみの変更のため省略可とする依頼元の判断を
+    了承(CLAUDE.mdの例外規定に該当)。
+  - push・PR作成・マージは統括の判断に委ねる。
