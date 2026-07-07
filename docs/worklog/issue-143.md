@@ -88,3 +88,15 @@
       onError に渡す。修正後に、テスト中の
       `it.skip("treats error:null as a non-error reply and does not crash")`
       を有効化して回帰検出に使う想定（現状は skip）。
+
+### 2026-07-07 統括によるバグ修正対応
+
+- testerが発見した「`error: null`でcollectorがクラッシュする」不具合を修正した。
+  `parseSubscribeError`で`message.error`が`typeof !== "object"`または`null`の
+  場合は「エラーなし」として`undefined`を返すよう変更。
+- 修正前の状態(if文を一時的に除去)で実際にuncaughtException(TypeError)が
+  発生することを確認してから、修正を元に戻した。
+- `it.skip`だった回帰テスト「treats error:null as a non-error reply and does
+  not crash」を有効化。collector 662件・frontend 787件全通過を確認。
+- コミットを3つに分割: `feat(collector)`実装、`test(collector)`テスト強化、
+  `docs`worklog。
