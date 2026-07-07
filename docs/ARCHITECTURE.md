@@ -305,10 +305,21 @@ interface ChainAdapter {
   フロントの色分け・グルーピング（`networkId` 単位）にそのまま映すため。
   エッジの同一性キーは from/to/networkId の 3 つ組なので、CL/EL のエッジは
   端点が違う（beacon カード間 / Execution カード間）ことと合わせて衝突しない。
-  ブロック伝播パルスは `BlockEntity.receivedAt` のキー（beacon の stableId）と
-  端点が一致する CL エッジ上にのみ乗る（EL エッジは接続の可視化のみ）。
+  ブロック伝播パルスは `BlockEntity.receivedAt` のキーと両端点が一致する
+  エッジ上に乗る。`receivedAt` には同じ `newHeads` 受信 1 回を「対応する
+  beacon の stableId」と「Execution ノード自身の stableId」の 2 キー・同一
+  時刻で記録するため（Issue #141）、CL エッジ・EL エッジの両方にパルスが
+  走る。CL エッジの端点は beacon の stableId だけ、EL エッジの端点は
+  Execution の stableId だけなので、ネットワーク種別ごとの分離はフロント側の
+  端点照合（`computeBlockPulses` の既存ロジック）だけで成立し、networkId に
+  よるフィルタは不要。
 - `subscribeBlocks` — B層。各 Execution ノードの `eth_subscribe(newHeads)` を
-  購読し、ブロック受信時刻を束ねて渡す。
+  購読し、ブロック受信時刻を束ねて渡す。CL 側のブロック購読は行っておらず、
+  受信時刻の唯一のソースは EL の `newHeads`。受信 1 回を `receivedAt` の
+  2 キー（対応する beacon / Execution 自身。beacon が見つからなければ
+  Execution 自身のみ）へ同一時刻で記録する（Issue #141）。beacon キーの
+  時刻は「同じ論理ノードの EL が受信した時刻」のエイリアスであり、CL の
+  実受信時刻ではない（CL 実測は本 Issue の範囲外）。
 - `subscribeTransactions` — C層。`newPendingTransactions`（pending 検知）と
   `newHeads`（ブロック取り込み検知）を購読し、状態変化した tx を渡す。
   ブロック取り込みの検知では `eth_getBlockReceipts` を 1 ブロックにつき
