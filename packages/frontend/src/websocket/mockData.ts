@@ -538,6 +538,15 @@ export function createMockClient(
           diffs: [{ type: "entityRemoved", id: command.workbenchId }],
         };
       }
+      case "runWorkbenchOperation": {
+        // モックはワークベンチ内のツール実行を再現しない。UI 実装
+        // （ステップ8のフロント担当）でモック応答が必要になった時点で、
+        // tx ライフサイクルのモックと同様の再現を追加する。
+        return {
+          ok: false,
+          error: "runWorkbenchOperation is not supported by the mock client",
+        };
+      }
     }
   }
 

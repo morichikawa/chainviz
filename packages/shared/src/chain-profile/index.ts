@@ -1,6 +1,7 @@
 import type {
   BlockEntity,
   ChainType,
+  ContractEntity,
   PeerEdge,
   TransactionEntity,
   WorldStateSnapshot,
@@ -12,7 +13,7 @@ import type {
  * 実際に呼び出すものだけを宣言する。当初 C/D 層向けに置いていた汎用の
  * DiffEvent 購読口（subscribeChainEvents）は、実装が層ごとの型付き
  * コールバックへ発展し未使用となったため削除した。D 層の購読口は
- * Phase 4 の設計時に必要な形で追加する（先回り実装をしない）。
+ * Phase 5（D層: ノード内部）の設計時に必要な形で追加する（先回り実装をしない）。
  */
 export interface ChainAdapter {
   chainType: ChainType;
@@ -27,4 +28,14 @@ export interface ChainAdapter {
    * tx を onTx へ渡す。
    */
   subscribeTransactions(onTx: (tx: TransactionEntity) => void): Promise<void>;
+  /**
+   * C層: コントラクトのデプロイ検知・内容更新（カタログ照合による名前の判明
+   * 等）を購読し、現れた/変化した ContractEntity をそのたび onContract へ渡す。
+   * ワールドステートへの反映（差分計算）は store 側が担う。コントラクトという
+   * 概念を持たないチェーン（例: Bitcoin）のアダプタは実装しなくてよい
+   * （省略可。省略時、collector はコントラクト追跡を配線しない）。
+   */
+  subscribeContracts?(
+    onContract: (contract: ContractEntity) => void,
+  ): Promise<void>;
 }

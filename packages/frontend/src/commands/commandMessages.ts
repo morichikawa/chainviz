@@ -18,6 +18,7 @@ const ERROR_KEY: Record<Command["action"], MessageKey> = {
   removeNode: "command.error.removeNode",
   addWorkbench: "command.error.addWorkbench",
   removeWorkbench: "command.error.removeWorkbench",
+  runWorkbenchOperation: "command.error.runWorkbenchOperation",
 };
 
 /**

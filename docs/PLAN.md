@@ -1,6 +1,6 @@
 # chainviz 開発プラン（設計フェーズ〜Phase 1）
 
-`docs/CONCEPT.md` のロードマップ（Phase 1〜8）が「何を作るか」を定めるのに対し、
+`docs/CONCEPT.md` のロードマップ（Phase 1〜9）が「何を作るか」を定めるのに対し、
 このドキュメントは「直近をどの順番で・何を成果物として進めるか」を定める。
 各ステップに**成果物**と**完了条件**を置き、上から順に進める。
 ステップ・サブ項目はチェックボックスで管理し、完了したら都度チェックを付ける
@@ -284,13 +284,75 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
 ワークベンチからノードへのRPC呼び出しがエッジとして描画され、
 ワークベンチが持つウォレットの残高・nonceが可視化される)
 
-## ステップ 8 以降（概要のみ。詳細は着手時にこのドキュメントへ追記）
+## ステップ 8: Phase4実装 — C層拡張（コントラクト呼び出し・イベントログ可視化）
 
-- [ ] Phase 4（D層: ノード内部）
-- [ ] Phase 5（AA 可視化）
-- [ ] Phase 6（Bitcoin プロファイル追加）
-- [ ] Phase 7（Solana プロファイル追加、チェーン比較表示）
-- [ ] Phase 8 以降（Cosmos 系プロファイル追加）
+GitHub: milestone（Issue化の際に作成し、ここにリンクを埋める）
+
+CONCEPT.mdロードマップの新Phase 4（C層 完成）: ステップ7で範囲外とした
+コントラクト呼び出し・イベントログの可視化と、送金・デプロイ等の定型操作の
+GUI化。設計の全体像（型・データフロー・カタログの置き場所・決定事項）は
+`docs/ARCHITECTURE.md` §2〜§4 と `docs/worklog/meta.md`（2026-07-07 の設計
+記録）を参照。`packages/shared` の型変更（ContractEntity 拡張・
+TransactionEntity のコントラクト関連フィールド・WalletEntity.tokenBalances・
+runWorkbenchOperation コマンド・ChainAdapter.subscribeContracts）は設計時に
+実装済みで、このステップの各担当は決定済みの前提として使ってよい。
+
+**UX**（実装着手前に chainviz-ux が設計し、frontend に引き継ぐ）:
+
+- [ ] コントラクトカード・定型操作・イベントログ表示のUX設計（操作フロー・
+      情報の見せ方・文言。「コントラクトは全ノードで実行される」の伝え方を
+      含む）
+
+**node-env**:
+
+- [ ] サンプルコントラクト（最小ERC20のChainvizTokenとCounter）のFoundry
+      プロジェクトを`profiles/ethereum/contracts/`に追加しワークベンチに
+      マウントする
+- [ ] コントラクトカタログ（catalog.json: 表示名・ABI・tokenメタ情報）と
+      再生成スクリプト（build-catalog.sh）を追加する
+
+**collector**:
+
+- [ ] eth_getBlockReceiptsの正規化を拡張しコントラクト作成
+      （contractAddress）とイベントログ（logs）を取得する
+- [ ] コントラクトカタログの読み込みとデプロイ検知・追跡を実装し
+      ContractEntityをworld-stateへ配信する（subscribeContracts）
+- [ ] カタログのABIで関数呼び出し・イベントログを復号しTransactionEntityの
+      contractCall/contractEventsに載せる
+- [ ] runWorkbenchOperationコマンド（transfer/deployContract/callContract）
+      をワークベンチコンテナ内のcast/forge実行として実装する
+- [ ] 追跡中トークンコントラクトの残高をポーリングし
+      WalletEntity.tokenBalancesへ反映する
+
+**frontend**:
+
+- [ ] ContractEntityのカード表示とポップオーバー（未知のコントラクトの
+      表示を含む）を実装する
+- [ ] コントラクト呼び出し・イベントログの可視化（復号済み関数名・引数・
+      イベントの表示と、tx確定時のコントラクトカードへのアニメーション）を
+      実装する
+- [ ] ワークベンチカードから定型操作（送金・デプロイ・コントラクト呼び出し）
+      を実行するUIを実装する
+- [ ] ウォレットカードにトークン残高を表示する
+- [ ] C層拡張の用語データ（contract・デプロイ・ABI・イベントログ・EVM・
+      トークン等）をglossaryへ追加する
+
+**成果物**: 動くPhase 4デモ
+**完了条件**: CONCEPT.md「ロードマップ」Phase 4の記述どおりに動作する
+（キャンバスの定型操作またはワークベンチのforge/castでサンプルコントラクトを
+デプロイするとコントラクトカードが現れ、トークンtransfer等の呼び出しが
+関数名・引数付きで、発生したイベントログがイベント名付きで可視化され、
+ウォレットのトークン残高の変化が見える。カタログ外のコントラクトも
+「未知のコントラクト」として表示される。コントラクトが特定ノードではなく
+全ノードで実行されることが用語解説・カード表現から分かる）
+
+## ステップ 9 以降（概要のみ。詳細は着手時にこのドキュメントへ追記）
+
+- [ ] Phase 5（D層: ノード内部）
+- [ ] Phase 6（AA 可視化）
+- [ ] Phase 7（Bitcoin プロファイル追加）
+- [ ] Phase 8（Solana プロファイル追加、チェーン比較表示）
+- [ ] Phase 9 以降（Cosmos 系プロファイル追加）
 
 ## バックログ（特定のステップに紐づかない、後日着手する課題）
 

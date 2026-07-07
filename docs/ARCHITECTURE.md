@@ -144,6 +144,11 @@ interface OperationEdge {
 // キャンバス上でエッジ（紐）として描画されるものの総称
 type WorldStateEdge = PeerEdge | OperationEdge;
 
+interface TokenBalance {
+  contractAddress: string; // トークンを管理する ContractEntity.address に対応
+  amount: string; // トークン最小単位の 10 進文字列（精度落ち防止）
+}
+
 interface WalletEntity {
   kind: "wallet";
   address: string;
@@ -153,6 +158,10 @@ interface WalletEntity {
   isSmartAccount: boolean;
   ownerWorkbenchId: string | null; // ワークベンチ削除後も null にして残す（CONCEPT.md 参照）
   recentTxHashes: string[];
+  // 追跡中のトークンコントラクト（コントラクトカタログ掲載分）の残高一覧。
+  // symbol / decimals は対応する ContractEntity.token が持ち、ここでは重複させない。
+  // トークン未デプロイの環境・旧スナップショットでは省略（省略 = 情報なし）
+  tokenBalances?: TokenBalance[];
 }
 
 interface BlockEntity {
@@ -164,6 +173,34 @@ interface BlockEntity {
   receivedAt: Record<string /* nodeId */, number /* epoch ms */>; // 伝播の波アニメーション用
 }
 
+// 復号済みの引数 1 件。値は表示用に文字列化して持つ（大きな数値の精度落ち
+// 防止と、チェーンごとの型体系をスキーマに持ち込まないため）
+interface DecodedArgument {
+  name: string;
+  value: string;
+}
+
+// tx によるコントラクト関数呼び出しの内容。関数名・引数はコントラクト
+// カタログ（後述 §4）で復号できた場合のみ入る。復号できない呼び出しは
+// rawFunctionId（チェーン依存の生の識別子。EVM なら 4 バイトセレクタ）だけを
+// 持ち、解釈・表示は OperationEdge.operation と同じくフロントのチェーン
+// プロファイル表現セットの責務とする
+interface ContractCall {
+  contractAddress: string;
+  functionName?: string;
+  args?: DecodedArgument[];
+  rawFunctionId?: string;
+}
+
+// tx の実行中にコントラクトが発したイベント（ログ）1 件。復号できない
+// イベントは rawEventId（EVM なら topic0）だけを持つ
+interface ContractEvent {
+  contractAddress: string;
+  eventName?: string;
+  args?: DecodedArgument[];
+  rawEventId?: string;
+}
+
 interface TransactionEntity {
   kind: "transaction";
   hash: string;
@@ -171,12 +208,30 @@ interface TransactionEntity {
   to: string | null;
   status: "pending" | "included" | "failed";
   blockHash?: string;
+  // 追跡中のコントラクト宛てで、入力データを観測できた場合のみ（pending を
+  // 経ずに取り込みだけを観測した tx では省略されることがある。その場合も
+  // フロントは to と ContractEntity.address の照合で「コントラクト宛て」の
+  // 判定はできる）
+  contractCall?: ContractCall;
+  // この tx がコントラクトを新規作成（デプロイ）した場合の作成先アドレス
+  createdContractAddress?: string;
+  // 取り込み確定後（included / failed）にのみ入る
+  contractEvents?: ContractEvent[];
 }
 
+// チェーン上にデプロイされたスマートコントラクト。特定の 1 ノードの中で
+// 動くものではなく「チェーンに複製され、全ノードが同じ実行をするプログラム」
+// であり、WalletEntity と同じくチェーン側の状態なので、ノード・ワークベンチの
+// 削除とは無関係に、一度現れたら削除しない
 interface ContractEntity {
   kind: "contract";
   address: string;
-  abiRef?: string;
+  chainType: ChainType;
+  name?: string; // カタログで特定できた場合の表示名。無ければ「未知のコントラクト」
+  catalogKey?: string; // チェーンプロファイルのコントラクトカタログ上のキー
+  deployerAddress?: string; // デプロイを観測できた場合のみ
+  createdByTxHash?: string; // デプロイを観測できた場合のみ
+  token?: { symbol: string; decimals: number }; // トークンコントラクトの表示メタ情報
 }
 
 // AA（発展）
@@ -206,8 +261,22 @@ type DiffEvent =
 ```
 
 エンティティ削除時の扱いは CONCEPT.md の決定に従う: `NodeEntity` /
-`WorkbenchEntity` は `entityRemoved` で消えるが、`WalletEntity` は
-残し `ownerWorkbenchId` を `null` に更新する（`entityUpdated` を送る）。
+`WorkbenchEntity` は `entityRemoved` で消えるが、`WalletEntity` /
+`ContractEntity` はチェーン側の状態なので削除しない（ウォレットは
+`ownerWorkbenchId` を `null` に更新する `entityUpdated` を送る。
+コントラクトは一度現れたら以後そのまま残る）。
+
+コントラクト関連の観測（新 Phase 4 / C層 拡張）は既存のイベント型に乗せ、
+新しい DiffEvent 種別は追加しない:
+
+- コントラクトのデプロイ検知・名前の判明は `ContractEntity` の
+  `entityAdded` / `entityUpdated` として流れる（スナップショットにも含まれる）
+- 関数呼び出し・イベントログの復号結果は `TransactionEntity` のフィールド
+  （`contractCall` / `createdContractAddress` / `contractEvents`）として、
+  tx の `entityAdded` / `entityUpdated` に同乗する。フロントは既存の
+  tx 状態遷移検知（pending → included/failed）を使って「呼び出しが確定した
+  瞬間」「イベントが発生した瞬間」のアニメーションを駆動できるため、
+  operationObserved のような揮発性イベントの新設は不要と判断した
 
 エッジ系イベントは性質の違いで 2 系統に分かれる:
 
@@ -247,8 +316,36 @@ type Command =
   | { action: "addNode"; chainProfile: string }
   | { action: "removeNode"; nodeId: string }
   | { action: "addWorkbench"; label: string }
-  | { action: "removeWorkbench"; workbenchId: string };
+  | { action: "removeWorkbench"; workbenchId: string }
+  | {
+      action: "runWorkbenchOperation";
+      workbenchId: string;
+      operation: WorkbenchOperation;
+    };
+
+// ワークベンチ上で実行する定型操作（新 Phase 4）。amount はチェーン最小単位
+// （Ethereum なら wei）の 10 進文字列
+type WorkbenchOperation =
+  | { type: "transfer"; to: string; amount: string } // ネイティブ通貨の送金
+  | { type: "deployContract"; contractKey: string } // カタログ掲載コントラクトのデプロイ
+  | {
+      type: "callContract"; // デプロイ済みコントラクトの関数呼び出し
+      contractAddress: string;
+      functionName: string;
+      args: string[]; // 型解釈（数値・アドレス等）はカタログを持つアダプタ側が行う
+      amount?: string; // 省略時は 0
+    };
 ```
+
+`runWorkbenchOperation` は collector が対象ワークベンチコンテナ内の開発ツール
+（Ethereum プロファイルなら Foundry の `cast` / `forge`）を `docker exec` 相当で
+実行する方式とする。ワークベンチ内のツールは `ETH_RPC_URL`（ロギングプロキシ）
+経由でノードを叩くため、この操作の RPC 呼び出しは既存の観測経路
+（操作エッジ `operationObserved`・tx ライフサイクル）に**特別な配線なしで**
+そのまま乗る。「操作は必ずワークベンチという実体から発する」という CONCEPT.md
+の投影の考え方を GUI 操作でも崩さないための設計判断。コマンドの実行結果
+（成功・失敗）は既存の `commandResult` で返し、実際の反映（tx の出現、
+コントラクトカードの出現）は後続の観測 = `diff` で届く。
 
 流れ:
 
@@ -277,7 +374,10 @@ interface ChainAdapter {
   subscribePeers(onUpdate: (edges: PeerEdge[]) => void): void; // B層
   subscribeBlocks(onBlock: (block: BlockEntity) => void): Promise<void>; // B層
   subscribeTransactions(onTx: (tx: TransactionEntity) => void): Promise<void>; // C層
-  // D層の購読口は Phase 4 の設計時に追加する（チェーンごとに任意）
+  // C層: コントラクトのデプロイ検知・内容更新。コントラクトという概念を
+  // 持たないチェーン（Bitcoin 等）のアダプタは実装しなくてよい（省略可）
+  subscribeContracts?(onContract: (contract: ContractEntity) => void): Promise<void>;
+  // D層の購読口は Phase 5（旧 Phase 4）の設計時に追加する（チェーンごとに任意）
 }
 ```
 
@@ -330,9 +430,72 @@ interface ChainAdapter {
   failed 判定の導入前（`eth_getBlockByHash` 1 回）から増えない
   （Issue #86）。
 
-いずれも `BlockEntity` / `TransactionEntity` を返し、ワールドステートへの反映
-（差分計算・エンティティ更新）は store 側が担う。チェーン固有の RPC メソッド名は
-アダプタ配下に閉じ込め、これらのコールバックにはチェーン非依存の型だけを流す。
+- `subscribeContracts` — C層（新 Phase 4）。コントラクトのデプロイ検知と
+  内容更新（カタログ照合による名前の判明等）を購読する。Ethereum プロファイル
+  では追加の購読・ポーリングを設けず、`subscribeTransactions` が既に
+  ブロックごとに 1 回呼んでいる `eth_getBlockReceipts` の正規化を拡張して
+  実現する（receipt の `contractAddress` でデプロイを、`logs` でイベントを
+  得る。**ブロックあたりの RPC 回数は増やさない**。Issue #86 の方針を維持）:
+  - receipt の `contractAddress` が非 null の tx をコントラクト作成として
+    検知し、`ContractEntity` を生成・追跡する（`deployerAddress` = from、
+    `createdByTxHash` = tx ハッシュ）。カタログとの照合で `name` /
+    `catalogKey` / `token` を埋める
+  - `deployContract` コマンド経由のデプロイは、コマンド処理側が
+    「アドレス → カタログキー」をアダプタの追跡レジストリへ登録するため
+    確実に照合できる。手動デプロイ（ユーザーが直接 `forge create` した場合）
+    は未知のコントラクトとして表示される（デプロイ済みバイトコードとの
+    照合による特定は実装時のオプション。必須にしない）
+  - 関数呼び出しの復号（`TransactionEntity.contractCall`）は、pending 検知時に
+    既に呼んでいる `eth_getTransactionByHash` の正規化へ `input` を加え、
+    宛先が追跡中のコントラクトならカタログの ABI で復号する（viem の
+    `decodeFunctionData`。viem は既存依存）。イベントログの復号
+    （`contractEvents`）は receipt の `logs` をカタログの ABI で復号する
+    （`decodeEventLog`）。復号できないものは raw 識別子だけを載せる
+  - 制約: pending を経ずに取り込みだけを観測した tx は入力データを取得
+    しないため `contractCall`（関数名）が付かないことがある。フロントは
+    `to` と `ContractEntity.address` の照合でコントラクト宛て表示に
+    フォールバックする
+
+いずれも `BlockEntity` / `TransactionEntity` / `ContractEntity` を返し、
+ワールドステートへの反映（差分計算・エンティティ更新）は store 側が担う。
+チェーン固有の RPC メソッド名・ABI はアダプタ配下に閉じ込め、これらの
+コールバックにはチェーン非依存の型だけを流す。
+
+### コントラクトカタログ（新 Phase 4）
+
+チェーンプロファイルに同梱するサンプルコントラクトと、その表示名・
+インターフェース定義（EVM なら ABI）を持つデータファイル。
+「データとコードの分離」（CLAUDE.md）に従い、コードはこれを読むだけにする。
+
+```
+profiles/ethereum/contracts/
+  foundry.toml
+  src/
+    ChainvizToken.sol   # 最小の ERC20（外部依存なしの自己完結実装）
+    Counter.sol         # 最小のカウンタ（もっとも単純な学習用コントラクト）
+  catalog.json          # カタログキー → { 表示名, ABI, token メタ情報(symbol/decimals) }
+  build-catalog.sh      # forge build の成果物から catalog.json を再生成する開発用スクリプト
+```
+
+- ソース（`src/`）と `catalog.json` は両方コミットする。`catalog.json` は
+  ビルド成果物由来だが、ソースを変更したときだけ `build-catalog.sh` で
+  再生成するデータファイルとして扱う（genesis のような実行時生成にしない。
+  ABI はコンパイル時刻に依存せず決定的なため、コミットして差分レビュー
+  できる方が安全）
+- `contracts/` はワークベンチコンテナへ bind mount し、`deployContract` は
+  ワークベンチ内の `forge create`（ソースからのコンパイル・デプロイ）で行う
+- collector は `catalog.json` を既存の profileDir 解決
+  （`CHAINVIZ_ETHEREUM_PROFILE_DIR` / 相対パス既定。`values.env` の mnemonic
+  読み込みと同じ仕組み）で読む。カタログが無い・読めない場合はコントラクト
+  復号を無効にして起動を継続する（ウォレット追跡の mnemonic 欠落時と同じ
+  「機能単位の縮退」。エラーはログに残す）
+- 環境起動時の自動デプロイは行わない。デプロイはユーザー操作
+  （`runWorkbenchOperation` の `deployContract`、または手動の `forge create`）
+  で行い、「デプロイという行為そのもの」を可視化の対象にする
+- ウォレットのトークン残高（`WalletEntity.tokenBalances`）は、WalletTracker が
+  追跡中のトークンコントラクト（カタログ掲載かつデプロイ済みのもの）に対して
+  残高照会（EVM では `balanceOf` の `eth_call`）を既存の残高・nonce ポーリングと
+  同じ周期で行って得る。トークンが 1 つもデプロイされていなければ何もしない
 
 `ChainAdapter` を実装し、`profiles/<chainName>/` を追加するだけで
 新チェーンに対応する。既存プロファイルのコードは変更しない
