@@ -362,7 +362,7 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
 - [x] eth_subscribeのエラー応答(JSON-RPCエラー)を検知できず、購読失敗に
       気づけない
       [#143](https://github.com/morichikawa/chainviz/issues/143)
-- [ ] 長時間停止後の再起動で--ignore-ws-checkだけでは不十分(genesisからの
+- [x] 長時間停止後の再起動で--ignore-ws-checkだけでは不十分(genesisからの
       再構築が1 slot以内に収まらずハング)
       [#148](https://github.com/morichikawa/chainviz/issues/148)
 - [ ] beaconStableIdForExecutionがdocker composeプロジェクトをスコープ
