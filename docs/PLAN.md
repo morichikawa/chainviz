@@ -354,7 +354,7 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
 - [x] eth_subscribe(newHeads/newPendingTransactions)のWebSocket接続が
       切断時に自動再接続しない
       [#135](https://github.com/morichikawa/chainviz/issues/135)
-- [ ] PC停止等でチェーンが長時間停止すると、beacon再起動がweak
+- [x] PC停止等でチェーンが長時間停止すると、beacon再起動がweak
       subjectivity periodエラーで失敗する
       [#139](https://github.com/morichikawa/chainviz/issues/139)
 - [ ] reth(EL)同士のエッジにブロック伝播パルスが構造的に一切走らない
