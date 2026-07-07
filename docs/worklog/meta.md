@@ -1332,3 +1332,43 @@
     観測可能な動作変化が無い（新コマンドを送るUIが存在せず、collectorは
     明示的に拒否する）。過去のdesign-issue-123-124-shared-typesと同じ
     パターンであり、tester→reviewerで完結してよいと判断（最終判断は統括）
+### 2026-07-07 PLAN.mdステップ8へのIssueリンク追記のレビュー(reviewer 合格)
+
+- 担当: reviewer
+- 対象: ブランチ `design-phase4-contract-visibility`(未コミットの
+  `docs/PLAN.md` のみの変更。milestone #7 作成と Issue #157〜#169 の
+  起票に伴うリンク追記)
+- 内容:
+  - ステップ8(Phase4実装 — C層拡張)の全13チェックボックスへの
+    `[#番号](URL)` リンク追記と、milestoneプレースホルダ行の実URL化を
+    レビューした。結果は合格。
+  - `gh issue view` で #157〜#169 の全13件を照合: 各Issueのタイトルが
+    PLAN.mdの対応するチェックボックスの文言と1対1で正確に対応している
+    (UX 1件 #157 / node-env 2件 #158〜#159 / collector 5件 #160〜#164 /
+    frontend 5件 #165〜#169)。番号の割り当てにズレや取り違えは無い。
+  - 全13件が milestone #7「Phase 4: C層拡張(コントラクト可視化)」に
+    紐づいていることを確認(`gh api repos/.../milestones/7` で
+    open_issues: 13 とも一致)。milestoneリンクのURL
+    (https://github.com/morichikawa/chainviz/milestone/7)も実在する
+    正しいURLで、他ステップ(milestone 1〜6)と同じ書式。
+  - ラベルも妥当: #158〜#159 は node-env、#160〜#164 は collector、
+    #165〜#169 は frontend。#157(UX設計)は専用ラベルが無いため引き継ぎ先の
+    frontend ラベルで、PLAN.md上は **UX** 見出し配下に置かれており矛盾なし。
+  - リンクの書式・配置(チェックボックス本文の直後にインデント6スペースで
+    リンク行を置く)は、他ステップ・バックログの既存項目と一貫している。
+  - #157 のチェックボックスは `[x]`(設計済み)だがIssueはOPEN。クローズは
+    PR本文の `Closes #157` によるマージ時自動クローズに委ねる規約どおりで
+    問題なし(この`[x]`と「§6.10 の判断4点は確定済み」の記述自体は今回の
+    差分外の既存記述)。
+  - Issue本文も抜き取りで確認(#157/#160/#169): ARCHITECTURE.md §6 や
+    Issue #86 への参照など、設計成果物と整合する内容だった。
+  - `pnpm lint` がリポジトリ全体で通ることを確認した(exit 0)。
+- 決定事項・注意点:
+  - QA(chainviz-qa)はdocsのみの変更のため省略可とする依頼元の判断を
+    了承(CLAUDE.mdの例外規定に該当)。
+  - 未コミットの状態でのレビューのため、コミット時は docs のみの1コミット
+    (Conventional Commits の `docs:`)とすること。
+  - このブランチのPR作成時、#157 を閉じるなら本文に `Closes #157` を
+    Issueごとのキーワードで明記すること(統括への申し送り)。
+  - push・PR作成・マージは統括の判断に委ねる。
+
