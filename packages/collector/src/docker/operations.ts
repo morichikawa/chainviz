@@ -49,6 +49,18 @@ export interface CreatedContainer {
   id: string;
 }
 
+/**
+ * コンテナ内でのコマンド実行結果（`docker exec` 相当）。
+ * プロセスが正常終了しても（stderr にログを吐くだけ等）exitCode が 0 なら
+ * 成功、非 0 なら失敗として扱う（呼び出し側の契約）。
+ */
+export interface ExecResult {
+  /** 実行したプロセスの終了コード。0 が成功。 */
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}
+
 /** ラベル検索で見つかったコンテナの最小情報。 */
 export interface LabeledContainer {
   id: string;
@@ -77,4 +89,15 @@ export interface DockerOperations {
   listContainersByLabels(
     labels: Record<string, string>,
   ): Promise<LabeledContainer[]>;
+  /**
+   * 起動中のコンテナ内でコマンドを実行し、完了まで待って結果を返す
+   * （`docker exec` 相当）。runWorkbenchOperation がワークベンチコンテナ内で
+   * cast / forge を実行するために使う（Issue #163）。
+   *
+   * `cmd` は配列で渡すこと。呼び出し側（adapters/ethereum 配下）はシェル文字列
+   * 連結でコマンドを組み立てず、必ずトークンごとの配列のまま渡す契約とする
+   * （シェルを経由しないため、値にシェル特殊文字が含まれてもコマンド
+   * インジェクションが起きない）。
+   */
+  exec(containerId: string, cmd: string[]): Promise<ExecResult>;
 }

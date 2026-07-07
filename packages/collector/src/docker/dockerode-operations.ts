@@ -3,11 +3,13 @@
 // DockerOperations インターフェースだけに依存させる（dockerode-client.ts が
 // 観測面で担っているのと同じ方針）。
 
+import { PassThrough } from "node:stream";
 import type Docker from "dockerode";
 import type {
   ContainerSpec,
   CreatedContainer,
   DockerOperations,
+  ExecResult,
   LabeledContainer,
 } from "./operations.js";
 
@@ -164,5 +166,59 @@ export function createDockerOperations(docker: Docker): DockerOperations {
       });
       return containers.map((c) => ({ id: c.Id, labels: c.Labels ?? {} }));
     },
+
+    async exec(containerId: string, cmd: string[]): Promise<ExecResult> {
+      const container = docker.getContainer(containerId);
+      // Cmd は配列のまま dockerode へ渡す（シェルを経由しないため、値に
+      // シェル特殊文字が含まれてもコマンドインジェクションが起きない）。
+      const dockerExec = await container.exec({
+        Cmd: cmd,
+        AttachStdout: true,
+        AttachStderr: true,
+      });
+      const stream = await dockerExec.start({ Tty: false });
+      return demuxExecStream(dockerExec, stream);
+    },
+  };
+}
+
+/** dockerode の Exec.modem が持つ demuxStream の最小面（型定義が any のため独自に定義）。 */
+interface ExecModem {
+  demuxStream(
+    src: NodeJS.ReadableStream,
+    stdout: NodeJS.WritableStream,
+    stderr: NodeJS.WritableStream,
+  ): void;
+}
+
+/**
+ * exec.start() が返す多重化ストリーム（stdout/stderr が 1 本に混ざったもの）を
+ * modem.demuxStream で分離しつつ全量読み切り、完了後に exec.inspect() から
+ * 終了コードを取得して ExecResult にまとめる。
+ */
+async function demuxExecStream(
+  dockerExec: Docker.Exec,
+  stream: NodeJS.ReadableStream,
+): Promise<ExecResult> {
+  const stdoutChunks: Buffer[] = [];
+  const stderrChunks: Buffer[] = [];
+  const stdout = new PassThrough();
+  const stderr = new PassThrough();
+  stdout.on("data", (chunk: Buffer) => stdoutChunks.push(chunk));
+  stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
+
+  const modem = (dockerExec as unknown as { modem: ExecModem }).modem;
+  modem.demuxStream(stream, stdout, stderr);
+
+  await new Promise<void>((resolve, reject) => {
+    stream.on("end", resolve);
+    stream.on("error", reject);
+  });
+
+  const info = await dockerExec.inspect();
+  return {
+    exitCode: info.ExitCode ?? -1,
+    stdout: Buffer.concat(stdoutChunks).toString("utf8"),
+    stderr: Buffer.concat(stderrChunks).toString("utf8"),
   };
 }
