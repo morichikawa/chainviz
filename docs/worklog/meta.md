@@ -987,3 +987,48 @@
   - QA(chainviz-qa)はdocsのみの変更のため省略可とする依頼元の判断を
     了承(CLAUDE.mdに明記された例外に該当)。
   - push・PR作成・マージは統括の判断に委ねる。
+
+### 2026-07-07 PLAN.mdバックログへのIssue #141追加のレビュー(reviewer 合格)
+
+- 担当: reviewer
+- ブランチ: docs-plan-add-141-backlog(コミット 1e2afe1)
+- 内容:
+  - `docs/PLAN.md` のバックログセクションへIssue #141(reth(EL)同士の
+    エッジにブロック伝播パルスが構造的に一切走らない)を1項目追加する
+    docsのみの変更をレビューした。結果は合格。
+  - `gh issue view 141` で照合: 状態はOPENで `[ ]`(未チェック)と一致。
+    PLAN.mdの行の文言はIssueタイトルそのままで正確。リンク先URLも
+    正しい。既存のバックログ項目(#125/#129/#135/#139)と同じ配置・
+    書式で整合している。
+  - Issue本文の技術的主張をコードで裏取りした:
+    - `packages/collector/src/adapters/ethereum/targets.ts` の
+      `executionTargets()` は `receivedAtKey: beaconStableId ?? obs.stableId`
+      としており、対応するbeaconが存在する通常構成では
+      `BlockEntity.receivedAt` のキーは常にbeacon(CL)側のstableIdに
+      なる(EL自身のstableIdはbeaconが見つからない場合のフォール
+      バックのみ)。主張どおり。
+    - フロントの `packages/frontend/src/entities/blockPulse.ts` は
+      「両端点がともに `receivedAt` に記録されているエッジだけ」を
+      パルス対象とするため、端点がEL(reth)のstableIdである
+      `-execution` ネットワークのエッジは構造的にパルス対象外になる。
+      「構造的に一切走らない」という表現は正確。
+    - 対応方針が参照先として挙げる `subscribeBlocks()`・`blockTracker`
+      は `packages/collector/src/adapters/ethereum/index.ts` に実在し、
+      `target.receivedAtKey` をキーに `blockTracker.record()` している
+      ことを確認した。
+  - ラベルは collector。修正箇所がcollectorの
+    `targets.ts` / `index.ts`(receivedAtの記録側)なので妥当。
+    frontend側(blockPulse.ts)は両端点が揃えば既存ロジックのまま
+    動くため、collector単独のラベルで整合。
+  - 変更は `docs/PLAN.md` のみ2行の追加で、コミットは1件
+    (Conventional Commits形式の `docs:`)。「1変更=1コミット」
+    「チェックボックス1行=Issue 1つ」の規約に適合。
+  - `pnpm lint` がリポジトリ全体で通ることを確認した(exit 0)。
+- 決定事項・注意点:
+  - 対応方針の「CL側の記録と両方持たせる」を実装する際は、同一論理
+    ノードのEL/CL両方のキーが同じ `receivedAt` に入ることになるため、
+    フロントのパルス計算(波の起点判定・鮮度ウィンドウ)がCL/ELの
+    ネットワークごとに正しく分離されるかを設計時に確認すること。
+  - QA(chainviz-qa)はdocsのみの変更のため省略可とする依頼元の判断を
+    了承(CLAUDE.mdに明記された例外に該当)。
+  - push・PR作成・マージは統括の判断に委ねる。

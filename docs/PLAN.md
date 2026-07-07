@@ -357,6 +357,8 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
 - [ ] PC停止等でチェーンが長時間停止すると、beacon再起動がweak
       subjectivity periodエラーで失敗する
       [#139](https://github.com/morichikawa/chainviz/issues/139)
+- [ ] reth(EL)同士のエッジにブロック伝播パルスが構造的に一切走らない
+      [#141](https://github.com/morichikawa/chainviz/issues/141)
 
 ## 運用ルール（全ステップ共通）
 
