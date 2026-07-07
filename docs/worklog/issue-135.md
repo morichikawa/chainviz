@@ -186,3 +186,42 @@
     明記、エラー握りつぶしなし、境界の遵守、docs との齟齬なし)。今回の
     差分はテスト1行の変更のみで、これらの判断に影響しない
 - push / PR作成 / マージ / Issueクローズは統括に委ねる
+
+### 2026-07-07 Issue #135 実機QA検証(合格)(qa)
+
+- 担当: qa
+- 結果: **合格**。完了条件を満たしていることを実機で確認した。
+- 検証環境: 本物の docker compose 環境（chainviz-ethereum）には一切触れず、
+  独立した合成環境として reth の dev モード単体コンテナを別ポート・別名で
+  起動して検証した。
+  - `docker run -d --name chainviz-qa135-reth -p 28546:8546
+    ghcr.io/paradigmxyz/reth:latest node --dev --dev.block-time 2s
+    --http --ws --ws.addr 0.0.0.0 --ws.port 8546 --ws.api eth,net,web3`
+    で 2 秒ごとにブロックを生成し、WebSocket(JSON-RPC)をホストの 28546
+    番へ公開。
+  - ビルド済みの collector コード（`dist/adapters/ethereum/eth-ws-client.js`
+    の `createWsEthClient()`。既定の `RECONNECT_DELAY_MS=2000` を使用）を
+    使って `subscribeNewHeads("ws://127.0.0.1:28546", ...)` を購読する
+    小さな確認スクリプトを走らせ、`onHeader` が呼ばれるたびにブロック番号と
+    受信時刻（`BlockEntity.receivedAt` 相当）を記録した。
+- 検証1: WebSocket 接続の強制切断からの自動再接続・再購読
+  - `docker restart chainviz-qa135-reth` でノードを再作成相当に再起動し
+    WS を切断。collector プロセスを再起動することなく、切断前の最終ブロック
+    (#37, 02:24:55)の約 5 秒後に #38(02:25:00)を受信し、購読が自動復旧した。
+  - さらに `docker stop`→約9秒待機→`docker start` で長めのダウンを再現。
+    ダウン中は 2 秒間隔で `connect ECONNREFUSED` が 4 回記録され（無期限
+    リトライが 2000ms 間隔で試行され続けていることを実測確認）、ノード復帰
+    後の最初の再接続試行で購読が復旧し #61 以降の受信を再開した。
+    onError にエラーが正しく渡っており（握りつぶしなし）、購読プロセスは
+    クラッシュせず生存し続けた。
+- 検証2: 再接続後もブロック伝播データ（receivedAt）が更新され続けること
+  - 再接続後もブロック番号は単調増加で連続受信され（#38→#49、#61→#68 など
+    欠落なし）、各受信で receivedAt(Date.now相当)が新しい値に更新され続けた。
+    再接続後に購読が「生きているが通知が来ない」状態に陥ることはなかった。
+- 完了条件（PLAN.md #135）「WebSocket 接続が切れても collector を再起動する
+  ことなく一定時間内に購読が自動復旧しブロック伝播パルスが再び流れる」を
+  満たしている。
+- 後片付け: 起動した合成環境コンテナ(chainviz-qa135-reth)を `docker rm -f`
+  で削除、確認スクリプトも削除済み。カスタムネットワークは作成していない
+  （default bridge を使用）。本物の chainviz-ethereum 環境は無変更で稼働継続を
+  確認。push / PR作成 / マージ / Issueクローズは行っていない（統括に委ねる）。
