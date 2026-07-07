@@ -86,4 +86,4 @@
 | #143 | Issue #143 eth_subscribeのエラー応答を検知できない不具合の修正 | [2026-07-07](worklog/issue-143.md) |
 | #139 | Issue #139 lighthouse起動時のweak subjectivity periodエラー対応(--ignore-ws-check) | [2026-07-07](worklog/issue-139.md) |
 | #141 | Issue #141 reth(EL)同士のエッジにブロック伝播パルスが走らない(receivedAtの2キー記録設計) | [2026-07-07](worklog/issue-141.md) |
-| - | 特定Issueに紐付かない記録(PLAN.md/CLAUDE.md更新等) | [2026-07-05〜2026-07-06](worklog/meta.md) |
+| - | 特定Issueに紐付かない記録(PLAN.md/CLAUDE.md更新等) | [2026-07-05〜2026-07-07](worklog/meta.md) |
