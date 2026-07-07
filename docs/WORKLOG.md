@@ -94,4 +94,5 @@
 | #159 | Issue #159 コントラクトカタログ(catalog.json)と再生成スクリプト(build-catalog.sh)の追加 | [2026-07-07](worklog/issue-159.md) |
 | #163 | Issue #163 runWorkbenchOperationコマンド(transfer/deployContract/callContract)を実装 | [2026-07-07](worklog/issue-163.md) |
 | #161 | Issue #161 コントラクトカタログの読み込みとデプロイ検知・追跡(subscribeContracts) | [2026-07-07](worklog/issue-161.md) |
+| #162 | Issue #162 カタログABIによる関数呼び出し・イベントログの復号(contractCall/contractEvents) | [2026-07-07](worklog/issue-162.md) |
 | - | 特定Issueに紐付かない記録(PLAN.md/CLAUDE.md更新等) | [2026-07-05〜2026-07-07](worklog/meta.md) |
