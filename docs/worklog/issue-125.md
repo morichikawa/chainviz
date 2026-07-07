@@ -393,3 +393,76 @@ Playwright(headless Chromium)で `circle.peer-pulse` の画面座標を50〜60ms
   走らず原点付近に静止する退化があり得る。QA の実機確認は UX 設計時と
   同じ Chromium 系で、`circle.peer-pulse` の座標が始点側から到達先側へ
   単調に変化することを確認してほしい
+
+### 2026-07-07 Issue #125 QA検証(実機Playwright相当のCDP実測・合格)
+
+- 担当: qa
+- ブランチ: issue-125-ux-design-pulse-visibility
+- 結果: **合格**。PLAN.mdの完了条件「隣接ノード間のブロック伝播パルスが
+  『点滅』ではなく『移動している』とユーザーに伝わるようになっていること」を
+  満たしていることを実機で確認した。
+
+#### 検証環境と手法
+
+- 稼働中のメイン環境(Docker + 統括起動のcollector port 4000)は読み取り
+  専用で利用し、破壊的操作(docker down等)は一切行っていない。
+- 本worktreeから修正版frontendを別ポート(vite 5273、`VITE_COLLECTOR_URL=
+  ws://127.0.0.1:4000`)で並走起動し、稼働中collectorのワールドステートを
+  描画させた(メインのfrontend port 5173には触れていない)。配信された
+  `/src/styles.css` に `pulse-travel` キーフレームが含まれることを確認。
+- 実装担当・UX設計時はこの環境でPlaywright(ヘッドレスChromium)が起動
+  できなかった(libnss3/libnspr4/libasound欠落・sudo不可)。今回は
+  playwright同梱の `chrome-headless-shell`(chromium 1228 / HeadlessChrome
+  149)に対し、欠落libを含むubuntu debパッケージ(libnss3/libnspr4/
+  libasound2t64)をアーカイブから取得してスクラッチ領域へ展開し、
+  `LD_LIBRARY_PATH` で解決して起動に成功した。CDP(DevTools Protocol)を
+  `ws` モジュール経由で直接駆動し、`circle.peer-pulse` の
+  `getBoundingClientRect()` を40ms間隔でサンプリングした。
+
+#### 前提の確認(パルス発生源が生きているか)
+
+- collector(4000)のWS diffを40秒監視した結果、約2秒ごとに新規ブロックが
+  到来し、`receivedAt` が beacon1 と beacon2 に数〜十数ms差で記録され続けて
+  いた(peer-pulse の発生源が正常。UX設計時に懸念された購読停止(#135)は
+  現時点のこのcollectorでは再発しておらず、ブロックは流れている)。
+
+#### 完了条件1: パルスが実際に移動している(修正前は0px)
+
+- 既定グリッド(gapX=420)のまま、beacon1↔beacon2 の隣接エッジ上を走る
+  peer-pulse を12秒サンプリングし、6回のブロック伝播バーストを捕捉。
+  各バーストとも所要 dur=450ms で、x座標が単調変化していた:
+  - reverse方向(beacon2→beacon1): x が 約603→429 へ単調減少
+  - normal方向(beacon1→beacon2): x が 約429→618 へ単調増加
+  - y座標は一定(水平隣接エッジ)。1バーストの正味移動量は約160〜190px。
+- 修正前(SMILの`animateMotion`凍結)は同手法で移動量0pxだったのに対し、
+  実際にエッジ上を端から端へ移動するようになったことを確認した。正方向・
+  逆方向の両方が正しく動作する。
+
+#### 完了条件2: 隣接カード間に紐(エッジ)が視認できる長さになっている
+
+- 上記の水平隣接エッジ上でパルスが画面上を約175〜190px移動しており、
+  紐が十分な長さで見えている(修正前のエッジ長17px = 実質点滅とは明確に
+  異なる)。gapX=420への拡大が効いていることを実測で確認した。
+
+#### 完了条件3: 離れたカード間のパルスも壊れない
+
+- クライアント側操作のみ(collectorに影響しない)で beacon2 ノードを
+  右下へドラッグしてエッジを対角・長距離化し、再サンプリングした。
+  パルスは x(約452→764)・y(約147→343)ともに単調変化し、約368〜410pxの
+  長い経路を450msで最後まで走破した(normal/reverse両方向)。エッジ形状の
+  変化に offset-path が追従し、凍結・取り残しは発生しなかった。
+
+#### 補足(スコープ外・観測できなかった事項)
+
+- 現環境では `receivedAt` が beacon 側 stableId にのみ記録されるため、
+  パルスが走るのは beacon 間エッジのみで、reth(EL)間エッジには構造的に
+  パルスが走らない(worklog記載のスコープ外発見1のとおり。別Issue対象)。
+- operation-pulse は同一のCSS offset-path修正を受けているが、検証時に
+  アクティブなワークベンチのRPC操作が無く実機では発火しなかった。機構は
+  peer-pulse と同一で、tester/reviewer が静的に検証済み。本Issueの完了
+  条件はブロック伝播パルスに関するものであり、判定には影響しない。
+
+#### 後片付け
+
+- 起動した chrome-headless-shell と vite(5273)は検証後に停止済み。Docker・
+  メインのcollector(4000)・frontend(5173)には一切変更を加えていない。
