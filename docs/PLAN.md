@@ -351,7 +351,7 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
 - [ ] 動的追加ワークベンチのRPCがロギングプロキシを経由せずreth1に直結して
       いる(操作エッジが描画されない)
       [#129](https://github.com/morichikawa/chainviz/issues/129)
-- [ ] eth_subscribe(newHeads/newPendingTransactions)のWebSocket接続が
+- [x] eth_subscribe(newHeads/newPendingTransactions)のWebSocket接続が
       切断時に自動再接続しない
       [#135](https://github.com/morichikawa/chainviz/issues/135)
 - [ ] PC停止等でチェーンが長時間停止すると、beacon再起動がweak
