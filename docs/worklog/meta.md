@@ -1372,3 +1372,55 @@
     Issueごとのキーワードで明記すること(統括への申し送り)。
   - push・PR作成・マージは統括の判断に委ねる。
 
+
+### 2026-07-07 新Phase4(C層拡張)設計フェーズ PR #170 の実機検証(QA)
+
+- 担当: chainviz-qa
+- 対象: ブランチ design-phase4-contract-visibility / PR #170
+  (packages/shared の型変更 + packages/frontend の機械的追従 + docs)
+- 経緯: reviewer は「実行時に観測可能な動作変化が無い」としてQA省略を提案したが、
+  統括の判断で CLAUDE.md の例外規定(docs/・.claude/agents/ 配下のみ)の対象外
+  (packages のコード変更を含む)と整理され、実機検証を実施した。
+- 検証内容と結果(いずれも合格):
+  1. ビルド・lint・テストの独立再実行: `pnpm lint`(exit 0)、`pnpm build`
+     (shared/collector/frontend/e2e 全て成功)、`pnpm test` 全パッケージ green
+     (shared 40 / うち protocol 10・entities 26・chain-profile 2・events 2、
+     collector 719、frontend 791、e2e 34)。
+  2. frontend の実機起動確認: VITE_COLLECTOR_URL 未設定(モッククライアント)で
+     `build:web` → `vite preview` を起動し、ヘッドレス chromium で描画を確認。
+     ノードカード(chainviz-lighthouse-1 / reth-1 / reth-2)、reth 間の P2P
+     エッジ、ワークベンチ(alice)、ウォレット2件(EOA・残高/nonce・pending tx)、
+     所有エッジ、ワークベンチ→reth の操作エッジが全て描画され、Phase1〜3 の
+     既存機能に欠落・崩れは無い。DOM ダンプでも同要素の存在を確認し、
+     エラーオーバーレイ(vite-error-overlay 等)・非良性のコンソールエラーは
+     ゼロ(ResizeObserver loop の警告のみで無害)。
+  3. 型変更が既存 UI/ロジックと衝突しないこと: Command union への
+     runWorkbenchOperation 追加は collector の handler.ts が default ケースを
+     持つため未対応でも型エラーにならず(この設計フェーズでは collector 実装は
+     範囲外)、frontend の commandMessages.ts / i18n messages.ts / mockData.ts の
+     機械的追従もビルド・実行時ともに問題なし。mockData の runWorkbenchOperation
+     は ok:false(未サポート)を返すが、これを叩く UI はまだ無く(ステップ8の
+     frontend 範囲)既存表示に影響しない。
+  4. ContractEntity の abiRef 削除の波及確認: リポジトリ全体を grep し、
+     abiRef の参照が packages・docs のいずれにも残っていないことを確認
+     (置換漏れ・ダングリング参照なし)。
+  5. ドキュメント整合性: CONCEPT.md のロードマップ改番(新Phase4=コントラクト
+     可視化、旧Phase4以降を1つずつ後送り)、PLAN.md ステップ8、ARCHITECTURE.md
+     §2〜§6 が packages/shared の実コードと矛盾しないことをフィールド名単位で
+     照合(WorkbenchOperation / subscribeContracts / tokenBalances /
+     TokenBalance / contractCall / contractEvents / createdContractAddress /
+     catalogKey / deployerAddress / createdByTxHash / ContractCall /
+     ContractEvent / DecodedArgument / rawFunctionId / rawEventId、および
+     ContractEntity の形 chainType/name?/catalogKey?/token?{symbol,decimals})。
+     ARCHITECTURE.md 側にも旧 abiRef の記述は残っていない。
+- 判定: 合格。今回の型変更・機械的追従は既存の動くもの(Phase1〜3)を壊して
+  いない。新機能本体(コントラクトカード表示・デプロイ検知等)はこのPRの範囲外で
+  あり、未実装であること自体は失格理由にしない。
+- 注意点・申し送り:
+  - このステップ8には qa 担当と明記されたチェックボックスが無い(実装項目
+    #158〜#169 は今後の作業、#157 は UX が対応済み)ため、PLAN.md 側で QA が
+    付けるべきチェックは無い。
+  - push・PR作成・マージ・Issueクローズは統括の判断に委ねる(QAは実行しない)。
+  - ヘッドレス表示では日本語が豆腐(□)になったが、これは検証環境に CJK
+    フォントが無いためで、アプリの不具合ではない(ラテン文字・数値・
+    レイアウトは正常)。
