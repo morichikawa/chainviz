@@ -320,7 +320,7 @@ runWorkbenchOperation コマンド・ChainAdapter.subscribeContracts）は設計
 - [x] eth_getBlockReceiptsの正規化を拡張しコントラクト作成
       （contractAddress）とイベントログ（logs）を取得する
       [#160](https://github.com/morichikawa/chainviz/issues/160)
-- [ ] コントラクトカタログの読み込みとデプロイ検知・追跡を実装し
+- [x] コントラクトカタログの読み込みとデプロイ検知・追跡を実装し
       ContractEntityをworld-stateへ配信する（subscribeContracts）
       [#161](https://github.com/morichikawa/chainviz/issues/161)
 - [ ] カタログのABIで関数呼び出し・イベントログを復号しTransactionEntityの

@@ -8,6 +8,7 @@
 import type {
   BlockEntity,
   ChainAdapter,
+  ContractEntity,
   InfraEntity,
   NodeEntity,
   PeerEdge,
@@ -25,7 +26,9 @@ import {
   fetchNodePeerId,
 } from "./beacon-api.js";
 import { BlockPropagationTracker } from "./blocks.js";
+import type { ContractCatalog } from "./catalog.js";
 import { classifyContainer } from "./classify.js";
+import { ContractTracker } from "./contracts.js";
 import { MANAGED_LABEL, P2P_ROLE_LABEL } from "./labels.js";
 import {
   fetchConnectedExecutionPeerIdentities,
@@ -36,6 +39,7 @@ import {
   getBlockReceipts,
   getTransactionByHash,
   type EthRpcClient,
+  type RpcTransactionReceipt,
 } from "./eth-rpc-client.js";
 import {
   createWsEthClient,
@@ -87,6 +91,14 @@ export interface EthereumAdapterDeps {
    * 未指定・解決不能な場合は rpcTargetNodeId を省略する。
    */
   rpcTargetHost?: string;
+  /**
+   * profiles/ethereum/contracts/catalog.json を読み込んだ結果（Issue #161）。
+   * 未指定・読み込み失敗時は undefined とし、コントラクトのデプロイ検知自体は
+   * 続けつつ、名前/token 等カタログ由来の情報を付与しない「未知のコントラクト」
+   * 縮退動作にする（docs/ARCHITECTURE.md §4 参照。呼び出し側の main() が
+   * readContractCatalog() の失敗をログしたうえで undefined を渡す）。
+   */
+  catalog?: ContractCatalog;
 }
 
 /**
@@ -120,11 +132,16 @@ export class EthereumAdapter implements ChainAdapter {
   private readonly rpcTargetHost?: string;
   private readonly blockTracker = new BlockPropagationTracker();
   private readonly txTracker = new TransactionLifecycleTracker();
+  private readonly contractTracker: ContractTracker;
 
   private peerTimer?: ReturnType<typeof setTimeout>;
   private peerLoopRunning = false;
   private blockSubscriptions: NewHeadsSubscription[] = [];
   private txSubscriptions: Subscription[] = [];
+  // subscribeContracts で登録されたコールバック。未登録（subscribeContracts が
+  // 呼ばれていない）場合は undefined で、ブロック取り込み処理内のコントラクト
+  // デプロイ検知は追跡はするが配信はしない。
+  private onContract?: (contract: ContractEntity) => void;
   // 同一ブロックを複数ノードが newHeads で通知するため、included 判定用の
   // ブロック取得を 1 ブロックにつき 1 回だけに絞る（重複した RPC を避ける）。
   private readonly processedBlocks = new Set<string>();
@@ -142,6 +159,7 @@ export class EthereumAdapter implements ChainAdapter {
     this.mnemonic = deps.mnemonic;
     this.deriveAddress = deps.deriveAddress ?? deriveWalletAddress;
     this.rpcTargetHost = deps.rpcTargetHost;
+    this.contractTracker = new ContractTracker(this.chainType, deps.catalog);
   }
 
   /**
@@ -491,6 +509,7 @@ export class EthereumAdapter implements ChainAdapter {
         })),
       );
       for (const entity of changed) onTx(entity);
+      this.detectContractDeployments(receipts);
     } catch (err) {
       // 取得に失敗した場合も処理済みマークを外し、後続ノードからの通知で
       // 再試行できるようにする（さもないと当該ブロックの tx が pending のまま固まる）。
@@ -499,6 +518,66 @@ export class EthereumAdapter implements ChainAdapter {
         `[ethereum] failed to fetch receipts for block ${blockHash} for tx inclusion:`,
         err,
       );
+    }
+  }
+
+  // --- C 層（新 Phase 4）: コントラクトのデプロイ検知 ---
+
+  /**
+   * C 層: コントラクトのデプロイ検知・内容更新を購読する。docs/ARCHITECTURE.md
+   * §4 の設計どおり、専用の購読・ポーリングは追加しない。subscribeTransactions が
+   * 既にブロックごとに 1 回呼んでいる eth_getBlockReceipts の結果
+   * （handleBlockInclusion）をそのまま使い回すため、ここでは onContract の
+   * コールバックを保持するだけでよい（Promise<void> を返すのは ChainAdapter
+   * インターフェースの形に合わせるためで、非同期処理自体は発生しない）。
+   *
+   * 注意: subscribeTransactions が呼ばれて newHeads の購読が実際に張られていない
+   * 限り、ここで登録したコールバックが呼ばれることはない（Ethereum プロファイル
+   * ではブロック取り込みの検知経路を tx 層と共有する設計のため。collector 本体
+   * の main() は両方を配線する）。
+   */
+  async subscribeContracts(
+    onContract: (contract: ContractEntity) => void,
+  ): Promise<void> {
+    this.onContract = onContract;
+  }
+
+  /**
+   * runWorkbenchOperation(deployContract) 経由のデプロイについて、デプロイ先
+   * アドレスとカタログキーの対応を登録する（Issue #163 がデプロイ実行後に
+   * 呼び出す想定。ChainAdapter インターフェースには含めず、EthereumAdapter
+   * 固有の拡張 API とする）。
+   *
+   * 登録の結果、追跡中のコントラクトが「未知」から「カタログ既知」へ更新
+   * された場合は、購読済みの onContract コールバックへその場で
+   * entityUpdated 相当の最新エンティティを渡す（world-state store 側が
+   * 差分を計算して entityUpdated として配信する）。デプロイをまだ検知して
+   * いない場合は登録だけを保留し、コールバックは呼ばない（後続の
+   * handleBlockInclusion がデプロイを検知した時点で、保留されたカタログキーを
+   * 適用した状態の entityAdded がそのまま配信される）。
+   */
+  registerContractDeployment(address: string, contractKey: string): void {
+    const updated = this.contractTracker.registerDeployment(address, contractKey);
+    if (updated) this.onContract?.(updated);
+  }
+
+  /**
+   * ブロック取り込みで得た receipts から、コントラクト作成（contractAddress が
+   * 非 null）を検知し、追跡中の onContract コールバックへ ContractEntity を渡す。
+   * onContract 未登録（subscribeContracts が呼ばれていない）場合でも追跡自体は
+   * 行う（後から registerDeployment / subscribeContracts が呼ばれても一貫した
+   * 状態を返せるようにするため）。同一アドレスの重複通知（複数ノードからの
+   * 同一ブロック通知）は ContractTracker 側で無視される。
+   */
+  private detectContractDeployments(receipts: RpcTransactionReceipt[]): void {
+    for (const r of receipts) {
+      if (!r.contractAddress) continue;
+      const entity = this.contractTracker.recordDeployment({
+        address: r.contractAddress,
+        deployerAddress: r.from,
+        createdByTxHash: r.transactionHash,
+      });
+      if (entity) this.onContract?.(entity);
     }
   }
 

@@ -4,6 +4,7 @@
 import Docker from "dockerode";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { readContractCatalog } from "./adapters/ethereum/catalog.js";
 import { EthereumAdapter } from "./adapters/ethereum/index.js";
 import {
   readProfileMnemonic,
@@ -271,7 +272,17 @@ export async function main(port: number = DEFAULT_PORT): Promise<void> {
   // 実際の待受設定と常に一致させるため、ここでは決め打ちにしない。
   const proxyTarget = resolveProxyTarget();
   const rpcTargetHost = parseProxyTargetHost(proxyTarget);
-  const adapter = new EthereumAdapter(poller, { mnemonic, rpcTargetHost });
+  // コントラクトカタログ（profiles/ethereum/contracts/catalog.json）を読み込む
+  // （Issue #161）。読み込み・パース失敗時は readContractCatalog が具体的な
+  // 理由をログした上で undefined を返し、コントラクトのデプロイ検知自体は
+  // 継続しつつカタログ由来の情報（name/token 等）だけ付与しない「未知のコント
+  // ラクト」縮退動作になる（docs/ARCHITECTURE.md §4）。
+  const catalog = readContractCatalog(profileDir);
+  const adapter = new EthereumAdapter(poller, {
+    mnemonic,
+    rpcTargetHost,
+    catalog,
+  });
   const store = new WorldStateStore("ethereum");
 
   // 操作コマンド（ノード/ワークベンチの追加・削除）の処理を配線する。
@@ -343,6 +354,19 @@ export async function main(port: number = DEFAULT_PORT): Promise<void> {
     })
     .catch((err) =>
       console.error("[collector] transaction subscription failed:", err),
+    );
+
+  // C 層（新 Phase 4）: コントラクトのデプロイ検知・内容更新（カタログ照合含む）
+  // を購読し、ContractEntity の差分をワールドステート store 経由でフロントへ
+  // 配信する（Issue #161）。EthereumAdapter の実装は subscribeTransactions が
+  // 張る newHeads 購読を内部で共有するため、追加の購読・ポーリングは発生しない。
+  adapter
+    .subscribeContracts((contract) => {
+      const diff = store.applyContract(contract);
+      server.broadcastDiff(diff);
+    })
+    .catch((err) =>
+      console.error("[collector] contract subscription failed:", err),
     );
 
   // C 層: ワークベンチが持つウォレットの残高・nonce を周期ポーリングし、
