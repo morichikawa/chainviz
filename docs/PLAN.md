@@ -342,7 +342,7 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
       [#123](https://github.com/morichikawa/chainviz/issues/123)
 - [x] reth同士のP2Pメッシュ形成が分かりにくく、正しい状態か判断できない
       [#124](https://github.com/morichikawa/chainviz/issues/124)
-- [ ] ブロック伝播パルスが隣接カード間では移動距離が短すぎて点滅にしか
+- [x] ブロック伝播パルスが隣接カード間では移動距離が短すぎて点滅にしか
       見えない
       [#125](https://github.com/morichikawa/chainviz/issues/125)
 - [x] pnpm dev:down --dockerがaddNode/addWorkbenchで動的追加したコンテナを

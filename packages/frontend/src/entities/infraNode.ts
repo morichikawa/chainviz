@@ -40,9 +40,19 @@ export interface GridOptions {
   originY: number;
 }
 
+/**
+ * gapX(横間隔)は420(Issue #125 UX設計)。カード実測最大幅は現行の命名
+ * (`chainviz-ethereum-<service>-N`)で約285フローpx(workbench)なので、420
+ * なら横に隣接するカード間に約135px以上の紐が見え、450msフロアでの移動
+ * (約300px/s)がはっきり知覚できる。カード幅は `containerName` の長さに
+ * 依存する(min-width 190px、max-width なし)ため、コンテナ名が現行より
+ * 大幅に長くなる運用に変わった場合はこの値の見直しが必要。
+ * gapY(縦間隔)はカード実測高さ(約80フローpx)に対して十分な余白があるため
+ * 変えない。
+ */
 export const DEFAULT_GRID: GridOptions = {
   columns: 3,
-  gapX: 260,
+  gapX: 420,
   gapY: 200,
   originX: 0,
   originY: 0,

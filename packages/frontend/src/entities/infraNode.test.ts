@@ -72,6 +72,34 @@ describe("defaultGridPosition", () => {
   });
 });
 
+describe("DEFAULT_GRID horizontal spacing (Issue #125)", () => {
+  // Issue #125 UX設計で確認されたカード実測最大幅（workbench で約285フローpx）。
+  // gapX がこれ以下だと横に隣接するカードが接触・重複し、ブロック伝播パルスが
+  // 走る紐（エッジ）が1pxも見えなくなる（旧 gapX=260 で実際に発生していた）。
+  const MEASURED_MAX_CARD_WIDTH = 285;
+
+  it("keeps a visible thread between horizontally adjacent cards", () => {
+    // gapX が最大カード幅を上回り、隣接カード間に紐がはっきり見える距離
+    // （UX設計の「135px以上」に対し、退行検知としては 100px を下限に取る）を
+    // 確保していること。260 への巻き戻しはこの下限を割って検出される。
+    const visibleThread = DEFAULT_GRID.gapX - MEASURED_MAX_CARD_WIDTH;
+    expect(visibleThread).toBeGreaterThanOrEqual(100);
+  });
+
+  it("spaces columns wider than rows so pulses have room to travel", () => {
+    // 横間隔だけを広げた設計意図（gapY は据え置き）を固定する。
+    expect(DEFAULT_GRID.gapX).toBeGreaterThan(DEFAULT_GRID.gapY);
+  });
+
+  it("never collides distinct grid cells regardless of gap sizes", () => {
+    // gapX 変更で別セルどうしの座標が衝突（positionKey が重複）しないこと。
+    const keys = new Set(
+      Array.from({ length: 12 }, (_, i) => positionKey(defaultGridPosition(i))),
+    );
+    expect(keys.size).toBe(12);
+  });
+});
+
 describe("entitiesToFlowNodes", () => {
   it("keeps only infra entities and sorts by id", () => {
     const nodes = entitiesToFlowNodes([node("b"), wallet, node("a")], {});
