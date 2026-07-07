@@ -1781,3 +1781,77 @@ describe("EthereumAdapter.subscribeContracts (Issue #161)", () => {
     warnSpy.mockRestore();
   });
 });
+
+describe("EthereumAdapter.trackedTokenContractAddresses (Issue #164)", () => {
+  it("returns an empty array when no contract has been deployed", () => {
+    const poller = new DockerPoller(
+      clientFrom([rethFixture("reth1", "172.28.1.1")]),
+    );
+    const adapter = new EthereumAdapter(poller, { catalog: testCatalog });
+    expect(adapter.trackedTokenContractAddresses()).toEqual([]);
+  });
+
+  it("includes a deployed token contract's address once detected via block inclusion", async () => {
+    const poller = new DockerPoller(
+      clientFrom([rethFixture("reth1", "172.28.1.1")]),
+    );
+    const ws = controllableWsClient();
+    const rpc = stubRpcClient({
+      blocks: {
+        "0xblock1": [
+          {
+            transactionHash: "0xdeploy",
+            from: "0xdeployer",
+            to: null,
+            status: "0x1",
+            contractAddress: "0xnewtoken",
+          },
+        ],
+      },
+    });
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      ethRpcClient: rpc.client,
+      catalog: testCatalog,
+    });
+    await adapter.subscribeTransactions(() => {});
+    await adapter.subscribeContracts(() => {});
+    adapter.registerContractDeployment("0xnewtoken", "ChainvizToken");
+    ws.emit("ws://172.28.1.1:8546", header());
+    await flushAsync();
+
+    expect(adapter.trackedTokenContractAddresses()).toEqual(["0xnewtoken"]);
+  });
+
+  it("excludes a deployed contract that is not cataloged as a token", async () => {
+    const poller = new DockerPoller(
+      clientFrom([rethFixture("reth1", "172.28.1.1")]),
+    );
+    const ws = controllableWsClient();
+    const rpc = stubRpcClient({
+      blocks: {
+        "0xblock1": [
+          {
+            transactionHash: "0xdeploy",
+            from: "0xdeployer",
+            to: null,
+            status: "0x1",
+            contractAddress: "0xunknowncontract",
+          },
+        ],
+      },
+    });
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      ethRpcClient: rpc.client,
+      catalog: testCatalog,
+    });
+    await adapter.subscribeTransactions(() => {});
+    await adapter.subscribeContracts(() => {});
+    ws.emit("ws://172.28.1.1:8546", header());
+    await flushAsync();
+
+    // カタログ未照合（未知のコントラクト）は token を持たないので対象外。
+    expect(adapter.trackedTokenContractAddresses()).toEqual([]);
+  });
+});

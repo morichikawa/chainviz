@@ -297,6 +297,70 @@ describe("ContractTracker.getCatalogEntry (Issue #162)", () => {
   });
 });
 
+describe("ContractTracker.tokenContractAddresses (Issue #164)", () => {
+  it("returns an empty array when nothing has been deployed", () => {
+    const tracker = new ContractTracker("ethereum", catalog);
+    expect(tracker.tokenContractAddresses()).toEqual([]);
+  });
+
+  it("excludes tracked contracts without token metadata (e.g. Counter)", () => {
+    const tracker = new ContractTracker("ethereum", catalog);
+    tracker.registerDeployment("0xctr", "Counter");
+    tracker.recordDeployment({
+      address: "0xctr",
+      deployerAddress: "0xdeployer",
+      createdByTxHash: "0xtx1",
+    });
+    expect(tracker.tokenContractAddresses()).toEqual([]);
+  });
+
+  it("excludes untracked / uncataloged (unknown) contracts", () => {
+    const tracker = new ContractTracker("ethereum", catalog);
+    tracker.recordDeployment({
+      address: "0xunknown",
+      deployerAddress: "0xdeployer",
+      createdByTxHash: "0xtx1",
+    });
+    expect(tracker.tokenContractAddresses()).toEqual([]);
+  });
+
+  it("includes a deployed, cataloged token contract's normalized address", () => {
+    const tracker = new ContractTracker("ethereum", catalog);
+    tracker.registerDeployment("0xTOKEN", "ChainvizToken");
+    tracker.recordDeployment({
+      address: "0xTOKEN",
+      deployerAddress: "0xdeployer",
+      createdByTxHash: "0xtx1",
+    });
+    expect(tracker.tokenContractAddresses()).toEqual(["0xtoken"]);
+  });
+
+  it("includes multiple token contracts and excludes non-token ones from the same call", () => {
+    const tracker = new ContractTracker("ethereum", catalog);
+    tracker.registerDeployment("0xtoken1", "ChainvizToken");
+    tracker.recordDeployment({
+      address: "0xtoken1",
+      deployerAddress: "0xdeployer",
+      createdByTxHash: "0xtx1",
+    });
+    tracker.registerDeployment("0xctr", "Counter");
+    tracker.recordDeployment({
+      address: "0xctr",
+      deployerAddress: "0xdeployer",
+      createdByTxHash: "0xtx2",
+    });
+    expect(tracker.tokenContractAddresses()).toEqual(["0xtoken1"]);
+  });
+
+  it("does not yet include a token contract whose catalog key is only pending (not yet applied)", () => {
+    // registerDeployment がデプロイ検知前に呼ばれた場合、pendingCatalogKeys に
+    // 積まれるだけで recordDeployment 前は追跡マップに存在しない。
+    const tracker = new ContractTracker("ethereum", catalog);
+    tracker.registerDeployment("0xtoken", "ChainvizToken");
+    expect(tracker.tokenContractAddresses()).toEqual([]);
+  });
+});
+
 describe("ContractTracker address casing normalization (Issue #161 review follow-up)", () => {
   // 実測（reth + foundry, chainviz-reviewer 2026-07-07）: forge create の
   // "Deployed to:" 行は EIP-55 チェックサム表記（大小混在）、reth の

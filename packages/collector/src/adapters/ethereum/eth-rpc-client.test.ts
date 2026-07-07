@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createFetchEthRpcClient,
+  ethCall,
   fetchBalanceWei,
   fetchNonce,
   getBlockReceipts,
@@ -83,6 +84,33 @@ describe("fetchNonce", () => {
     await fetchNonce(rpc, "http://node", "0xfeed");
     expect(method).toBe("eth_getTransactionCount");
     expect(params).toEqual(["0xfeed", "latest"]);
+  });
+});
+
+describe("ethCall (Issue #164)", () => {
+  it("sends eth_call with {to, data} and the 'latest' block tag, returning the raw result", async () => {
+    const seen: { method: string; params: unknown[] }[] = [];
+    const rpc = stubRpc((method, params) => {
+      seen.push({ method, params });
+      return "0x0000000000000000000000000000000000000000000000000000000000002a";
+    });
+    const result = await ethCall(rpc, "http://node", "0xtoken", "0xdeadbeef");
+    expect(seen[0]).toEqual({
+      method: "eth_call",
+      params: [{ to: "0xtoken", data: "0xdeadbeef" }, "latest"],
+    });
+    expect(result).toBe(
+      "0x0000000000000000000000000000000000000000000000000000000000002a",
+    );
+  });
+
+  it("propagates errors from the underlying RPC client", async () => {
+    const rpc = stubRpc(() => {
+      throw new Error("execution reverted");
+    });
+    await expect(
+      ethCall(rpc, "http://node", "0xtoken", "0xdeadbeef"),
+    ).rejects.toThrow("execution reverted");
   });
 });
 

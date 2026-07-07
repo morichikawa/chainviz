@@ -611,6 +611,17 @@ export class EthereumAdapter implements ChainAdapter {
   }
 
   /**
+   * 現在追跡中かつカタログの token メタ情報を持つコントラクトのアドレス一覧を
+   * 返す（ContractTracker.tokenContractAddresses への委譲）。collector 本体
+   * （index.ts）が WalletTracker のトークン残高ポーリング対象を決めるために
+   * 使う（Issue #164）。ChainAdapter インターフェースには含めず、
+   * registerContractDeployment と同じく EthereumAdapter 固有の拡張 API とする。
+   */
+  trackedTokenContractAddresses(): string[] {
+    return this.contractTracker.tokenContractAddresses();
+  }
+
+  /**
    * ブロック取り込みで得た receipts から、コントラクト作成（contractAddress が
    * 非 null）を検知し、追跡中の onContract コールバックへ ContractEntity を渡す。
    * onContract 未登録（subscribeContracts が呼ばれていない）場合でも追跡自体は

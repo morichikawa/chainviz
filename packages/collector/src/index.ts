@@ -376,9 +376,14 @@ export async function main(port: number = DEFAULT_PORT): Promise<void> {
       console.error("[collector] contract subscription failed:", err),
     );
 
-  // C 層: ワークベンチが持つウォレットの残高・nonce を周期ポーリングし、
-  // WalletEntity としてワールドステート store 経由でフロントへ配信する（Issue #77）。
-  const walletTracker = new WalletTracker(poller, mnemonic);
+  // C 層: ワークベンチが持つウォレットの残高・nonce・トークン残高を周期
+  // ポーリングし、WalletEntity としてワールドステート store 経由でフロントへ
+  // 配信する（Issue #77、トークン残高は Issue #164）。追跡中のトークン
+  // コントラクト一覧は EthereumAdapter の ContractTracker（デプロイ検知・
+  // カタログ照合済みの token メタ情報を持つコントラクト）から都度取得する。
+  const walletTracker = new WalletTracker(poller, mnemonic, {
+    getTokenContractAddresses: () => adapter.trackedTokenContractAddresses(),
+  });
   walletTracker.subscribe((wallets) => {
     const diff = store.applyWallets(wallets);
     server.broadcastDiff(diff);
