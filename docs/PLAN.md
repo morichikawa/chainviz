@@ -365,7 +365,7 @@ CONCEPT.mdロードマップのPhase3: 「ブロック生成・tx投入をリア
 - [ ] 長時間停止後の再起動で--ignore-ws-checkだけでは不十分(genesisからの
       再構築が1 slot以内に収まらずハング)
       [#148](https://github.com/morichikawa/chainviz/issues/148)
-- [ ] beaconStableIdForExecutionがdocker composeプロジェクトをスコープ
+- [x] beaconStableIdForExecutionがdocker composeプロジェクトをスコープ
       しない(複数プロジェクト同時観測時にキー混線の恐れ)
       [#153](https://github.com/morichikawa/chainviz/issues/153)
 
