@@ -157,3 +157,32 @@
      (eth-ws-client.ts と test の基本2件)
   2. test(collector): tester のエッジケーステスト5件
   3. docs: worklog・WORKLOG.md 索引・PLAN.md チェックの更新
+
+### 2026-07-07 Issue #135 静的レビュー2回目(合格)(reviewer)
+
+- 担当: reviewer
+- 結果: **合格**
+- 前回差し戻し(lint失敗)への対応確認:
+  - `eth-ws-client.test.ts` 342行目の未使用変数 `paramsB` が解消されている。
+    `await nextJsonMessage(connB);` と変数に束縛しない形に変更されており、
+    「connB 側の subscribe フレーム到達を待つ」という待機の意味は保たれて
+    いる(newHeads/pendingTx の判別は `paramsA` のみで足りるため、
+    `paramsB` の値は元々不要だった)
+- 確認結果:
+  - `pnpm lint`: 成功
+  - `pnpm build`: 成功(全パッケージ)
+  - `pnpm test`: 成功。shared 13 / e2e 34 / collector 645 / frontend 761。
+    collector の 645 件は報告値と一致
+  - コミット粒度: `main..HEAD` は3コミット。
+    `fix(collector)`(再接続実装 eth-ws-client.ts のみ)、
+    `test(collector)`(基本テスト2件+エッジケース5件)、
+    `docs`(worklog・WORKLOG.md 索引・PLAN.md チェック)。
+    1回目レビューでは「fix に基本テストを含める」案を示したが、
+    実装/テスト/docs の3分割も関心事が混在しておらず、1変更1コミットの
+    ルールに照らして問題ない
+  - テストコミットメッセージが参照する Issue #143(eth_subscribe の
+    エラー応答を検知できない既知の制限)が実際に起票されていることを確認
+  - 実装・テスト内容そのものは1回目レビューで確認済み(固定値の前提条件
+    明記、エラー握りつぶしなし、境界の遵守、docs との齟齬なし)。今回の
+    差分はテスト1行の変更のみで、これらの判断に影響しない
+- push / PR作成 / マージ / Issueクローズは統括に委ねる
