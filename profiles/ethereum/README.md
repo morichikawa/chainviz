@@ -263,6 +263,8 @@ contracts/
   src/
     ChainvizToken.sol   # 最小の ERC20(外部ライブラリ非依存の自己完結実装)
     Counter.sol          # 最小のカウンタ(状態変更 + イベント発行のみ)
+  catalog.json          # 表示名・ABI・トークンメタ情報のカタログ(下記参照)
+  build-catalog.sh       # catalog.json の再生成スクリプト
 ```
 
 - **ChainvizToken**: `name`(Chainviz Token)/ `symbol`(CVZ)/ `decimals`(18)
@@ -275,9 +277,26 @@ contracts/
 - **Counter**: `increment()` / `incrementBy(uint256)` で状態(`count`)を
   変更し `Incremented` イベントを、`reset()` で `Reset` イベントを出す、
   もっとも単純な学習用コントラクト。
-- コントラクトカタログ(`catalog.json`。表示名・ABI・トークンメタ情報)は
-  別 Issue([#159](https://github.com/morichikawa/chainviz/issues/159))で
-  追加する。
+- コントラクトカタログ(`catalog.json`)は、この 2 つのコントラクトの
+  表示名・ABI(forge のビルド成果物から抽出した標準の ABI JSON 配列)・
+  トークンメタ情報(ChainvizToken の symbol/decimals)を、コントラクト名を
+  キーにして持つデータファイル。collector がデプロイ検知・呼び出し/イベント
+  復号に使う(`docs/ARCHITECTURE.md` §4)。
+
+### コントラクトカタログの再生成
+
+`src/` 配下のコントラクトを追加・変更したときは、`build-catalog.sh` で
+`catalog.json` を作り直してコミットする(`out/` はビルドのたびに生成される
+成果物であり `catalog.json` はそこから抽出した安定版データファイルという
+位置づけ。`.gitignore` で除外している `out/` 自体はコミットしない)。
+
+```sh
+cd profiles/ethereum/contracts
+./build-catalog.sh
+```
+
+`forge` がローカルに無ければ `workbench` と同じ `ghcr.io/foundry-rs/foundry`
+イメージを docker 経由で使ってビルドする(`jq` は別途必要)。
 
 ### ワークベンチ内でのビルド・デプロイ
 

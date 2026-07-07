@@ -311,7 +311,7 @@ runWorkbenchOperation コマンド・ChainAdapter.subscribeContracts）は設計
       プロジェクトを`profiles/ethereum/contracts/`に追加しワークベンチに
       マウントする
       [#158](https://github.com/morichikawa/chainviz/issues/158)
-- [ ] コントラクトカタログ（catalog.json: 表示名・ABI・tokenメタ情報）と
+- [x] コントラクトカタログ（catalog.json: 表示名・ABI・tokenメタ情報）と
       再生成スクリプト（build-catalog.sh）を追加する
       [#159](https://github.com/morichikawa/chainviz/issues/159)
 
