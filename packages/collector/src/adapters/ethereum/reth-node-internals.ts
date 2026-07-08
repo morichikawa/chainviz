@@ -13,14 +13,7 @@ import {
 } from "./reth-metrics.js";
 import type { RethMetricsClient } from "./reth-metrics-client.js";
 import type { RethMetricsTracker } from "./reth-metrics-tracker.js";
-
-/** ノード内部メトリクスのポーリング対象 1 件（targets.ts の他の Target 型と同型）。 */
-export interface RethNodeInternalsTarget {
-  /** ノードの安定識別子（NodeEntity.id と一致）。 */
-  stableId: string;
-  /** `/metrics` の URL（`http://<コンテナIP>:9001/metrics`）。 */
-  metricsUrl: string;
-}
+import type { ExecutionMetricsTarget } from "./targets.js";
 
 export interface RethNodeInternalsResult {
   /** syncStages・mempool のいずれも観測できなければ省略。 */
@@ -45,7 +38,7 @@ export interface RethNodeInternalsResult {
  */
 export async function pollRethNodeInternals(
   client: RethMetricsClient,
-  target: RethNodeInternalsTarget,
+  target: ExecutionMetricsTarget,
   tracker: RethMetricsTracker,
 ): Promise<RethNodeInternalsResult | undefined> {
   let text: string;

@@ -7,6 +7,7 @@ import type {
   ContractEntity,
   DiffEvent,
   NodeEntity,
+  NodeInternals,
   PeerEdge,
   TransactionEntity,
   WalletEntity,
@@ -125,6 +126,30 @@ export class WorldStateStore {
       (e): e is WalletEntity => e.kind === "wallet",
     );
     const diff = computeWalletDiff(prevWallets, observed, this.chainType);
+    for (const event of diff) this.applyEvent(event);
+    this.timestamp = Date.now();
+    return diff;
+  }
+
+  /**
+   * D層: ノード内部の観測状態（NodeInternals）を既存の NodeEntity へ
+   * `internals` フィールドのパッチとして反映する（docs/ARCHITECTURE.md
+   * §7.3）。node/workbench の追加・削除は A 層（applyInfra）だけが担うため、
+   * ここでは新規追加は行わない。対象ノードが store に存在しない（削除済み・
+   * addNode 直後で A 層のポーリングをまだ経ていない等）観測は、具体的な
+   * ノード id をログに残したうえで捨てる（CLAUDE.md「エラーを握りつぶす
+   * コードを見逃さない」）。返り値は適用した差分イベント。
+   */
+  applyNodeInternals(nodeId: string, internals: NodeInternals): DiffEvent[] {
+    const existing = this.entities.get(nodeId);
+    if (!existing || existing.kind !== "node") {
+      console.error(
+        `[world-state] applyNodeInternals: node ${nodeId} not found; dropping node internals observation`,
+      );
+      return [];
+    }
+    const after: NodeEntity = { ...existing, internals };
+    const diff = computeDiff([existing], [after]);
     for (const event of diff) this.applyEvent(event);
     this.timestamp = Date.now();
     return diff;

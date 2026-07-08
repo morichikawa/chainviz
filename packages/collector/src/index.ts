@@ -388,6 +388,25 @@ export async function main(port: number = DEFAULT_PORT): Promise<void> {
     const diff = store.applyWallets(wallets);
     server.broadcastDiff(diff);
   });
+
+  // D層: ノード内部の観測（Issue #185/#186）を購読し、ノード内部状態
+  // （NodeEntity.internals）はワールドステート store 経由で、駆動リンク上の
+  // 呼び出し活動（nodeLinkActivity）は operationObserved と同じく store に
+  // 畳み込まず passthrough でフロントへ配信する（docs/ARCHITECTURE.md
+  // §7.3）。
+  adapter
+    .subscribeNodeInternals({
+      onInternals: (nodeId, internals) => {
+        const diff = store.applyNodeInternals(nodeId, internals);
+        server.broadcastDiff(diff);
+      },
+      onLinkActivity: (activity) => {
+        server.broadcastDiff([{ type: "nodeLinkActivity", activity }]);
+      },
+    })
+    .catch((err) =>
+      console.error("[collector] node internals subscription failed:", err),
+    );
 }
 
 // 直接実行されたときだけサーバーを起動する（import 時は副作用なし）。

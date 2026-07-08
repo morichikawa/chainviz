@@ -6,7 +6,7 @@ import type {
   TransactionEntity,
   WorkbenchEntity,
 } from "@chainviz/shared";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { WorldStateStore } from "./store.js";
 
 function workbench(overrides: Partial<WorkbenchEntity> = {}): WorkbenchEntity {
@@ -703,5 +703,136 @@ describe("WorldStateStore.applyContract", () => {
       1,
     );
     expect(snapshot.edges).toHaveLength(1);
+  });
+});
+
+describe("WorldStateStore.applyNodeInternals (Issue #186)", () => {
+  it("patches internals onto an existing node and emits only the changed field", () => {
+    const store = new WorldStateStore();
+    store.applyInfra([node()]);
+    const diff = store.applyNodeInternals("chainviz-ethereum/reth1", {
+      mempool: { pending: 2, queued: 0 },
+    });
+    expect(diff).toEqual([
+      {
+        type: "entityUpdated",
+        id: "chainviz-ethereum/reth1",
+        patch: { internals: { mempool: { pending: 2, queued: 0 } } },
+      },
+    ]);
+    const stored = store.getSnapshot().entities[0] as NodeEntity;
+    expect(stored.internals).toEqual({ mempool: { pending: 2, queued: 0 } });
+    // 他のフィールドは変化しない
+    expect(stored.clientType).toBe("reth");
+  });
+
+  it("emits no diff when the same internals are applied unchanged", () => {
+    const store = new WorldStateStore();
+    store.applyInfra([node()]);
+    store.applyNodeInternals("chainviz-ethereum/reth1", {
+      mempool: { pending: 2, queued: 0 },
+    });
+    const diff = store.applyNodeInternals("chainviz-ethereum/reth1", {
+      mempool: { pending: 2, queued: 0 },
+    });
+    expect(diff).toEqual([]);
+  });
+
+  it("drops the observation and logs when the node is not in the store", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const store = new WorldStateStore();
+    const diff = store.applyNodeInternals("chainviz-ethereum/reth-missing", {
+      mempool: { pending: 1, queued: 0 },
+    });
+    expect(diff).toEqual([]);
+    expect(store.getSnapshot().entities).toEqual([]);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("chainviz-ethereum/reth-missing"),
+    );
+    errorSpy.mockRestore();
+  });
+
+  it("drops the observation when the target id belongs to a non-node entity", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const store = new WorldStateStore();
+    store.applyInfra([workbench()]);
+    const diff = store.applyNodeInternals("chainviz-ethereum/workbench1", {
+      mempool: { pending: 1, queued: 0 },
+    });
+    expect(diff).toEqual([]);
+    const stored = store.getSnapshot().entities[0] as WorkbenchEntity;
+    expect(stored).not.toHaveProperty("internals");
+    errorSpy.mockRestore();
+  });
+
+  it("keeps node internals separate from other entities and edges", () => {
+    const store = new WorldStateStore();
+    store.applyInfra([node()]);
+    store.applyPeers([edge()]);
+    store.applyBlock(block());
+    store.applyNodeInternals("chainviz-ethereum/reth1", {
+      syncStages: [{ stage: "Headers", checkpoint: 42 }],
+    });
+    const snapshot = store.getSnapshot();
+    const stored = snapshot.entities.find(
+      (e) => e.kind === "node",
+    ) as NodeEntity;
+    expect(stored.internals).toEqual({
+      syncStages: [{ stage: "Headers", checkpoint: 42 }],
+    });
+    expect(snapshot.edges).toHaveLength(1);
+    expect(snapshot.entities.filter((e) => e.kind === "block")).toHaveLength(
+      1,
+    );
+  });
+
+  it("replaces the internals field wholesale rather than merging with the previous observation", () => {
+    const store = new WorldStateStore();
+    store.applyInfra([node()]);
+    // 完全な internals（syncStages + mempool）を先に反映する。
+    store.applyNodeInternals("chainviz-ethereum/reth1", {
+      syncStages: [{ stage: "Headers", checkpoint: 10 }],
+      mempool: { pending: 2, queued: 0 },
+    });
+    // 次の観測が mempool だけ（syncStages を含まない）だった場合、internals は
+    // その観測のスナップショットで丸ごと置き換わり、以前の syncStages は
+    // 残らない。pollRethNodeInternals は毎スクレイプで観測できたフィールドだけを
+    // 載せた完結した NodeInternals を返す前提なので、マージではなく置き換えが
+    // 意図した挙動（docs/ARCHITECTURE.md §7.3 の「internals フィールドの
+    // パッチ」）。
+    const diff = store.applyNodeInternals("chainviz-ethereum/reth1", {
+      mempool: { pending: 5, queued: 1 },
+    });
+    expect(diff).toEqual([
+      {
+        type: "entityUpdated",
+        id: "chainviz-ethereum/reth1",
+        patch: { internals: { mempool: { pending: 5, queued: 1 } } },
+      },
+    ]);
+    const stored = store.getSnapshot().entities[0] as NodeEntity;
+    expect(stored.internals).toEqual({ mempool: { pending: 5, queued: 1 } });
+    expect(stored.internals?.syncStages).toBeUndefined();
+  });
+
+  it("clears internals when an empty observation replaces a populated one", () => {
+    // syncStages も mempool も観測できなくなった縮退ケース（空の NodeInternals）
+    // でも既存値は残さず置き換える。以前の内部状態が幽霊のように残らないことを
+    // 固定する。
+    const store = new WorldStateStore();
+    store.applyInfra([node()]);
+    store.applyNodeInternals("chainviz-ethereum/reth1", {
+      mempool: { pending: 3, queued: 2 },
+    });
+    const diff = store.applyNodeInternals("chainviz-ethereum/reth1", {});
+    expect(diff).toEqual([
+      {
+        type: "entityUpdated",
+        id: "chainviz-ethereum/reth1",
+        patch: { internals: {} },
+      },
+    ]);
+    const stored = store.getSnapshot().entities[0] as NodeEntity;
+    expect(stored.internals).toEqual({});
   });
 });
