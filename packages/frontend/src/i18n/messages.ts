@@ -173,6 +173,48 @@ export const messages = {
     en: "Not in the catalog, so it cannot be decoded (raw identifier).",
   },
   "tx.chip.deploy": { ja: "デプロイ", en: "Deploy" },
+  // --- C層拡張: 定型操作パネル（送金・デプロイ・コントラクト呼び出し。
+  // ARCHITECTURE.md §6.5/§6.8） ---
+  "action.workbenchOperations": { ja: "操作を実行…", en: "Run operation…" },
+  "action.workbenchOperations.hint": {
+    ja: "このワークベンチの中で開発ツール（cast / forge）を実行します。RPC 呼び出しは {rpcTarget} に送られ、通常の操作と同じように観測・表示されます",
+    en: "Runs developer tools (cast / forge) inside this workbench. Its RPC calls go to {rpcTarget} and are observed and displayed like any other operation.",
+  },
+  "action.workbenchOperations.hint.generic": {
+    ja: "このワークベンチの中で開発ツール（cast / forge）を実行します。RPC 呼び出しは通常の操作と同じように観測・表示されます",
+    en: "Runs developer tools (cast / forge) inside this workbench. Its RPC calls are observed and displayed like any other operation.",
+  },
+  "operation.tab.transfer": { ja: "送金", en: "Transfer" },
+  "operation.tab.deploy": { ja: "デプロイ", en: "Deploy" },
+  "operation.tab.call": { ja: "コントラクト呼び出し", en: "Call contract" },
+  "operation.close": { ja: "閉じる", en: "Close" },
+  "operation.transfer.to": { ja: "宛先", en: "To" },
+  "operation.transfer.amount": { ja: "金額（ETH）", en: "Amount (ETH)" },
+  "operation.transfer.submit": { ja: "送金する", en: "Send" },
+  "operation.transfer.note": {
+    ja: "tx は mempool に入り、ブロックに取り込まれると確定します",
+    en: "The tx enters the mempool and becomes final once included in a block.",
+  },
+  "operation.transfer.amount.invalid": {
+    ja: "0以上のETH数量を10進数で入力してください（例: 0.5）",
+    en: "Enter a non-negative ETH amount in decimal (e.g. 0.5).",
+  },
+  "operation.deploy.contract": { ja: "コントラクト", en: "Contract" },
+  "operation.deploy.submit": { ja: "デプロイする", en: "Deploy" },
+  "operation.deploy.note": {
+    ja: "ソースからコンパイルしたコントラクトを配置する tx が送られ、取り込まれるとコントラクトカードが現れます",
+    en: "Sends a tx that places the compiled contract on chain; a contract card appears once it is included.",
+  },
+  "operation.call.target": { ja: "対象コントラクト", en: "Target contract" },
+  "operation.call.function": { ja: "関数", en: "Function" },
+  "operation.call.amount": { ja: "送金額（ETH、任意）", en: "Amount (ETH, optional)" },
+  "operation.call.submit": { ja: "実行する", en: "Call" },
+  "operation.call.empty": {
+    ja: "呼び出せるコントラクトがまだありません。先に「デプロイ」タブからデプロイしてください",
+    en: "No callable contracts yet. Deploy one from the Deploy tab first.",
+  },
+  "operation.pending": { ja: "実行中…", en: "Running…" },
+  "ghost.contract.deploying": { ja: "デプロイ中… {name}", en: "Deploying… {name}" },
 } as const satisfies Record<string, Localized>;
 
 export type MessageKey = keyof typeof messages;

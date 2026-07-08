@@ -8,6 +8,7 @@ import {
   resolveAddNodeHint,
   resolveAddWorkbenchHint,
   resolveWorkbenchLabel,
+  resolveWorkbenchOperationsHint,
 } from "./commandMessages.js";
 
 const tJa = (key: MessageKey) => translate(key, "ja");
@@ -53,6 +54,14 @@ describe("describeCommandError", () => {
       [
         { action: "removeWorkbench", workbenchId: "wb-1" },
         "ワークベンチの削除に失敗しました",
+      ],
+      [
+        {
+          action: "runWorkbenchOperation",
+          workbenchId: "wb-1",
+          operation: { type: "transfer", to: "0xbob", amount: "1" },
+        },
+        "ワークベンチ操作の実行に失敗しました",
       ],
     ];
     for (const [command, expected] of cases) {
@@ -193,5 +202,25 @@ describe("resolveAddWorkbenchHint (Issue #123 §4-1)", () => {
     expect(resolveAddWorkbenchHint([], tEn)).toBe(
       tEn("action.addWorkbench.hint.generic"),
     );
+  });
+});
+
+describe("resolveWorkbenchOperationsHint (ARCHITECTURE.md §6.5)", () => {
+  it("interpolates the RPC target container name when resolved", () => {
+    const message = resolveWorkbenchOperationsHint("chainviz-reth-1", tJa);
+    expect(message).toContain("chainviz-reth-1");
+    expect(message).not.toBe(tJa("action.workbenchOperations.hint.generic"));
+  });
+
+  it("falls back to the generic hint when the RPC target is unresolved", () => {
+    expect(resolveWorkbenchOperationsHint(undefined, tEn)).toBe(
+      tEn("action.workbenchOperations.hint.generic"),
+    );
+  });
+
+  it("renders the English hint text", () => {
+    const message = resolveWorkbenchOperationsHint("chainviz-reth-1", tEn);
+    expect(message).toContain("chainviz-reth-1");
+    expect(message).toContain("cast / forge");
   });
 });
