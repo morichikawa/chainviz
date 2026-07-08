@@ -1424,3 +1424,204 @@
   - ヘッドレス表示では日本語が豆腐(□)になったが、これは検証環境に CJK
     フォントが無いためで、アプリの不具合ではない(ラテン文字・数値・
     レイアウトは正常)。
+
+### 2026-07-08 Phase 5(D層: ノード内部)設計メモ
+
+- 担当: designer
+- ブランチ: design-phase5-node-internals
+- 内容: Phase 5(D層)の設計。packages/sharedの型定義まで実装し、実装ロジックは
+  各担当への引き継ぎ事項とした。設計本文は docs/ARCHITECTURE.md §7、ステップの
+  分解は docs/PLAN.md ステップ9。
+  - 現状確認: profiles/ethereum は既に reth(EL)+lighthouse(CL)のEngine API
+    構成(8551+JWT)であり、CONCEPT.mdの「EL/CL構成にして」は構成変更不要。
+    フロントに「レイヤー切り替え」機構は存在せず、A〜C層は同一キャンバス
+    共存であることをコードで確認した(D層も共存で設計)。
+  - 型追加(packages/shared、ビルド・lint・全テストgreenを確認済み):
+    NodeEntity.drivesNodeId?(駆動関係。rpcTargetNodeIdと同じ省略流儀)、
+    NodeEntity.internals?: NodeInternals(syncStages/mempool)、
+    NodeLinkActivity+InternalCallStats(揮発性の増分観測)、
+    DiffEventにnodeLinkActivity、ChainAdapter.subscribeNodeInternals?(省略可)。
+  - 主要な設計判断:
+    1. Kurtosis不採用(compose構成が安定稼働、移行はaddNode/genesis再生成/E2Eの
+       前提を壊す)。CONCEPT.md未決事項に記録。
+    2. データ源はPrometheusメトリクスのみ(構造化ログのパースは採らない)。
+       Engine APIは受け手のreth側メトリクスで観測(lighthouse側の有効化は不要)。
+    3. Engine API呼び出しは「観測間隔内の増分」として揮発性イベントで配信
+       (Prometheusカウンタから個々の呼び出しは復元できないため。
+       operationObservedとの粒度の違いを型コメントに明記)。
+    4. CL→ELの駆動関係は snapshot.edges ではなく NodeEntity.drivesNodeId から
+       フロントが導出(所有エッジ・操作先エッジと同じ流儀)。
+    5. internalsはstoreへのパッチで反映。pollInfraの出力にinternalsキーが
+       無い限りfieldPatchは上書きしないため、A層ポーリングと衝突しない
+       (store.ts/diff.tsの実装を確認して判断)。
+- 決定事項・注意点(実装担当へ):
+  - rethのメトリクス名(engine系カウンタ・reth_sync_checkpoint・
+    transaction_pool系)は候補であり、実装時に実環境の/metrics出力で確定する
+    こと。イメージが:latestのため、欠落時はフィールド省略の縮退動作にする。
+  - reth_sync_checkpointが追従運転(Engine API駆動)中も進むかは未確認。
+    実測し、syncStatus/blockHeight更新(現状常にsyncing/0の既知ギャップ)の
+    情報源決定に使うこと(ARCHITECTURE.md §7.3)。
+  - スクレイプ間隔3秒は「slot time 2秒なら毎スクレイプ1〜2件の増分が出て
+    パルスが連続的に見える」前提のサンプリング周期。前提をコードコメントにも
+    書くこと。カウンタリセット(再起動)は増分=現在値として扱う。
+  - reth-node.shへの--metrics追加は、動的追加ノードも同スクリプトを使うため
+    1箇所で両方に効く(node-lifecycle.tsのentrypoint確認済み)。
+  - UXへ委ねる項目(表示密度・パルス粒度・文言・用語定義)はARCHITECTURE.md
+    §7.5に列挙した。スキーマ変更を伴わない範囲に限定してある。
+
+### 2026-07-08 Phase 5(D層: ノード内部)UX設計メモ
+
+- 担当: ux
+- ブランチ: design-phase5-node-internals
+- 内容: ARCHITECTURE.md §7.5 の委譲4項目(内部リンクエッジ・パルスの見た目、
+  同期ステージ・mempool内訳の見せ方、表示密度の制御、D層用語)のUX設計。
+  成果物は ARCHITECTURE.md §7.6(frontendへの着手指示を兼ねる)。設計前に
+  frontendをモックデータで起動しPlaywrightで実画面を確認した(beacon/rethの
+  カードが無関係な2枚に見える、addNodeフォロワーの詳細が「同期中・ブロック高
+  0」のまま動かない、等の課題を実際に確認)。
+- 主要な設計判断(§7.6.10 の4点は推奨案として統括確認待ち):
+  1. D層はA〜C層と同一キャンバス共存。表示切り替え・フィルタは導入しない
+     (内部リンクはペア数分しか増えない・既存層に切り替え機構が無い・実害が
+     出てからA〜D一貫の仕組みとして別Issue化)。
+  2. 内部リンクエッジは無彩色シルバー(候補 #c9d4e8)の二重線(鞘+芯)。
+     「有彩色=ネットワーク/チェーン上の関係、無彩色=ノード内部の機構」で
+     色の系統を分ける。矢印なし(方向はパルスが伝える)。ホバーで
+     PeerEdgePopover同型のポップオーバー(説明文+直近観測のメソッド別増分。
+     最終観測から10秒で「最近の呼び出しはありません」に切替)。
+  3. 活動パルスは1観測=1本(メソッド別に分けない)。カウンタ増分から個々の
+     呼び出しは復元できないため「パルス1本=間隔内の1回以上の呼び出し」と
+     視覚・用語解説の両方で誠実に伝える。到達演出は追加せず、既存のブロック
+     伝播発光とのタイミング一致で因果を見せる。
+  4. 同期ステージはポップオーバーに全件(表示名+checkpoint+ミニバー。分母は
+     キャンバス上の全ELノードのblockHeight最大値)。加えてsyncing中のELカード
+     面のみ「同期中: {ステージ} {checkpoint}/{目標}」の1行+バーを常設し、
+     addNode後のバックフィルを目立たせる(syncedで消える)。
+  5. txpoolはポップオーバーのみ(pending/queued)。C層glossaryのmempool
+     (チェーン全体の概念)とD層txpool(ノード内実体)をrelatedTermsで相互
+     リンクし概念と実体の対応を学べるようにする。
+  6. ステージ表示名(Headers→ヘッダ取得等)とEngine APIメソッド分類ラベル
+     (engine_newPayload→ブロックの実行依頼等)はchain-profiles/ethereum/の
+     静的データに置く(チェーン固有語彙の解釈はフロント表現セットの責務)。
+     生ステージ名は実装時に実環境の/metricsで確定すること。
+  7. 用語はd-internal.yamlにengine-api / el-cl-separation / staged-sync /
+     txpoolの4件。全用語にUIアンカーを対応済み(§7.6.9の表)。
+- 実装担当への注意点:
+  - i18n文言(§7.6.8)は初稿。語調の微調整はfrontend裁量、構成・意味の変更は
+    不可。英語訳はi18n担当のレビュー対象。
+  - エッジポップオーバー用の「エッジごとの最終観測」はstoreに畳み込まず
+    描画側ローカルstateで保持する(operationPulsesと同じ分離経路)。
+  - カード面の進行表示の「現在のステージ」は配列順で最初のcheckpoint<目標高。
+    目標高が0/導出不能ならバー無しでステージ名+checkpointのみに縮退。
+
+### 2026-07-08 Phase 5(D層: ノード内部)設計フェーズのレビュー
+
+- 担当: reviewer
+- 対象: ブランチ design-phase5-node-internals(未コミットの作業ツリー)。
+  docs(CONCEPT.md 未決事項・ARCHITECTURE.md §7/§7.6・PLAN.md ステップ9・
+  worklog)+ packages/shared の型追加(NodeEntity.drivesNodeId/internals、
+  NodeInternals、SyncStageProgress、InternalCallStats、NodeLinkActivity、
+  DiffEvent.nodeLinkActivity、ChainAdapter.subscribeNodeInternals)+
+  tester のテスト強化。
+- 結果: **合格**(修正指示なし)。
+- 確認内容:
+  1. EL/CL 構成の実態: profiles/ethereum/docker-compose.yml と
+     scripts/reth-node.sh を実地確認。reth(EL)+ lighthouse(CL)が
+     EXECUTION_ENDPOINT http://rethN:8551 + /genesis/jwt/jwtsecret で
+     接続される構成が Phase 2 以降既に存在し、「EL/CL 構成にして」は構成
+     変更不要・Kurtosis 不採用という designer の判断根拠は正しい。
+     reth-node.sh は compose 起動ノードと addNode 動的追加ノード
+     (node-lifecycle.ts が同スクリプトを bind mount)の両方で共用されて
+     おり、「--metrics 追加は1箇所で両方に効く」も実装確認済み。
+  2. 設計原則との整合: Prometheus メトリクスの語彙(メトリクス名・スクレイプ)
+     は collector(EthereumAdapter)と node-env に閉じ、packages/shared の
+     スキーマは中立語彙(drivesNodeId=駆動関係、internals、method=生識別子)
+     のみ。ステージ表示名・Engine API メソッド分類はフロントのチェーン
+     プロファイル表現セットの静的データに置く設計で、ChainAdapter 境界・
+     データとコードの分離・プロファイル単位の増設のいずれにも適合。
+     reth メトリクス名が未確定な点は「候補として明記+実測で確定+欠落時は
+     フィールド省略の縮退」と設計されており、実装時に破綻しない。
+  3. 型変更: subscribeNodeInternals は省略可能で、既存アダプタ・collector
+     の配線を壊さない(全パッケージのビルドが通ることで確認)。drivesNodeId
+     は rpcTargetNodeId と同じ「参照整合性を型で保証しない生 id + フロントの
+     ダングリングガード」の既存流儀に一致し妥当。
+  4. UX 設計(§7.6): 既存の表現体系(カード=要約/ホバー=詳細、エッジの
+     色体系、useOperationPulses の分離経路)との一貫性を確認。「パルス1本=
+     観測間隔内の1回以上の呼び出し」を視覚と用語解説の両方で明示する設計は
+     増分観測という性質に誠実。§7.6.10 の確定4点(切り替え不採用・1観測
+     1本・カード常設は進行1行のみ・無彩色二重線)はいずれも本文の理由付けが
+     成立しており妥当。
+  5. 固定値の前提明記: スクレイプ間隔3秒(slot 2秒前提)・最終観測10秒での
+     表示切替(3秒×3回+余裕)はいずれも前提条件が本文に明記されており、
+     CLAUDE.md「観測できる状態への依存」ルールに適合。実装時は 10 秒を
+     スクレイプ間隔定数から導出する形が望ましい(実装担当への注意)。
+  6. テストの質: falsy 0(checkpoint/latencyMs/pending/queued)の保持、
+     空配列と省略の区別、バージョン付きメソッド名の生値保持、optional 購読口
+     2つの独立性、DiffEvent 全7種の網羅 switch(never による網羅性の番人)
+     など、型契約として意味のある検証になっている。JSON 往復テストは shared
+     パッケージの既存流儀(型契約の文書化+コンパイル時検証)に一致。
+  7. pnpm lint / pnpm build / pnpm test を全て実行し green
+     (shared 58 / collector 944 / frontend 1205 / e2e 34)。
+- 非ブロッキングの指摘(統括への申し送り):
+  - PLAN.md ステップ9は milestone リンク未設定・UX 項目([x]済み)に Issue
+    番号リンクが無い。ステップ8の前例(#157)どおり、着手時の Issue 化の際に
+    UX 設計にも Issue を割り当てて遡ってリンクすること。
+  - 未コミットのため、コミット時は Phase4 設計フェーズの前例(feat(shared)
+    型追加 / docs(ux) / docs 記録)に倣い関心事ごとに分割すること。
+  - QA の要否: Phase4 設計フェーズ(PR #170)では reviewer の QA 省略提案を
+    統括が却下し実機検証(独立ビルド・テスト再実行+frontend モック起動での
+    既存機能非退行確認)を実施した記録がある(2026-07-07 の QA 記録)。
+    本件も packages/shared のコード変更を含み CLAUDE.md の QA 省略例外
+    (docs/・.claude/agents/ のみ)の対象外のため、同等の軽量 QA を
+    chainviz-qa で実施すべき。
+
+### 2026-07-08 Phase 5(D層: ノード内部)設計フェーズの実機検証(QA)
+
+- 担当: chainviz-qa
+- 対象: ブランチ design-phase5-node-internals(未コミットの作業ツリー)。
+  packages/shared の型追加(NodeEntity.drivesNodeId/internals、NodeInternals、
+  SyncStageProgress、InternalCallStats、NodeLinkActivity、
+  DiffEvent.nodeLinkActivity、ChainAdapter.subscribeNodeInternals /
+  NodeInternalsHandlers)+ docs(CONCEPT.md 未決事項・ARCHITECTURE.md §7/§7.6・
+  PLAN.md ステップ9・worklog)+ tester のテスト強化。
+- 経緯: reviewer が Phase4 設計フェーズ(PR #170)と同等の軽量 QA を提案。
+  packages/shared のコード変更を含み CLAUDE.md の QA 省略例外(docs/・
+  .claude/agents/ のみ)の対象外のため実施した。新機能本体(D層データの実際の
+  観測・可視化)は未実装であり、それが「見えない」ことは失格理由にしない。
+- 検証内容と結果(いずれも合格):
+  1. 既存ノード環境への影響: `git status` / `git diff main -- profiles/` で
+     profiles/ 配下に変更が無いことを確認。reth-node.sh への --metrics 追加
+     等はこのフェーズ未実施(実装ステップ待ち)で設計どおり。
+  2. ビルド・lint・テストの独立再実行: `pnpm lint`(exit 0)、`pnpm build`
+     (exit 0、全パッケージ成功)、`pnpm test`(exit 0)。テスト件数は
+     shared 58 / collector 944 / frontend 1205 / e2e 34 で全 green。
+     reviewer 報告の件数と一致。
+  3. frontend の実機起動での既存機能非退行: VITE_COLLECTOR_URL 未設定
+     (モッククライアント)で `build:web` → `vite preview`(127.0.0.1:15180)を
+     起動し、ヘッドレス chromium で描画とDOMを確認。接続バッジ「接続済み」、
+     ノードカード3枚(chainviz-lighthouse-1 / reth-1 / reth-2、bootnode
+     バッジ2件・同期済みステータス)、ワークベンチ(alice、操作UI)、ウォレット
+     3枚(EOA・残高/nonce・トークン残高チップ・pending tx・orphan表示)、
+     コントラクトカード3枚(Counter / ChainvizToken / 未知コントラクト、
+     activity チップ)が全て描画。エッジは peer / ownership / deploy /
+     operation / interaction / desc が描画され、Phase1〜4 の既存機能に欠落・
+     崩れは無い。vite-error-overlay は0件、非良性のコンソールエラーも無し。
+  4. 型変更の非破壊性: 追加フィールドは全て optional / 追加 union メンバーで、
+     ChainAdapter.subscribeNodeInternals も省略可。既存アダプタ・collector の
+     配線を壊さない(全パッケージのビルド・テスト green で確認)。drivesNodeId
+     は rpcTargetNodeId と同じ「生 id + フロントのダングリングガード」の既存
+     流儀に一致。
+  5. ドキュメント整合性: entities.ts / events/index.ts / chain-profile/index.ts
+     の実コードと ARCHITECTURE.md §7・CONCEPT.md 未決事項・PLAN.md ステップ9 を
+     照合し、フィールド名・型の記述に矛盾なし。
+- 判定: 合格。今回の型変更・テスト強化・docs は既存の動くもの(Phase1〜4)を
+  壊していない。新機能本体(D層観測・可視化)はこのフェーズの範囲外で未実装で
+  あること自体は失格理由にしない。
+- 注意点・申し送り:
+  - PLAN.md ステップ9 に qa 担当と明記されたチェックボックスは無い(実装項目は
+    今後の作業、UX 項目は [x] 済み)ため、PLAN.md 側で QA が付けるチェックは
+    無い(Phase4 設計フェーズと同じ)。
+  - push・PR作成・マージ・Issueクローズは統括の判断に委ねる(QAは実行しない)。
+  - ヘッドレス表示では日本語が豆腐(□)になるが、検証環境に CJK フォントが
+    無いためで、アプリの不具合ではない(ラテン文字・数値・レイアウトは正常。
+    Phase4 QA と同じ環境要因)。検証で起動した preview は後始末済み
+    (ポート15180 解放確認)。profiles/ の共有 Docker スタックには一切触れていない。
