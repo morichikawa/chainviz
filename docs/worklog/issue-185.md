@@ -299,3 +299,40 @@ collector のテストは 997 → 1026 に増加し全通過、`pnpm --filter
 4. `NodeLinkActivity.calls` の配列順には契約が無く、`parseEngineCallCounters`
    の出力順は生テキストの HELP 出現順(非決定的)に依存する。フロントで
    呼び出し一覧を表示する場合(#188)は表示側でソートすること。
+
+#### QA検証(qa)
+
+独立した合成環境(`docker compose -p chainviz-qa185 up -d`。本物の稼働中
+スタックには一切触れず、検証後に `down -v` で破棄)で reth1/reth2 を起動し、
+チェーンがブロックを生成している状態(block 32→51 まで進行を確認)で
+ビルド済み dist の `pollRethNodeInternals` を実データに通して検証した。
+判定は合格。
+
+- エントリポイント関数の実データ検証: 稼働中 reth1 の
+  `http://<コンテナIP>:9001/metrics` に対し `createFetchRethMetricsClient` +
+  `RethMetricsTracker` を使って `pollRethNodeInternals` を2回呼び出した。
+  - 1回目(ベースライン): `internals` あり、`syncStages` 15件、
+    `mempool = {pending:0, queued:0}`、`calls` は空配列(初回はベースライン
+    のみ記録し出力しない設計どおり)。
+  - 6秒後の2回目: `syncStages` はパイプライン順(Headers..Finish の11段の
+    あとに Era/MerkleUnwind/Prune/PruneSenderRecovery)で15件、全ステージの
+    checkpoint が 48→51 へ進行。`mempool` 取得可。Engine API 呼び出し統計は
+    `engine_forkchoiceUpdatedV3`(count=5, latencyMs≈0.18)・
+    `engine_newPayloadV4`(count=3, latencyMs≈1.10)・
+    `engine_getPayloadV4`(count=1, latencyMs≈0.28)の3件が区間増分として
+    得られた。Engine API呼び出し統計・同期ステージ・txpool のいずれも
+    実ノードから正しくパースされることを確認した。
+- 縮退動作(取得失敗でも落ちない): 到達不能ポート
+  (`127.0.0.1:59999`、ECONNREFUSED)と、200以外を返す実HTTPエンドポイント
+  (reth JSON-RPC ポート 8545、405 応答)の双方で、例外で落ちず
+  `console.error` に stableId と実エラー内容を残して `undefined` を返す
+  ことを確認した。
+- 既存機能への影響: リポジトリ全体で `pnpm lint && pnpm build &&
+  pnpm test` を独立実行し全て成功(collector/shared/frontend とも通過、
+  frontend 1205テスト等)。
+- 検証で作成した一時スクリプトは削除済み。docker スタックは `down -v` で
+  破棄済み(残存コンテナ・ボリューム・ネットワーク無しを確認)。
+- 補足: 本ブランチでは PLAN.md の #185 チェックボックスが QA 実施前に
+  既に `[x]` になっていた(通常は QA が付ける手順)。QA 合格を確認済みの
+  ため状態としては正しい。
+
