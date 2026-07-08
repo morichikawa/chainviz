@@ -83,6 +83,26 @@ const SAFE_WALLET = addr("5afe");
 const ALICE_TX1 = txHash("a11ce01");
 const BOB_TX1 = txHash("b0b01");
 
+// C層拡張: ウォレットのトークン残高（Issue #168）のモック用サンプル。
+// TOKEN_CONTRACT（ChainvizToken/CVZ、decimals 18）は下の
+// chainvizTokenContract() と同じアドレス定数を後方で宣言して共有する
+// （モジュール評価順の都合上、値そのものは下方の TOKEN_CONTRACT 定義を参照。
+// 参照するのは aliceWallet()/bobWallet() 呼び出し時＝モジュール初期化後の
+// ため問題ない）。
+/** Alice の CVZ 残高（1000.5 CVZ 相当。ETH 残高と異なる小数部にして
+ * decimals 変換の桁を目視確認できるようにする）。 */
+const ALICE_CVZ_BALANCE_WEI = (10005n * 10n ** 17n).toString();
+/** Bob の CVZ 残高（250.25 CVZ 相当）。 */
+const BOB_CVZ_BALANCE_WEI = (25025n * 10n ** 16n).toString();
+/**
+ * まだ観測されていない（またはカタログに無い）コントラクトのアドレス。
+ * Bob の tokenBalances に混ぜ、ダングリングガード（対応する ContractEntity
+ * が見つからない tokenBalance は表示しない。ARCHITECTURE.md §6.7）を
+ * オフラインで確認できるようにする。
+ */
+const UNTRACKED_TOKEN_CONTRACT = addr("de1e7ed");
+const BOB_UNTRACKED_TOKEN_BALANCE_WEI = ethWei(999n);
+
 /** Alice ウォレットの初期状態（createMockSnapshot と live 更新で共有）。 */
 const INITIAL_ALICE_NONCE = 3;
 const INITIAL_ALICE_BALANCE_WEI = 5n * 10n ** 18n;
@@ -114,6 +134,11 @@ function aliceWallet(): WalletEntity {
     // 新しい順: mempool 待機中の素の送金、復号済みのトークン呼び出し、
     // デプロイ（Issue #166: 「意味」優先の tx チップ表示を確認できる組み合わせ）。
     recentTxHashes: [ALICE_TX1, TOKEN_CALL_TX, TOKEN_DEPLOY_TX],
+    // Issue #168: CVZ トークン残高（ウォレットカードのトークン残高チップ・
+    // ポップオーバー表示の確認用）。
+    tokenBalances: [
+      { contractAddress: TOKEN_CONTRACT, amount: ALICE_CVZ_BALANCE_WEI },
+    ],
   };
 }
 
@@ -134,6 +159,16 @@ function bobWallet(): WalletEntity {
     // カタログ外コントラクトへの復号不能な呼び出しと、Counter のデプロイを
     // 含める（Issue #166: 未復号チップ・デプロイチップの確認用）。
     recentTxHashes: [BOB_TX1, UNKNOWN_CALL_TX, COUNTER_DEPLOY_TX],
+    // Issue #168: 正常に突き合わせられる CVZ 残高と、対応する ContractEntity
+    // が存在しない（未観測/カタログ外）tokenBalance を両方含める。後者は
+    // ダングリングガードで非表示になることの確認用（表示されてはいけない）。
+    tokenBalances: [
+      { contractAddress: TOKEN_CONTRACT, amount: BOB_CVZ_BALANCE_WEI },
+      {
+        contractAddress: UNTRACKED_TOKEN_CONTRACT,
+        amount: BOB_UNTRACKED_TOKEN_BALANCE_WEI,
+      },
+    ],
   };
 }
 

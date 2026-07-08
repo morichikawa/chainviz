@@ -161,6 +161,7 @@ export const messages = {
   "field.deployer": { ja: "デプロイした人", en: "Deployed by" },
   "field.createdByTx": { ja: "作成 tx", en: "Created by tx" },
   "field.token": { ja: "トークン", en: "Token" },
+  "field.tokenBalances": { ja: "トークン残高", en: "Token balances" },
   "edge.deployedBy": {
     ja: "{address} がデプロイしたコントラクト",
     en: "Contract deployed by {address}",

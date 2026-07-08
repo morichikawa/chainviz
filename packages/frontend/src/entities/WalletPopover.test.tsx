@@ -158,3 +158,60 @@ describe("WalletPopover call preview (ARCHITECTURE.md §6.6)", () => {
     expect(line.textContent).toBe("デプロイ → 0xffffff…ffff");
   });
 });
+
+describe("WalletPopover token balances (ARCHITECTURE.md §6.7)", () => {
+  function wrapWithEntity(
+    tokenBalances: WalletEntity["tokenBalances"],
+    contractsByAddress?: ReadonlyMap<string, ContractEntity>,
+  ) {
+    return render(
+      <LanguageProvider initialLanguage="ja">
+        <GlossaryProvider glossary={{}}>
+          <WalletPopover
+            entity={wallet({ tokenBalances })}
+            transactions={[]}
+            contractsByAddress={contractsByAddress}
+          />
+        </GlossaryProvider>
+      </LanguageProvider>,
+    );
+  }
+
+  it("shows no token balances row when tokenBalances is absent", () => {
+    wrapWithEntity(undefined);
+    expect(screen.queryByText("トークン残高")).toBeNull();
+  });
+
+  it("shows no token balances row when tokenBalances is an empty array", () => {
+    wrapWithEntity([]);
+    expect(screen.queryByText("トークン残高")).toBeNull();
+  });
+
+  it("lists the contract name and formatted amount for a resolvable balance", () => {
+    const tokenAddress = `0x${"a".repeat(40)}`;
+    wrapWithEntity(
+      [{ contractAddress: tokenAddress, amount: (5n * 10n ** 18n).toString() }],
+      new Map([
+        [
+          tokenAddress,
+          contract({
+            address: tokenAddress,
+            name: "ChainvizToken",
+            token: { symbol: "CVZ", decimals: 18 },
+          }),
+        ],
+      ]),
+    );
+    const item = screen.getByTestId(`wallet-token-${wallet().address}-${tokenAddress}`);
+    expect(item.textContent).toBe("ChainvizToken5.0000 CVZ");
+  });
+
+  it("omits a balance whose ContractEntity is unresolved (dangling guard)", () => {
+    const tokenAddress = `0x${"a".repeat(40)}`;
+    wrapWithEntity([{ contractAddress: tokenAddress, amount: "1000" }], new Map());
+    expect(
+      screen.queryByTestId(`wallet-token-${wallet().address}-${tokenAddress}`),
+    ).toBeNull();
+    expect(screen.queryByText("トークン残高")).toBeNull();
+  });
+});

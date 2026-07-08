@@ -479,6 +479,39 @@ body {
   white-space: nowrap;
 }
 
+/* --- C層拡張: ウォレットカードのトークン残高チップ列（ARCHITECTURE.md §6.7。
+   Issue #168） --- */
+.wallet-card__tokens {
+  margin-top: 10px;
+  border-top: 1px solid var(--divider);
+  padding-top: 8px;
+}
+
+.wallet-card__tokens-label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.wallet-card__token-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.wallet-token-chip {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--contract-edge);
+  color: var(--contract-edge);
+  background: rgba(111, 125, 234, 0.14);
+  white-space: nowrap;
+  cursor: help;
+}
+
 .wallet-card__tx {
   margin-top: 10px;
   border-top: 1px solid var(--divider);
@@ -883,6 +916,27 @@ body {
 
 .infra-field__value {
   color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- C層拡張: WalletPopover のトークン残高一覧（ARCHITECTURE.md §6.7。
+   Issue #168）。infra-field と同じ「ラベル/値を両端に置く」見た目にし、
+   コントラクト名と残高がくっついて読みにくくならないようにする。 --- */
+.wallet-popover__token-list {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wallet-popover__token-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  padding: 2px 0;
+}
+
+.wallet-popover__token-amount {
   font-variant-numeric: tabular-nums;
 }
 
