@@ -47,6 +47,14 @@ if [ -n "$RETH_P2P_IP" ]; then
 fi
 
 # 共通の起動オプション。'*'(cors/origins の値)が glob 展開されないよう無効化する。
+#
+# --metrics 0.0.0.0:9001 は D層(ノード内部可視化、Issue #184)向けの
+# Prometheus メトリクスエンドポイント。8545(HTTP-RPC)/8546(WS-RPC)/
+# 8551(authrpc)/30303(devp2p)と衝突しないポートを割り当てている。ホストへの
+# ports: 公開は行わない。8551(authrpc)もホスト非公開の前例であり、
+# collector はこのメトリクスにも JSON-RPC(8545)・Beacon API(5052)と
+# 同じく Docker 観測から得たコンテナ IP へ直接到達する設計のため
+# (docs/ARCHITECTURE.md §7.2、docs/worklog/issue-184.md)。
 set -f
 COMMON="--chain /genesis/metadata/genesis.json \
   --datadir /data \
@@ -59,6 +67,7 @@ COMMON="--chain /genesis/metadata/genesis.json \
   --authrpc.addr 0.0.0.0 --authrpc.port 8551 \
   --authrpc.jwtsecret /genesis/jwt/jwtsecret \
   --port 30303 \
+  --metrics 0.0.0.0:9001 \
   --color never \
   ${NAT_OPT}"
 
