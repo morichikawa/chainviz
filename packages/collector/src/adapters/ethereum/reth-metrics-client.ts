@@ -15,7 +15,18 @@ export interface RethMetricsClient {
   getText(url: string): Promise<string>;
 }
 
-/** グローバル fetch を用いた RethMetricsClient 実装。 */
+/**
+ * グローバル fetch を用いた RethMetricsClient 実装。
+ *
+ * `timeoutMs` の既定値 3000ms の前提条件（Issue #185 レビューの申し送り。
+ * CLAUDE.md「今この瞬間に観測できる状態に依存した固定値を埋め込まない」への
+ * 対応）: これは同一 Docker ネットワーク内（collector と同じホスト上の
+ * ノードコンテナ）へのスクレイプであり、チェーンの進行状態（稼働時間・
+ * ブロック高）には依存しない値。`NODE_INTERNALS_POLL_INTERVAL_MS`
+ * （reth-metrics-tracker.ts）と同値にしてあり、1 回のポーリング間隔内に
+ * 取得が完了しない場合はそのノードの今回分の観測を諦めて次の間隔で
+ * 再試行する、という考え方に揃えている。
+ */
 export function createFetchRethMetricsClient(
   timeoutMs = 3000,
 ): RethMetricsClient {
