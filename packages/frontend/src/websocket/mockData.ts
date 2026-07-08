@@ -46,6 +46,9 @@ const lighthouseNode: NodeEntity = {
   syncStatus: "synced",
   blockHeight: 128,
   headBlockHash: "0x00000080",
+  // D層: このbeaconがEngine APIで駆動するreth（ARCHITECTURE.md §7.6.3。
+  // Issue #188）。内部リンクエッジ1本をオフラインで確認できるようにする。
+  drivesNodeId: "reth-node-1",
 };
 
 /**
@@ -394,6 +397,30 @@ export function mockOperationObserved(operation: string): DiffEvent {
   return { type: "operationObserved", edge };
 }
 
+/**
+ * D層: 内部リンク（beacon → reth の Engine API 呼び出し）の観測イベント
+ * （nodeLinkActivity）のモックを作る（ARCHITECTURE.md §7.6.4。Issue #188）。
+ * lighthouse-1（drivesNodeId: reth-node-1）上の内部リンクエッジへ、活動
+ * パルスをオフラインで確認できるようにする。実環境では collector が reth の
+ * `/metrics` ポーリングから増分を検知して生成するが、モックでは固定の
+ * カウンタ増分（1観測あたり newPayload/forkchoiceUpdated 各1回相当）を返す
+ * （実測値ではなく UI 確認用の演出値）。
+ */
+export function mockNodeLinkActivity(): DiffEvent {
+  return {
+    type: "nodeLinkActivity",
+    activity: {
+      fromNodeId: "lighthouse-1",
+      toNodeId: "reth-node-1",
+      calls: [
+        { method: "engine_newPayloadV4", count: 1, latencyMs: 8 },
+        { method: "engine_forkchoiceUpdatedV3", count: 1, latencyMs: 4 },
+      ],
+      observedAt: Date.now(),
+    },
+  };
+}
+
 /** collector 不在でも UI を確認するためのモックスナップショット。 */
 export function createMockSnapshot(): WorldStateSnapshot {
   return {
@@ -519,6 +546,9 @@ function newFollowerNodePair(seq: number): { reth: NodeEntity; beacon: NodeEntit
     headBlockHash: "0x00000000",
     p2pRole: "peer",
     removable: true,
+    // D層: addNode後のペアでも内部リンクエッジが張られることを確認できる
+    // ようにする（ARCHITECTURE.md §7.6.3。Issue #188）。
+    drivesNodeId: reth.id,
   };
   return { reth, beacon };
 }
@@ -905,6 +935,9 @@ export function createMockClient(
             // その裏で走る RPC 呼び出し（cast send 相当）を操作エッジとして観測させ、
             // ワークベンチ → reth-node-1 のパルスを流す。
             mockOperationObserved("eth_sendRawTransaction"),
+            // D層: 内部リンク（beacon → reth の Engine API 呼び出し）の
+            // 活動パルスをオフラインで確認できるようにする（Issue #188）。
+            mockNodeLinkActivity(),
             ...advanceTxLifecycle(),
           ]);
         }, intervalMs);

@@ -1,5 +1,6 @@
 import type {
   NodeEntity,
+  NodeLinkActivity,
   OperationEdge,
   WalletEntity,
   WorkbenchEntity,
@@ -11,6 +12,7 @@ import {
   applySnapshot,
   emptyWorldState,
   entityId,
+  extractNodeLinkActivities,
   extractOperations,
   listEdges,
   listEntities,
@@ -611,6 +613,89 @@ describe("operationObserved (volatile, not folded into world state)", () => {
       },
     ]);
     // entity / edge は反映されるが、operationObserved は畳み込まれない。
+    expect(Object.keys(next.entities)).toEqual(["n1"]);
+    expect(next.edges).toHaveLength(1);
+  });
+});
+
+describe("nodeLinkActivity (volatile, not folded into world state. D層。Issue #188)", () => {
+  const activity: NodeLinkActivity = {
+    fromNodeId: "beacon-1",
+    toNodeId: "reth-1",
+    calls: [{ method: "engine_newPayloadV4", count: 2 }],
+    observedAt: 1_000,
+  };
+
+  it("applyDiff ignores nodeLinkActivity (no entities/edges added)", () => {
+    const next = applyDiff(emptyWorldState, [
+      { type: "nodeLinkActivity", activity },
+    ]);
+    expect(listEntities(next)).toEqual([]);
+    expect(listEdges(next)).toEqual([]);
+  });
+
+  it("extractNodeLinkActivities pulls out only nodeLinkActivity events", () => {
+    const activities = extractNodeLinkActivities([
+      { type: "entityAdded", entity: node("n1") },
+      { type: "nodeLinkActivity", activity },
+      {
+        type: "nodeLinkActivity",
+        activity: { ...activity, observedAt: 4_000 },
+      },
+    ]);
+    expect(activities).toEqual([activity, { ...activity, observedAt: 4_000 }]);
+  });
+
+  it("extractNodeLinkActivities returns an empty array when there are none", () => {
+    expect(
+      extractNodeLinkActivities([{ type: "entityRemoved", id: "n1" }]),
+    ).toEqual([]);
+  });
+
+  it("extractNodeLinkActivities returns an empty array for an empty event list", () => {
+    expect(extractNodeLinkActivities([])).toEqual([]);
+  });
+
+  it("extractNodeLinkActivities does not confuse it with operationObserved (both volatile but distinct)", () => {
+    const opEdge: OperationEdge = {
+      kind: "operation",
+      fromWorkbenchId: "workbench-alice",
+      toNodeId: "reth-node-1",
+      operation: "eth_sendRawTransaction",
+      observedAt: 1_000,
+    };
+    const activities = extractNodeLinkActivities([
+      { type: "operationObserved", edge: opEdge },
+      { type: "nodeLinkActivity", activity },
+    ]);
+    expect(activities).toEqual([activity]);
+  });
+
+  it("preserves order and count with interleaved events", () => {
+    const a2: NodeLinkActivity = { ...activity, observedAt: 4_000 };
+    const a3: NodeLinkActivity = { ...activity, toNodeId: "reth-2" };
+    const activities = extractNodeLinkActivities([
+      { type: "nodeLinkActivity", activity },
+      { type: "entityAdded", entity: node("n1") },
+      { type: "nodeLinkActivity", activity: a2 },
+      {
+        type: "edgeAdded",
+        edge: { kind: "peer", fromNodeId: "n1", toNodeId: "n2", networkId: "1" },
+      },
+      { type: "nodeLinkActivity", activity: a3 },
+    ]);
+    expect(activities).toEqual([activity, a2, a3]);
+  });
+
+  it("applyDiff ignores nodeLinkActivity even when mixed with real state changes", () => {
+    const next = applyDiff(emptyWorldState, [
+      { type: "entityAdded", entity: node("n1") },
+      { type: "nodeLinkActivity", activity },
+      {
+        type: "edgeAdded",
+        edge: { kind: "peer", fromNodeId: "n1", toNodeId: "n2", networkId: "1" },
+      },
+    ]);
     expect(Object.keys(next.entities)).toEqual(["n1"]);
     expect(next.edges).toHaveLength(1);
   });

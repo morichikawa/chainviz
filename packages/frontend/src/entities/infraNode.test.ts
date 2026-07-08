@@ -188,6 +188,32 @@ describe("entitiesToFlowNodes", () => {
     const nodes = entitiesToFlowNodes([node("n10"), node("n2"), node("n1")], {});
     expect(nodes.map((n) => n.id)).toEqual(["n1", "n10", "n2"]);
   });
+
+  // --- D層: drivesNodeContainerName（ARCHITECTURE.md §7.6.3。Issue #188） ---
+
+  it("resolves drivesNodeContainerName for a node whose drivesNodeId points at a present node", () => {
+    const beacon: NodeEntity = { ...node("beacon-1", "chainviz-lighthouse-1"), drivesNodeId: "reth-1" };
+    const reth = node("reth-1", "chainviz-reth-1");
+    const nodes = entitiesToFlowNodes([beacon, reth], {});
+    const beaconNode = nodes.find((n) => n.id === "beacon-1");
+    expect(beaconNode?.data.drivesNodeContainerName).toBe("chainviz-reth-1");
+  });
+
+  it("omits drivesNodeContainerName when the node has no drivesNodeId", () => {
+    const nodes = entitiesToFlowNodes([node("reth-1")], {});
+    expect(nodes[0].data.drivesNodeContainerName).toBeUndefined();
+  });
+
+  it("omits drivesNodeContainerName when drivesNodeId cannot be resolved (dangling)", () => {
+    const beacon: NodeEntity = { ...node("beacon-1"), drivesNodeId: "does-not-exist" };
+    const nodes = entitiesToFlowNodes([beacon], {});
+    expect(nodes[0].data.drivesNodeContainerName).toBeUndefined();
+  });
+
+  it("does not set drivesNodeContainerName on a workbench", () => {
+    const nodes = entitiesToFlowNodes([workbench], {});
+    expect(nodes[0].data.drivesNodeContainerName).toBeUndefined();
+  });
 });
 
 describe("isSameInfraNode", () => {

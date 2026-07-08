@@ -19,7 +19,8 @@ import type { InfraFlowNode } from "./infraNode.js";
  * 「操作は必ずワークベンチという実体から発する」ため起点はカード側に置く）。
  */
 export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
-  const { entity, rpcTargetContainerName, isNew, operationPending } = data;
+  const { entity, rpcTargetContainerName, drivesNodeContainerName, isNew, operationPending } =
+    data;
   const { t } = useLanguage();
   const actions = useCommandActions();
   const [hovered, setHovered] = useState(false);
@@ -135,7 +136,11 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
         </div>
       )}
       {hovered && (
-        <InfraPopover entity={entity} rpcTargetContainerName={rpcTargetContainerName} />
+        <InfraPopover
+          entity={entity}
+          rpcTargetContainerName={rpcTargetContainerName}
+          drivesNodeContainerName={drivesNodeContainerName}
+        />
       )}
       {entity.kind === "workbench" && operationPanelOpen && (
         <OperationPanel

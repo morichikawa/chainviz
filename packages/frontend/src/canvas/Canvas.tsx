@@ -23,6 +23,11 @@ import { DEPLOY_EDGE_TYPE, isDeployFlowEdge } from "../entities/deployEdge.js";
 import { GhostNodeCard } from "../entities/GhostNodeCard.js";
 import { GHOST_NODE_TYPE } from "../entities/ghostNode.js";
 import { InfraNodeCard } from "../entities/InfraNodeCard.js";
+import { InternalLinkEdge } from "../entities/InternalLinkEdge.js";
+import {
+  INTERNAL_LINK_EDGE_TYPE,
+  isInternalLinkFlowEdge,
+} from "../entities/internalLinkEdge.js";
 import { PeerNetworkLegend } from "../entities/PeerNetworkLegend.js";
 import { PeerPropagationEdge } from "../entities/PeerPropagationEdge.js";
 import { PEER_EDGE_TYPE, isPeerFlowEdge } from "../entities/peerEdge.js";
@@ -62,6 +67,7 @@ const edgeTypes: EdgeTypes = {
   [CONNECTING_EDGE_TYPE]: ConnectingEdge,
   [OPERATION_TARGET_EDGE_TYPE]: OperationTargetEdge,
   [CONTRACT_CALL_PULSE_EDGE_TYPE]: ContractCallPulseEdge,
+  [INTERNAL_LINK_EDGE_TYPE]: InternalLinkEdge,
 };
 
 export interface CanvasProps {
@@ -84,6 +90,12 @@ function CanvasInner({ nodes, edges = [], onPersistPosition }: CanvasProps) {
   // ポップオーバー表示を行う（ARCHITECTURE.md §6.3）。デプロイエッジ以外
   // では常に null のまま。
   const [hoveredDeployEdgeId, setHoveredDeployEdgeId] = useState<
+    string | null
+  >(null);
+  // ホバー中の内部リンクエッジ(D層)の id。同じ仕組みでホバー強調・
+  // ポップオーバー表示を行う（ARCHITECTURE.md §7.6.3）。内部リンクエッジ
+  // 以外では常に null のまま。
+  const [hoveredInternalLinkEdgeId, setHoveredInternalLinkEdgeId] = useState<
     string | null
   >(null);
 
@@ -125,6 +137,9 @@ function CanvasInner({ nodes, edges = [], onPersistPosition }: CanvasProps) {
     (_event: unknown, edge: Edge) => {
       if (edge.type === PEER_EDGE_TYPE) setHoveredPeerEdgeId(edge.id);
       if (edge.type === DEPLOY_EDGE_TYPE) setHoveredDeployEdgeId(edge.id);
+      if (edge.type === INTERNAL_LINK_EDGE_TYPE) {
+        setHoveredInternalLinkEdgeId(edge.id);
+      }
     },
     [],
   );
@@ -134,6 +149,11 @@ function CanvasInner({ nodes, edges = [], onPersistPosition }: CanvasProps) {
     }
     if (edge.type === DEPLOY_EDGE_TYPE) {
       setHoveredDeployEdgeId((current) =>
+        current === edge.id ? null : current,
+      );
+    }
+    if (edge.type === INTERNAL_LINK_EDGE_TYPE) {
+      setHoveredInternalLinkEdgeId((current) =>
         current === edge.id ? null : current,
       );
     }
@@ -154,9 +174,14 @@ function CanvasInner({ nodes, edges = [], onPersistPosition }: CanvasProps) {
           if ((edge.data?.hovered ?? false) === hovered) return edge;
           return { ...edge, data: { ...edge.data, hovered } };
         }
+        if (isInternalLinkFlowEdge(edge)) {
+          const hovered = edge.id === hoveredInternalLinkEdgeId;
+          if ((edge.data?.hovered ?? false) === hovered) return edge;
+          return { ...edge, data: { ...edge.data, hovered } };
+        }
         return edge;
       }),
-    [rfEdges, hoveredPeerEdgeId, hoveredDeployEdgeId],
+    [rfEdges, hoveredPeerEdgeId, hoveredDeployEdgeId, hoveredInternalLinkEdgeId],
   );
 
   // ネットワーク凡例（Issue #124 A）に渡す、現在描画中のピア接続だけの一覧。

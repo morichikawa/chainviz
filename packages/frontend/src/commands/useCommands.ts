@@ -16,6 +16,7 @@ import {
   removeGhostByCommandId,
   removeGhostForArrivedEntity,
 } from "../entities/ghostNode.js";
+import type { NodeLinkActivitySignal } from "../entities/internalLinkEdge.js";
 import type { OperationSignal } from "../entities/operationEdge.js";
 import type { MessageKey } from "../i18n/messages.js";
 import type { NotificationInput } from "../notifications/notificationStore.js";
@@ -55,6 +56,11 @@ export interface UseCommandsResult {
   hasReceivedSnapshot: boolean;
   /** 揮発性の操作観測イベント列（描画側で操作パルスに消費する）。 */
   operations: OperationSignal[];
+  /**
+   * 揮発性の内部リンク活動観測イベント列（D層。描画側で活動パルスに消費
+   * する。`useWorldState.ts` の docstring参照。Issue #188）。
+   */
+  nodeLinkActivities: NodeLinkActivitySignal[];
   actions: CommandActions;
   /**
    * addNode / addWorkbench 送信直後、実エンティティが届くまでの間だけ表示する
@@ -169,8 +175,14 @@ export function useCommands(
     [],
   );
 
-  const { state, status, hasReceivedSnapshot, operations, sendCommand } =
-    useWorldState(clientFactory, handleCommandResult);
+  const {
+    state,
+    status,
+    hasReceivedSnapshot,
+    operations,
+    nodeLinkActivities,
+    sendCommand,
+  } = useWorldState(clientFactory, handleCommandResult);
   stateRef.current = state;
 
   // node / workbench / contract の実エンティティが新規に届いたら、対応する
@@ -376,6 +388,7 @@ export function useCommands(
     status,
     hasReceivedSnapshot,
     operations,
+    nodeLinkActivities,
     actions,
     ghosts,
     pendingOperationWorkbenchIds,

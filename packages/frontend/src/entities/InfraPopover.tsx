@@ -26,13 +26,20 @@ function Field({ label, value }: { label: string; value: string }) {
  * `rpcTargetContainerName` はワークベンチの RPC 接続先が解決できた場合に
  * 「操作先ノード」欄を追加する（Issue #123 UX設計 §4-4）。解決できない場合
  * （collector 未対応・削除されたノードなど）は欄自体を出さない（§4-5）。
+ *
+ * `drivesNodeContainerName` は node（CL 側）が `drivesNodeId` を解決できた
+ * 場合に「駆動する実行ノード」欄を追加する（ARCHITECTURE.md §7.6.3。
+ * Issue #188）。EL 側への逆方向の行は追加しない（同じ理由で欄自体を出さない
+ * フォールバックも同様）。
  */
 export function InfraPopover({
   entity,
   rpcTargetContainerName,
+  drivesNodeContainerName,
 }: {
   entity: InfraEntity;
   rpcTargetContainerName?: string;
+  drivesNodeContainerName?: string;
 }) {
   const { t } = useLanguage();
   const ports = entity.ports.length > 0 ? entity.ports.join(", ") : "-";
@@ -88,6 +95,16 @@ export function InfraPopover({
             label={t("field.blockHeight")}
             value={String(entity.blockHeight)}
           />
+          {drivesNodeContainerName && (
+            <div className="infra-field">
+              <span className="infra-field__label">
+                <GlossaryTerm termKey="engine-api">
+                  {t("field.drivesNode")}
+                </GlossaryTerm>
+              </span>
+              <span className="infra-field__value">{drivesNodeContainerName}</span>
+            </div>
+          )}
         </>
       )}
       {entity.kind === "workbench" && (

@@ -144,3 +144,133 @@ describe("useWorldState hasReceivedSnapshot (Issue #123 regression)", () => {
     expect(result.current.hasReceivedSnapshot).toBe(true);
   });
 });
+
+describe("useWorldState nodeLinkActivities channel (D層。Issue #188)", () => {
+  it("starts empty before any diff arrives", () => {
+    const factory: ClientFactory = (handlers) => fakeClient(handlers).client;
+    const { result } = renderHook(() => useWorldState(factory));
+    expect(result.current.nodeLinkActivities).toEqual([]);
+  });
+
+  it("appends a seq-numbered signal for each nodeLinkActivity diff event", () => {
+    let captured: ChainvizClientHandlers | null = null;
+    const factory: ClientFactory = (handlers) => {
+      captured = handlers;
+      return fakeClient(handlers).client;
+    };
+    const { result } = renderHook(() => useWorldState(factory));
+
+    act(() => {
+      captured?.onDiff?.([
+        {
+          type: "nodeLinkActivity",
+          activity: {
+            fromNodeId: "beacon-1",
+            toNodeId: "reth-1",
+            calls: [{ method: "engine_newPayloadV4", count: 2 }],
+            observedAt: 1_000,
+          },
+        },
+      ]);
+    });
+
+    expect(result.current.nodeLinkActivities).toHaveLength(1);
+    expect(result.current.nodeLinkActivities[0]).toMatchObject({
+      seq: 0,
+      activity: { fromNodeId: "beacon-1", toNodeId: "reth-1" },
+    });
+  });
+
+  it("does not fold nodeLinkActivity into the world state entities/edges", () => {
+    let captured: ChainvizClientHandlers | null = null;
+    const factory: ClientFactory = (handlers) => {
+      captured = handlers;
+      return fakeClient(handlers).client;
+    };
+    const { result } = renderHook(() => useWorldState(factory));
+
+    act(() => {
+      captured?.onDiff?.([
+        {
+          type: "nodeLinkActivity",
+          activity: {
+            fromNodeId: "beacon-1",
+            toNodeId: "reth-1",
+            calls: [],
+            observedAt: 1_000,
+          },
+        },
+      ]);
+    });
+
+    expect(Object.keys(result.current.state.entities)).toEqual([]);
+    expect(result.current.state.edges).toEqual([]);
+  });
+
+  it("keeps operations and nodeLinkActivities as independent channels", () => {
+    let captured: ChainvizClientHandlers | null = null;
+    const factory: ClientFactory = (handlers) => {
+      captured = handlers;
+      return fakeClient(handlers).client;
+    };
+    const { result } = renderHook(() => useWorldState(factory));
+
+    act(() => {
+      captured?.onDiff?.([
+        {
+          type: "operationObserved",
+          edge: {
+            kind: "operation",
+            fromWorkbenchId: "workbench-alice",
+            toNodeId: "reth-node-1",
+            operation: "eth_sendRawTransaction",
+            observedAt: 1_000,
+          },
+        },
+        {
+          type: "nodeLinkActivity",
+          activity: {
+            fromNodeId: "beacon-1",
+            toNodeId: "reth-1",
+            calls: [{ method: "engine_newPayloadV4", count: 1 }],
+            observedAt: 1_000,
+          },
+        },
+      ]);
+    });
+
+    expect(result.current.operations).toHaveLength(1);
+    expect(result.current.nodeLinkActivities).toHaveLength(1);
+  });
+
+  it("caps the retained nodeLinkActivities to the most recent ones", () => {
+    let captured: ChainvizClientHandlers | null = null;
+    const factory: ClientFactory = (handlers) => {
+      captured = handlers;
+      return fakeClient(handlers).client;
+    };
+    const { result } = renderHook(() => useWorldState(factory));
+
+    const many = Array.from({ length: 150 }, (_, i) => ({
+      type: "nodeLinkActivity" as const,
+      activity: {
+        fromNodeId: "beacon-1",
+        toNodeId: "reth-1",
+        calls: [{ method: "engine_newPayloadV4", count: 1 }],
+        observedAt: i,
+      },
+    }));
+
+    act(() => {
+      captured?.onDiff?.(many);
+    });
+
+    expect(result.current.nodeLinkActivities).toHaveLength(100);
+    // 直近100件を残す（末尾=最新50件切り捨て前の続き）。最古のseqが50から始まる。
+    expect(result.current.nodeLinkActivities[0].seq).toBe(50);
+    expect(
+      result.current.nodeLinkActivities[result.current.nodeLinkActivities.length - 1]
+        .seq,
+    ).toBe(149);
+  });
+});

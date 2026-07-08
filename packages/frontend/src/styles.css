@@ -30,6 +30,15 @@
      操作エッジのマゼンタ・ピア接続の既存パレット（peerEdge.ts の
      NETWORK_COLORS）のどれとも混同しないインディゴ系にする。 */
   --contract-edge: #6f7dea;
+  /* D層拡張: 内部リンクエッジ（beacon(CL) → reth(EL)。ARCHITECTURE.md
+     §7.6.3）の色。既存のエッジ色はすべて有彩色で「ネットワーク上/チェーン
+     上の関係」を表しており（ピア接続の青緑系パレット・所有の琥珀・操作の
+     マゼンタ・コントラクトのインディゴ）、内部リンクは「同じマシンの中の
+     配管」という別の系統であることを示すため、無彩色寄りのシルバーにする。
+     既存色との見分け（Issue #95 の前例どおり）: 最も近い有彩色は
+     --contract-edge の飽和したインディゴ(#6f7dea)だが、こちらは彩度を
+     大きく落とした淡いシルバーブルーで、視覚的に混同しない。 */
+  --internal-edge: #c9d4e8;
   font-family:
     "Inter", system-ui, -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN",
     "Noto Sans JP", sans-serif;
@@ -717,6 +726,84 @@ body {
   animation-name: pulse-travel;
   animation-timing-function: linear;
   animation-fill-mode: forwards;
+}
+
+/* --- D層拡張: 内部リンクエッジ（beacon(CL) → reth(EL)。常設。
+   ARCHITECTURE.md §7.6.3。Issue #188） --- */
+/* 二重線（配管のメタファー）の「鞘」。太く低不透明度で、React Flow の
+   BaseEdge（.react-flow__edge-path）側が担う。実際の太さ・不透明度は
+   internalLinkEdge.ts の INTERNAL_LINK_SHEATH_* 定数と一致させること
+   （JS 側でも style を組み立てて渡しているため、ここは基本値の重複定義）。 */
+.internal-link-edge .react-flow__edge-path {
+  stroke-linecap: round;
+}
+
+.internal-link-edge--hovered {
+  stroke-opacity: 0.28 !important;
+}
+
+/* 二重線の「芯」。太さ・不透明度は InternalLinkEdge.tsx が inline style で
+   都度計算して渡すため、ここでは形状のみを定義する。 */
+.internal-link-edge__core {
+  stroke-linecap: round;
+}
+
+/* 活動パルス（1観測1本のハートビート。ARCHITECTURE.md §7.6.4）。
+   B層の伝播パルス・C層の操作パルスと色で区別できるよう、内部リンクと
+   同系のシルバー発光にする。offset-path 走行は .peer-pulse 等と共通
+   （pulse-travel キーフレーム）。進行方向は常に CL→EL 固定なので
+   animation-direction は指定しない（常に normal）。 */
+.internal-link-pulse {
+  fill: #eef2fb;
+  filter: drop-shadow(0 0 5px var(--internal-edge)) drop-shadow(0 0 10px var(--internal-edge));
+  pointer-events: none;
+  animation-name: pulse-travel;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+.internal-link-popover {
+  min-width: 220px;
+  max-width: 300px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #0c1119;
+  border: 1px solid var(--internal-edge);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  font-size: 11px;
+}
+
+.internal-link-popover__heading {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.internal-link-popover__endpoints {
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.internal-link-popover__description {
+  line-height: 1.4;
+  margin-bottom: 6px;
+}
+
+.internal-link-popover__activity {
+  border-top: 1px solid var(--divider);
+  padding-top: 6px;
+}
+
+.internal-link-popover__activity-label {
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.internal-link-popover__calls {
+  font-variant-numeric: tabular-nums;
+}
+
+.internal-link-popover__no-activity {
+  color: var(--muted);
 }
 
 /* --- B層: ネットワーク凡例 + ピア接続ホバーポップオーバー(Issue #124) --- */

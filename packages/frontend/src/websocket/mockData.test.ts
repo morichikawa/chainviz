@@ -68,6 +68,29 @@ describe("createMockSnapshot connection targets (Issue #123)", () => {
   });
 });
 
+describe("createMockSnapshot D-layer content (internal link, Issue #188)", () => {
+  it("gives lighthouse-1 a drivesNodeId pointing at reth-node-1", () => {
+    const snapshot = createMockSnapshot();
+    const byId = new Map(
+      snapshot.entities
+        .filter((e): e is NodeEntity => e.kind === "node")
+        .map((e) => [e.id, e]),
+    );
+    expect(byId.get("lighthouse-1")?.drivesNodeId).toBe("reth-node-1");
+  });
+
+  it("does not set drivesNodeId on EL (reth) nodes", () => {
+    const snapshot = createMockSnapshot();
+    const byId = new Map(
+      snapshot.entities
+        .filter((e): e is NodeEntity => e.kind === "node")
+        .map((e) => [e.id, e]),
+    );
+    expect(byId.get("reth-node-1")?.drivesNodeId).toBeUndefined();
+    expect(byId.get("reth-node-2")?.drivesNodeId).toBeUndefined();
+  });
+});
+
 describe("createMockSnapshot C-layer content", () => {
   it("includes wallets (EOA, smart account) and transactions", () => {
     const snapshot = createMockSnapshot();
@@ -179,6 +202,46 @@ describe("createMockClient tx lifecycle", () => {
     });
     // 端点はともにスナップショット内のインフラエンティティとして存在する。
     expect(observed.edge.fromWorkbenchId).toBe("workbench-alice");
+    client.disconnect();
+    vi.useRealTimers();
+  });
+
+  it("emits a lighthouse-1 -> reth-node-1 nodeLinkActivity on each tick (D層。Issue #188)", () => {
+    vi.useFakeTimers();
+    const onDiff = vi.fn();
+    const client = createMockClient({ onDiff }, { intervalMs: 1000 });
+    client.connect();
+    vi.advanceTimersByTime(1000);
+    const diffs = onDiff.mock.calls[0][0];
+    const activity = diffs.find(
+      (d: { type: string }) => d.type === "nodeLinkActivity",
+    );
+    expect(activity).toMatchObject({
+      type: "nodeLinkActivity",
+      activity: {
+        fromNodeId: "lighthouse-1",
+        toNodeId: "reth-node-1",
+      },
+    });
+    expect(activity.activity.calls.length).toBeGreaterThan(0);
+    client.disconnect();
+    vi.useRealTimers();
+  });
+
+  it("emits a fresh nodeLinkActivity on every subsequent tick", () => {
+    vi.useFakeTimers();
+    const onDiff = vi.fn();
+    const client = createMockClient({ onDiff }, { intervalMs: 1000 });
+    client.connect();
+    vi.advanceTimersByTime(1000);
+    vi.advanceTimersByTime(1000);
+    expect(onDiff).toHaveBeenCalledTimes(2);
+    for (const call of onDiff.mock.calls) {
+      const activity = call[0].find(
+        (d: { type: string }) => d.type === "nodeLinkActivity",
+      );
+      expect(activity).toBeTruthy();
+    }
     client.disconnect();
     vi.useRealTimers();
   });

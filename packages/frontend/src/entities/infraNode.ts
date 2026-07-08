@@ -18,6 +18,13 @@ export interface InfraNodeData extends Record<string, unknown> {
    */
   rpcTargetContainerName?: string;
   /**
+   * entity が node で `drivesNodeId` を解決できた場合の、駆動先ノードの
+   * containerName（カード詳細ポップオーバーの「駆動する実行ノード」欄用。
+   * ARCHITECTURE.md §7.6.3。Issue #188）。解決できない場合は省略する
+   * （フォールバック: 欄自体を出さない。`rpcTargetContainerName` と同じ流儀）。
+   */
+  drivesNodeContainerName?: string;
+  /**
    * 実カード到着からの一定時間だけ true になる新着強調フラグ（Issue #123）。
    * entitiesToFlowNodes 自体はこの値を持たない（新着判定は時間経過に依存する
    * ため、entities/useNewArrivalHighlight.ts が別途計算し、呼び出し側
@@ -177,12 +184,16 @@ export function entitiesToFlowNodes(
       entity.kind === "workbench" && entity.rpcTargetNodeId
         ? nodesById.get(entity.rpcTargetNodeId)?.containerName
         : undefined;
+    const drivesNodeContainerName =
+      entity.kind === "node" && entity.drivesNodeId
+        ? nodesById.get(entity.drivesNodeId)?.containerName
+        : undefined;
 
     return {
       id: entity.id,
       type: "infra",
       position: { x: position.x, y: position.y },
-      data: { entity, rpcTargetContainerName },
+      data: { entity, rpcTargetContainerName, drivesNodeContainerName },
     };
   });
 }
