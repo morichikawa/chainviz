@@ -1339,6 +1339,133 @@ relatedTerms の配線: `engine-api` ↔ `el-cl-separation` ↔ `el-client` /
 4. **内部リンクは無彩色シルバーの二重線**（7.6.3。有彩色 = ネットワーク/
    チェーン上の関係、無彩色 = ノード内部の機構、という色の系統分け）
 
+## 8. E2E テストの構成（プロトコル層 + UI 層）
+
+E2E（結合）テストは 2 層で構成する（2026-07-08 のユーザー指示
+「E2E テストは Playwright で。自然言語ベースのシナリオを作り、基本操作から
+異常系まで網羅する。UI でやれるところは全部 UI でやる」に基づく設計）。
+
+### 8.1 二層の責務分担
+
+| 層 | ランナー | 対象 | 検証の視点 |
+| --- | --- | --- | --- |
+| プロトコル層 | vitest + `ws` | collector の WebSocket 契約 | UI から到達できない検証（不正フレーム・不正コマンド・接続タイミング競合・ポート衝突・伝播時刻の数値検証・RPC によるブロック追従判定） |
+| UI 層 | Playwright（chromium） | frontend + collector + 実 Docker | ユーザーが実際に見る・操作する結果（カード表示・エッジ描画・ボタン操作・トースト・言語切り替え） |
+
+判断基準は「**UI で同等以上に検証できるシナリオは UI 層に一本化し、
+プロトコル層と重複させない**」。両層とも実 Docker スタックを相手にするため、
+重複させると実行時間が倍加する。既存のプロトコル層テストのうち UI 層へ
+移行するもの・残すものの棚卸しは `packages/e2e/SCENARIOS.md` に記載する。
+
+プロトコル層に残す検証（UI から到達不能なもの）:
+
+- 不正 WebSocket フレーム（不正 JSON・type 欠落・未知 type）への耐性
+- UI が送信し得ない不正コマンド（未対応 chainProfile・存在しない ID）の拒否
+- 接続確立直後（snapshot 前）のコマンド取りこぼし・未接続クライアントの拒否
+- collector 起動のポート衝突検出（Issue #64）
+- ブロック伝播 `receivedAt` の数値検証（時刻差の範囲は UI に表示されない）
+- addNode 後のブロック追従の数値判定（`eth_blockNumber` の RPC 比較。
+  ノードカードのブロック高表示は Issue #187 実装後も「追いついたか」の
+  数値判定は RPC が確実）
+- D層 E2E（Issue #191。`NodeEntity.internals` / `nodeLinkActivity` の
+  スキーマレベルの受信検証）
+
+### 8.2 パッケージ構成
+
+新規パッケージは作らず `packages/e2e` に同居させる。Docker 起動待ち・
+collector 起動・排他ロックのハーネス（`src/helpers/`）を両層で共有するため。
+
+```
+packages/e2e/
+  SCENARIOS.md            # シナリオカタログ（自然言語。§8.4）
+  playwright.config.ts    # UI 層の設定（webServer で vite dev を起動）
+  vitest.config.ts        # プロトコル層（既存）
+  vitest.unit.config.ts   # Docker 非依存ユニット（既存。pnpm test 対象）
+  src/
+    *.test.ts             # プロトコル層のテスト（既存）
+    helpers/              # 共有ハーネス（既存 + Playwright 用 globalSetup）
+    ui/
+      *.spec.ts           # UI 層（Playwright）。vitest の include と重ならない
+```
+
+実行コマンドは `pnpm test:e2e`（プロトコル層）と `pnpm test:e2e:ui`（UI 層）
+に分ける。どちらも実 Docker を必要とし数分かかるため、**pre-push フックの
+`pnpm test` には含めない**（既存方針を維持）。実行順の推奨はプロトコル層 →
+UI 層（collector の契約が壊れているときに UI 層の失敗原因を切り分けやすい）。
+
+### 8.3 起動トポロジ（UI 層）
+
+```
+playwright globalSetup:
+  acquireE2eLock()            # vitest e2e と同一のホスト単位ロックを共用
+  → ensureChainRunning()      # 既存スタックを再利用（helpers/docker.ts）
+  → startCollector(4125)      # UI 層専用ポート（helpers/collector.ts）
+playwright webServer:
+  vite dev --port 5275        # VITE_COLLECTOR_URL=ws://127.0.0.1:4125
+テスト実行（chromium が http://127.0.0.1:5275 を操作）
+globalTeardown:
+  collector 停止 → ロック解放  # Docker スタックは残置（既存方針と同じ）
+```
+
+- **排他ロックの共用**: `helpers/e2e-lock.ts` の既定パスをそのまま使う。
+  これにより `test:e2e` と `test:e2e:ui` の同時実行（別 worktree 含む）も
+  スタック・ポートの奪い合いにならない
+- **ポート割り当て**: collector は dev 4000 / vitest e2e 4123 /
+  ポート衝突テスト 4199 / **UI 層 4125**。frontend は dev 5173 /
+  **UI 層 5275**。既存の実行系と同時に手元で使っても衝突しない
+- `VITE_COLLECTOR_URL` は vite dev サーバー起動時に確定する（ビルド時
+  埋め込み）ため、webServer の起動コマンドの環境変数で渡す。vite dev の
+  起動は 1 秒未満（実測 0.6 秒）で、ビルド済み配布物との差異が問題に
+  なったことはないため `vite build` + `preview` は使わない
+
+### 8.4 シナリオ記法（自然言語ベース）
+
+シナリオの正は **`packages/e2e/SCENARIOS.md`**（Markdown の箇条書き）に置く。
+各シナリオは安定 ID（例: `UI-CMD-01`）とタイトルを持ち、
+「前提 / 操作 / 確認」の 3 見出しの箇条書きで書く（Given/When/Then 相当）。
+
+Playwright 側の実装規約:
+
+- `test()` のタイトルは「`<シナリオID>: <タイトル>`」とし、SCENARIOS.md と
+  1 対 1 に対応させる
+- シナリオの各箇条書きは `test.step("<箇条書きと同じ文>", ...)` で実装する。
+  テストレポートがそのまま自然言語のシナリオとして読める
+- SCENARIOS.md とテストコードの対応はレビュー（sync-docs スキル）で確認する
+
+Gherkin（cucumber）は採用しない。ステップ定義の間接層と依存関係が増える
+一方、単一言語・単一リポジトリの本プロジェクトでは Markdown + `test.step`
+で同じ可読性を得られるため。
+
+**運用ルール**: 以後、新しい UI 機能を実装するステップには「SCENARIOS.md への
+シナリオ追記 + UI 層テストの実装」をチェックボックスとして含める
+（2026-07-08 ユーザー指示「これからもちゃんと追加すること」）。
+
+### 8.5 frontend の計装方針
+
+- ロケータは `data-testid` を正とする。文言（i18n）依存のロケータは言語
+  切り替えシナリオ以外では使わない（文言変更でテストが壊れるのを防ぐ）
+- カード類は計装済み（`infra-card-<id>` / `wallet-card-<address>` /
+  `contract-card-<address>` / `ghost-card-<commandId>` /
+  `operation-panel-<workbenchId>` / `toast-<id>` 等、34 箇所）
+- 追加計装が必要な箇所（UI 層の実装 Issue で対応）: 接続ステータスバッジ・
+  キャンバスツールバー（ノード追加ボタン・ワークベンチラベル入力・追加
+  ボタン）・言語トグル・用語ポップオーバー・インフラポップオーバー。
+  React Flow のエッジは `data-id`（`peer-...` 等の edge id）で特定できる
+  ため追加計装は不要
+
+### 8.6 実行環境の前提と実測値
+
+- Playwright の chromium はシステムライブラリ（libnspr4 / libnss3 /
+  libasound2 等）を必要とする。未導入のホストでは
+  `pnpm exec playwright install chromium` に加えて
+  `sudo pnpm exec playwright install-deps chromium`（または同等の apt
+  インストール）が必要。CONTRIBUTING.md に前提として記載する
+- 実測（2026-07-08、WSL2）: プロトコル層 21 テストがスタックのコールド
+  スタート込みで 3 分 07 秒、稼働中スタック再利用ならさらに短い。vite dev
+  の起動は 0.6 秒。UI 層を足しても手動実行に耐える範囲を維持する
+- CJK フォントが無いホストではスクリーンショット上の日本語が豆腐（□）に
+  なるが、DOM のテキスト自体は正常なのでアサーションには影響しない
+
 ## 未確定のまま残す項目
 
 以下は実装しながら詰める（先回りして今は決めない）。
