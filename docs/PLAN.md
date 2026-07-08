@@ -564,6 +564,22 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
 - [ ] デプロイのコンストラクタ引数にABI型と不一致な値を入力するとforgeの
       生エラーがそのままトーストに表示される
       [#209](https://github.com/morichikawa/chainviz/issues/209)
+- [ ] ワークベンチに複数ウォレットが紐づいているように見える
+      [#210](https://github.com/morichikawa/chainviz/issues/210)
+- [ ] コントラクトをデプロイしたらUI上でどう表現されるのか伝わりにくい
+      [#211](https://github.com/morichikawa/chainviz/issues/211)
+- [ ] チェーンの繋がり方・署名中かどうか・状態の中身を可視化してほしい
+      [#212](https://github.com/morichikawa/chainviz/issues/212)
+- [ ] ワークベンチからの操作でなにができるのかの説明がほしい
+      [#213](https://github.com/morichikawa/chainviz/issues/213)
+- [ ] ブートノードとvalidator(2-1/1-1)がP2P接続確立中の表示のまま変化しない
+      [#214](https://github.com/morichikawa/chainviz/issues/214)
+- [ ] rethとbeaconそれぞれの役割・関連性がUIから見えてこない
+      [#215](https://github.com/morichikawa/chainviz/issues/215)
+- [ ] beacon/rethを1個ずつペアでしか追加できない制約についての疑問
+      [#216](https://github.com/morichikawa/chainviz/issues/216)
+- [ ] エラー時のトースト通知が長文で右下のポップアップが崩れる
+      [#217](https://github.com/morichikawa/chainviz/issues/217)
 
 ## 運用ルール（全ステップ共通）
 
