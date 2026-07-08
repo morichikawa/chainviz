@@ -214,6 +214,31 @@ describe("entitiesToFlowNodes", () => {
     const nodes = entitiesToFlowNodes([workbench], {});
     expect(nodes[0].data.drivesNodeContainerName).toBeUndefined();
   });
+
+  // --- D層: maxElBlockHeight（ARCHITECTURE.md §7.6.5。Issue #189） ---
+
+  it("puts the max EL blockHeight (from syncStages-reporting nodes) on every card's data", () => {
+    // 全カードに同じスナップショット単位の分母が載る。EL2件のうち高い方が採用。
+    const el1: NodeEntity = { ...node("el-1"), blockHeight: 100, internals: { syncStages: [] } };
+    const el2: NodeEntity = { ...node("el-2"), blockHeight: 128, internals: { syncStages: [] } };
+    const nodes = entitiesToFlowNodes([el1, el2, workbench], {});
+    expect(nodes.every((n) => n.data.maxElBlockHeight === 128)).toBe(true);
+  });
+
+  it("sets maxElBlockHeight to 0 when no node reports syncStages", () => {
+    // syncStages を持つノードが1件も無ければ分母は0（バー非表示のフォールバック）。
+    const nodes = entitiesToFlowNodes([node("a"), workbench], {});
+    expect(nodes[0].data.maxElBlockHeight).toBe(0);
+  });
+
+  it("excludes non-syncStages nodes from the max even when their blockHeight is higher", () => {
+    // internals を持たない（CL 相当の）高 blockHeight ノードは分母に含めない。
+    const cl: NodeEntity = { ...node("cl-1"), blockHeight: 999 };
+    const el: NodeEntity = { ...node("el-1"), blockHeight: 50, internals: { syncStages: [] } };
+    const nodes = entitiesToFlowNodes([cl, el], {});
+    expect(nodes.find((n) => n.id === "cl-1")?.data.maxElBlockHeight).toBe(50);
+    expect(nodes.find((n) => n.id === "el-1")?.data.maxElBlockHeight).toBe(50);
+  });
 });
 
 describe("isSameInfraNode", () => {
@@ -297,6 +322,66 @@ describe("isSameInfraNode", () => {
     const previous = { ...entitiesToFlowNodes([shared], {})[0], data: { entity: shared } };
     const next = { ...entitiesToFlowNodes([shared], {})[0], data: { entity: shared } };
     expect(isSameInfraNode(previous, next)).toBe(true);
+  });
+
+  // --- maxElBlockHeight の比較（Issue #189 のバグ再発防止） ---
+
+  it("returns false when only maxElBlockHeight changed even though the entity reference is identical", () => {
+    // Issue #189 の要注意点の回帰テスト。当のノード自身の entity が変わらない
+    // 間（例: バックフィル中で blockHeight がまだ動いていないフォロワー）でも、
+    // 他ノードのチェーン進行で分母（maxElBlockHeight）が動いたら「変化あり」と
+    // 判定しなければプログレスバーの分母が固まる。isSameInfraNode の比較から
+    // maxElBlockHeight を外す（バグを戻す）と、この期待は false→true に転び失敗する。
+    const shared = node("a", "c-a");
+    const previous: InfraFlowNode = {
+      id: "a",
+      type: "infra",
+      position: { x: 0, y: 0 },
+      data: { entity: shared, maxElBlockHeight: 128 },
+    };
+    const next: InfraFlowNode = {
+      id: "a",
+      type: "infra",
+      position: { x: 0, y: 0 },
+      data: { entity: shared, maxElBlockHeight: 129 },
+    };
+    expect(isSameInfraNode(previous, next)).toBe(false);
+  });
+
+  it("returns true when maxElBlockHeight is unchanged alongside an unchanged entity and position", () => {
+    const shared = node("a", "c-a");
+    const previous: InfraFlowNode = {
+      id: "a",
+      type: "infra",
+      position: { x: 0, y: 0 },
+      data: { entity: shared, maxElBlockHeight: 128 },
+    };
+    const next: InfraFlowNode = {
+      id: "a",
+      type: "infra",
+      position: { x: 0, y: 0 },
+      data: { entity: shared, maxElBlockHeight: 128 },
+    };
+    expect(isSameInfraNode(previous, next)).toBe(true);
+  });
+
+  it("detects the transition from an unresolved (0) to a resolved maxElBlockHeight", () => {
+    // 目標高が0（全EL不明）から実値へ確定する瞬間も「変化あり」と扱う。
+    // バーの有無自体が切り替わるため取りこぼしてはならない。
+    const shared = node("a", "c-a");
+    const previous: InfraFlowNode = {
+      id: "a",
+      type: "infra",
+      position: { x: 0, y: 0 },
+      data: { entity: shared, maxElBlockHeight: 0 },
+    };
+    const next: InfraFlowNode = {
+      id: "a",
+      type: "infra",
+      position: { x: 0, y: 0 },
+      data: { entity: shared, maxElBlockHeight: 100 },
+    };
+    expect(isSameInfraNode(previous, next)).toBe(false);
   });
 });
 

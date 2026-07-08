@@ -5,6 +5,7 @@ import type {
 } from "@chainviz/shared";
 import type { Node } from "@xyflow/react";
 import type { LayoutMap, Position } from "../layout/layoutStore.js";
+import { computeMaxSyncTargetHeight } from "./syncProgress.js";
 
 /** A層で描画対象になるインフラエンティティ（コンテナ）。 */
 export type InfraEntity = NodeEntity | WorkbenchEntity;
@@ -24,6 +25,14 @@ export interface InfraNodeData extends Record<string, unknown> {
    * （フォールバック: 欄自体を出さない。`rpcTargetContainerName` と同じ流儀）。
    */
   drivesNodeContainerName?: string;
+  /**
+   * D層: キャンバス上の全 EL ノード（`internals.syncStages` を持つ node）の
+   * blockHeight 最大値（ARCHITECTURE.md §7.6.5「同期ステージのミニバーの
+   * 分母」）。全カードに同じ値が入る（entity 単位ではなくスナップショット
+   * 単位の値のため。`isSameInfraNode` の比較対象に含める必要がある点は
+   * docstring 参照）。該当ノードが1件も無ければ0。
+   */
+  maxElBlockHeight?: number;
   /**
    * 実カード到着からの一定時間だけ true になる新着強調フラグ（Issue #123）。
    * entitiesToFlowNodes 自体はこの値を持たない（新着判定は時間経過に依存する
@@ -171,6 +180,10 @@ export function entitiesToFlowNodes(
   const occupied = new Set(Object.values(layout).map(positionKey));
   const fallbackPositions = new Map<string, Position>();
 
+  // D層: 全カード共通の値（スナップショット単位）なので、エンティティごとに
+  // 計算しない（ARCHITECTURE.md §7.6.5）。
+  const maxElBlockHeight = computeMaxSyncTargetHeight(nodesById.values());
+
   return infra.map((entity) => {
     let position: Position | undefined = layout[entity.containerName];
     if (!position) position = fallbackPositions.get(entity.containerName);
@@ -193,7 +206,12 @@ export function entitiesToFlowNodes(
       id: entity.id,
       type: "infra",
       position: { x: position.x, y: position.y },
-      data: { entity, rpcTargetContainerName, drivesNodeContainerName },
+      data: {
+        entity,
+        rpcTargetContainerName,
+        drivesNodeContainerName,
+        maxElBlockHeight,
+      },
     };
   });
 }
@@ -205,6 +223,16 @@ export function entitiesToFlowNodes(
  * `entity` は WorldState 側で内容に変化がない限り同一オブジェクト参照が
  * 保たれる(`world-state/store.ts` の `applyDiff` 参照)ため、参照比較だけで
  * 「実データが変わっていないか」を安価に判定できる。
+ *
+ * `maxElBlockHeight` は例外的に明示比較が必要（Issue #189）。
+ * `rpcTargetContainerName`/`drivesNodeContainerName` は解決先ノードの
+ * containerName（実質不変）から導かれるため、この関数が entity 参照のみで
+ * 判定しても古い値を使い回す実害がほぼ無い。一方 `maxElBlockHeight` は
+ * チェーン進行のたびに変わり続ける値であり、当のノード自身の entity が
+ * 変化しない間（例: バックフィル中で blockHeight がまだ動いていない
+ * フォロワーカード）は entity 参照だけの比較だと古い分母を使い回してしまい、
+ * 同期ステージのプログレスバーが固まって見える。そのため明示的に比較対象に
+ * 含める。
  */
 export function isSameInfraNode(
   previous: InfraFlowNode,
@@ -212,6 +240,7 @@ export function isSameInfraNode(
 ): boolean {
   return (
     previous.data.entity === next.data.entity &&
+    previous.data.maxElBlockHeight === next.data.maxElBlockHeight &&
     previous.position.x === next.position.x &&
     previous.position.y === next.position.y
   );

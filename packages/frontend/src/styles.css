@@ -1006,6 +1006,63 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* --- D層拡張: 同期ステージのミニプログレスバー（ARCHITECTURE.md §7.6.5。
+   Issue #189）。ポップオーバーの全件表示・カード面の1行表示の両方で共通の
+   バー見た目を使う（entities/SyncProgressBar.tsx）。色は既存の同期中ドット
+   （--syncing）を流用し、新しい色トークンを増やさない。 --- */
+.sync-progress-bar {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--divider);
+  overflow: hidden;
+  margin-top: 2px;
+}
+
+.sync-progress-bar__fill {
+  height: 100%;
+  background: var(--syncing);
+  border-radius: 2px;
+}
+
+.infra-popover__sync-stages {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--divider);
+}
+
+.infra-popover__sync-stages-heading {
+  margin-bottom: 2px;
+}
+
+.infra-popover__sync-stage-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.infra-popover__sync-stage-row {
+  padding: 2px 0;
+}
+
+.infra-popover__sync-stage-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+
+/* カード面のバックフィル進行1行（`syncStatus === "syncing"` の間だけ出る。
+   §7.6.5「カード常設はバックフィル進行の1行のみ」）。 */
+.infra-card__sync-progress {
+  margin-top: 4px;
+}
+
+.infra-card__sync-progress-text {
+  font-size: 11px;
+  color: var(--muted);
+}
+
 /* --- C層拡張: WalletPopover のトークン残高一覧（ARCHITECTURE.md §6.7。
    Issue #168）。infra-field と同じ「ラベル/値を両端に置く」見た目にし、
    コントラクト名と残高がくっついて読みにくくならないようにする。 --- */

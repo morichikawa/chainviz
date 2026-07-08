@@ -1,5 +1,7 @@
+import { format } from "../i18n/i18n.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
+import { InfraPopoverSyncStages } from "./InfraPopoverSyncStages.js";
 import type { InfraEntity } from "./infraNode.js";
 
 /** クライアント種別を用語キーへ対応づける（EL/CL の用語解説に繋ぐ）。 */
@@ -31,15 +33,23 @@ function Field({ label, value }: { label: string; value: string }) {
  * 場合に「駆動する実行ノード」欄を追加する（ARCHITECTURE.md §7.6.3。
  * Issue #188）。EL 側への逆方向の行は追加しない（同じ理由で欄自体を出さない
  * フォールバックも同様）。
+ *
+ * `maxElBlockHeight` はキャンバス上の全 EL ノードの blockHeight 最大値
+ * （同期ステージのミニバーの分母。ARCHITECTURE.md §7.6.5。Issue #189）。
+ * `entity.internals.syncStages` がある node にのみ「同期ステージ」セクションを、
+ * `entity.internals.mempool` がある node にのみ「txpool」行を追加する
+ * （どちらも省略時はセクション/行ごと出さない既存の流儀を踏襲）。
  */
 export function InfraPopover({
   entity,
   rpcTargetContainerName,
   drivesNodeContainerName,
+  maxElBlockHeight,
 }: {
   entity: InfraEntity;
   rpcTargetContainerName?: string;
   drivesNodeContainerName?: string;
+  maxElBlockHeight?: number;
 }) {
   const { t } = useLanguage();
   const ports = entity.ports.length > 0 ? entity.ports.join(", ") : "-";
@@ -103,6 +113,25 @@ export function InfraPopover({
                 </GlossaryTerm>
               </span>
               <span className="infra-field__value">{drivesNodeContainerName}</span>
+            </div>
+          )}
+          {entity.internals?.syncStages && entity.internals.syncStages.length > 0 && (
+            <InfraPopoverSyncStages
+              stages={entity.internals.syncStages}
+              targetHeight={maxElBlockHeight ?? 0}
+            />
+          )}
+          {entity.internals?.mempool && (
+            <div className="infra-field">
+              <span className="infra-field__label">
+                <GlossaryTerm termKey="txpool">{t("field.txpool")}</GlossaryTerm>
+              </span>
+              <span className="infra-field__value">
+                {format(t("txpool.value"), {
+                  pending: String(entity.internals.mempool.pending),
+                  queued: String(entity.internals.mempool.queued),
+                })}
+              </span>
             </div>
           )}
         </>
