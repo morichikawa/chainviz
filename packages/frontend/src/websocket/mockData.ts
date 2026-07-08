@@ -111,7 +111,9 @@ function aliceWallet(): WalletEntity {
     nonce: INITIAL_ALICE_NONCE,
     isSmartAccount: false,
     ownerWorkbenchId: "workbench-alice",
-    recentTxHashes: [ALICE_TX1],
+    // 新しい順: mempool 待機中の素の送金、復号済みのトークン呼び出し、
+    // デプロイ（Issue #166: 「意味」優先の tx チップ表示を確認できる組み合わせ）。
+    recentTxHashes: [ALICE_TX1, TOKEN_CALL_TX, TOKEN_DEPLOY_TX],
   };
 }
 
@@ -129,7 +131,9 @@ function bobWallet(): WalletEntity {
     nonce: 7,
     isSmartAccount: false,
     ownerWorkbenchId: null,
-    recentTxHashes: [BOB_TX1],
+    // カタログ外コントラクトへの復号不能な呼び出しと、Counter のデプロイを
+    // 含める（Issue #166: 未復号チップ・デプロイチップの確認用）。
+    recentTxHashes: [BOB_TX1, UNKNOWN_CALL_TX, COUNTER_DEPLOY_TX],
   };
 }
 
@@ -181,6 +185,105 @@ const UNKNOWN_CONTRACT = addr("dead01");
 
 const TOKEN_DEPLOY_TX = txHash("dep70ken1");
 const COUNTER_DEPLOY_TX = txHash("dep70cnt1");
+
+// C層拡張（コントラクト呼び出し・イベントログの可視化。Issue #166）のモック
+// 用サンプル。#165 のコントラクトサンプルと組み合わせて使えるよう、既存の
+// TOKEN_CONTRACT / COUNTER_CONTRACT / UNKNOWN_CONTRACT のアドレスをそのまま
+// 参照する。「復号済み（カタログ既知）」「復号不能（カタログ外）」の両方を
+// 確認できるサンプルを用意する（ARCHITECTURE.md §6.6）。
+const TOKEN_CALL_TX = txHash("70kenca11");
+const UNKNOWN_CALL_TX = txHash("dead0ca11");
+
+/** 1 ETH 相当の wei 建て転送量（トークンのモックにも金額の桁感を合わせて流用）。 */
+const MOCK_TRANSFER_AMOUNT_WEI = ethWei(1n);
+
+/**
+ * Alice が ChainvizToken.transfer を呼び出し、確定して Transfer イベントも
+ * 観測できた tx。関数名・引数・イベント名がすべて復号済みのサンプル
+ * （コントラクトカードの活動チップ・ウォレットの tx チップ双方の確認用）。
+ */
+function tokenTransferCallTx(): TransactionEntity {
+  return {
+    kind: "transaction",
+    hash: TOKEN_CALL_TX,
+    from: ALICE_WALLET,
+    to: TOKEN_CONTRACT,
+    status: "included",
+    blockHash: "0x00000080",
+    contractCall: {
+      contractAddress: TOKEN_CONTRACT,
+      functionName: "transfer",
+      args: [
+        { name: "to", value: BOB_WALLET },
+        { name: "amount", value: MOCK_TRANSFER_AMOUNT_WEI },
+      ],
+    },
+    contractEvents: [
+      {
+        contractAddress: TOKEN_CONTRACT,
+        eventName: "Transfer",
+        args: [
+          { name: "from", value: ALICE_WALLET },
+          { name: "to", value: BOB_WALLET },
+          { name: "value", value: MOCK_TRANSFER_AMOUNT_WEI },
+        ],
+      },
+    ],
+  };
+}
+
+/**
+ * Bob がカタログ外のコントラクトを呼び出した tx。ABI を持たないため
+ * `functionName`/`eventName` を復号できず、`rawFunctionId`/`rawEventId`
+ * （生の 4byte セレクタ/トピック相当）だけが入る（ARCHITECTURE.md §6.4/§6.6）。
+ */
+function unknownContractCallTx(): TransactionEntity {
+  return {
+    kind: "transaction",
+    hash: UNKNOWN_CALL_TX,
+    from: BOB_WALLET,
+    to: UNKNOWN_CONTRACT,
+    status: "included",
+    blockHash: "0x00000080",
+    contractCall: {
+      contractAddress: UNKNOWN_CONTRACT,
+      rawFunctionId: "0xa9059cbb",
+    },
+    contractEvents: [
+      {
+        contractAddress: UNKNOWN_CONTRACT,
+        rawEventId: "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+      },
+    ],
+  };
+}
+
+/** ChainvizToken のデプロイ tx（Alice 発）。ウォレットの tx チップで
+ * 「デプロイ」表示を確認できるようにする。 */
+function tokenDeployTx(): TransactionEntity {
+  return {
+    kind: "transaction",
+    hash: TOKEN_DEPLOY_TX,
+    from: ALICE_WALLET,
+    to: null,
+    status: "included",
+    blockHash: "0x00000060",
+    createdContractAddress: TOKEN_CONTRACT,
+  };
+}
+
+/** Counter のデプロイ tx（Bob 発）。 */
+function counterDeployTx(): TransactionEntity {
+  return {
+    kind: "transaction",
+    hash: COUNTER_DEPLOY_TX,
+    from: BOB_WALLET,
+    to: null,
+    status: "included",
+    blockHash: "0x00000060",
+    createdContractAddress: COUNTER_CONTRACT,
+  };
+}
 
 /** カタログ既知・トークンを持つコントラクト。Alice がデプロイした体で、
  * デプロイエッジ（Alice ウォレット → このカード）を確認できる。 */
@@ -267,6 +370,10 @@ export function createMockSnapshot(): WorldStateSnapshot {
       safeWallet(),
       alicePendingTx(),
       bobIncludedTx(),
+      tokenTransferCallTx(),
+      unknownContractCallTx(),
+      tokenDeployTx(),
+      counterDeployTx(),
       chainvizTokenContract(),
       counterContract(),
       unknownContract(),
@@ -448,6 +555,9 @@ export function createMockClient(
   let aliceBalanceWei = INITIAL_ALICE_BALANCE_WEI;
   let aliceRecent: string[] = [ALICE_TX1];
   let pendingHash: string | null = ALICE_TX1;
+  // 現在 pending 中の tx が素の送金かコントラクト呼び出しか（次の tick で
+  // 確定させる際に contractEvents を足すかどうかの判定に使う。Issue #166）。
+  let pendingKind: "plain" | "call" = "plain";
   let txSeq = 0;
 
   function resetTxState() {
@@ -455,6 +565,7 @@ export function createMockClient(
     aliceBalanceWei = INITIAL_ALICE_BALANCE_WEI;
     aliceRecent = [ALICE_TX1];
     pendingHash = ALICE_TX1;
+    pendingKind = "plain";
     txSeq = 0;
   }
 
@@ -462,17 +573,39 @@ export function createMockClient(
    * 1 tick 分の tx ライフサイクルを進める差分を返す。前回 pending だった tx を
    * included に確定させて Alice の nonce/残高を更新し、新しい pending tx を
    * mempool へ投入する。recentTxHashes からあふれた古い tx は掃除する。
+   *
+   * 3回に1回、新しい pending tx を ChainvizToken.transfer への呼び出しに
+   * する（Issue #166: tx確定時のコントラクトへのパルス・確定フラッシュを
+   * live で確認できるようにするための演出頻度。実データの分布を模した
+   * ものではない UX 上の固定値）。呼び出しが確定した瞬間、契約カードの
+   * アニメーション（`useContractSettlementEffects`）と Transfer イベント
+   * チップの両方をオフラインで確認できる。
    */
   function advanceTxLifecycle(): DiffEvent[] {
     const diffs: DiffEvent[] = [];
 
     if (pendingHash) {
       const blockHash = `0x${blockHeight.toString(16).padStart(8, "0")}`;
-      diffs.push({
-        type: "entityUpdated",
-        id: pendingHash,
-        patch: { status: "included", blockHash },
-      });
+      const patch: Partial<TransactionEntity> = {
+        status: "included",
+        blockHash,
+      };
+      if (pendingKind === "call") {
+        // ARCHITECTURE.md §6.6: contractEvents はブロック取り込みが確定した
+        // 後にのみ入る。
+        patch.contractEvents = [
+          {
+            contractAddress: TOKEN_CONTRACT,
+            eventName: "Transfer",
+            args: [
+              { name: "from", value: ALICE_WALLET },
+              { name: "to", value: BOB_WALLET },
+              { name: "value", value: MOCK_TRANSFER_AMOUNT_WEI },
+            ],
+          },
+        ];
+      }
+      diffs.push({ type: "entityUpdated", id: pendingHash, patch });
       aliceNonce += 1;
       // gas 概算(21000 gas × 1 gwei)を残高から差し引く。
       aliceBalanceWei -= 21_000n * 1_000_000_000n;
@@ -485,16 +618,32 @@ export function createMockClient(
 
     const hash = txHash(`feed${txSeq++}`);
     pendingHash = hash;
-    diffs.push({
-      type: "entityAdded",
-      entity: {
-        kind: "transaction",
-        hash,
-        from: ALICE_WALLET,
-        to: BOB_WALLET,
-        status: "pending",
-      },
-    });
+    const makeCall = txSeq % 3 === 0;
+    pendingKind = makeCall ? "call" : "plain";
+    const tx: TransactionEntity = makeCall
+      ? {
+          kind: "transaction",
+          hash,
+          from: ALICE_WALLET,
+          to: TOKEN_CONTRACT,
+          status: "pending",
+          contractCall: {
+            contractAddress: TOKEN_CONTRACT,
+            functionName: "transfer",
+            args: [
+              { name: "to", value: BOB_WALLET },
+              { name: "amount", value: MOCK_TRANSFER_AMOUNT_WEI },
+            ],
+          },
+        }
+      : {
+          kind: "transaction",
+          hash,
+          from: ALICE_WALLET,
+          to: BOB_WALLET,
+          status: "pending",
+        };
+    diffs.push({ type: "entityAdded", entity: tx });
 
     const nextRecent = [hash, ...aliceRecent];
     const overflow = nextRecent.slice(6);

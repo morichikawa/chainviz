@@ -165,6 +165,14 @@ export const messages = {
     ja: "{address} がデプロイしたコントラクト",
     en: "Contract deployed by {address}",
   },
+  // --- C層拡張: コントラクト呼び出し・イベントログの可視化（ARCHITECTURE.md §6.6/§6.8） ---
+  "contract.activity": { ja: "直近の呼び出し・イベント", en: "Recent calls & events" },
+  "contract.noActivity": { ja: "まだ呼び出しがありません", en: "No calls yet" },
+  "contract.chip.undecoded": {
+    ja: "カタログに定義が無いため復号できません（生の識別子）",
+    en: "Not in the catalog, so it cannot be decoded (raw identifier).",
+  },
+  "tx.chip.deploy": { ja: "デプロイ", en: "Deploy" },
 } as const satisfies Record<string, Localized>;
 
 export type MessageKey = keyof typeof messages;

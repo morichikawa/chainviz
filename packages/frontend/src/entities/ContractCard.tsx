@@ -2,12 +2,60 @@ import { Handle, type NodeProps, Position } from "@xyflow/react";
 import { useState } from "react";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
+import type { ContractActivityChip } from "./contractActivity.js";
 import { ContractPopover } from "./ContractPopover.js";
 import type { ContractFlowNode } from "./contractNode.js";
 import { shortHex } from "./transaction.js";
 
 /**
- * C層拡張のコントラクトカード（ARCHITECTURE.md §6.3）。ウォレットカードと
+ * 「直近の呼び出し・イベント」チップ1件（ARCHITECTURE.md §6.6）。復号済みなら
+ * 関数名/イベント名を、そうでなければ生の識別子の短縮表示を出す。ホバーで
+ * 引数一覧（復号済み）または復号不能である旨（GlossaryTerm: abi）を出す。
+ */
+function ActivityChip({ chip }: { chip: ContractActivityChip }) {
+  const { t } = useLanguage();
+  const [hovered, setHovered] = useState(false);
+  const hasDetail = chip.decoded ? chip.args.length > 0 : true;
+
+  return (
+    <span
+      className={[
+        "contract-activity-chip",
+        `contract-activity-chip--${chip.kind}`,
+        chip.decoded ? "" : "contract-activity-chip--undecoded",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      data-testid={`contract-activity-chip-${chip.key}`}
+      data-kind={chip.kind}
+      data-decoded={chip.decoded}
+    >
+      {chip.kind === "event" ? "◆ " : ""}
+      {chip.label}
+      {hovered && hasDetail && (
+        <span className="contract-activity-chip__popover" role="tooltip">
+          {chip.decoded ? (
+            chip.args.map((arg, index) => (
+              <span
+                key={`${chip.key}-arg-${index}-${arg.name}`}
+                className="contract-activity-chip__arg"
+              >
+                {arg.name}: {arg.value}
+              </span>
+            ))
+          ) : (
+            <GlossaryTerm termKey="abi">{t("contract.chip.undecoded")}</GlossaryTerm>
+          )}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/**
+ * C層拡張のコントラクトカード（ARCHITECTURE.md §6.3/§6.6）。ウォレットカードと
  * 同型の骨格（ヘッダ・名前・サブタイトル）を持つが、チェーン側の状態のため
  * 削除ボタンは置かない（Issue #103 の「削除できないものに削除 UI を出さない」
  * 流儀）。
@@ -17,9 +65,13 @@ import { shortHex } from "./transaction.js";
  * （§6.4）。「全ノードで実行」ピルはホバーで EVM の用語解説を出し、確定した
  * 呼び出しが全ノードへ同時にブロック伝播として見えるタイミングの一致（§6.6、
  * Issue #166 で実装）と合わせて「特定ノードではない」ことを伝える。
+ *
+ * `flashKind` はtx確定の瞬間（呼び出し・デプロイ）に一時的に立つ演出フラグ
+ * （§6.6「確定時のコントラクトへのパルス」）。ウォレットの tx チップの
+ * `is-settling` と同系の演出で、failed の tx は失敗色のフラッシュにする。
  */
 export function ContractCard({ data }: NodeProps<ContractFlowNode>) {
-  const { entity, isNew } = data;
+  const { entity, activity, isNew, flashKind } = data;
   const { t } = useLanguage();
   const [hovered, setHovered] = useState(false);
 
@@ -31,6 +83,7 @@ export function ContractCard({ data }: NodeProps<ContractFlowNode>) {
     "infra-card--contract",
     isUncataloged ? "infra-card--contract-unknown" : "",
     isNew ? "infra-card--new" : "",
+    flashKind ? `contract-card--settle-${flashKind}` : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -89,6 +142,23 @@ export function ContractCard({ data }: NodeProps<ContractFlowNode>) {
             {entity.token.symbol}
           </>
         )}
+      </div>
+      <div
+        className="contract-card__activity"
+        data-testid={`contract-activity-${entity.address}`}
+      >
+        <span className="contract-card__activity-label">
+          <GlossaryTerm termKey="event-log">{t("contract.activity")}</GlossaryTerm>
+        </span>
+        <div className="contract-card__activity-chips">
+          {activity.length === 0 ? (
+            <span className="contract-card__activity-empty">
+              {t("contract.noActivity")}
+            </span>
+          ) : (
+            activity.map((chip) => <ActivityChip key={chip.key} chip={chip} />)
+          )}
+        </div>
       </div>
       {hovered && <ContractPopover entity={entity} />}
     </div>

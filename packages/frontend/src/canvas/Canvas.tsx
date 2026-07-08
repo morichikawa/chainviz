@@ -14,6 +14,8 @@ import {
   type NodeChange,
 } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { ContractCallPulseEdge } from "../entities/ContractCallPulseEdge.js";
+import { CONTRACT_CALL_PULSE_EDGE_TYPE } from "../entities/contractCallPulseEdge.js";
 import { ContractCard } from "../entities/ContractCard.js";
 import { CONTRACT_NODE_TYPE } from "../entities/contractNode.js";
 import { DeployEdge } from "../entities/DeployEdge.js";
@@ -59,6 +61,7 @@ const edgeTypes: EdgeTypes = {
   [PENDING_CONNECTION_EDGE_TYPE]: PendingConnectionEdge,
   [CONNECTING_EDGE_TYPE]: ConnectingEdge,
   [OPERATION_TARGET_EDGE_TYPE]: OperationTargetEdge,
+  [CONTRACT_CALL_PULSE_EDGE_TYPE]: ContractCallPulseEdge,
 };
 
 export interface CanvasProps {

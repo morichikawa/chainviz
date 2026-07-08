@@ -63,6 +63,7 @@ describe("canvasNodeLayoutKey", () => {
         transactions: [],
         settlingHashes: [],
         ownerPresent: false,
+        contractsByAddress: new Map(),
       },
     };
     expect(canvasNodeLayoutKey(walletNode)).toBe("0xabc");
@@ -73,7 +74,7 @@ describe("canvasNodeLayoutKey", () => {
       id: contract.address,
       type: "contract",
       position: { x: 0, y: 0 },
-      data: { entity: contract },
+      data: { entity: contract, activity: [] },
     };
     expect(canvasNodeLayoutKey(contractNode)).toBe("0xc0ntract");
   });
@@ -236,6 +237,7 @@ describe("preserveMeasuredDimensions", () => {
         transactions: [],
         settlingHashes: [],
         ownerPresent: false,
+        contractsByAddress: new Map(),
       },
     };
     const result = preserveMeasuredDimensions<CanvasFlowNode>([walletNext], previous);
@@ -257,6 +259,7 @@ describe("preserveMeasuredDimensions", () => {
           transactions: [],
           settlingHashes: [],
           ownerPresent: false,
+          contractsByAddress: new Map(),
         },
       },
     ];
@@ -271,6 +274,7 @@ describe("preserveMeasuredDimensions", () => {
           transactions: [],
           settlingHashes: [],
           ownerPresent: false,
+          contractsByAddress: new Map(),
         },
       },
     ];

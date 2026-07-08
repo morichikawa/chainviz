@@ -9,6 +9,7 @@ import {
   indexTransactions,
   resolveWalletTransactions,
   shortHex,
+  txChipLabel,
   txStatusMap,
 } from "./transaction.js";
 
@@ -100,6 +101,87 @@ describe("txStatusMap", () => {
     const map = txStatusMap([tx("0x1", "pending"), tx("0x2", "included")]);
     expect(map.get("0x1")).toBe("pending");
     expect(map.get("0x2")).toBe("included");
+  });
+});
+
+describe("txChipLabel (ARCHITECTURE.md §6.6 「意味」優先の tx チップ表示)", () => {
+  it("prefers the decoded function name over everything else", () => {
+    const t: TransactionEntity = {
+      kind: "transaction",
+      hash: "0xhash",
+      from: "0xa",
+      to: "0xcontract",
+      status: "included",
+      contractCall: { contractAddress: "0xcontract", functionName: "transfer" },
+      createdContractAddress: "0xshouldnotwin",
+    };
+    expect(txChipLabel(t)).toEqual({ kind: "function", text: "transfer" });
+  });
+
+  it("falls back to deploy when createdContractAddress is set and no function name is decoded", () => {
+    const t: TransactionEntity = {
+      kind: "transaction",
+      hash: "0xhash",
+      from: "0xa",
+      to: null,
+      status: "included",
+      createdContractAddress: "0xnewcontract",
+    };
+    expect(txChipLabel(t)).toEqual({ kind: "deploy", text: "" });
+  });
+
+  it("prefers deploy over an undecoded rawFunctionId when both happen to be present", () => {
+    const t: TransactionEntity = {
+      kind: "transaction",
+      hash: "0xhash",
+      from: "0xa",
+      to: null,
+      status: "included",
+      contractCall: { contractAddress: "0xcontract", rawFunctionId: "0xa9059cbb" },
+      createdContractAddress: "0xnewcontract",
+    };
+    expect(txChipLabel(t)).toEqual({ kind: "deploy", text: "" });
+  });
+
+  it("falls back to a shortened rawFunctionId when the call cannot be decoded and it is not a deploy", () => {
+    const t: TransactionEntity = {
+      kind: "transaction",
+      hash: "0xhash",
+      from: "0xa",
+      to: "0xunknown",
+      status: "included",
+      contractCall: { contractAddress: "0xunknown", rawFunctionId: "0xa9059cbb" },
+    };
+    expect(txChipLabel(t)).toEqual({ kind: "raw", text: "0xa9059cbb" });
+  });
+
+  it("falls back to the shortened tx hash for a plain transfer with no contract info", () => {
+    const t: TransactionEntity = {
+      kind: "transaction",
+      hash: `0x${"1".repeat(64)}`,
+      from: "0xa",
+      to: "0xb",
+      status: "pending",
+    };
+    expect(txChipLabel(t)).toEqual({
+      kind: "hash",
+      text: shortHex(t.hash, 4, 3),
+    });
+  });
+
+  it("falls back to the shortened tx hash when contractCall exists but decodes nothing", () => {
+    const t: TransactionEntity = {
+      kind: "transaction",
+      hash: `0x${"2".repeat(64)}`,
+      from: "0xa",
+      to: "0xcontract",
+      status: "included",
+      contractCall: { contractAddress: "0xcontract" },
+    };
+    expect(txChipLabel(t)).toEqual({
+      kind: "hash",
+      text: shortHex(t.hash, 4, 3),
+    });
   });
 });
 

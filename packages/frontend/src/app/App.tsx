@@ -1,5 +1,6 @@
 import type {
   BlockEntity,
+  ContractEntity,
   NodeEntity,
   TransactionEntity,
   WalletEntity,
@@ -34,9 +35,10 @@ import { peerEdgesToFlowEdges } from "../entities/peerEdge.js";
 import { ownershipEdgesToFlowEdges } from "../entities/ownershipEdge.js";
 import { operationTargetEdgesToFlowEdges } from "../entities/operationTargetEdge.js";
 import { ghostsToPendingConnectionEdges } from "../entities/pendingConnectionEdge.js";
-import { stabilizeNodes } from "../entities/nodeStability.js";
+import { stabilizeArrayReference, stabilizeNodes } from "../entities/nodeStability.js";
 import { indexTransactions } from "../entities/transaction.js";
 import { useBlockPulses } from "../entities/useBlockPulses.js";
+import { useContractSettlementEffects } from "../entities/useContractSettlementEffects.js";
 import { useNewArrivalHighlight } from "../entities/useNewArrivalHighlight.js";
 import { useOperationPulses } from "../entities/useOperationPulses.js";
 import { useTxLifecycle } from "../entities/useTxLifecycle.js";
@@ -236,6 +238,40 @@ function AppShell({
     () => attachPulsesToEdges(peerEdges, activePulses),
     [peerEdges, activePulses],
   );
+  // tx の blockHash から BlockEntity.number を引く索引（コントラクトの
+  // 「直近の呼び出し・イベント」チップの並び順に使う。ARCHITECTURE.md §6.6。
+  // contractActivity.ts の docstring 参照）。
+  const blockNumberByHash = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const block of blocks) map.set(block.hash, block.number);
+    return map;
+  }, [blocks]);
+
+  // C層拡張: コントラクト（ARCHITECTURE.md §6.2〜§6.4）。ウォレットの
+  // WalletPopover が「呼び出し内容」の宛先コントラクト名解決に使う
+  // （§6.6）ため、ウォレット関連の memo より先に算出する。
+  //
+  // infraNodes/walletNodes/contractNodes と同じ理由(Issue #119)で参照を
+  // 安定化する（Issue #166 差し戻し対応）。`entities` は state 更新のたびに
+  // 新しい配列になるため、素の filter だけだと中身が同じでも `contracts` が
+  // 毎回新しい配列になり、それに依存する `contractsByAddress` の Map まで
+  // 毎回作り直されてしまう。walletNode.ts の isSameWalletNode は
+  // `contractsByAddress` を参照比較するため、Map の参照が安定しないと
+  // 無関係な更新のたびに「変化した」と誤判定し、ウォレットカードの不要な
+  // 再レンダー防止（Issue #119）が効かなくなる。
+  const previousContractsRef = useRef<ContractEntity[]>([]);
+  const contracts = useMemo(() => {
+    const next = stabilizeArrayReference(
+      entities.filter(isContractEntity),
+      previousContractsRef.current,
+    );
+    previousContractsRef.current = next;
+    return next;
+  }, [entities]);
+  const contractsByAddress = useMemo(
+    () => new Map(contracts.map((c) => [c.address, c])),
+    [contracts],
+  );
 
   // C層: ウォレット・トランザクション。
   const wallets = useMemo(
@@ -268,13 +304,14 @@ function AppShell({
         txByHash,
         settling,
         presentInfraIds: infraNodeIds,
+        contractsByAddress,
       }),
       previousWalletNodesRef.current,
       isSameWalletNode,
     );
     previousWalletNodesRef.current = next;
     return next;
-  }, [wallets, layout, txByHash, settling, infraNodeIds]);
+  }, [wallets, layout, txByHash, settling, infraNodeIds, contractsByAddress]);
 
   // ワークベンチ → ウォレットの所有エッジ（点線・別色で B層のピア接続と区別）。
   const ownershipEdges = useMemo(
@@ -282,34 +319,19 @@ function AppShell({
     [wallets, infraNodeIds],
   );
 
-  // C層拡張: コントラクト（ARCHITECTURE.md §6.2〜§6.4）。
-  const contracts = useMemo(
-    () => entities.filter(isContractEntity),
-    [entities],
-  );
   // infraNodes/walletNodes と同じ理由(Issue #119)でコントラクトカードも
-  // 参照を安定化する。
+  // 参照を安定化する（`contracts` 自体はウォレット関連 memo より前で
+  // 算出済み。§6.6 WalletPopover の宛先コントラクト名解決に使うため）。
   const previousContractNodesRef = useRef<ContractFlowNode[]>([]);
   const contractNodes = useMemo(() => {
     const next = stabilizeNodes(
-      contractsToFlowNodes(contracts, { layout }),
+      contractsToFlowNodes(contracts, { layout, transactions, blockNumberByHash }),
       previousContractNodesRef.current,
       isSameContractNode,
     );
     previousContractNodesRef.current = next;
     return next;
-  }, [contracts, layout]);
-
-  // 新着強調フラグの後付け（infraNodesWithHighlight と同じ狙い）。
-  const contractNodesWithHighlight = useMemo(
-    () =>
-      contractNodes.map((node) => {
-        const isNew = newArrivals.has(node.id);
-        if (isNew === (node.data.isNew ?? false)) return node;
-        return { ...node, data: { ...node.data, isNew } };
-      }),
-    [contractNodes, newArrivals],
-  );
+  }, [contracts, layout, transactions, blockNumberByHash]);
 
   // 現在キャンバスに存在するウォレットの address 集合（デプロイエッジの
   // 端点存在判定に使う。ownershipEdges の infraNodeIds と同じ狙い）。
@@ -321,6 +343,30 @@ function AppShell({
   const deployEdges = useMemo(
     () => deployEdgesToFlowEdges(contracts, walletAddressIds),
     [contracts, walletAddressIds],
+  );
+
+  // tx確定時のコントラクトへの揮発パルス + 確定フラッシュ（ARCHITECTURE.md
+  // §6.6「確定時のコントラクトへのパルス」。Issue #166）。
+  const { pulseEdges: contractCallPulseEdges, flashing: contractFlashing } =
+    useContractSettlementEffects(transactions, contracts, walletAddressIds);
+
+  // 新着強調フラグ・確定フラッシュ種別の後付け（infraNodesWithHighlight と
+  // 同じ狙い。どちらも時間経過に依存する派生状態で isSameContractNode の
+  // 比較対象ではないため、stabilizeNodes の後段でここに付ける）。
+  const contractNodesWithHighlight = useMemo(
+    () =>
+      contractNodes.map((node) => {
+        const isNew = newArrivals.has(node.id);
+        const flashKind = contractFlashing.get(node.id);
+        if (
+          isNew === (node.data.isNew ?? false) &&
+          flashKind === node.data.flashKind
+        ) {
+          return node;
+        }
+        return { ...node, data: { ...node.data, isNew, flashKind } };
+      }),
+    [contractNodes, newArrivals, contractFlashing],
   );
 
   // ワークベンチ → ノードの操作（RPC 呼び出し）を、観測された瞬間だけ一時的な
@@ -375,6 +421,7 @@ function AppShell({
       ...pendingConnectionEdges,
       ...connectingEdges,
       ...operationTargetEdges,
+      ...contractCallPulseEdges,
     ],
     [
       peerEdgesWithPulses,
@@ -384,6 +431,7 @@ function AppShell({
       pendingConnectionEdges,
       connectingEdges,
       operationTargetEdges,
+      contractCallPulseEdges,
     ],
   );
 

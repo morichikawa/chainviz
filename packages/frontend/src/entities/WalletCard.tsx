@@ -2,7 +2,7 @@ import { Handle, type NodeProps, Position } from "@xyflow/react";
 import { useState } from "react";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
-import { shortHex } from "./transaction.js";
+import { shortHex, txChipLabel } from "./transaction.js";
 import { formatEther, type WalletFlowNode } from "./walletNode.js";
 import { WalletPopover } from "./WalletPopover.js";
 
@@ -11,9 +11,14 @@ import { WalletPopover } from "./WalletPopover.js";
  * アドレス・残高・nonce と直近 tx チップを出し、ホバーで詳細ポップオーバーを
  * 表示する。tx チップは pending 中は明滅し、pending → 確定へ変わった瞬間に
  * 確定フラッシュ演出を当てる（Issue #81 の tx ライフサイクル表示）。
+ *
+ * tx チップのラベルは hash 短縮ではなく「意味」優先で出す（ARCHITECTURE.md
+ * §6.6。優先順位は `txChipLabel` 参照。Issue #166）。tx hash 自体は title
+ * 属性（ネイティブツールチップ）として残す。
  */
 export function WalletCard({ data }: NodeProps<WalletFlowNode>) {
-  const { entity, transactions, settlingHashes, ownerPresent } = data;
+  const { entity, transactions, settlingHashes, ownerPresent, contractsByAddress } =
+    data;
   const { t } = useLanguage();
   const [hovered, setHovered] = useState(false);
 
@@ -76,24 +81,33 @@ export function WalletCard({ data }: NodeProps<WalletFlowNode>) {
           {transactions.length === 0 ? (
             <span className="wallet-card__tx-empty">{t("wallet.noTx")}</span>
           ) : (
-            transactions.map((tx) => (
-              <span
-                key={tx.hash}
-                className={`wallet-tx-chip wallet-tx-chip--${tx.status}${
-                  settling.has(tx.hash) ? " is-settling" : ""
-                }`}
-                title={shortHex(tx.hash)}
-                data-testid={`wallet-tx-chip-${tx.hash}`}
-                data-status={tx.status}
-              >
-                {shortHex(tx.hash, 4, 3)}
-              </span>
-            ))
+            transactions.map((tx) => {
+              const label = txChipLabel(tx);
+              const text = label.kind === "deploy" ? t("tx.chip.deploy") : label.text;
+              return (
+                <span
+                  key={tx.hash}
+                  className={`wallet-tx-chip wallet-tx-chip--${tx.status}${
+                    settling.has(tx.hash) ? " is-settling" : ""
+                  }`}
+                  title={shortHex(tx.hash)}
+                  data-testid={`wallet-tx-chip-${tx.hash}`}
+                  data-status={tx.status}
+                  data-label-kind={label.kind}
+                >
+                  {text}
+                </span>
+              );
+            })
           )}
         </div>
       </div>
       {hovered && (
-        <WalletPopover entity={entity} transactions={transactions} />
+        <WalletPopover
+          entity={entity}
+          transactions={transactions}
+          contractsByAddress={contractsByAddress}
+        />
       )}
     </div>
   );

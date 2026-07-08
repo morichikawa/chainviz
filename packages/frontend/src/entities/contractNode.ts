@@ -1,17 +1,28 @@
-import type { ContractEntity, WorldStateEntity } from "@chainviz/shared";
+import type {
+  ContractEntity,
+  TransactionEntity,
+  WorldStateEntity,
+} from "@chainviz/shared";
 import type { Node } from "@xyflow/react";
+import {
+  type ContractActivityChip,
+  deriveContractActivity,
+  sameContractActivity,
+} from "./contractActivity.js";
 import type { GridOptions } from "./infraNode.js";
 import { DEFAULT_GRID, defaultGridPosition } from "./infraNode.js";
 import type { LayoutMap } from "../layout/layoutStore.js";
 
 /**
  * C層拡張のコントラクトカードをキャンバス上に描くための型・変換
- * （ARCHITECTURE.md §6.2/§6.3）。インフラカード（infraNode.ts）・ウォレット
- * カード（walletNode.ts）と対になる。
+ * （ARCHITECTURE.md §6.2/§6.3/§6.6）。インフラカード（infraNode.ts）・
+ * ウォレットカード（walletNode.ts）と対になる。
  */
 
 export interface ContractNodeData extends Record<string, unknown> {
   entity: ContractEntity;
+  /** カードに載せる「直近の呼び出し・イベント」チップ列（§6.6。新しい順・最大6件）。 */
+  activity: ContractActivityChip[];
   /**
    * 実カード到着からの一定時間だけ true になる新着強調フラグ（infraNode.ts
    * の InfraNodeData と同じ仕組み。Issue #123 の配置ルールをコントラクト行にも
@@ -19,6 +30,13 @@ export interface ContractNodeData extends Record<string, unknown> {
    * 持たず、呼び出し側（App.tsx）が useNewArrivalHighlight の結果を後付けする。
    */
   isNew?: boolean;
+  /**
+   * tx確定時の確定フラッシュ演出中の種別（§6.6「確定時のコントラクトへの
+   * パルス」）。isNew と同じく時間経過に依存する派生状態のため、
+   * contractsToFlowNodes 自体はこの値を持たず、呼び出し側（App.tsx）が
+   * useContractSettlementEffects の結果を後付けする。
+   */
+  flashKind?: "success" | "failed";
 }
 
 export type ContractFlowNode = Node<ContractNodeData, "contract">;
@@ -44,6 +62,17 @@ export function isContractEntity(
 
 export interface ContractNodeContext {
   layout: LayoutMap;
+  /**
+   * 「直近の呼び出し・イベント」チップ列（§6.6）の導出元になる tx 一覧。
+   * 省略時は空配列（活動チップなし）。
+   */
+  transactions?: TransactionEntity[];
+  /**
+   * tx の `blockHash` から `BlockEntity.number` を引くための索引
+   * （活動チップの並び順に使う。`deriveContractActivity` 参照）。省略時は
+   * 空 Map（すべて最古扱いになり、tx hash の辞書順にフォールバックする）。
+   */
+  blockNumberByHash?: ReadonlyMap<string, number>;
   grid?: GridOptions;
 }
 
@@ -56,12 +85,16 @@ export interface ContractNodeContext {
  *   Docker コンテナ ID のように再起動で変わる識別子は使わない）をキーに
  *   layout から引く。未保存なら既定グリッドへ。
  * - 並び順を安定させるため address でソートしてからグリッド添字を割り当てる。
+ * - `activity`（§6.6のチップ列）は `ctx.transactions` から都度導出する
+ *   （`ContractEntity` 自体には専用フィールドを追加しない設計）。
  */
 export function contractsToFlowNodes(
   entities: WorldStateEntity[],
   ctx: ContractNodeContext,
 ): ContractFlowNode[] {
   const grid = ctx.grid ?? CONTRACT_GRID;
+  const transactions = ctx.transactions ?? [];
+  const blockNumberByHash = ctx.blockNumberByHash ?? new Map<string, number>();
   const contracts = entities
     .filter(isContractEntity)
     .sort((a, b) => a.address.localeCompare(b.address));
@@ -69,11 +102,16 @@ export function contractsToFlowNodes(
   return contracts.map((entity, index) => {
     const saved = ctx.layout[entity.address];
     const position = saved ?? defaultGridPosition(index, grid);
+    const activity = deriveContractActivity(
+      entity.address,
+      transactions,
+      blockNumberByHash,
+    );
     return {
       id: entity.address,
       type: CONTRACT_NODE_TYPE,
       position: { x: position.x, y: position.y },
-      data: { entity },
+      data: { entity, activity },
     };
   });
 }
@@ -81,9 +119,11 @@ export function contractsToFlowNodes(
 /**
  * 2つの ContractFlowNode が「見た目上変化していない」とみなせるか判定する
  * (`stabilizeNodes` に渡す比較関数。infraNode.ts の isSameInfraNode と同じ
- * 狙い。Issue #119)。`isNew` はここでは比較対象にしない（infraNode.ts の
- * InfraNodeData と同じ理由。時間経過に依存する派生フラグのため、呼び出し側
- * App.tsx が stabilizeNodes の後段で別途反映する）。
+ * 狙い。Issue #119)。`isNew`/`flashKind` はここでは比較対象にしない
+ * （infraNode.ts の InfraNodeData と同じ理由。時間経過に依存する派生状態の
+ * ため、呼び出し側 App.tsx が stabilizeNodes の後段で別途反映する）。
+ * `activity` は `deriveContractActivity` が毎回新しい配列を組み立てるため、
+ * 内容比較（`sameContractActivity`）で行う。
  */
 export function isSameContractNode(
   previous: ContractFlowNode,
@@ -92,6 +132,7 @@ export function isSameContractNode(
   return (
     previous.data.entity === next.data.entity &&
     previous.position.x === next.position.x &&
-    previous.position.y === next.position.y
+    previous.position.y === next.position.y &&
+    sameContractActivity(previous.data.activity, next.data.activity)
   );
 }
