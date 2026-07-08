@@ -1,6 +1,7 @@
 import type {
   BlockEntity,
   ContractEntity,
+  NodeEntity,
   NodeInternalsHandlers,
   PeerEdge,
   TransactionEntity,
@@ -192,6 +193,19 @@ function rethMetricsText(engineCallCount: number): string {
     `reth_engine_rpc_new_payload_v4_count ${engineCallCount}`,
     'reth_sync_checkpoint{stage="Headers"} 10',
     "reth_transaction_pool_pending_pool_transactions 1",
+    "reth_transaction_pool_queued_pool_transactions 0",
+  ].join("\n");
+}
+
+/**
+ * `reth_sync_checkpoint{stage="Finish"}` を含む `/metrics` レスポンス
+ * （Issue #187 の syncStatus/blockHeight テスト用）。
+ */
+function rethMetricsTextWithFinish(finishCheckpoint: number): string {
+  return [
+    `reth_sync_checkpoint{stage="Headers"} ${finishCheckpoint}`,
+    `reth_sync_checkpoint{stage="Finish"} ${finishCheckpoint}`,
+    "reth_transaction_pool_pending_pool_transactions 0",
     "reth_transaction_pool_queued_pool_transactions 0",
   ].join("\n");
 }
@@ -2243,6 +2257,213 @@ describe("EthereumAdapter.subscribeNodeInternals (Issue #186)", () => {
     fixtures = [reth1, beacon1];
     await vi.advanceTimersByTimeAsync(3000);
     expect(onLinkActivity).toHaveBeenCalledTimes(1);
+    adapter.dispose();
+  });
+});
+
+describe("EthereumAdapter syncStatus/blockHeight from D層 (Issue #187)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  /** pollInfra の結果から指定 stableId の NodeEntity を取り出す。 */
+  function nodeById(
+    entities: (NodeEntity | { kind: string })[],
+    id: string,
+  ): NodeEntity {
+    const found = entities.find(
+      (e): e is NodeEntity => e.kind === "node" && (e as NodeEntity).id === id,
+    );
+    if (!found) throw new Error(`node ${id} not found`);
+    return found;
+  }
+
+  it("fills syncStatus/blockHeight from the Finish checkpoint once D層観測が届く (single node, no peer to compare against)", async () => {
+    const poller = new DockerPoller(
+      clientFrom([rethFixture("reth1", "172.28.1.1")]),
+    );
+    const rethMetricsClient = queuedRethMetricsClient({
+      "http://172.28.1.1:9001/metrics": [rethMetricsTextWithFinish(42)],
+    });
+    const adapter = new EthereumAdapter(poller, {
+      rethMetricsClient,
+      nodeInternalsPollIntervalMs: 3000,
+    });
+
+    // pollInfra 単体では D層観測がまだ無いため既存のプレースホルダのまま。
+    const before = await adapter.pollInfra();
+    expect(nodeById(before.entities ?? [], "chainviz-ethereum/reth1")).toMatchObject(
+      { syncStatus: "syncing", blockHeight: 0 },
+    );
+
+    await adapter.subscribeNodeInternals({
+      onInternals: vi.fn(),
+      onLinkActivity: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const after = await adapter.pollInfra();
+    expect(nodeById(after.entities ?? [], "chainviz-ethereum/reth1")).toMatchObject(
+      { syncStatus: "synced", blockHeight: 42 },
+    );
+    adapter.dispose();
+  });
+
+  it("marks the lagging node as syncing and the caught-up node as synced (two EL peers)", async () => {
+    const poller = new DockerPoller(
+      clientFrom([
+        rethFixture("reth1", "172.28.1.1"),
+        rethFixture("reth3", "172.28.1.3"),
+      ]),
+    );
+    const rethMetricsClient = queuedRethMetricsClient({
+      "http://172.28.1.1:9001/metrics": [rethMetricsTextWithFinish(3372)],
+      "http://172.28.1.3:9001/metrics": [rethMetricsTextWithFinish(191)],
+    });
+    const adapter = new EthereumAdapter(poller, {
+      rethMetricsClient,
+      nodeInternalsPollIntervalMs: 3000,
+    });
+
+    await adapter.subscribeNodeInternals({
+      onInternals: vi.fn(),
+      onLinkActivity: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const partial = await adapter.pollInfra();
+    const entities = partial.entities ?? [];
+    expect(nodeById(entities, "chainviz-ethereum/reth1")).toMatchObject({
+      syncStatus: "synced",
+      blockHeight: 3372,
+    });
+    expect(nodeById(entities, "chainviz-ethereum/reth3")).toMatchObject({
+      syncStatus: "syncing",
+      blockHeight: 191,
+    });
+    adapter.dispose();
+  });
+
+  it("keeps the syncing/0 placeholder when the metrics response has no Finish checkpoint", async () => {
+    const poller = new DockerPoller(
+      clientFrom([rethFixture("reth1", "172.28.1.1")]),
+    );
+    const rethMetricsClient = queuedRethMetricsClient({
+      // 既存の rethMetricsText は "Headers" のみで "Finish" を含まない。
+      "http://172.28.1.1:9001/metrics": [rethMetricsText(21)],
+    });
+    const adapter = new EthereumAdapter(poller, {
+      rethMetricsClient,
+      nodeInternalsPollIntervalMs: 3000,
+    });
+
+    await adapter.subscribeNodeInternals({
+      onInternals: vi.fn(),
+      onLinkActivity: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const partial = await adapter.pollInfra();
+    expect(nodeById(partial.entities ?? [], "chainviz-ethereum/reth1")).toMatchObject(
+      { syncStatus: "syncing", blockHeight: 0 },
+    );
+    adapter.dispose();
+  });
+
+  it("stops counting a removed node once its execution container disappears from observations", async () => {
+    const reth1 = rethFixture("reth1", "172.28.1.1");
+    const reth3 = rethFixture("reth3", "172.28.1.3");
+    let fixtures: Fixture[] = [reth1, reth3];
+    const byId = new Map([reth1, reth3].map((f) => [f.summary.Id, f] as const));
+    const client: DockerClient = {
+      listContainers: async () => fixtures.map((f) => f.summary),
+      getContainer: (id: string) => ({
+        top: async () => byId.get(id)?.top ?? { Titles: ["CMD"], Processes: [] },
+        stats: async () => zeroStats,
+      }),
+    };
+    const poller = new DockerPoller(client);
+
+    const rethMetricsClient = queuedRethMetricsClient({
+      "http://172.28.1.1:9001/metrics": [
+        rethMetricsTextWithFinish(3372),
+        rethMetricsTextWithFinish(3400),
+      ],
+      "http://172.28.1.3:9001/metrics": [rethMetricsTextWithFinish(191)],
+    });
+    const adapter = new EthereumAdapter(poller, {
+      rethMetricsClient,
+      nodeInternalsPollIntervalMs: 3000,
+    });
+
+    await adapter.subscribeNodeInternals({
+      onInternals: vi.fn(),
+      onLinkActivity: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    let partial = await adapter.pollInfra();
+    expect(nodeById(partial.entities ?? [], "chainviz-ethereum/reth3")).toMatchObject(
+      { syncStatus: "syncing", blockHeight: 191 },
+    );
+
+    // reth3 が削除され観測から消える。
+    fixtures = [rethFixture("reth1", "172.28.1.1")];
+    await vi.advanceTimersByTimeAsync(3000);
+
+    partial = await adapter.pollInfra();
+    const entities = partial.entities ?? [];
+    expect(entities.some((e) => (e as NodeEntity).id === "chainviz-ethereum/reth3")).toBe(
+      false,
+    );
+    // reth1 は唯一の観測ノードになったため synced（比較基準が無い既定の倒し方）。
+    expect(nodeById(entities, "chainviz-ethereum/reth1")).toMatchObject({
+      syncStatus: "synced",
+      blockHeight: 3400,
+    });
+    adapter.dispose();
+  });
+
+  it("keeps the syncing/0 placeholder for a CL (beacon) node that has no D層 metrics", async () => {
+    // 設計判断（docs/worklog/issue-187.md）: CL(beacon)ノードは D層メトリクス
+    // (internals)を持たないため、EL(reth)側が D層観測で埋まっても beacon は
+    // 既存のプレースホルダ（syncing/0）のまま残る。この分離が実装に正しく
+    // 反映されていることを保証する。
+    const poller = new DockerPoller(
+      clientFrom([
+        rethFixture("reth1", "172.28.1.1"),
+        beaconFixture("beacon1", "172.28.2.1"),
+      ]),
+    );
+    const rethMetricsClient = queuedRethMetricsClient({
+      "http://172.28.1.1:9001/metrics": [rethMetricsTextWithFinish(1500)],
+    });
+    const adapter = new EthereumAdapter(poller, {
+      rethMetricsClient,
+      httpClient: beaconHttp({}),
+      nodeInternalsPollIntervalMs: 3000,
+    });
+
+    await adapter.subscribeNodeInternals({
+      onInternals: vi.fn(),
+      onLinkActivity: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const partial = await adapter.pollInfra();
+    const entities = partial.entities ?? [];
+    // EL(reth1)は D層観測から埋まる。
+    expect(nodeById(entities, "chainviz-ethereum/reth1")).toMatchObject({
+      syncStatus: "synced",
+      blockHeight: 1500,
+    });
+    // CL(beacon1)は D層メトリクスを持たないためプレースホルダのまま。
+    expect(nodeById(entities, "chainviz-ethereum/beacon1")).toMatchObject({
+      syncStatus: "syncing",
+      blockHeight: 0,
+    });
     adapter.dispose();
   });
 });
