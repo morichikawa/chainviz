@@ -45,7 +45,7 @@ el-client:
       The client responsible for executing transactions and applying EVM state
       transitions, and for serving JSON-RPC. chainviz uses reth.
   layer: a-infra
-  relatedTerms: [cl-client, container]
+  relatedTerms: [cl-client, container, engine-api, el-cl-separation, staged-sync]
 
 cl-client:
   name:
@@ -60,7 +60,7 @@ cl-client:
       attestation) and talks to the execution client over the Engine API.
       chainviz uses lighthouse.
   layer: a-infra
-  relatedTerms: [el-client, container]
+  relatedTerms: [el-client, container, engine-api, el-cl-separation]
 
 workbench:
   name:

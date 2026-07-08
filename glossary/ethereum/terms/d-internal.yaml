@@ -1,0 +1,109 @@
+# D層（ノード内部）の用語データ。
+# スキーマは docs/ARCHITECTURE.md §5 を参照。
+# 1エントリ = 用語キー -> { name, definition, layer, relatedTerms }
+# name / definition は {ja, en} 形式の多言語テキスト。
+
+engine-api:
+  name:
+    ja: Engine API
+    en: Engine API
+  definition:
+    ja: >-
+      合意クライアント（CL）と実行クライアント（EL）を繋ぐ内部 API。CL が
+      「このブロックを実行して」「チェーンの先端はここ」と EL へ指示する
+      ことでチェーンが進む。The Merge 以降、合意と実行は別々のプロセスに
+      分かれたため、両者を結びつける繋ぎ目としてこの API が必要になった。
+      chainviz では beacon カードから reth カードへ引かれる内部リンクの
+      紐と、その上を流れるパルスとして見える。パルス1本は「観測間隔内に
+      1回以上の呼び出しがあったこと」を示すハートビートであり、呼び出しの
+      内訳（メソッド名・回数）は紐へのホバーで確認できる。
+    en: >-
+      The internal API that connects the consensus client (CL) and the
+      execution client (EL). The chain advances as the CL tells the EL
+      "execute this block" and "the chain head is here." Since The Merge
+      split consensus and execution into separate processes, this API became
+      the seam that ties the two back together. chainviz shows it as the internal
+      link cord from the beacon card to the reth card, with pulses flowing
+      along it. Each pulse is a heartbeat meaning "at least one call happened
+      in this observation interval," not one pulse per call; the breakdown
+      (method names and counts) is available by hovering the cord.
+  layer: d-internal
+  relatedTerms: [el-cl-separation, el-client, cl-client]
+
+el-cl-separation:
+  name:
+    ja: EL/CL分離
+    en: EL/CL separation
+  definition:
+    ja: >-
+      1つの Ethereum ノードが、実行クライアント（EL）と合意クライアント
+      （CL）という2つの別プロセスの組で構成されること（The Merge 以降の
+      標準構成）。PoS へ移行する際、合意の仕組みを丸ごと差し替える必要が
+      あったため、実行部分をそのまま温存しつつ合意だけを別プロセスへ
+      切り出した。役割ごとに分かれていることで、各クライアント実装を
+      独立に開発・入れ替えできる。chainviz ではノードを追加すると必ず
+      reth（EL）+ beacon（CL）の2枚のカードが対で現れ、内部リンクの
+      エッジで結ばれる。
+    en: >-
+      The arrangement in which a single Ethereum node consists of two
+      separate processes — an execution client (EL) and a consensus client
+      (CL) — the standard shape since The Merge. Migrating to PoS required
+      replacing the entire consensus mechanism, so it was split off into its
+      own process while the execution side was kept intact. Because the
+      roles are split, each client implementation can be developed and
+      swapped independently. chainviz reflects this by always adding a reth
+      (EL) and a beacon (CL) card as a pair whenever a node is added, joined
+      by an internal link edge.
+  layer: d-internal
+  relatedTerms: [engine-api, el-client, cl-client]
+
+staged-sync:
+  name:
+    ja: ステージ型同期
+    en: Staged sync
+  definition:
+    ja: >-
+      追いつき同期を「ヘッダ取得 → 実行 → 索引作成…」という段階（ステージ）
+      に分け、ブロック範囲ごとにまとめて処理する同期方式（reth が採用）。
+      1ブロックずつ全処理を繰り返すより、ステージごとにディスクアクセスが
+      まとまるため、桁違いに速く追いつくことができる。chainviz では
+      同期中の reth カードとその詳細（ポップオーバー）に、各段階が
+      どのブロック高まで進んだかがバーの列として表示される。
+    en: >-
+      A syncing method that splits catch-up sync into stages — "fetch
+      headers, execute, build indexes, ..." — and processes each stage in
+      bulk over a range of blocks (used by reth). Compared to running every
+      step for one block at a time, batching disk access by stage lets a
+      node catch up dramatically faster. chainviz shows this on a syncing
+      reth card and its popover as a row of progress bars, one per stage,
+      each showing how far it has advanced.
+  layer: d-internal
+  relatedTerms: [el-client]
+
+txpool:
+  name:
+    ja: txpool
+    en: Txpool
+  definition:
+    ja: >-
+      ノードが自分の中に持つ、まだブロックに取り込まれていない tx の
+      置き場（mempool のノード内実体）。pending はすぐにブロックへ
+      取り込める tx、queued は nonce の飛びなど前提条件待ちで取り込めない
+      tx を指す。tx はブロックに入るまでどこかに保持される必要があり、
+      それは各ノードのローカルな仕事（だからノードごとに中身が違う）。
+      chainviz では reth ノードの詳細に pending / queued の実数が表示
+      される。C層の `mempool` はチェーン全体の概念としての待機列を指し、
+      txpool はそれが実際に各ノードの中に持つ実体であるという対応関係
+      にある。
+    en: >-
+      The place inside a node where transactions that have not yet been
+      included in a block are held (the node's local counterpart to the
+      mempool). Pending transactions are ready to be included right away;
+      queued ones are blocked on a precondition such as a nonce gap. A tx
+      must be held somewhere until it lands in a block, and that holding is
+      each node's own local job — which is why the contents differ from node
+      to node. chainviz shows the pending / queued counts on a reth node's
+      detail view. Layer C's `mempool` names the chain-wide concept of this
+      waiting area, while txpool is the concrete per-node instance of it.
+  layer: d-internal
+  relatedTerms: [mempool, transaction, nonce]
