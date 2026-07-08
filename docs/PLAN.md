@@ -345,7 +345,7 @@ runWorkbenchOperation コマンド・ChainAdapter.subscribeContracts）は設計
 - [x] ワークベンチカードから定型操作（送金・デプロイ・コントラクト呼び出し）
       を実行するUIを実装する
       [#167](https://github.com/morichikawa/chainviz/issues/167)
-- [ ] ウォレットカードにトークン残高を表示する
+- [x] ウォレットカードにトークン残高を表示する
       [#168](https://github.com/morichikawa/chainviz/issues/168)
 - [x] C層拡張の用語データ（contract・デプロイ・ABI・イベントログ・EVM・
       トークン等）をglossaryへ追加する

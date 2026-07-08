@@ -5,6 +5,7 @@ import type { MessageKey } from "../i18n/messages.js";
 import { formatEther } from "./walletNode.js";
 import { shortHex } from "./transaction.js";
 import { deriveTxCallPreview } from "./txCallPreview.js";
+import { resolveWalletTokenBalances } from "./walletTokenBalances.js";
 
 const TX_STATUS_KEY: Record<TransactionEntity["status"], MessageKey> = {
   pending: "tx.status.pending",
@@ -52,6 +53,10 @@ function TxCallPreviewLine({
  * （wei と Ether）・nonce・所有者・直近 tx の一覧を表示する。tx がコントラクト
  * 呼び出し/デプロイであれば、関数名＋引数プレビュー＋宛先コントラクト名を
  * 追記する（ARCHITECTURE.md §6.6、Issue #166）。
+ *
+ * 追跡中のトークン残高があれば「トークン残高」行を追記し、コントラクト名
+ * （未特定なら symbol）＋整形済み残高を1件ずつ列挙する（ARCHITECTURE.md
+ * §6.7、Issue #168）。
  */
 export function WalletPopover({
   entity,
@@ -63,6 +68,10 @@ export function WalletPopover({
   contractsByAddress?: ReadonlyMap<string, ContractEntity>;
 }) {
   const { t } = useLanguage();
+  const tokenBalances = resolveWalletTokenBalances(
+    entity.tokenBalances,
+    contractsByAddress,
+  );
 
   return (
     <div className="infra-popover" role="tooltip">
@@ -90,6 +99,29 @@ export function WalletPopover({
           {entity.ownerWorkbenchId ?? t("wallet.ownerDeleted")}
         </span>
       </div>
+      {tokenBalances.length > 0 && (
+        <div className="wallet-popover__tokens">
+          <span className="infra-field__label">
+            <GlossaryTerm termKey="token">{t("field.tokenBalances")}</GlossaryTerm>
+          </span>
+          <ul className="wallet-popover__token-list">
+            {tokenBalances.map((tb) => (
+              <li
+                key={tb.contractAddress}
+                className="wallet-popover__token-item"
+                data-testid={`wallet-token-${entity.address}-${tb.contractAddress}`}
+              >
+                <span className="wallet-popover__token-name">
+                  {tb.contractName ?? tb.symbol}
+                </span>
+                <span className="wallet-popover__token-amount">
+                  {tb.formatted} {tb.symbol}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="wallet-popover__tx">
         <span className="infra-field__label">
           <GlossaryTerm termKey="transaction">{t("field.recentTx")}</GlossaryTerm>

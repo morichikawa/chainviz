@@ -1,4 +1,4 @@
-import type { TransactionEntity, WalletEntity } from "@chainviz/shared";
+import type { ContractEntity, TransactionEntity, WalletEntity } from "@chainviz/shared";
 import { ReactFlowProvider } from "@xyflow/react";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -101,6 +101,76 @@ describe("WalletCard", () => {
   it("labels a smart account differently from an EOA", () => {
     renderCard(data({ entity: wallet({ isSmartAccount: true }) }));
     expect(screen.getByText("スマートアカウント")).toBeTruthy();
+  });
+});
+
+describe("WalletCard token balances (ARCHITECTURE.md §6.7)", () => {
+  function contract(overrides: Partial<ContractEntity> = {}): ContractEntity {
+    return {
+      kind: "contract",
+      address: `0x${"c".repeat(40)}`,
+      chainType: "ethereum",
+      ...overrides,
+    };
+  }
+
+  it("does not render the token balances section when tokenBalances is absent", () => {
+    renderCard(data());
+    expect(
+      screen.queryByTestId(`wallet-tokens-${wallet().address}`),
+    ).toBeNull();
+  });
+
+  it("does not render the token balances section when tokenBalances is empty", () => {
+    renderCard(data({ entity: wallet({ tokenBalances: [] }) }));
+    expect(
+      screen.queryByTestId(`wallet-tokens-${wallet().address}`),
+    ).toBeNull();
+  });
+
+  it("shows a formatted token balance chip when the contract is resolvable", () => {
+    const tokenAddress = `0x${"d".repeat(40)}`;
+    renderCard(
+      data({
+        entity: wallet({
+          tokenBalances: [
+            { contractAddress: tokenAddress, amount: (5n * 10n ** 18n).toString() },
+          ],
+        }),
+        contractsByAddress: new Map([
+          [
+            tokenAddress,
+            contract({
+              address: tokenAddress,
+              name: "ChainvizToken",
+              token: { symbol: "CVZ", decimals: 18 },
+            }),
+          ],
+        ]),
+      }),
+    );
+    const chip = screen.getByTestId(
+      `wallet-token-chip-${wallet().address}-${tokenAddress}`,
+    );
+    expect(chip.textContent).toBe("5.0000 CVZ");
+  });
+
+  it("does not render a chip for a tokenBalance whose ContractEntity is unresolved (dangling guard)", () => {
+    const tokenAddress = `0x${"d".repeat(40)}`;
+    renderCard(
+      data({
+        entity: wallet({
+          tokenBalances: [{ contractAddress: tokenAddress, amount: "1000" }],
+        }),
+        contractsByAddress: new Map(),
+      }),
+    );
+    expect(
+      screen.queryByTestId(`wallet-tokens-${wallet().address}`),
+    ).toBeNull();
+    expect(
+      screen.queryByTestId(`wallet-token-chip-${wallet().address}-${tokenAddress}`),
+    ).toBeNull();
   });
 });
 

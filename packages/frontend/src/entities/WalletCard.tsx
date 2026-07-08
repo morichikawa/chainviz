@@ -3,6 +3,7 @@ import { useState } from "react";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { shortHex, txChipLabel } from "./transaction.js";
+import { resolveWalletTokenBalances } from "./walletTokenBalances.js";
 import { formatEther, type WalletFlowNode } from "./walletNode.js";
 import { WalletPopover } from "./WalletPopover.js";
 
@@ -15,6 +16,12 @@ import { WalletPopover } from "./WalletPopover.js";
  * tx チップのラベルは hash 短縮ではなく「意味」優先で出す（ARCHITECTURE.md
  * §6.6。優先順位は `txChipLabel` 参照。Issue #166）。tx hash 自体は title
  * 属性（ネイティブツールチップ）として残す。
+ *
+ * 残高行の下には、追跡中のトークン残高チップ列を出す（ARCHITECTURE.md
+ * §6.7、Issue #168）。対応する `ContractEntity` の token 情報と突き合わせて
+ * 「{amount} {symbol}」形式に整形し、突き合わせ不能な分やトークン残高が
+ * 1件もない場合はセクションごと表示しない（`resolveWalletTokenBalances`
+ * 参照）。
  */
 export function WalletCard({ data }: NodeProps<WalletFlowNode>) {
   const { entity, transactions, settlingHashes, ownerPresent, contractsByAddress } =
@@ -30,6 +37,12 @@ export function WalletCard({ data }: NodeProps<WalletFlowNode>) {
   const pendingCount = transactions.filter(
     (tx) => tx.status === "pending",
   ).length;
+  // トークン残高チップ列（ARCHITECTURE.md §6.7、Issue #168）。対応する
+  // ContractEntity が未観測/token情報なしの分は除外済み(ダングリングガード)。
+  const tokenBalances = resolveWalletTokenBalances(
+    entity.tokenBalances,
+    contractsByAddress,
+  );
 
   return (
     <div
@@ -72,6 +85,28 @@ export function WalletCard({ data }: NodeProps<WalletFlowNode>) {
         <GlossaryTerm termKey="nonce">{t("field.nonce")}</GlossaryTerm>{" "}
         {entity.nonce}
       </div>
+      {tokenBalances.length > 0 && (
+        <div
+          className="wallet-card__tokens"
+          data-testid={`wallet-tokens-${entity.address}`}
+        >
+          <span className="wallet-card__tokens-label">
+            <GlossaryTerm termKey="token">{t("field.tokenBalances")}</GlossaryTerm>
+          </span>
+          <div className="wallet-card__token-chips">
+            {tokenBalances.map((tb) => (
+              <span
+                key={tb.contractAddress}
+                className="wallet-token-chip"
+                title={tb.contractName ?? shortHex(tb.contractAddress)}
+                data-testid={`wallet-token-chip-${entity.address}-${tb.contractAddress}`}
+              >
+                {tb.formatted} {tb.symbol}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="wallet-card__tx" data-testid={`wallet-tx-${entity.address}`}>
         <span className="wallet-card__tx-label">
           <GlossaryTerm termKey="mempool">{t("field.recentTx")}</GlossaryTerm>
