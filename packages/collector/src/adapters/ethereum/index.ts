@@ -63,6 +63,7 @@ import {
   RethMetricsTracker,
 } from "./reth-metrics-tracker.js";
 import { pollRethNodeInternals } from "./reth-node-internals.js";
+import { NodeSyncStatusCache } from "./sync-status.js";
 import {
   beaconStableIdForExecution,
   beaconTargets,
@@ -165,6 +166,12 @@ export class EthereumAdapter implements ChainAdapter {
   private readonly rethMetricsClient: RethMetricsClient;
   private readonly rethMetricsTracker = new RethMetricsTracker();
   private readonly nodeInternalsPollIntervalMs: number;
+  // D層観測（reth の Finish checkpoint）から NodeEntity.syncStatus/
+  // blockHeight を解決するためのキャッシュ（Issue #187）。書き込みは
+  // pollOneNodeInternals（D層）、読み出しは toEntity（A層。pollInfra）から
+  // 行う（docs/ARCHITECTURE.md §7.3「情報源はアダプタ内のキャッシュとし、
+  // pollInfra がキャッシュから値を埋める」）。
+  private readonly syncStatusCache = new NodeSyncStatusCache();
 
   private peerTimer?: ReturnType<typeof setTimeout>;
   private peerLoopRunning = false;
@@ -228,6 +235,12 @@ export class EthereumAdapter implements ChainAdapter {
    * `NodeEntity.drivesNodeId` に設定する（`rpcTargetNodeId` と同じ
    * 「独立した購読ではなく A 層のポーリングで毎回解決する」流儀。
    * docs/ARCHITECTURE.md §7.3）。
+   *
+   * D層（Issue #187）: `NodeEntity.syncStatus`/`blockHeight` も、
+   * subscribeNodeInternals（D層の周期ポーリング）が別途更新している
+   * `syncStatusCache`（reth の Finish checkpoint 由来）から `toEntity()` が
+   * 毎回埋める。書き手は本メソッド（applyInfra 経由）1 本のまま変わらない
+   * （docs/worklog/issue-187.md 参照）。
    */
   async pollInfra(): Promise<Partial<WorldStateSnapshot>> {
     const observations = await this.poller.pollOnce();
@@ -307,14 +320,19 @@ export class EthereumAdapter implements ChainAdapter {
       };
     }
 
-    // A 層では同期状態・ブロック高は取得しない（B/C 層で埋める）。
+    // 同期状態・ブロック高は D層観測（reth の Finish checkpoint、Issue #187）
+    // のキャッシュから埋める。まだ観測が無い（CL ノード・観測前・reth の
+    // バージョン差で Finish メトリクス自体が無い等）場合は既存のプレースホルダ
+    // のまま（headBlockHash は本Issueのスコープ外で常に空文字列。
+    // docs/ARCHITECTURE.md §7.3、docs/worklog/issue-187.md 参照）。
+    const resolvedSync = this.syncStatusCache.resolve(obs.stableId);
     return {
       ...infra,
       kind: "node",
       chainType: this.chainType,
       clientType: classification.clientType,
-      syncStatus: "syncing",
-      blockHeight: 0,
+      syncStatus: resolvedSync?.syncStatus ?? "syncing",
+      blockHeight: resolvedSync?.blockHeight ?? 0,
       headBlockHash: "",
       // P2P 上の役割（Issue #124）。ラベルが無い・想定外の値の場合は
       // すべて通常ピア扱いにする（addNode で追加されるノードは常に peer
@@ -775,7 +793,11 @@ export class EthereumAdapter implements ChainAdapter {
    *   その旨をログに残す（黙って捨てない）。
    * - 前回 tick で観測できた stableId のうち今回観測できなくなったものは
    *   `RethMetricsTracker.forgetNode()` で前回値を破棄する（ノード削除の
-   *   後始末。Issue #185 の申し送り）。
+   *   後始末。Issue #185 の申し送り）。`syncStatusCache` も同様に後始末する
+   *   （Issue #187）。
+   * - `internals` が観測できた場合、`syncStatusCache`（Issue #187。
+   *   `NodeEntity.syncStatus`/`blockHeight` の情報源）も同時に更新する。
+   *   読み出しは pollInfra（A層）が別途行う。
    */
   private async pollNodeInternalsOnce(
     handlers: NodeInternalsHandlers,
@@ -786,7 +808,12 @@ export class EthereumAdapter implements ChainAdapter {
 
     const currentIds = new Set(targets.map((t) => t.stableId));
     for (const id of this.trackedNodeInternalsIds) {
-      if (!currentIds.has(id)) this.rethMetricsTracker.forgetNode(id);
+      if (!currentIds.has(id)) {
+        this.rethMetricsTracker.forgetNode(id);
+        // Issue #187: syncStatus 判定の基準（他ノードの最大 checkpoint との
+        // 比較）に、削除済みノードの古い値が亡霊のように残らないようにする。
+        this.syncStatusCache.forgetNode(id);
+      }
     }
     this.trackedNodeInternalsIds = currentIds;
 
@@ -813,7 +840,14 @@ export class EthereumAdapter implements ChainAdapter {
     // エラー内容をログ済み）はここでは何もしない。
     if (!result) return;
 
-    if (result.internals) handlers.onInternals(target.stableId, result.internals);
+    if (result.internals) {
+      // Issue #187: syncStatus/blockHeight のキャッシュ更新は、world-state
+      // への配信（handlers.onInternals）とは独立した副経路（読み出しは
+      // pollInfra の toEntity から行う。store への書き込みは既存の applyInfra
+      // 経路 1 本のまま）。
+      this.syncStatusCache.update(target.stableId, result.internals);
+      handlers.onInternals(target.stableId, result.internals);
+    }
 
     if (result.calls.length === 0) return;
     const executionObs = obsByStableId.get(target.stableId);
