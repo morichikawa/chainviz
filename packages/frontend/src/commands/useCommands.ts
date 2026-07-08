@@ -1,5 +1,10 @@
-import type { Command, WorldStateEntity } from "@chainviz/shared";
+import type {
+  Command,
+  WorkbenchOperation,
+  WorldStateEntity,
+} from "@chainviz/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CONTRACT_GRID } from "../entities/contractNode.js";
 import {
   resolveBootNodes,
   resolveRpcTargetNode,
@@ -33,6 +38,14 @@ export interface CommandActions {
   addWorkbench: (label: string) => void;
   removeNode: (nodeId: string) => void;
   removeWorkbench: (workbenchId: string) => void;
+  /**
+   * ワークベンチカードの操作パネル（送金/デプロイ/コントラクト呼び出し。
+   * ARCHITECTURE.md §6.5）から発行する定型操作コマンド。
+   */
+  runWorkbenchOperation: (
+    workbenchId: string,
+    operation: WorkbenchOperation,
+  ) => void;
 }
 
 export interface UseCommandsResult {
@@ -49,6 +62,15 @@ export interface UseCommandsResult {
    * ノード配列にそのまま連結してキャンバスへ渡す。
    */
   ghosts: GhostFlowNode[];
+  /**
+   * runWorkbenchOperation を送信してから commandResult が返るまでの間、
+   * そのワークベンチの id を含む集合（ARCHITECTURE.md §6.5「ワークベンチ
+   * カードにスピナー＋『実行中…』を出す」）。同一ワークベンチから複数の
+   * 操作を連続送信しても（二重送信防止ではないため許容される）、すべてが
+   * 解決するまで id を保持する（内部的には操作数のカウントで管理し、0件に
+   * なった時点で id を集合から外す）。
+   */
+  pendingOperationWorkbenchIds: Set<string>;
 }
 
 /**
@@ -100,11 +122,41 @@ export function useCommands(
   // （Issue #113: entityAdded で infraCount=1 → addNode（index=1+0=1）→
   // entityRemoved で infraCount=0 → addNode（index=0+1=1 で前段と衝突））。
   const ghostIndexRef = useRef(0);
+  // デプロイの仮カード（kind: "contract"）専用の、上記と同じ狙いの単調増加
+  // カウンタ。node/workbench とは別のグリッド（CONTRACT_GRID）に置くため、
+  // 衝突判定の基準（既存コントラクト数）も別に持つ必要があり、ref を分ける。
+  const contractGhostIndexRef = useRef(0);
+
+  // runWorkbenchOperation の保留数をワークベンチ id ごとに数える
+  // （UseCommandsResult.pendingOperationWorkbenchIds の docstring参照）。
+  const [pendingOperationCounts, setPendingOperationCounts] = useState<
+    Map<string, number>
+  >(new Map());
+  const pendingOperationWorkbenchIds = useMemo(
+    () => new Set(pendingOperationCounts.keys()),
+    [pendingOperationCounts],
+  );
 
   const handleCommandResult = useCallback<CommandResultHandler>(
     (commandId, ok, error) => {
       const command = pendingRef.current.get(commandId);
       pendingRef.current.delete(commandId);
+
+      // runWorkbenchOperation の保留カウントは成否によらずここで解除する
+      // （ARCHITECTURE.md §6.5「commandResult で解除」。二重送信防止では
+      // ないので、同じワークベンチの別操作がまだ保留中ならカウントを
+      // 1つ減らすだけでスピナーは出したままにする）。
+      if (command?.action === "runWorkbenchOperation") {
+        const { workbenchId } = command;
+        setPendingOperationCounts((prev) => {
+          const current = prev.get(workbenchId) ?? 0;
+          const next = new Map(prev);
+          if (current <= 1) next.delete(workbenchId);
+          else next.set(workbenchId, current - 1);
+          return next;
+        });
+      }
+
       if (!ok) {
         // 失敗が確定した時点で、対応する仮カードはもう実体化しないので消す。
         setGhosts((current) => removeGhostByCommandId(current, commandId));
@@ -121,11 +173,13 @@ export function useCommands(
     useWorldState(clientFactory, handleCommandResult);
   stateRef.current = state;
 
-  // node / workbench の実エンティティが新規に届いたら、対応する仮カードを
-  // 1枚取り除く（entityAdded は commandId を持たないため厳密な対応付けは
-  // できない。node は到着した clientType から EL/CL の層を判定し、同じ層の
-  // ゴーストを優先して消す（addNode が reth/beacon の2枚のゴーストを生む
-  // ため）。FIFO 近似・フォールバックの理由は entities/ghostNode.ts 参照。
+  // node / workbench / contract の実エンティティが新規に届いたら、対応する
+  // 仮カードを1枚取り除く（entityAdded は commandId を持たないため厳密な
+  // 対応付けはできない。node は到着した clientType から EL/CL の層を判定し、
+  // 同じ層のゴーストを優先して消す（addNode が reth/beacon の2枚のゴーストを
+  // 生むため）。contract は到着した catalogKey で対応するデプロイ中の仮カード
+  // を優先して消す（ARCHITECTURE.md §6.5）。FIFO 近似・フォールバックの
+  // 理由は entities/ghostNode.ts 参照。
   const seenEntityIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const previous = seenEntityIdsRef.current;
@@ -134,7 +188,12 @@ export function useCommands(
     for (const id of currentIds) {
       if (previous.has(id)) continue;
       const entity = state.entities[id];
-      if (entity && (entity.kind === "node" || entity.kind === "workbench")) {
+      if (
+        entity &&
+        (entity.kind === "node" ||
+          entity.kind === "workbench" ||
+          entity.kind === "contract")
+      ) {
         arrivedEntities.push(entity);
       }
     }
@@ -147,7 +206,9 @@ export function useCommands(
           next,
           entity.kind === "node"
             ? { kind: "node", clientType: entity.clientType }
-            : { kind: "workbench" },
+            : entity.kind === "contract"
+              ? { kind: "contract", catalogKey: entity.catalogKey }
+              : { kind: "workbench" },
         );
       }
       return next;
@@ -195,6 +256,38 @@ export function useCommands(
       const commandId = sendCommand(command);
       if (commandId === undefined) return;
       pendingRef.current.set(commandId, command);
+
+      if (command.action === "runWorkbenchOperation") {
+        const { workbenchId } = command;
+        setPendingOperationCounts((prev) => {
+          const next = new Map(prev);
+          next.set(workbenchId, (next.get(workbenchId) ?? 0) + 1);
+          return next;
+        });
+
+        // デプロイのみコントラクト行へ仮カードを置く（ARCHITECTURE.md §6.5）。
+        // 送金・呼び出しは既存エンティティへの副作用（残高/イベント）のみで、
+        // 新規カードが生まれないため仮カードは作らない。
+        if (command.operation.type === "deployContract") {
+          const contractCount = Object.values(
+            stateRef.current.entities,
+          ).filter((entity) => entity.kind === "contract").length;
+          const index = Math.max(contractGhostIndexRef.current, contractCount);
+          contractGhostIndexRef.current = index + 1;
+          const ghost = createGhostNode({
+            commandId,
+            kind: "contract",
+            // カタログキー自体が人が読める表示名（例: "ChainvizToken"）を
+            // 兼ねるため、ゴーストのラベルにもそのまま使う（i18n 不要）。
+            label: command.operation.contractKey,
+            catalogKey: command.operation.contractKey,
+            index,
+            grid: CONTRACT_GRID,
+          });
+          setGhosts((current) => [...current, ghost]);
+        }
+        return;
+      }
 
       if (command.action !== "addNode" && command.action !== "addWorkbench") {
         return;
@@ -272,9 +365,19 @@ export function useCommands(
         dispatch({ action: "removeNode", nodeId }),
       removeWorkbench: (workbenchId: string) =>
         dispatch({ action: "removeWorkbench", workbenchId }),
+      runWorkbenchOperation: (workbenchId: string, operation: WorkbenchOperation) =>
+        dispatch({ action: "runWorkbenchOperation", workbenchId, operation }),
     }),
     [dispatch],
   );
 
-  return { state, status, hasReceivedSnapshot, operations, actions, ghosts };
+  return {
+    state,
+    status,
+    hasReceivedSnapshot,
+    operations,
+    actions,
+    ghosts,
+    pendingOperationWorkbenchIds,
+  };
 }

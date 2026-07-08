@@ -177,6 +177,32 @@ describe("createGhostNode", () => {
       expect(ghost.data.targetNodeId).toBeUndefined();
     });
   });
+
+  describe("contract ghosts (ARCHITECTURE.md §6.5 deploy placeholder)", () => {
+    it("carries the catalogKey through to data", () => {
+      const ghost = createGhostNode({
+        commandId: "cmd-deploy-1",
+        kind: "contract",
+        label: "ChainvizToken",
+        index: 0,
+        catalogKey: "ChainvizToken",
+      });
+      expect(ghost.data.kind).toBe("contract");
+      expect(ghost.data.label).toBe("ChainvizToken");
+      expect(ghost.data.catalogKey).toBe("ChainvizToken");
+    });
+
+    it("has no layer suffix in its id (only node ghosts do)", () => {
+      const ghost = createGhostNode({
+        commandId: "cmd-deploy-2",
+        kind: "contract",
+        label: "Counter",
+        index: 0,
+        catalogKey: "Counter",
+      });
+      expect(ghost.id).toBe("ghost-cmd-deploy-2");
+    });
+  });
 });
 
 describe("removeGhostByCommandId", () => {
@@ -403,5 +429,127 @@ describe("removeGhostForArrivedEntity (Issue #123)", () => {
       clientType: "reth",
     });
     expect(result).toEqual([cons]);
+  });
+
+  describe("contract arrivals (ARCHITECTURE.md §6.5)", () => {
+    it("removes the ghost whose catalogKey matches the arrived contract's catalogKey", () => {
+      const token = createGhostNode({
+        commandId: "1",
+        kind: "contract",
+        label: "ChainvizToken",
+        index: 0,
+        catalogKey: "ChainvizToken",
+      });
+      const counter = createGhostNode({
+        commandId: "2",
+        kind: "contract",
+        label: "Counter",
+        index: 1,
+        catalogKey: "Counter",
+      });
+      const result = removeGhostForArrivedEntity([token, counter], {
+        kind: "contract",
+        catalogKey: "Counter",
+      });
+      expect(result).toEqual([token]);
+    });
+
+    it("falls back to kind-only FIFO when the catalogKey does not match any ghost", () => {
+      const token = createGhostNode({
+        commandId: "1",
+        kind: "contract",
+        label: "ChainvizToken",
+        index: 0,
+        catalogKey: "ChainvizToken",
+      });
+      const result = removeGhostForArrivedEntity([token], {
+        kind: "contract",
+        catalogKey: "SomethingElse",
+      });
+      expect(result).toEqual([]);
+    });
+
+    it("falls back to kind-only FIFO when the arrived contract has no catalogKey (unknown contract)", () => {
+      const token = createGhostNode({
+        commandId: "1",
+        kind: "contract",
+        label: "ChainvizToken",
+        index: 0,
+        catalogKey: "ChainvizToken",
+      });
+      const result = removeGhostForArrivedEntity([token], { kind: "contract" });
+      expect(result).toEqual([]);
+    });
+
+    it("does not touch node/workbench ghosts when a contract arrives", () => {
+      const workbench = createGhostNode({
+        commandId: "1",
+        kind: "workbench",
+        label: "Alice",
+        index: 0,
+      });
+      const result = removeGhostForArrivedEntity([workbench], {
+        kind: "contract",
+        catalogKey: "ChainvizToken",
+      });
+      expect(result).toEqual([workbench]);
+    });
+
+    it("removes only the oldest matching ghost when two deploys of the SAME catalogKey are pending (no over-removal)", () => {
+      // 同一コントラクト(ChainvizToken)を2回同時デプロイした場合、1件目の到着で
+      // catalogKey が一致するゴーストは2枚あるが、消すのは最も古い1枚だけで
+      // もう1枚は残す(残る側は2件目の到着で消える)。Issue #113 の教訓:
+      // 「複数の同時操作でゴーストを取り違える/過剰に消す」を防ぐ。
+      const first = createGhostNode({
+        commandId: "deploy-1",
+        kind: "contract",
+        label: "ChainvizToken",
+        index: 0,
+        catalogKey: "ChainvizToken",
+      });
+      const second = createGhostNode({
+        commandId: "deploy-2",
+        kind: "contract",
+        label: "ChainvizToken",
+        index: 1,
+        catalogKey: "ChainvizToken",
+      });
+      const afterFirst = removeGhostForArrivedEntity([first, second], {
+        kind: "contract",
+        catalogKey: "ChainvizToken",
+      });
+      expect(afterFirst).toEqual([second]);
+      // 2件目の到着で残りの1枚も消える。
+      const afterSecond = removeGhostForArrivedEntity(afterFirst, {
+        kind: "contract",
+        catalogKey: "ChainvizToken",
+      });
+      expect(afterSecond).toEqual([]);
+    });
+
+    it("prefers the catalogKey match over array order when a different-key ghost is older", () => {
+      // 先頭に別種(Counter)のデプロイ中ゴーストがあっても、到着した ChainvizToken は
+      // FIFO 先頭(Counter)ではなく catalogKey 一致(ChainvizToken)を消す。
+      // 取り違え(別コントラクトの仮カードを誤って消す)が起きないことの確認。
+      const counterGhost = createGhostNode({
+        commandId: "deploy-counter",
+        kind: "contract",
+        label: "Counter",
+        index: 0,
+        catalogKey: "Counter",
+      });
+      const tokenGhost = createGhostNode({
+        commandId: "deploy-token",
+        kind: "contract",
+        label: "ChainvizToken",
+        index: 1,
+        catalogKey: "ChainvizToken",
+      });
+      const result = removeGhostForArrivedEntity([counterGhost, tokenGhost], {
+        kind: "contract",
+        catalogKey: "ChainvizToken",
+      });
+      expect(result).toEqual([counterGhost]);
+    });
   });
 });

@@ -14,8 +14,12 @@ import { DEFAULT_GRID, type GridOptions, defaultGridPosition } from "./infraNode
  * 位置へ暫定的に置き、実エンティティが届き次第 useCommands 側が取り除く。
  */
 
-/** ゴーストが表す対象の種別。addNode / addWorkbench のどちらから生まれたか。 */
-export type GhostKind = "node" | "workbench";
+/**
+ * ゴーストが表す対象の種別。addNode / addWorkbench / runWorkbenchOperation
+ * (deployContract) のどれから生まれたか（ARCHITECTURE.md §6.5「デプロイの
+ * みコントラクト行へ仮カードを置く」）。
+ */
+export type GhostKind = "node" | "workbench" | "contract";
 
 /**
  * ゴーストが node の場合、EL/CL のどちらを表すか（Issue #123 UX設計 §4-2）。
@@ -43,6 +47,13 @@ export interface GhostNodeData extends Record<string, unknown> {
    * `targetContainerName` と同時に解決される（同じノードの別表現）。
    */
   targetNodeId?: string;
+  /**
+   * kind === "contract" のときだけ意味を持つ、デプロイ先のカタログキー
+   * （`WorkbenchOperation.deployContract.contractKey` と同じ値）。実体到着
+   * （entityAdded の `ContractEntity.catalogKey`）との突き合わせに使う
+   * （`removeGhostForArrivedEntity` 参照）。
+   */
+  catalogKey?: string;
 }
 
 /** React Flow の nodeTypes で使うゴーストカードの型名。 */
@@ -80,6 +91,8 @@ export interface CreateGhostNodeParams {
   /** 接続予定先ノードの containerName / 安定 ID（解決できなければ省略）。 */
   targetContainerName?: string;
   targetNodeId?: string;
+  /** kind === "contract" のときのカタログキー（GhostNodeData 参照）。 */
+  catalogKey?: string;
 }
 
 /**
@@ -98,6 +111,7 @@ export function createGhostNode({
   layer,
   targetContainerName,
   targetNodeId,
+  catalogKey,
 }: CreateGhostNodeParams): GhostFlowNode {
   const position = defaultGridPosition(index, grid);
   const id = layer ? `ghost-${commandId}-${layer}` : `ghost-${commandId}`;
@@ -108,7 +122,15 @@ export function createGhostNode({
     // 位置が未確定の暫定カードなので、ドラッグでレイアウトに焼き付けさせない。
     draggable: false,
     selectable: false,
-    data: { commandId, kind, label, layer, targetContainerName, targetNodeId },
+    data: {
+      commandId,
+      kind,
+      label,
+      layer,
+      targetContainerName,
+      targetNodeId,
+      catalogKey,
+    },
   };
 }
 
@@ -141,15 +163,20 @@ export function removeOldestGhostByKind(
 }
 
 /** `removeGhostForArrivedEntity` に渡す、実体到着イベント側の最小限の形。 */
-export interface ArrivedInfraEntity {
-  kind: "node" | "workbench";
-  /** kind === "node" のときのクライアント種別（reth / lighthouse 等）。 */
-  clientType?: string;
-}
+export type ArrivedInfraEntity =
+  | { kind: "node"; clientType?: string }
+  | { kind: "workbench" }
+  | {
+      kind: "contract";
+      /** 到着した `ContractEntity.catalogKey`（未照合なら省略）。 */
+      catalogKey?: string;
+    };
 
 /**
  * 実エンティティ（entityAdded）の到着に対応する 1 枚のゴーストを取り除いた
- * 新しい配列を返す（純粋関数。Issue #123 UX設計 §4-3 ルール2）。
+ * 新しい配列を返す（純粋関数。Issue #123 UX設計 §4-3 ルール2。デプロイの
+ * 仮カードは ARCHITECTURE.md §6.5「entityAdded（contract）の catalogKey
+ * 一致で置換し、対応が取れないときは FIFO 近似」）。
  *
  * addNode が reth 用・beacon 用の 2 枚のゴーストを生むようになったため、
  * `removeOldestGhostByKind`（kind だけの FIFO）では届いた実体がどちらの
@@ -157,6 +184,11 @@ export interface ArrivedInfraEntity {
  * EL/CL の層を判定し、同じ層のゴーストのうち最も古いものを優先して消す。
  * 同じ層のゴーストが無い場合（旧スナップショット・層不明の生成物など）は
  * kind だけの FIFO へフォールバックする（ゴーストが消えなくなる事故を防ぐ）。
+ *
+ * kind === "contract" は、到着した `catalogKey` に一致するデプロイ中の
+ * ゴーストがあればそれを優先して消す。一致するものが無い（catalogKey が
+ * 省略された・複数の同時デプロイで既に別のゴーストが消費された等）場合は
+ * kind だけの FIFO へフォールバックする。
  */
 export function removeGhostForArrivedEntity(
   ghosts: GhostFlowNode[],
@@ -164,6 +196,20 @@ export function removeGhostForArrivedEntity(
 ): GhostFlowNode[] {
   if (entity.kind === "workbench") {
     return removeOldestGhostByKind(ghosts, "workbench");
+  }
+
+  if (entity.kind === "contract") {
+    if (entity.catalogKey !== undefined) {
+      const index = ghosts.findIndex(
+        (ghost) =>
+          ghost.data.kind === "contract" &&
+          ghost.data.catalogKey === entity.catalogKey,
+      );
+      if (index !== -1) {
+        return [...ghosts.slice(0, index), ...ghosts.slice(index + 1)];
+      }
+    }
+    return removeOldestGhostByKind(ghosts, "contract");
   }
 
   const category = clientCategory(entity.clientType ?? "");
