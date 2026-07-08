@@ -1,0 +1,87 @@
+import type { ContractEntity } from "@chainviz/shared";
+import type { ReactNode } from "react";
+import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
+import { useLanguage } from "../i18n/LanguageProvider.js";
+import { shortHex } from "./transaction.js";
+
+function Field({ label, value }: { label: ReactNode; value: string }) {
+  return (
+    <div className="infra-field">
+      <span className="infra-field__label">{label}</span>
+      <span className="infra-field__value">{value}</span>
+    </div>
+  );
+}
+
+/**
+ * 未知コントラクトの説明文中の「ABI」という語だけに用語解説アンカーを
+ * 付ける（ARCHITECTURE.md §6.9: abi の主なアンカーの1つが「未知コントラクト
+ * の説明文」）。i18n の文言データ自体は1つの完結した文（§6.8）のまま保ち、
+ * 表示側でその中の該当語だけを `GlossaryTerm` に差し替える。
+ * 文言に "ABI" という部分文字列が無い場合（訳文の変更などで一致しなくなった
+ * 場合）は、アンカーを付けずそのままの文を返す防御的フォールバック。
+ */
+function withAbiAnchor(text: string): ReactNode {
+  const idx = text.indexOf("ABI");
+  if (idx === -1) return text;
+  const before = text.slice(0, idx);
+  const after = text.slice(idx + "ABI".length);
+  return (
+    <>
+      {before}
+      <GlossaryTerm termKey="abi">ABI</GlossaryTerm>
+      {after}
+    </>
+  );
+}
+
+/**
+ * コントラクトカードのホバーで出る詳細ポップオーバー（ARCHITECTURE.md
+ * §6.3「ポップオーバー」）。冒頭に「特定ノードではなく全ノードで実行される」
+ * 誤解防止の説明文を置き、観測できなかったフィールド（デプロイした人・作成
+ * tx・トークン）は行ごと省略する（WalletPopover と同じ既存の流儀）。
+ *
+ * カタログ未登録（`name` 省略）の場合は説明文を差し替え、ABI を復号できない
+ * ことを伝える（§6.4）。
+ */
+export function ContractPopover({ entity }: { entity: ContractEntity }) {
+  const { t } = useLanguage();
+  const isUncataloged = entity.name === undefined;
+
+  return (
+    <div className="infra-popover contract-popover" role="tooltip">
+      <p className="contract-popover__description">
+        {isUncataloged
+          ? withAbiAnchor(t("contract.popover.unknownDescription"))
+          : t("contract.popover.description")}
+      </p>
+      <Field label={t("field.address")} value={shortHex(entity.address, 10, 6)} />
+      {entity.deployerAddress && (
+        <div className="infra-field">
+          <span className="infra-field__label">
+            <GlossaryTerm termKey="deploy">{t("field.deployer")}</GlossaryTerm>
+          </span>
+          <span className="infra-field__value">
+            {shortHex(entity.deployerAddress)}
+          </span>
+        </div>
+      )}
+      {entity.createdByTxHash && (
+        <Field
+          label={t("field.createdByTx")}
+          value={shortHex(entity.createdByTxHash)}
+        />
+      )}
+      {entity.token && (
+        <div className="infra-field">
+          <span className="infra-field__label">
+            <GlossaryTerm termKey="token">{t("field.token")}</GlossaryTerm>
+          </span>
+          <span className="infra-field__value">
+            {entity.token.symbol} / decimals {entity.token.decimals}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
