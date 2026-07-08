@@ -360,9 +360,66 @@ runWorkbenchOperation コマンド・ChainAdapter.subscribeContracts）は設計
 「未知のコントラクト」として表示される。コントラクトが特定ノードではなく
 全ノードで実行されることが用語解説・カード表現から分かる）
 
-## ステップ 9 以降（概要のみ。詳細は着手時にこのドキュメントへ追記）
+## ステップ 9: Phase5実装 — D層（ノード内部可視化）
 
-- [ ] Phase 5（D層: ノード内部）
+CONCEPT.mdロードマップのPhase 5: 「EL/CL構成(Kurtosis検討)にしてEngine API・
+同期ステージを可視化(D層)」。EL/CL構成は既存のcompose構成で実現済みで、
+Kurtosisは不採用が確定している(CONCEPT.md未決事項参照)。可視化するのは
+①CL→ELのEngine APIのやり取り(内部リンクエッジ+活動パルス)、②rethの
+ステージ型同期の進行状況、③txpoolの内部状態、の3点。設計の全体像
+(型・データフロー・観測方法・決定事項)は`docs/ARCHITECTURE.md` §7と
+`docs/worklog/meta.md`(2026-07-08の設計記録)を参照。`packages/shared`の
+型変更(NodeEntity.drivesNodeId/internals・NodeInternals・NodeLinkActivity・
+DiffEventのnodeLinkActivity・ChainAdapter.subscribeNodeInternals)は設計時に
+実装済みで、各担当は決定済みの前提として使ってよい。
+
+**UX**（実装着手前に chainviz-ux が設計し、frontend に引き継ぐ）:
+
+- [ ] D層可視化のUX設計(内部リンクエッジ・活動パルス・同期ステージ・
+      mempool内訳の見せ方、表示密度の制御、D層用語の文言。
+      `docs/ARCHITECTURE.md` §7.5の委譲項目)
+
+**node-env**:
+
+- [ ] rethのPrometheusメトリクスを有効化する(reth-node.shの共通起動
+      オプションに--metricsを追加。compose起動ノードと動的追加ノードの
+      両方に効くことを確認する)
+
+**collector**:
+
+- [ ] rethのメトリクスエンドポイントを周期ポーリングしEngine API呼び出し・
+      同期ステージ・txpoolをパースする(メトリクス名は実環境の/metrics出力で
+      確定。欠落時はフィールド省略の縮退動作)
+- [ ] NodeInternals/drivesNodeIdをworld-stateへ反映しnodeLinkActivityを
+      配信する(subscribeNodeInternalsの配線・storeのapplyNodeInternals・
+      pollInfraでのdrivesNodeId解決)
+- [ ] ノードカードの同期状態・ブロック高(現在常にsyncing/0)をD層観測から
+      更新する(情報源はステージcheckpointかnewHeads受信済み最新ブロックかを
+      実測で確定。ARCHITECTURE.md §7.3)
+
+**frontend**:
+
+- [ ] 内部リンクエッジ(beacon→reth)の常設描画とnodeLinkActivityの
+      活動パルスを実装する
+- [ ] ノードカード/ポップオーバーに同期ステージ・mempool内訳を表示する
+- [ ] D層用語データ(d-internal.yaml: Engine API・EL/CL分離・ステージ型同期・
+      txpool等)をglossaryへ追加する
+
+**e2e**:
+
+- [ ] D層のE2Eテスト(NodeEntity.internals/drivesNodeIdの反映と
+      nodeLinkActivityの受信)を追加する
+
+**成果物**: 動くPhase 5デモ
+**完了条件**: CONCEPT.md「ロードマップ」Phase 5の記述どおりに動作する
+(beaconカードと対のrethカードが内部リンクエッジで結ばれ、Engine APIの
+呼び出しがslotごとの活動パルスとして流れ続ける。rethノードの詳細に同期
+ステージの進行状況とtxpoolのpending/queued件数が表示され、addNodeで追加
+したフォロワーノードのバックフィル進行がステージの進みとして見える。
+Engine API・ステージ型同期が用語解説から学べる)
+
+## ステップ 10 以降（概要のみ。詳細は着手時にこのドキュメントへ追記）
+
 - [ ] Phase 6（AA 可視化）
 - [ ] Phase 7（Bitcoin プロファイル追加）
 - [ ] Phase 8（Solana プロファイル追加、チェーン比較表示）
