@@ -1653,3 +1653,59 @@
 - 注意点・申し送り: milestone のタイトルは #1〜#6 が「ステップN:」接頭辞
   付き、#7〜#8 が Phase 名のみで命名が揺れているが、直近の #7 の前例に
   沿っており PLAN.md 側の記述の問題ではない(気になるなら統括判断で改名可)。
+
+### 2026-07-08 設計メモ: E2E テストの Playwright 移行(UI シナリオテスト)
+- 担当: designer
+- ブランチ: design-e2e-playwright-migration
+- 内容: ユーザー指示「E2E は Playwright で。自然言語ベース(箇条書き)の
+  シナリオで基本操作から異常系まで網羅。UI でやれるところは全部 UI で。
+  既存分も見直し、今後も追加し続ける」を受けた設計。成果物は
+  `docs/ARCHITECTURE.md` §8(二層構成・起動トポロジ・シナリオ記法・計装
+  方針・実測値)、`packages/e2e/SCENARIOS.md`(シナリオカタログ。既存 WS
+  テストの棚卸し表 + UI シナリオ 24 件 + 残すプロトコル層シナリオ 10 件)、
+  `docs/PLAN.md` の新ステップ 10(チェックボックス 7 件。旧「ステップ 10
+  以降」は 11 以降へ繰り下げ)、`packages/e2e/package.json` への
+  `@playwright/test` 追加。
+- 設計上の主な判断:
+  1. 二層構成: UI で同等以上に検証できる WS テストは Playwright へ一本化
+     (両層とも実 Docker 相手で、重複させると実行時間が倍加するため)。
+     UI から到達不能な検証(不正フレーム・不正コマンド・タイミング競合・
+     ポート衝突・receivedAt の数値検証・RPC でのブロック追従判定)は
+     プロトコル層(vitest + ws)に残す。WS 版の削除は対応する UI シナリオが
+     green になったコミットと同時(空白期間を作らない)。
+  2. パッケージは新設せず `packages/e2e` に同居(helpers のハーネスを両層で
+     共有するため)。Playwright は `src/ui/*.spec.ts` + playwright.config.ts。
+     vitest の include(`*.test.ts`)と重ならない。
+  3. 排他ロック(`helpers/e2e-lock.ts`)は既定パスのまま Playwright の
+     globalSetup でも取得し、`test:e2e` と `test:e2e:ui` の同時実行を防ぐ。
+  4. ポートは UI 層専用に collector 4125 / frontend 5275 を割り当て
+     (dev 4000/5173・vitest e2e 4123・衝突テスト 4199 と重ねない)。
+  5. シナリオ記法は Gherkin(cucumber)を採用せず、SCENARIOS.md(Markdown
+     箇条書き、前提/操作/確認)を正として `test()` タイトルにシナリオ ID、
+     各箇条書きを `test.step()` で同文実装する方式。依存と間接層を増やさず
+     同等の可読性を得るため。
+  6. pre-push フックの `pnpm test` には UI 層も含めない(既存方針を維持)。
+- 実測・実証(2026-07-08、WSL2):
+  - 既存プロトコル層 21 テストはスタックのコールドスタート込みで 3 分 07 秒
+    (全 green)。vite dev の起動は 0.6 秒。
+  - `@playwright/test` 1.61.1 + chromium で、vite dev(モックモード)に対する
+    起動・DOM 操作・ロケータ取得が成立することをスモークスクリプトで実証
+    (カード 7 枚・ツールバー・エッジ 6 本を検出)。
+  - **注意**: このホストは chromium のシステムライブラリ(libnspr4 /
+    libnss3 / libasound2 等)が未導入で、`playwright install chromium`
+    だけでは起動しない。実装 Issue では `sudo playwright install-deps`
+    等の導入(または LD_LIBRARY_PATH での注入)が前提。CONTRIBUTING.md への
+    記載をステップ 10 の基盤導入チェックボックスに含めた。
+- 決定事項・注意点(実装担当への申し送り):
+  - frontend の計装は追加が必要(接続バッジ・ツールバー・言語トグル・
+    用語/インフラポップオーバー)。カード類は 34 箇所計装済み。React Flow
+    エッジは `data-id` で特定できるため追加不要。
+  - frontend の WebSocket クライアントは自動再接続を持たない(仕様)。
+    再接続系 UI シナリオはリロードで表現する(UI-ERR-01 / UI-MULTI-02)。
+  - PROTO-CMD-01(ブロック追従)は現在 addNode テストの副産物に依存して
+    いるため、UI 移行時に addNode 送信を自己完結する形へ再構成が必要。
+  - UI-ERR-02(collector 停止中の追加操作)の実挙動(60 秒のゴースト
+    タイムアウト後のトースト)は実装時に確認し、シナリオ記述を実態に
+    合わせて確定させること。
+  - UI-D(D層シナリオ)はステップ 9 の #188/#189 完了が前提。#191(WS レベルの
+    D層 E2E)はプロトコル層として従来どおりステップ 9 で実装する。
