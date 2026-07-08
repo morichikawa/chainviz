@@ -1,6 +1,10 @@
 import type { Node } from "@xyflow/react";
 import { describe, expect, it } from "vitest";
-import { sameByReference, stabilizeNodes } from "./nodeStability.js";
+import {
+  sameByReference,
+  stabilizeArrayReference,
+  stabilizeNodes,
+} from "./nodeStability.js";
 
 interface TestData extends Record<string, unknown> {
   value: string;
@@ -179,5 +183,66 @@ describe("sameByReference", () => {
     const a = { x: 1 };
     const b = { x: 2 };
     expect(sameByReference([a, b], [b, a])).toBe(false);
+  });
+});
+
+describe("stabilizeArrayReference", () => {
+  // Issue #166 差し戻し対応: App.tsx の `contracts`
+  // (`entities.filter(isContractEntity)`) は state 更新のたびに新しい配列を
+  // 作るため、要素の中身(参照)が全く変わっていなくても愚直に使うと下流の
+  // useMemo(`contractsByAddress`)まで毎回作り直されてしまう。この関数は
+  // その無駄な参照の入れ替わりを止める。
+
+  it("returns the exact previous reference when every element matches by reference", () => {
+    const a = { id: "a" };
+    const b = { id: "b" };
+    const previous = [a, b];
+    const next = [a, b]; // 別配列だが要素は同じ参照
+    const result = stabilizeArrayReference(next, previous);
+    expect(result).toBe(previous);
+    expect(result).not.toBe(next);
+  });
+
+  it("returns the previous reference for two independently constructed empty arrays", () => {
+    // 空配列同士(sameByReference は長さ0同士を true とみなす)。
+    const previous: unknown[] = [];
+    const next: unknown[] = [];
+    expect(stabilizeArrayReference(next, previous)).toBe(previous);
+  });
+
+  it("returns next when an element was replaced with a different reference (same length)", () => {
+    const a = { id: "a" };
+    const bOld = { id: "b" };
+    const bNew = { id: "b" }; // 中身が同じでも別オブジェクト
+    const previous = [a, bOld];
+    const next = [a, bNew];
+    const result = stabilizeArrayReference(next, previous);
+    expect(result).toBe(next);
+    expect(result).not.toBe(previous);
+  });
+
+  it("returns next when an element was added (length grew)", () => {
+    const a = { id: "a" };
+    const b = { id: "b" };
+    const previous = [a];
+    const next = [a, b];
+    const result = stabilizeArrayReference(next, previous);
+    expect(result).toBe(next);
+  });
+
+  it("returns next when an element was removed (length shrank)", () => {
+    const a = { id: "a" };
+    const b = { id: "b" };
+    const previous = [a, b];
+    const next = [a];
+    const result = stabilizeArrayReference(next, previous);
+    expect(result).toBe(next);
+  });
+
+  it("returns next when there is no previous output yet (first call)", () => {
+    const a = { id: "a" };
+    const next = [a];
+    const result = stabilizeArrayReference(next, []);
+    expect(result).toBe(next);
   });
 });

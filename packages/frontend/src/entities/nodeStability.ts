@@ -47,3 +47,24 @@ export function sameByReference<T>(a: readonly T[], b: readonly T[]): boolean {
   if (a.length !== b.length) return false;
   return a.every((item, index) => item === b[index]);
 }
+
+/**
+ * `next` の全要素が `previous` と参照レベルで完全一致(`sameByReference`)する
+ * なら `previous` をそのまま返し、そうでなければ `next` を返す純粋関数
+ * (Issue #166 差し戻し対応)。
+ *
+ * `entities.filter(...)` のように呼ぶたびに新しい配列を作る変換の出力を、
+ * 中身の要素が実質変わっていない場合に限り配列自体の参照まで安定させたい
+ * ときに使う。`stabilizeNodes` と違い要素自体は作り直さない（要素の同一性は
+ * 呼び出し元の元データ側に委ねる）。
+ *
+ * 使用例(Issue #166): App.tsx の `contracts`（`entities.filter(isContractEntity)`
+ * の出力）をこの関数で安定化すると、そこから作る `contractsByAddress`
+ * （`useMemo(() => new Map(...), [contracts])`）の Map インスタンスまで参照が
+ * 安定する。これにより walletNode.ts の `isSameWalletNode` が
+ * `contractsByAddress` の参照比較で誤って「変化した」と判定し、Issue #119 の
+ * 参照安定化（ウォレットカードの不要な再レンダー防止）を無効化する問題を防ぐ。
+ */
+export function stabilizeArrayReference<T>(next: T[], previous: T[]): T[] {
+  return sameByReference(next, previous) ? previous : next;
+}
