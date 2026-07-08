@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { ContainerObservation } from "../../docker/types.js";
+import { EXECUTION_METRICS_PORT } from "./reth-metrics-client.js";
 import {
   beaconStableIdForExecution,
   beaconTargets,
   EXECUTION_RPC_PORT,
   EXECUTION_WS_PORT,
+  executionMetricsTargets,
   executionPeerTargets,
   executionRpcUrls,
   executionTargets,
@@ -794,5 +796,44 @@ describe("executionRpcUrls", () => {
 
   it("skips execution containers without an IP", () => {
     expect(executionRpcUrls([obs({ ip: "" })])).toEqual([]);
+  });
+});
+
+describe("executionMetricsTargets", () => {
+  it("selects execution nodes and builds their metrics URL", () => {
+    expect(executionMetricsTargets([obs()])).toEqual([
+      {
+        stableId: "chainviz-ethereum/reth1",
+        metricsUrl: `http://172.28.1.1:${EXECUTION_METRICS_PORT}/metrics`,
+      },
+    ]);
+  });
+
+  it("excludes beacon, validator and workbench containers", () => {
+    expect(executionMetricsTargets([beacon1, validator1, workbench])).toEqual(
+      [],
+    );
+  });
+
+  it("excludes execution nodes without an IP address", () => {
+    expect(executionMetricsTargets([{ ...obs(), ip: "" }])).toEqual([]);
+  });
+
+  it("lists every reachable execution node", () => {
+    const reth2 = obs({
+      stableId: "chainviz-ethereum/reth2",
+      labels: { "com.docker.compose.service": "reth2" },
+      ip: "172.28.1.2",
+    });
+    expect(
+      executionMetricsTargets([obs(), reth2]).map((t) => t.metricsUrl),
+    ).toEqual([
+      `http://172.28.1.1:${EXECUTION_METRICS_PORT}/metrics`,
+      `http://172.28.1.2:${EXECUTION_METRICS_PORT}/metrics`,
+    ]);
+  });
+
+  it("returns no targets for an empty observation set", () => {
+    expect(executionMetricsTargets([])).toEqual([]);
   });
 });
