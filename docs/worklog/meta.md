@@ -1625,3 +1625,31 @@
     無いためで、アプリの不具合ではない(ラテン文字・数値・レイアウトは正常。
     Phase4 QA と同じ環境要因)。検証で起動した preview は後始末済み
     (ポート15180 解放確認)。profiles/ の共有 Docker スタックには一切触れていない。
+
+### 2026-07-08 ステップ9のIssue起票に伴う docs/PLAN.md へのIssueリンク追記のレビュー
+- 担当: reviewer
+- ブランチ: design-phase5-node-internals
+- 内容: docs/PLAN.md ステップ9(Phase5実装 — D層)への milestone リンクと
+  Issue リンク(#183〜#191)追記(未コミットの docs のみの変更)を静的レビュー
+  した。
+- 確認内容と結果(いずれも合格):
+  1. Issue との対応: #183〜#191 の全9件を `gh issue view` で確認。各
+     チェックボックスの内容と Issue のタイトル・本文が一致し、リンク先の
+     番号の取り違えは無い。担当ラベル(UX=frontend 1件・node-env 1件・
+     collector 3件・frontend 3件・e2e 1件=collector ラベル)も PLAN.md の
+     セクション分けと整合。e2e を collector ラベルにするのは過去の e2e
+     Issue(#51〜#54 等)の慣例どおり。全 Issue が milestone
+     「Phase 5: D層(ノード内部可視化)」(milestone #8)に紐付いている。
+  2. 記述形式の一貫性: milestone リンクは既存ステップと同じ
+     `GitHub: [milestone](URL)` 形式、Issue リンクは既存ステップと同じ
+     「チェックボックス本文末尾に6スペースインデントで
+     `[#番号](URL)`」形式で一貫している。
+  3. milestone URL: `https://github.com/morichikawa/chainviz/milestone/8` が
+     実在し、ステップ9に対応する milestone であることを GitHub API で確認。
+  4. #183(UX設計)のみ [x] 済みだが、Issue 自体は OPEN。クローズは PR マージ
+     時の自動クローズに委ねる運用どおりで問題ない。
+- 判定: 合格。docs/ のみの変更(コード変更なし)のため、CLAUDE.md の例外規定
+  により chainviz-qa は省略してよい。
+- 注意点・申し送り: milestone のタイトルは #1〜#6 が「ステップN:」接頭辞
+  付き、#7〜#8 が Phase 名のみで命名が揺れているが、直近の #7 の前例に
+  沿っており PLAN.md 側の記述の問題ではない(気になるなら統括判断で改名可)。
