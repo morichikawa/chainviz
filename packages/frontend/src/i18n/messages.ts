@@ -242,6 +242,22 @@ export const messages = {
   },
   "internalEdge.latency": { ja: "平均 {ms} ms", en: "avg {ms} ms" },
   "field.drivesNode": { ja: "駆動する実行ノード", en: "Drives execution node" },
+  // --- D層: 同期ステージ・txpool内訳（ARCHITECTURE.md §7.6.5/§7.6.6。
+  // Issue #189） ---
+  "field.syncStages": { ja: "同期ステージ", en: "Sync stages" },
+  "field.txpool": { ja: "txpool", en: "Txpool" },
+  "txpool.value": {
+    ja: "pending {pending} · queued {queued}",
+    en: "pending {pending} · queued {queued}",
+  },
+  "sync.progress": {
+    ja: "同期中: {stage} {checkpoint}/{target}",
+    en: "Syncing: {stage} {checkpoint}/{target}",
+  },
+  "sync.progressNoTarget": {
+    ja: "同期中: {stage} {checkpoint}",
+    en: "Syncing: {stage} {checkpoint}",
+  },
 } as const satisfies Record<string, Localized>;
 
 export type MessageKey = keyof typeof messages;

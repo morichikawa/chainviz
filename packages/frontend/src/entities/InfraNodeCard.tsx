@@ -6,6 +6,7 @@ import { resolveWorkbenchOperationsHint } from "../commands/commandMessages.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { OperationPanel } from "../operations/OperationPanel.js";
+import { InfraNodeCardSyncProgress } from "./InfraNodeCardSyncProgress.js";
 import { InfraPopover } from "./InfraPopover.js";
 import type { InfraFlowNode } from "./infraNode.js";
 
@@ -19,8 +20,14 @@ import type { InfraFlowNode } from "./infraNode.js";
  * 「操作は必ずワークベンチという実体から発する」ため起点はカード側に置く）。
  */
 export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
-  const { entity, rpcTargetContainerName, drivesNodeContainerName, isNew, operationPending } =
-    data;
+  const {
+    entity,
+    rpcTargetContainerName,
+    drivesNodeContainerName,
+    maxElBlockHeight,
+    isNew,
+    operationPending,
+  } = data;
   const { t } = useLanguage();
   const actions = useCommandActions();
   const [hovered, setHovered] = useState(false);
@@ -111,6 +118,14 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
       </div>
       <div className="infra-card__name">{entity.containerName}</div>
       <div className="infra-card__subtitle">{subtitle}</div>
+      {entity.kind === "node" &&
+        entity.syncStatus === "syncing" &&
+        entity.internals?.syncStages && (
+          <InfraNodeCardSyncProgress
+            stages={entity.internals.syncStages}
+            targetHeight={maxElBlockHeight ?? 0}
+          />
+        )}
       {entity.kind === "workbench" && (
         <div className="infra-card__operate-wrapper">
           <ActionHint hint={resolveWorkbenchOperationsHint(rpcTargetContainerName, t)}>
@@ -140,6 +155,7 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
           entity={entity}
           rpcTargetContainerName={rpcTargetContainerName}
           drivesNodeContainerName={drivesNodeContainerName}
+          maxElBlockHeight={maxElBlockHeight}
         />
       )}
       {entity.kind === "workbench" && operationPanelOpen && (

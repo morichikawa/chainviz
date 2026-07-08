@@ -5,6 +5,7 @@ import type {
   NodeEntity,
   OperationEdge,
   PeerEdge,
+  SyncStageProgress,
   TransactionEntity,
   WalletEntity,
   WorkbenchEntity,
@@ -15,6 +16,31 @@ import type {
   ChainvizClientHandlers,
   ConnectionStatus,
 } from "./client.js";
+
+/**
+ * ステージ型同期の全ステージ名（reth の実際の並び順。ARCHITECTURE.md §7.6.7
+ * の表と同じ順序）。D層: synced な reth ノードでもステージ一覧は残るという
+ * §7.6.5 の記述どおり、全ステージの checkpoint を渡された blockHeight に
+ * 揃えた「完了済み」のサンプルを作る（rethNode 用。Issue #189）。
+ */
+const RETH_SYNC_STAGE_NAMES = [
+  "Headers",
+  "Bodies",
+  "SenderRecovery",
+  "Execution",
+  "AccountHashing",
+  "StorageHashing",
+  "MerkleExecute",
+  "TransactionLookup",
+  "IndexAccountHistory",
+  "IndexStorageHistory",
+  "Finish",
+] as const;
+
+/** 全ステージが `checkpoint` まで完了した状態のサンプルを作る。 */
+function fullSyncStages(checkpoint: number): SyncStageProgress[] {
+  return RETH_SYNC_STAGE_NAMES.map((stage) => ({ stage, checkpoint }));
+}
 
 function rethNode(n: number, blockHeight: number): NodeEntity {
   return {
@@ -30,6 +56,12 @@ function rethNode(n: number, blockHeight: number): NodeEntity {
     syncStatus: "synced",
     blockHeight,
     headBlockHash: `0x${blockHeight.toString(16).padStart(8, "0")}`,
+    // D層: 同期ステージ・txpool内訳をオフラインで確認できるようにする
+    // （ARCHITECTURE.md §7.6.5/§7.6.6。Issue #189）。
+    internals: {
+      syncStages: fullSyncStages(blockHeight),
+      mempool: { pending: n, queued: 0 },
+    },
   };
 }
 
@@ -530,6 +562,28 @@ function newFollowerNodePair(seq: number): { reth: NodeEntity; beacon: NodeEntit
     headBlockHash: "0x00000000",
     p2pRole: "peer",
     removable: true,
+    // D層: バックフィル進行中のサンプル（ARCHITECTURE.md §7.6.5。
+    // Issue #189）。Headers/Bodies だけ進み、残りは未着手にすることで、
+    // カード面の「同期中: 送信者復元 0/128」1行と、ポップオーバーの
+    // 全ステージ一覧（進捗にばらつきがある状態）の両方をオフラインで
+    // 確認できるようにする。mempool はまだヘッダ/ボディ取得段階で
+    // txの中身を検証できていない想定で pending/queued とも0にする。
+    internals: {
+      syncStages: [
+        { stage: "Headers", checkpoint: 128 },
+        { stage: "Bodies", checkpoint: 64 },
+        { stage: "SenderRecovery", checkpoint: 0 },
+        { stage: "Execution", checkpoint: 0 },
+        { stage: "AccountHashing", checkpoint: 0 },
+        { stage: "StorageHashing", checkpoint: 0 },
+        { stage: "MerkleExecute", checkpoint: 0 },
+        { stage: "TransactionLookup", checkpoint: 0 },
+        { stage: "IndexAccountHistory", checkpoint: 0 },
+        { stage: "IndexStorageHistory", checkpoint: 0 },
+        { stage: "Finish", checkpoint: 0 },
+      ],
+      mempool: { pending: 0, queued: 0 },
+    },
   };
   const beacon: NodeEntity = {
     kind: "node",
