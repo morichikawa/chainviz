@@ -1709,3 +1709,116 @@
     合わせて確定させること。
   - UI-D(D層シナリオ)はステップ 9 の #188/#189 完了が前提。#191(WS レベルの
     D層 E2E)はプロトコル層として従来どおりステップ 9 で実装する。
+
+### 2026-07-08 レビュー: E2E テストの Playwright 移行(設計)
+- 担当: reviewer
+- ブランチ: design-e2e-playwright-migration(worktree)
+- 結果: **合格**(軽微な記録訂正1件と実装時の申し送り2件あり。差し戻しなし)
+- 確認した内容:
+  - 棚卸しの正確性: 既存 E2E 5 ファイルを全読し、テスト数 21 件
+    (a-b-layer 3 / commands 6 / error-paths 6 / reconnect 5 / port-collision 1)
+    が SCENARIOS.md §1 の棚卸し表(移行 8 行・残す 10 行)と過不足なく対応
+    することを確認。「compose 起動ノードの削除拒否はプロトコル層のみ」の
+    判断は InfraNodeCard.tsx が `entity.removable === true` のときだけ削除
+    ボタンを描画する実装(テストも既存)と整合し正しい。「ブロック追従は
+    RPC 判定」も、waitForBlockCatchUp の動的タイムアウト+進捗停止検出に
+    よる数値判定が UI から再現不能なため正しい
+  - ポート設計: collector 既定 4000 / vitest e2e 4123 / 衝突テスト 4199 /
+    vite dev 5173 を実コードで確認し、UI 層の 4125/5275 が衝突しないこと
+    を確認。排他ロックは e2e-lock.ts の既定パス(os.tmpdir() 固定)共用で
+    worktree をまたいで有効
+  - pre-push 整合: root `pnpm test` → e2e は vitest.unit.config.ts
+    (`*.unit.test.ts` のみ)で、`src/ui/*.spec.ts` はどの vitest include
+    にも合致しない。PLAN ステップ 10 の完了条件にも明記済み
+  - シナリオ記法: Markdown(前提/操作/確認)+ `test.step()` 同文実装は
+    ユーザー要望「自然言語ベース(箇条書き)」を満たす。Gherkin 不採用の
+    理由(間接層・依存増)も妥当
+  - 検証: `pnpm lint && pnpm build && pnpm test` 全通過。vite dev 起動を
+    実測(81ms。設計メモの 0.6 秒と整合)。playwright-core 1.61.1 の要求
+    chromium revision 1228 が ~/.cache/ms-playwright に配置済みであること、
+    ldconfig に libnspr4/libnss3/libasound が 1 件も無いこと(設計メモの
+    環境注意と一致。issue-165 等の過去 QA の deb 展開記録とも整合)を確認。
+    プロトコル層 21 テストのフル実行(実 Docker)の再現は QA に委ねる
+  - コミット粒度: 5 コミットすべて単一関心事で規約どおり
+- 記録の訂正: 上記設計メモの「UI シナリオ 24 件」は誤りで、実数は
+  **32 件**(UI-CONN 1 / UI-A 5 / UI-B 3 / UI-CMD 7 / UI-C 7 / UI-D 3 /
+  UI-ERR 4 / UI-MULTI 2)。プロトコル層 10 件は正しい
+- 実装担当(ステップ 10-1 以降)への申し送り:
+  - Playwright の既定 testMatch は `*.test.ts` も拾うため、
+    playwright.config.ts では `testDir` を `src/ui` に限定すること
+    (さもないとプロトコル層の vitest ファイルを Playwright が誤実行する。
+    ARCHITECTURE §8.2 は vitest 側の非重複しか述べていない)
+  - UI-ERR-01/02 は共有 collector(4125)を停止させるため、他シナリオと
+    並列実行すると巻き添えで失敗する。単一 Docker スタック共有の性質上、
+    UI 層は workers=1(直列)を基本とするか、UI-ERR 系だけ専用 collector
+    ポートで隔離すること(設計文書に並列度の記述が無いため実装時に確定)
+
+### 2026-07-08 QA検証: E2E テストの Playwright 移行(設計)
+- 担当: qa
+- ブランチ: design-e2e-playwright-migration(worktree)
+- 結果: **合格**(この設計フェーズで実機確認できる範囲はすべて確認。差し戻しなし)
+- このフェーズは設計・シナリオ確定のみで、Playwright テストの実装コードは
+  未着手。以下は実機で確認できる範囲を検証した。
+- 確認した内容:
+  - 静的ゲート(独立実行): `pnpm install --frozen-lockfile`(lockfile 変更なし)、
+    `pnpm lint`(clean)、`pnpm build`(shared/collector/frontend/e2e 全 OK)、
+    `pnpm test` 全通過(shared 58 / collector 1026 / frontend 1205 /
+    e2e ユニット 34)。package.json への @playwright/test 追加は既存の
+    ビルド・テストに影響していない。
+  - 既存プロトコル層テストの健全性: `vitest list`(e2e 設定)で 21 件の
+    テストがすべて収集されることを確認(a-b-layer 3 / commands 6 /
+    error-paths 6 / reconnect 5 / port-collision 1)。SCENARIOS.md §1 の
+    棚卸し・§3 の PROTO 表と一致。これらのテストは ws とヘルパのみを
+    import し @playwright/test に依存しないため、今回の依存追加は
+    ランタイム挙動に影響しない。
+  - Playwright chromium の実行可否: この環境では headless_shell が
+    libnspr4/libnss3/libasound2 を欠き起動失敗することを実際の launch で
+    再現(reviewer 報告と一致)。過去 QA の手法(`apt-get download` で
+    libnspr4 / libnss3 / libasound2t64 の deb を取得 → `dpkg-deb -x` で展開
+    → `LD_LIBRARY_PATH` に追加)で headless chromium の起動・DOM 描画・
+    data-testid ロケータ取得まで成功することを確認。root 権限なしで UI 層
+    テストを回せる回避策が有効(実装フェーズ・CONTRIBUTING 記載の参考)。
+  - ドキュメント整合性: SCENARIOS.md の UI シナリオは 32 件
+    (CONN1/A5/B3/CMD7/C7/D3/ERR4/MULTI2)、PROTO は 10 件で、§1「残す」
+    10 行と §3 表が一致。ARCHITECTURE §8.6 の「プロトコル層 21 テスト」も
+    実数と一致。`pnpm test:e2e:ui` は §8.2/§8.3・PLAN §10 で配線予定の
+    成果物として言及され、package.json に未追加なのは設計フェーズとして
+    整合。矛盾は見つからなかった。
+- 実機で「今回は実行しなかった」項目とその理由:
+  - フル Docker 実行(21 テストの実走): 依頼元より「本物の稼働中スタックに
+    は触れないでください」との明示指示があり、現在ホスト上で
+    chainviz-ethereum スタック(6 ノード + ワークベンチ)が稼働中。E2E
+    ハーネスは稼働中スタックを再利用する設計(ensureChainRunning が
+    172.28.1.1 の健全性を見て再利用)で、フル実行すると managed ノードの
+    追加・削除でこのスタックに触れるため、隔離した別スタックでの実行は
+    現ハーネス構成では不可能。指示を優先し、フル実行は行わなかった。
+    なお実行時点で当該スタックに接続中の collector(4000)/frontend/e2e
+    ロックは無く(能動的な利用者は検出されず)、統括が「このスタックは
+    使い捨ててよい」と判断すれば低リスクでフル実行可能。判断は統括に委ねる。
+- PLAN §10 のチェックボックスは全て実装タスク(未着手)であり、この設計
+  フェーズで qa がチェックを付ける項目は無い。
+
+### 2026-07-08 E2Eプロトコル層21テストのフル実走検証(qa)
+
+- 担当: qa(検証)
+- ブランチ: design-e2e-playwright-migration
+- 背景: 前回検証で「稼働中のchainviz-ethereumスタックに触れるため見送り」と
+  していたフル実走について、統括がユーザーに確認し「このスタックは使い捨てて
+  よい(触れてよい)」との回答を得たため、実際に実行して検証した。
+- 実施内容: `pnpm --filter @chainviz/e2e test:e2e` を稼働中の
+  chainviz-ethereumスタック(6ノード + ワークベンチ)を再利用する形で実行。
+- 結果: 21件すべて合格(合格)。
+  - reconnect 5 / error-paths 6 / commands 6 / a-b-layer 3 /
+    collector-port-collision 1、Test Files 5 passed、Duration 約262秒。
+  - package.json への @playwright/test 追加後もプロトコル層テストの
+    ランタイム挙動に影響が無いことを実走で確認した(これらのテストは ws と
+    ヘルパのみ import し @playwright/test に依存しない)。
+- 実行後のスタック状態確認(放置破損が無いことの確認):
+  - コンテナ数は実行前と同じ8個に戻っており(reth1/reth2, beacon1/beacon2,
+    validator1/validator2, workbench の稼働7 + genesis の Exited(0) 1)、
+    addNode/addWorkbench で動的に追加されたコンテナは afterAll で正しく
+    クリーンアップされ、orphan コンテナは残っていない。
+  - reth1(172.28.1.1:8545)の eth_blockNumber が 0x4ec→0x4ef と6秒で進行
+    しており、チェーンは健全に稼働継続している。
+- 結論: 完了条件(既存21テストが依存追加後も全通過)を満たす。スタックも
+  破損せず稼働継続。
