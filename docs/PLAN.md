@@ -433,6 +433,8 @@ Engine API・ステージ型同期が用語解説から学べる)
 
 ## ステップ 10: E2E テストの Playwright 移行（UI シナリオテスト）
 
+GitHub: [milestone](https://github.com/morichikawa/chainviz/milestone/9)
+
 ユーザー指示（2026-07-08）: 「E2E テストは Playwright を使う。自然言語
 ベース（箇条書き）のシナリオを作り、基本操作から異常系まで網羅する。
 UI でやれるところは全部 UI でやる。これまでの分も見直し、これからも
@@ -446,18 +448,25 @@ UI で同等以上に検証できるシナリオは Playwright（実ブラウザ
 - [ ] Playwright 基盤の導入(playwright.config.ts・globalSetup での排他
       ロック/Docker/collector 起動・webServer での vite dev 起動・
       pnpm test:e2e:ui の配線・CONTRIBUTING.md への前提記載)
+      [#197](https://github.com/morichikawa/chainviz/issues/197)
 - [ ] frontend の計装(SCENARIOS.md の UI シナリオが参照する data-testid の
       追加: 接続バッジ・ツールバー・言語トグル・用語/インフラポップ
       オーバー)
+      [#198](https://github.com/morichikawa/chainviz/issues/198)
 - [ ] 基本表示シナリオ(UI-CONN・UI-A・UI-B)の Playwright 実装
+      [#199](https://github.com/morichikawa/chainviz/issues/199)
 - [ ] 操作シナリオ(UI-CMD: ノード/ワークベンチ追加・削除)の Playwright
       実装と、移行済み WS テストの整理(SCENARIOS.md §1 の棚卸しどおり)
+      [#200](https://github.com/morichikawa/chainviz/issues/200)
 - [ ] C層シナリオ(UI-C: 送金・デプロイ・コントラクト呼び出し・トークン
       残高・未知コントラクト)の Playwright 実装
+      [#201](https://github.com/morichikawa/chainviz/issues/201)
 - [ ] 異常系・複数クライアントシナリオ(UI-ERR・UI-MULTI)の Playwright
       実装と、移行済み WS テストの整理
+      [#202](https://github.com/morichikawa/chainviz/issues/202)
 - [ ] D層 UI シナリオ(UI-D)の Playwright 実装(ステップ9の #188/#189 の
       実装完了が前提)
+      [#203](https://github.com/morichikawa/chainviz/issues/203)
 
 **成果物**: `pnpm test:e2e:ui` で実行できる Playwright の UI シナリオ
 テスト一式と、更新された `packages/e2e/SCENARIOS.md`
