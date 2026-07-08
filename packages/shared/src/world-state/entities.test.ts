@@ -5,6 +5,8 @@ import type {
   ContractEvent,
   DecodedArgument,
   NodeEntity,
+  NodeInternals,
+  NodeLinkActivity,
   OperationEdge,
   PeerEdge,
   TokenBalance,
@@ -587,6 +589,251 @@ describe("world-state entities", () => {
     ) as WalletEntity;
     expect(emptyRoundTripped.tokenBalances).toEqual([]);
     expect(emptyRoundTripped.tokenBalances).not.toBeUndefined();
+  });
+
+  it("carries node internals (sync stages / mempool) across JSON, omitted when unobserved", () => {
+    // D層: EL ノードが内部メトリクスを公開している場合の NodeEntity。
+    // ステージ名はクライアント依存の生の識別子をそのまま持つ（解釈はフロントの
+    // チェーンプロファイル表現セットの責務）。
+    const internals: NodeInternals = {
+      syncStages: [
+        { stage: "Headers", checkpoint: 120 },
+        { stage: "Bodies", checkpoint: 120 },
+        { stage: "Execution", checkpoint: 118 },
+      ],
+      mempool: { pending: 3, queued: 1 },
+    };
+    const node: NodeEntity = {
+      kind: "node",
+      id: "node-1",
+      containerName: "chainviz-ethereum-reth1",
+      ip: "172.28.1.1",
+      ports: [8545],
+      resources: { cpuPercent: 0, memMB: 0 },
+      process: { name: "reth" },
+      chainType: "ethereum",
+      clientType: "reth",
+      syncStatus: "synced",
+      blockHeight: 120,
+      headBlockHash: "0xabc",
+      internals,
+    };
+    const roundTripped = JSON.parse(JSON.stringify(node)) as NodeEntity;
+    expect(roundTripped.internals?.syncStages).toHaveLength(3);
+    expect(roundTripped.internals?.syncStages?.[2]).toEqual({
+      stage: "Execution",
+      checkpoint: 118,
+    });
+    expect(roundTripped.internals?.mempool).toEqual({ pending: 3, queued: 1 });
+
+    // メトリクスを公開しないノード・旧スナップショットでは省略（キー自体が
+    // 現れない）。フロントは表示を出さない側に倒す。
+    const withoutInternals: NodeEntity = { ...node };
+    delete withoutInternals.internals;
+    const serialized = JSON.stringify(withoutInternals);
+    expect(serialized).not.toContain("internals");
+    const parsed = JSON.parse(serialized) as NodeEntity;
+    expect(parsed.internals).toBeUndefined();
+  });
+
+  it("distinguishes partial internals (mempool のみ等) from full internals", () => {
+    // NodeInternals の各フィールドは独立に省略できる（観測できたものだけ載る）。
+    // mempool だけ観測できたケースが型として成立し、syncStages が無い =
+    // ステージ表示を出さない側に安全に倒れることを確認する。
+    const mempoolOnly: NodeInternals = { mempool: { pending: 0, queued: 0 } };
+    const serialized = JSON.stringify(mempoolOnly);
+    expect(serialized).not.toContain("syncStages");
+    const parsed = JSON.parse(serialized) as NodeInternals;
+    expect(parsed.syncStages).toBeUndefined();
+    // pending/queued の 0 は falsy だが JSON 往復で欠落しない。
+    expect(parsed.mempool?.pending).toBe(0);
+    expect(parsed.mempool?.queued).toBe(0);
+  });
+
+  it("carries drivesNodeId on a driving node, omitted when the node drives nothing", () => {
+    // D層: beacon（CL）ノードが対の Execution（EL）ノードを駆動する関係。
+    const beacon: NodeEntity = {
+      kind: "node",
+      id: "beacon-1",
+      containerName: "chainviz-ethereum-beacon1",
+      ip: "172.28.2.1",
+      ports: [5052],
+      resources: { cpuPercent: 0, memMB: 0 },
+      process: { name: "lighthouse" },
+      chainType: "ethereum",
+      clientType: "lighthouse",
+      syncStatus: "synced",
+      blockHeight: 0,
+      headBlockHash: "",
+      drivesNodeId: "node-1",
+    };
+    const roundTripped = JSON.parse(JSON.stringify(beacon)) as NodeEntity;
+    expect(roundTripped.drivesNodeId).toBe("node-1");
+
+    // 駆動関係を持たないノード（EL 側・解決不能・旧スナップショット）では
+    // 省略（null は使わない。WorkbenchEntity.rpcTargetNodeId と同じ流儀）。
+    const nonDriving: NodeEntity = { ...beacon };
+    delete nonDriving.drivesNodeId;
+    const serialized = JSON.stringify(nonDriving);
+    expect(serialized).not.toContain("drivesNodeId");
+    expect((JSON.parse(serialized) as NodeEntity).drivesNodeId).toBeUndefined();
+  });
+
+  it("represents internal API call activity as a NodeLinkActivity (増分・揮発性)", () => {
+    // 呼び出し 1 回ごとではなく観測間隔内の増分として届く（OperationEdge との
+    // 違い）。method はチェーン依存の生の識別子、latencyMs は観測できた場合のみ。
+    const activity: NodeLinkActivity = {
+      fromNodeId: "beacon-1",
+      toNodeId: "node-1",
+      calls: [
+        { method: "engine_newPayload", count: 2, latencyMs: 12 },
+        { method: "engine_forkchoiceUpdated", count: 2 },
+      ],
+      observedAt: 1_700_000_000_000,
+    };
+    const roundTripped = JSON.parse(
+      JSON.stringify(activity),
+    ) as NodeLinkActivity;
+    expect(roundTripped.calls).toHaveLength(2);
+    expect(roundTripped.calls[0].latencyMs).toBe(12);
+    // latencyMs 未観測はキーごと現れない（省略 = 観測不能）。
+    expect(JSON.stringify(roundTripped.calls[1])).not.toContain("latencyMs");
+  });
+
+  it("distinguishes empty NodeInternals fields (observed-but-zero) from full omission", () => {
+    // 観測はできたが中身が空、という縮退の境界を確認する。
+    // - internals: {} …… ノードは observable だが syncStages も mempool も
+    //   観測できなかった（両フィールド省略）。フロントは両行とも出さない。
+    // - syncStages: [] …… ステージ一覧を観測できたが 0 件（例: パイプライン
+    //   同期を行っていないノード）。これは syncStages 省略と意味が異なるので
+    //   [] が JSON 往復で保持され、undefined と取り違えないことを確認する。
+    const emptyInternals: NodeInternals = {};
+    const serializedEmpty = JSON.stringify(emptyInternals);
+    expect(serializedEmpty).not.toContain("syncStages");
+    expect(serializedEmpty).not.toContain("mempool");
+    const parsedEmpty = JSON.parse(serializedEmpty) as NodeInternals;
+    expect(parsedEmpty.syncStages).toBeUndefined();
+    expect(parsedEmpty.mempool).toBeUndefined();
+
+    const emptyStages: NodeInternals = { syncStages: [] };
+    const roundTripped = JSON.parse(
+      JSON.stringify(emptyStages),
+    ) as NodeInternals;
+    expect(roundTripped.syncStages).toEqual([]);
+    expect(roundTripped.syncStages).not.toBeUndefined();
+    expect(roundTripped.syncStages).toHaveLength(0);
+  });
+
+  it("preserves a sync stage checkpoint of 0 across JSON (falsy 0 must survive)", () => {
+    // 起動直後・未着手のステージは checkpoint: 0。0 は falsy だが JSON は数値 0
+    // を保持する。ステージ名だけ現れて checkpoint がキーごと欠落する、という
+    // 崩れが起きないことを確認する（mempool の pending/queued 0 と同じ配慮）。
+    const internals: NodeInternals = {
+      syncStages: [
+        { stage: "Headers", checkpoint: 0 },
+        { stage: "Execution", checkpoint: 0 },
+      ],
+    };
+    const serialized = JSON.stringify(internals);
+    expect(serialized).toContain('"checkpoint":0');
+    const parsed = JSON.parse(serialized) as NodeInternals;
+    expect(parsed.syncStages?.[0].checkpoint).toBe(0);
+    expect(parsed.syncStages?.[1]).toEqual({ stage: "Execution", checkpoint: 0 });
+  });
+
+  it("preserves an InternalCallStats latencyMs of 0 across JSON (falsy 0 must survive)", () => {
+    // 所要時間 0ms（サブミリ秒で丸められた等）を観測できたケース。latencyMs は
+    // optional だが、0 を観測した場合と「観測できず省略」は意味が異なる。
+    // 0 がキーごと欠落せず、undefined と取り違えないことを確認する。
+    const observedZero: NodeLinkActivity = {
+      fromNodeId: "beacon-1",
+      toNodeId: "node-1",
+      calls: [{ method: "engine_forkchoiceUpdated", count: 1, latencyMs: 0 }],
+      observedAt: 1_700_000_000_000,
+    };
+    const serialized = JSON.stringify(observedZero);
+    expect(serialized).toContain('"latencyMs":0');
+    const parsed = JSON.parse(serialized) as NodeLinkActivity;
+    expect(parsed.calls[0].latencyMs).toBe(0);
+    expect(parsed.calls[0].latencyMs).not.toBeUndefined();
+  });
+
+  it("keeps versioned method identifiers raw on InternalCallStats", () => {
+    // method は「生の識別子をそのまま載せ、まとめ方はフロントの表現セットが
+    // 決める」設計（entities.ts / ARCHITECTURE.md §7.2）。バージョン付きの
+    // メソッド名（engine_newPayloadV4 等）を集約・改名せず生のまま持つこと、
+    // 同一系統の別バージョンを別エントリとして区別できることを確認する。
+    const activity: NodeLinkActivity = {
+      fromNodeId: "beacon-1",
+      toNodeId: "node-1",
+      calls: [
+        { method: "engine_newPayloadV3", count: 1 },
+        { method: "engine_newPayloadV4", count: 2 },
+        { method: "engine_forkchoiceUpdatedV3", count: 1 },
+      ],
+      observedAt: 1_700_000_000_000,
+    };
+    const roundTripped = JSON.parse(
+      JSON.stringify(activity),
+    ) as NodeLinkActivity;
+    expect(roundTripped.calls.map((c) => c.method)).toEqual([
+      "engine_newPayloadV3",
+      "engine_newPayloadV4",
+      "engine_forkchoiceUpdatedV3",
+    ]);
+    // V3 と V4 はまとめられず別カウントのまま。
+    expect(roundTripped.calls[0].count).toBe(1);
+    expect(roundTripped.calls[1].count).toBe(2);
+  });
+
+  it("distinguishes NodeLinkActivity with no calls (empty array) from populated", () => {
+    // 「増分ゼロの種類は含めない」ため通常は calls に 1 件以上入るが、増分が
+    // まったく無い観測は本来配信されない（アダプタ側の縮退）。型としては空配列
+    // も成立する。空配列が JSON 往復で保持され、フロントが calls.length で
+    // パルス本数を決める際に 0 件を安全に扱えることを確認する。
+    const noCalls: NodeLinkActivity = {
+      fromNodeId: "beacon-1",
+      toNodeId: "node-1",
+      calls: [],
+      observedAt: 1_700_000_000_000,
+    };
+    const roundTripped = JSON.parse(JSON.stringify(noCalls)) as NodeLinkActivity;
+    expect(roundTripped.calls).toEqual([]);
+    expect(roundTripped.calls).toHaveLength(0);
+  });
+
+  it("accepts drivesNodeId as a plain string reference without referential integrity", () => {
+    // drivesNodeId は rpcTargetNodeId と同じく「エンティティの id を指す生の
+    // 文字列」であり、型は参照先の存在・一意性を保証しない（ダングリングガード
+    // はフロント描画側の責務。ARCHITECTURE.md §7.4）。異常な指し先でも型として
+    // 成立し、フロントが相手ノード不在を検出して描かない側に倒せることを確認する。
+    const base: NodeEntity = {
+      kind: "node",
+      id: "beacon-1",
+      containerName: "chainviz-ethereum-beacon1",
+      ip: "172.28.2.1",
+      ports: [5052],
+      resources: { cpuPercent: 0, memMB: 0 },
+      process: { name: "lighthouse" },
+      chainType: "ethereum",
+      clientType: "lighthouse",
+      syncStatus: "synced",
+      blockHeight: 0,
+      headBlockHash: "",
+    };
+
+    // 自己参照（自分自身を駆動対象に指す）: 型は許容する。フロントは
+    // from === to のエッジを描かない側に倒せるよう、値がそのまま保持される。
+    const selfDriving: NodeEntity = { ...base, drivesNodeId: "beacon-1" };
+    const selfRoundTripped = JSON.parse(
+      JSON.stringify(selfDriving),
+    ) as NodeEntity;
+    expect(selfRoundTripped.drivesNodeId).toBe(selfRoundTripped.id);
+
+    // 存在しないノード id（解決結果が古い・相手が削除済み）を指すダングリング。
+    // 型は関知せず、キャンバス上に相手が居なければフロントが描画を抑止する。
+    const dangling: NodeEntity = { ...base, drivesNodeId: "node-does-not-exist" };
+    expect(dangling.drivesNodeId).toBe("node-does-not-exist");
   });
 
   it("distinguishes an included tx with no events (empty array) from an undecoded tx", () => {

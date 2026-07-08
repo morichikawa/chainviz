@@ -19,6 +19,43 @@ export interface InfraEntity {
   removable?: boolean;
 }
 
+/**
+ * ノード内部の同期ステージ 1 件の進行状況（D層）。ステージ型同期を行う
+ * クライアント（例: reth）が「どの処理段階がどのブロック高まで済んだか」を
+ * 公開しているものを正規化する。
+ */
+export interface SyncStageProgress {
+  /**
+   * ステージ名。値はクライアント依存の生の識別子（例: reth の "Headers" /
+   * "Bodies" / "Execution"）をそのまま入れる。解釈・表示（和訳・説明）は
+   * OperationEdge.operation と同じくフロントのチェーンプロファイル表現セット
+   * の責務とする。
+   */
+  stage: string;
+  /** そのステージが処理を終えたブロック高。 */
+  checkpoint: number;
+}
+
+/**
+ * ノード内部の観測状態（D層）。ノードプロセスが自己申告する内部メトリクス
+ * （同期ステージの進行・mempool の内訳など）をチェーン非依存の語彙へ正規化
+ * したもの。各フィールドは「そのノードが該当する内部構造を持ち、かつ観測
+ * できた場合」のみ入る（省略 = 情報なし。フロントは表示自体を出さない側に
+ * 倒す）。例: Ethereum プロファイルでは EL（reth）ノードのみが syncStages /
+ * mempool を持ち、CL（beacon）ノードでは internals 自体が省略される。
+ */
+export interface NodeInternals {
+  /** ステージ型同期の進行状況（クライアントが公開するステージ順）。 */
+  syncStages?: SyncStageProgress[];
+  /**
+   * このノードローカルの mempool の内訳。pending は次のブロックに入れる
+   * 状態の tx 数、queued は前提条件（nonce の飛び等）待ちで保留中の tx 数。
+   * C層の mempool（チェーン全体の概念）に対し、こちらは「このノードが
+   * いま抱えている実数」というノード内部の視点になる。
+   */
+  mempool?: { pending: number; queued: number };
+}
+
 export interface NodeEntity extends InfraEntity {
   kind: "node";
   chainType: ChainType;
@@ -39,6 +76,24 @@ export interface NodeEntity extends InfraEntity {
    * （バッジ・接続予定先の予告）を出さない側に倒す（Issue #123 / #124）。
    */
   p2pRole?: "bootnode" | "peer";
+  /**
+   * D層: このノードが内部 API で駆動する相手ノード（同じ論理ノードを構成する
+   * 相方クライアント）のエンティティ id。Ethereum プロファイルでは
+   * beacon（CL）ノードに入り、対になる Execution（EL）ノードを Engine API で
+   * 駆動する関係を表す（Engine API というチェーン固有の語彙はスキーマに
+   * 持ち込まず、「駆動する側 → される側」という一般関係だけを載せる）。
+   * collector（ChainAdapter）がインフラ観測から毎回解決する
+   * （WorkbenchEntity.rpcTargetNodeId と同じ考え方）。
+   * 駆動関係を持たないノード・解決できない場合・旧スナップショットでは省略
+   * （省略 = 無し/不明。フロントは内部リンクの表示を出さない側に倒す）。
+   * フロントはこの値から常設の「内部リンク」エッジを導出して描画する。
+   */
+  drivesNodeId?: string;
+  /**
+   * D層: ノード内部の観測状態。内部メトリクスを公開しないノード・観測前・
+   * 旧スナップショットでは省略（省略 = 情報なし）。
+   */
+  internals?: NodeInternals;
 }
 
 export interface WorkbenchEntity extends InfraEntity {
@@ -91,6 +146,46 @@ export interface OperationEdge {
 
 /** キャンバス上でエッジ（紐）として描画されるものの総称。kind で判別する。 */
 export type WorldStateEdge = PeerEdge | OperationEdge;
+
+/**
+ * 内部 API 呼び出し 1 種類ぶんの観測値（D層）。呼び出し 1 回ごとの離散
+ * イベントではなく、観測間隔（メトリクスのスクレイプ周期）内の増分として
+ * 観測される点が OperationEdge（1 回の呼び出し = 1 イベント）と異なる。
+ */
+export interface InternalCallStats {
+  /**
+   * 呼び出しの種類。値はチェーン/クライアント依存の生の識別子（例:
+   * "engine_newPayload"）をそのまま入れる。解釈・表示（分類・和訳）は
+   * OperationEdge.operation と同じくフロントのチェーンプロファイル表現セット
+   * の責務とする。
+   */
+  method: string;
+  /** 観測間隔内に増えた呼び出し回数（1 以上。増分ゼロの種類は載せない）。 */
+  count: number;
+  /**
+   * 呼び出し所要時間の代表値（ミリ秒）。クライアントが所要時間メトリクスを
+   * 公開しており観測できた場合のみ入る（省略 = 観測不能）。
+   */
+  latencyMs?: number;
+}
+
+/**
+ * 駆動リンク（NodeEntity.drivesNodeId が表す内部 API の関係）上で観測された
+ * 呼び出し活動（揮発性）。OperationEdge と同じく「観測された瞬間の出来事」
+ * なので、WorldStateSnapshot には含めない。DiffEvent の nodeLinkActivity で
+ * のみ流れ、store の状態にも畳み込まない（描画側が受信時にパルス等の
+ * アニメーションとして消費する）。
+ */
+export interface NodeLinkActivity {
+  /** 駆動する側（NodeEntity.drivesNodeId を持つ側）のノード id。 */
+  fromNodeId: string;
+  /** 駆動される側のノード id。 */
+  toNodeId: string;
+  /** この観測間隔で増分のあった呼び出しの一覧（増分ゼロの種類は含めない）。 */
+  calls: InternalCallStats[];
+  /** 観測した時刻（epoch ms）。 */
+  observedAt: number;
+}
 
 /**
  * ウォレットが保有するトークン残高 1 件。トークンの表示情報（symbol /
