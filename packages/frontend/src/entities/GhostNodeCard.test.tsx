@@ -137,4 +137,44 @@ describe("GhostNodeCard", () => {
       expect(screen.getByText("ethereum")).toBeTruthy();
     });
   });
+
+  describe("contract ghost (ARCHITECTURE.md §6.5 deploy placeholder)", () => {
+    it("renders the contract kind label and a 'deploying…' name with the label interpolated", () => {
+      renderGhost({
+        commandId: "cmd-deploy-1",
+        kind: "contract",
+        label: "ChainvizToken",
+        catalogKey: "ChainvizToken",
+      });
+      const card = screen.getByTestId("ghost-card-cmd-deploy-1");
+      expect(card.className).toContain("ghost-card--contract");
+      expect(screen.getByText("コントラクト")).toBeTruthy();
+      expect(screen.getByText("デプロイ中… ChainvizToken")).toBeTruthy();
+    });
+
+    it("renders the English deploying label", () => {
+      renderGhost(
+        {
+          commandId: "cmd-deploy-2",
+          kind: "contract",
+          label: "Counter",
+          catalogKey: "Counter",
+        },
+        "en",
+      );
+      expect(screen.getByText("Contract")).toBeTruthy();
+      expect(screen.getByText("Deploying… Counter")).toBeTruthy();
+    });
+
+    it("does not render a subtitle line for a contract ghost (no connection target concept)", () => {
+      renderGhost({
+        commandId: "cmd-deploy-3",
+        kind: "contract",
+        label: "Counter",
+        catalogKey: "Counter",
+      });
+      const card = screen.getByTestId("ghost-card-cmd-deploy-3");
+      expect(card.querySelector(".infra-card__subtitle")).toBeNull();
+    });
+  });
 });

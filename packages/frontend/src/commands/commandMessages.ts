@@ -79,3 +79,21 @@ export function resolveAddWorkbenchHint(
     rpcTarget: rpcTarget.containerName,
   });
 }
+
+/**
+ * ワークベンチカードの「操作を実行…」ボタンの押下前予告ツールチップ文言を
+ * 組み立てる（ARCHITECTURE.md §6.5）。RPC 接続先の containerName を解決
+ * できなければ generic な文言へフォールバックする（Issue #123 §4-5と同じ
+ * 流儀）。
+ */
+export function resolveWorkbenchOperationsHint(
+  rpcTargetContainerName: string | undefined,
+  t: (key: MessageKey) => string,
+): string {
+  if (!rpcTargetContainerName) {
+    return t("action.workbenchOperations.hint.generic");
+  }
+  return format(t("action.workbenchOperations.hint"), {
+    rpcTarget: rpcTargetContainerName,
+  });
+}

@@ -129,6 +129,50 @@ describe("contract card message keys (Issue #165)", () => {
   });
 });
 
+describe("operation panel message keys (Issue #167)", () => {
+  // OperationPanel / 各フォーム / InfraNodeCard / commandMessages が実際に
+  // 参照している操作パネル関連キー。訳し忘れ・未定義の回帰ガード。
+  const usedOperationKeys = [
+    "action.workbenchOperations",
+    "action.workbenchOperations.hint",
+    "action.workbenchOperations.hint.generic",
+    "operation.tab.transfer",
+    "operation.tab.deploy",
+    "operation.tab.call",
+    "operation.transfer.to",
+    "operation.transfer.amount",
+    "operation.transfer.amount.invalid",
+    "operation.transfer.note",
+    "operation.transfer.submit",
+    "operation.deploy.contract",
+    "operation.deploy.submit",
+    "operation.deploy.note",
+    "operation.call.target",
+    "operation.call.function",
+    "operation.call.amount",
+    "operation.call.submit",
+    "operation.call.empty",
+    "operation.pending",
+    "operation.close",
+    "ghost.contract.deploying",
+  ] as const;
+
+  it.each(usedOperationKeys)(
+    "has non-empty, distinct ja/en translations for %s",
+    (key) => {
+      const entry = messages[key];
+      expect(entry.ja.length).toBeGreaterThan(0);
+      expect(entry.en.length).toBeGreaterThan(0);
+      expect(entry.ja).not.toBe(entry.en);
+    },
+  );
+
+  it("keeps the {name} placeholder in both languages of ghost.contract.deploying", () => {
+    expect(messages["ghost.contract.deploying"].ja).toContain("{name}");
+    expect(messages["ghost.contract.deploying"].en).toContain("{name}");
+  });
+});
+
 describe("format", () => {
   it("replaces a single placeholder", () => {
     expect(format("hello {name}", { name: "world" })).toBe("hello world");

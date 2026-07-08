@@ -60,6 +60,10 @@ import {
   saveLayout,
   saveNodePosition,
 } from "../layout/layoutStore.js";
+import { ETHEREUM_OPERATION_CATALOG } from "../chain-profiles/ethereum/operationCatalog.js";
+import { deriveDeployedContracts } from "../operations/deployedContracts.js";
+import { OperationDataProvider } from "../operations/OperationDataContext.js";
+import { deriveWalletCandidates } from "../operations/walletCandidates.js";
 import { type KeyValueStorage, getBrowserStorage } from "../platform/storage.js";
 import type { ConnectionStatus } from "../websocket/client.js";
 import { createMockClient } from "../websocket/mockData.js";
@@ -112,8 +116,15 @@ function AppShell({
   const [layout, setLayout] = useState<LayoutMap>(() => loadLayout(storage));
   const { notifications, notify, dismiss } = useNotifications();
 
-  const { state, status, hasReceivedSnapshot, operations, actions, ghosts } =
-    useCommands(clientFactory, notify, t);
+  const {
+    state,
+    status,
+    hasReceivedSnapshot,
+    operations,
+    actions,
+    ghosts,
+    pendingOperationWorkbenchIds,
+  } = useCommands(clientFactory, notify, t);
 
   // ボタン押下直後のローディング表示（Issue #102）に使う。仮カードが
   // 1枚でも残っている間は「まだ実体化していない addNode/addWorkbench がある」
@@ -128,6 +139,18 @@ function AppShell({
   );
 
   const entities = useMemo(() => listEntities(state), [state]);
+
+  // 定型操作パネル（ARCHITECTURE.md §6.5）が必要とする、キャンバス上の
+  // 「今」の候補一覧。React Flow ノードの data には含めない
+  // （operations/OperationDataContext.ts の docstring参照）。
+  const walletCandidates = useMemo(
+    () => deriveWalletCandidates(entities),
+    [entities],
+  );
+  const deployedContracts = useMemo(
+    () => deriveDeployedContracts(entities, ETHEREUM_OPERATION_CATALOG),
+    [entities],
+  );
 
   // 新規に現れた node/workbench には、まだ保存済みレイアウトが無い位置へ
   // その場で空きグリッドスロットを確定し、layoutStore（localStorage）へ
@@ -198,19 +221,26 @@ function AppShell({
     return next;
   }, [entities, layout]);
 
-  // 新着強調フラグ（isNew）は「時間経過」に依存し isSameInfraNode の比較対象
-  // ではないため、stabilizeNodes の後段で後付けする（entities/infraNode.ts の
-  // InfraNodeData docstring参照）。実際に isNew が変化したノードだけ新しい
+  // 新着強調フラグ（isNew）・操作パネルの保留フラグ（operationPending）は
+  // どちらも「時間経過/保留状態」に依存し isSameInfraNode の比較対象ではない
+  // ため、stabilizeNodes の後段で後付けする（entities/infraNode.ts の
+  // InfraNodeData docstring参照）。実際にどちらかが変化したノードだけ新しい
   // オブジェクトにする（変化の無いノードの参照は保つ。Issue #119対策の効果を
   // 損なわないため）。
   const infraNodesWithHighlight = useMemo(
     () =>
       infraNodes.map((node) => {
         const isNew = newArrivals.has(node.id);
-        if (isNew === (node.data.isNew ?? false)) return node;
-        return { ...node, data: { ...node.data, isNew } };
+        const operationPending = pendingOperationWorkbenchIds.has(node.id);
+        if (
+          isNew === (node.data.isNew ?? false) &&
+          operationPending === (node.data.operationPending ?? false)
+        ) {
+          return node;
+        }
+        return { ...node, data: { ...node.data, isNew, operationPending } };
       }),
-    [infraNodes, newArrivals],
+    [infraNodes, newArrivals, pendingOperationWorkbenchIds],
   );
 
   // 現存するインフラノードの id 集合（ピア接続・所有エッジの端点存在判定に使う）。
@@ -455,19 +485,21 @@ function AppShell({
         </div>
       </header>
       <CommandActionsProvider actions={actions}>
-        <main className="app__canvas">
-          <CanvasToolbar
-            pendingAddNode={pendingAddNode}
-            pendingAddWorkbench={pendingAddWorkbench}
-            entities={entities}
-          />
-          {nodes.length === 0 ? (
-            <p className="app__empty">{t("canvas.empty")}</p>
-          ) : (
-            <Canvas nodes={nodes} edges={edges} onPersistPosition={persist} />
-          )}
-          <ToastStack notifications={notifications} onDismiss={dismiss} />
-        </main>
+        <OperationDataProvider value={{ walletCandidates, deployedContracts }}>
+          <main className="app__canvas">
+            <CanvasToolbar
+              pendingAddNode={pendingAddNode}
+              pendingAddWorkbench={pendingAddWorkbench}
+              entities={entities}
+            />
+            {nodes.length === 0 ? (
+              <p className="app__empty">{t("canvas.empty")}</p>
+            ) : (
+              <Canvas nodes={nodes} edges={edges} onPersistPosition={persist} />
+            )}
+            <ToastStack notifications={notifications} onDismiss={dismiss} />
+          </main>
+        </OperationDataProvider>
       </CommandActionsProvider>
     </div>
   );

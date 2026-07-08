@@ -16,10 +16,20 @@ import type { GhostFlowNode } from "./ghostNode.js";
  * する。接続予定先（`data.targetContainerName`）を解決できた場合はサブタイトル
  * に「起動中… {target} と接続予定」を出し、できなければ従来どおり
  * 「起動中…」のみにフォールバックする（§4-5）。
+ *
+ * kind === "contract" は定型操作パネルのデプロイ実行直後に置く仮カード
+ * （ARCHITECTURE.md §6.5）。接続先の概念が無くコントラクト行（C層拡張）に
+ * 置かれるため、名前欄自体に「デプロイ中… {name}」を出し、サブタイトルは
+ * 持たない。
  */
 export function GhostNodeCard({ data }: NodeProps<GhostFlowNode>) {
   const { t } = useLanguage();
-  const kindLabel = data.kind === "node" ? t("card.node") : t("card.workbench");
+  const kindLabel =
+    data.kind === "node"
+      ? t("card.node")
+      : data.kind === "workbench"
+        ? t("card.workbench")
+        : t("card.contract");
 
   const nodeLayerNameKey =
     data.layer === "execution"
@@ -29,14 +39,22 @@ export function GhostNodeCard({ data }: NodeProps<GhostFlowNode>) {
         : undefined;
   // layer が無い（旧呼び出し・想定外の生成物）場合は data.label へフォールバック
   // する。workbench は元々 data.label（入力されたワークベンチ名）を名前にする。
-  const name = nodeLayerNameKey ? t(nodeLayerNameKey) : data.label;
+  const name =
+    data.kind === "contract"
+      ? format(t("ghost.contract.deploying"), { name: data.label })
+      : nodeLayerNameKey
+        ? t(nodeLayerNameKey)
+        : data.label;
 
-  const subtitle = data.targetContainerName
-    ? `${t("ghost.status")} ${format(
-        t(data.kind === "workbench" ? "ghost.rpcTarget" : "ghost.willConnect"),
-        { target: data.targetContainerName },
-      )}`
-    : t("ghost.status");
+  const subtitle =
+    data.kind === "contract"
+      ? undefined
+      : data.targetContainerName
+        ? `${t("ghost.status")} ${format(
+            t(data.kind === "workbench" ? "ghost.rpcTarget" : "ghost.willConnect"),
+            { target: data.targetContainerName },
+          )}`
+        : t("ghost.status");
 
   return (
     <div
@@ -60,7 +78,9 @@ export function GhostNodeCard({ data }: NodeProps<GhostFlowNode>) {
         <span className="infra-card__kind">{kindLabel}</span>
       </div>
       <div className="infra-card__name">{name}</div>
-      <div className="infra-card__subtitle">{subtitle}</div>
+      {subtitle !== undefined && (
+        <div className="infra-card__subtitle">{subtitle}</div>
+      )}
     </div>
   );
 }

@@ -342,7 +342,7 @@ runWorkbenchOperation コマンド・ChainAdapter.subscribeContracts）は設計
       イベントの表示と、tx確定時のコントラクトカードへのアニメーション）を
       実装する
       [#166](https://github.com/morichikawa/chainviz/issues/166)
-- [ ] ワークベンチカードから定型操作（送金・デプロイ・コントラクト呼び出し）
+- [x] ワークベンチカードから定型操作（送金・デプロイ・コントラクト呼び出し）
       を実行するUIを実装する
       [#167](https://github.com/morichikawa/chainviz/issues/167)
 - [ ] ウォレットカードにトークン残高を表示する

@@ -986,3 +986,171 @@ body {
 .toast__dismiss:hover {
   color: var(--text);
 }
+
+/* --- 定型操作パネル（送金・デプロイ・コントラクト呼び出し。
+   ARCHITECTURE.md §6.5） --- */
+/* ワークベンチカード下部に置く全幅の起動ボタン。ActionHint（.action-hint）は
+   共有クラスで display:inline-block のため、そのままでは中の button の
+   width:100% が効かない（inline-block は内容に応じて縮む）。この
+   ラッパー配下だけ .action-hint を display:block に上書きし、ボタンが
+   カード幅いっぱいに広がるようにする。 */
+.infra-card__operate-wrapper {
+  margin-top: 8px;
+}
+
+.infra-card__operate-wrapper .action-hint {
+  display: block;
+}
+
+.infra-card__operate {
+  width: 100%;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.infra-card__operate:hover {
+  border-color: var(--accent);
+}
+
+/* 送信直後〜commandResult までの保留表示（canvas-toolbar__button--pending と
+   同型。二重送信防止ではないのでボタン自体は disabled にしない）。 */
+.infra-card__operate--pending {
+  border-color: var(--accent);
+  color: var(--muted);
+}
+
+.infra-card__operate-spinner {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 6px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  vertical-align: -1px;
+  animation: chainviz-spin 0.7s linear infinite;
+}
+
+/* ワークベンチカード脇のポップオーバー（infra-popover と同系の見た目）。 */
+.operation-panel {
+  position: absolute;
+  top: 0;
+  left: calc(100% + 12px);
+  z-index: 25;
+  width: 260px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #0c1119;
+  border: 1px solid var(--border);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  font-size: 12px;
+}
+
+.operation-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.operation-panel__tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.operation-panel__tab {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.operation-panel__tab--active {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.operation-panel__close {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.operation-panel__close:hover {
+  color: var(--text);
+}
+
+.operation-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.operation-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.operation-field__label {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.operation-field__input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+.operation-field__input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.operation-form__note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.operation-form__error {
+  margin: 0;
+  color: #ff6b6b;
+  font-size: 11px;
+}
+
+.operation-form__submit {
+  background: var(--accent);
+  color: #0c1119;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.operation-form__submit:disabled {
+  background: var(--panel-2);
+  color: var(--muted);
+  cursor: not-allowed;
+}

@@ -50,6 +50,7 @@ function renderCard(
     addWorkbench: vi.fn(),
     removeNode: vi.fn(),
     removeWorkbench: vi.fn(),
+    runWorkbenchOperation: vi.fn(),
     ...actions,
   };
   const props = { data: { entity, ...extraData } } as unknown as Parameters<
@@ -103,6 +104,7 @@ describe("InfraNodeCard remove button", () => {
                 addWorkbench: vi.fn(),
                 removeNode: vi.fn(),
                 removeWorkbench: vi.fn(),
+                runWorkbenchOperation: vi.fn(),
               }}
             >
               {/* React Flow のノードラッパ相当。ここへ pointerdown が伝播すると

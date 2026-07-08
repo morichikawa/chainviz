@@ -35,6 +35,7 @@ function renderToolbar(
     addWorkbench: vi.fn(),
     removeNode: vi.fn(),
     removeWorkbench: vi.fn(),
+    runWorkbenchOperation: vi.fn(),
     ...actions,
   };
   render(
