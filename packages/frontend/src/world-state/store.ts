@@ -1,5 +1,6 @@
 import type {
   DiffEvent,
+  NodeLinkActivity,
   OperationEdge,
   PeerEdge,
   WorldStateEntity,
@@ -131,6 +132,20 @@ export function extractOperations(events: DiffEvent[]): OperationEdge[] {
     if (event.type === "operationObserved") operations.push(event.edge);
   }
   return operations;
+}
+
+/**
+ * 差分イベント列から揮発性の内部リンク活動観測（nodeLinkActivity。D層。
+ * ARCHITECTURE.md §7.6.4）だけを抜き出す。`extractOperations` と同じ理由
+ * （ワールドステートへ畳み込まず、描画側が一度きりのパルスアニメーション
+ * として消費する）で applyDiff とは分離する。
+ */
+export function extractNodeLinkActivities(events: DiffEvent[]): NodeLinkActivity[] {
+  const activities: NodeLinkActivity[] = [];
+  for (const event of events) {
+    if (event.type === "nodeLinkActivity") activities.push(event.activity);
+  }
+  return activities;
 }
 
 /** WorldState 内のエンティティを配列として取り出す。 */

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Command } from "@chainviz/shared";
+import type { NodeLinkActivitySignal } from "../entities/internalLinkEdge.js";
 import type { OperationSignal } from "../entities/operationEdge.js";
 import type {
   ChainvizClient,
@@ -11,6 +12,7 @@ import {
   applyDiff,
   applySnapshot,
   emptyWorldState,
+  extractNodeLinkActivities,
   extractOperations,
 } from "./store.js";
 
@@ -44,6 +46,14 @@ export interface UseWorldStateResult {
    * 未処理分を消費してパルスアニメーションを走らせる。
    */
   operations: OperationSignal[];
+  /**
+   * 揮発性の内部リンク活動観測イベント（D層。`NodeEntity.drivesNodeId` 上の
+   * Engine API 呼び出し。ARCHITECTURE.md §7.6.4）の直近列。`operations` と
+   * 同じ経路分離の理由で、ワールドステートには畳み込まず、描画側
+   * （`useNodeLinkActivityPulses`）が seq をキーに未処理分を消費して活動
+   * パルスを走らせる。
+   */
+  nodeLinkActivities: NodeLinkActivitySignal[];
   /** 操作コマンドを送り、生成された commandId を返す（未接続なら undefined）。 */
   sendCommand: (command: Command) => string | undefined;
 }
@@ -56,6 +66,9 @@ export interface UseWorldStateResult {
  * 超える未消費イベントが積み上がることはない。
  */
 const OPERATION_SIGNAL_CAP = 100;
+
+/** `nodeLinkActivities` の最大保持数。`OPERATION_SIGNAL_CAP` と同じ理由。 */
+const NODE_LINK_ACTIVITY_SIGNAL_CAP = 100;
 
 /**
  * collector クライアント（実 WebSocket または mock）を接続し、届いた
@@ -74,11 +87,16 @@ export function useWorldState(
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
   const [hasReceivedSnapshot, setHasReceivedSnapshot] = useState(false);
   const [operations, setOperations] = useState<OperationSignal[]>([]);
+  const [nodeLinkActivities, setNodeLinkActivities] = useState<
+    NodeLinkActivitySignal[]
+  >([]);
   const clientRef = useRef<ChainvizClient | null>(null);
   const resultRef = useRef<CommandResultHandler | undefined>(onCommandResult);
   resultRef.current = onCommandResult;
   // 操作観測イベントにフロント側で振る通し番号。単調増加させ、消費側の重複排除に使う。
   const opSeqRef = useRef(0);
+  // 内部リンク活動観測イベントにフロント側で振る通し番号（opSeqRef と同じ狙い）。
+  const nodeLinkActivitySeqRef = useRef(0);
 
   useEffect(() => {
     const client = createClient({
@@ -102,6 +120,20 @@ export function useWorldState(
               : appended;
           });
         }
+        // nodeLinkActivity も同じく揮発性なのでワールドステートへ畳み込まず、
+        // 通し番号を付けた別経路（nodeLinkActivities）へ流す。
+        const linkActivities = extractNodeLinkActivities(events);
+        if (linkActivities.length > 0) {
+          setNodeLinkActivities((current) => {
+            const appended = current.slice();
+            for (const activity of linkActivities) {
+              appended.push({ seq: nodeLinkActivitySeqRef.current++, activity });
+            }
+            return appended.length > NODE_LINK_ACTIVITY_SIGNAL_CAP
+              ? appended.slice(appended.length - NODE_LINK_ACTIVITY_SIGNAL_CAP)
+              : appended;
+          });
+        }
       },
       onStatusChange: setStatus,
       onCommandResult: (commandId, ok, error) =>
@@ -120,5 +152,12 @@ export function useWorldState(
     [],
   );
 
-  return { state, status, hasReceivedSnapshot, operations, sendCommand };
+  return {
+    state,
+    status,
+    hasReceivedSnapshot,
+    operations,
+    nodeLinkActivities,
+    sendCommand,
+  };
 }
