@@ -101,4 +101,5 @@
 | #167 | Issue #167 ワークベンチカードから定型操作(送金・デプロイ・コントラクト呼び出し)を実行するUI | [2026-07-08](worklog/issue-167.md) |
 | #168 | Issue #168 ウォレットカードへのトークン残高表示(formatUnits一般化・ダングリングガード) | [2026-07-08](worklog/issue-168.md) |
 | #184 | Issue #184 rethのPrometheusメトリクスを有効化(--metrics 0.0.0.0:9001) | [2026-07-08](worklog/issue-184.md) |
+| #185 | Issue #185 rethメトリクスの周期ポーリング・パース(Prometheusテキストパーサー・Engine API呼び出し検知・同期ステージ・txpool) | [2026-07-08](worklog/issue-185.md) |
 | - | 特定Issueに紐付かない記録(PLAN.md/CLAUDE.md更新等、Phase5設計メモ) | [2026-07-05〜2026-07-08](worklog/meta.md) |
