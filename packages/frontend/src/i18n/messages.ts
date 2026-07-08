@@ -145,6 +145,26 @@ export const messages = {
     en: "Establishing P2P connection…",
   },
   "field.rpcTarget": { ja: "操作先ノード", en: "RPC target" },
+  // --- C層拡張: コントラクトカード（ARCHITECTURE.md §6.3/§6.4/§6.8） ---
+  "card.contract": { ja: "コントラクト", en: "Contract" },
+  "contract.unknown": { ja: "未知のコントラクト", en: "Unknown contract" },
+  "contract.badge.everyNode": { ja: "全ノードで実行", en: "Runs on every node" },
+  "contract.badge.uncataloged": { ja: "カタログ外", en: "Not in catalog" },
+  "contract.popover.description": {
+    ja: "チェーンに複製され、全ノードが同じ実行をするプログラムです。特定のサーバーやノードの中では動いていません",
+    en: "A program replicated on the chain; every node runs the same execution. It does not live on any single server or node.",
+  },
+  "contract.popover.unknownDescription": {
+    ja: "chainviz のカタログに載っていないため、関数やイベントの意味（ABI）を復号できません。存在と呼び出しの発生だけを表示します",
+    en: "Not in the chainviz catalog, so function and event meanings (ABI) cannot be decoded. Only its existence and incoming calls are shown.",
+  },
+  "field.deployer": { ja: "デプロイした人", en: "Deployed by" },
+  "field.createdByTx": { ja: "作成 tx", en: "Created by tx" },
+  "field.token": { ja: "トークン", en: "Token" },
+  "edge.deployedBy": {
+    ja: "{address} がデプロイしたコントラクト",
+    en: "Contract deployed by {address}",
+  },
 } as const satisfies Record<string, Localized>;
 
 export type MessageKey = keyof typeof messages;

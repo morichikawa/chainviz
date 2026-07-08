@@ -1,10 +1,11 @@
-import type { NodeEntity, WalletEntity } from "@chainviz/shared";
+import type { ContractEntity, NodeEntity, WalletEntity } from "@chainviz/shared";
 import { describe, expect, it } from "vitest";
 import {
   type CanvasFlowNode,
   canvasNodeLayoutKey,
   preserveMeasuredDimensions,
 } from "./canvasNode.js";
+import type { ContractFlowNode } from "./contractNode.js";
 import { createGhostNode } from "./ghostNode.js";
 import type { InfraFlowNode } from "./infraNode.js";
 import type { WalletFlowNode } from "./walletNode.js";
@@ -35,6 +36,12 @@ const wallet: WalletEntity = {
   recentTxHashes: [],
 };
 
+const contract: ContractEntity = {
+  kind: "contract",
+  address: "0xc0ntract",
+  chainType: "ethereum",
+};
+
 describe("canvasNodeLayoutKey", () => {
   it("uses containerName for infra cards", () => {
     const infraNode: InfraFlowNode = {
@@ -59,6 +66,16 @@ describe("canvasNodeLayoutKey", () => {
       },
     };
     expect(canvasNodeLayoutKey(walletNode)).toBe("0xabc");
+  });
+
+  it("uses address for contract cards", () => {
+    const contractNode: ContractFlowNode = {
+      id: contract.address,
+      type: "contract",
+      position: { x: 0, y: 0 },
+      data: { entity: contract },
+    };
+    expect(canvasNodeLayoutKey(contractNode)).toBe("0xc0ntract");
   });
 
   it("uses commandId for ghost cards (which are non-draggable so this is never persisted)", () => {

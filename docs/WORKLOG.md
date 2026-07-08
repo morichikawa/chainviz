@@ -96,4 +96,5 @@
 | #161 | Issue #161 コントラクトカタログの読み込みとデプロイ検知・追跡(subscribeContracts) | [2026-07-07](worklog/issue-161.md) |
 | #162 | Issue #162 カタログABIによる関数呼び出し・イベントログの復号(contractCall/contractEvents) | [2026-07-07](worklog/issue-162.md) |
 | #164 | Issue #164 追跡中トークンコントラクトの残高ポーリング(WalletEntity.tokenBalances) | [2026-07-07](worklog/issue-164.md) |
+| #165 | Issue #165 ContractEntityのカード表示とポップオーバー(未知のコントラクトの差別化・デプロイエッジ) | [2026-07-08](worklog/issue-165.md) |
 | - | 特定Issueに紐付かない記録(PLAN.md/CLAUDE.md更新等) | [2026-07-05〜2026-07-07](worklog/meta.md) |
