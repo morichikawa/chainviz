@@ -1280,7 +1280,7 @@ Phase 4 までの画面を実際に操作して確認した課題:
   | AccountHashing | アカウントのハッシュ化 | Hash accounts |
   | StorageHashing | ストレージのハッシュ化 | Hash storage |
   | MerkleExecute | 状態ルート検証 | Verify state root |
-  | TransactionLookup | tx 索引作成 | Index transactions |
+  | TransactionLookup | tx索引作成 | Index transactions |
   | IndexAccountHistory | アカウント履歴の索引 | Index account history |
   | IndexStorageHistory | ストレージ履歴の索引 | Index storage history |
   | Finish | 仕上げ | Finish |
