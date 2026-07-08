@@ -98,7 +98,13 @@ export type WorldStateEdge = PeerEdge | OperationEdge;
  * メタ情報が持ち、ここでは重複させない。
  */
 export interface TokenBalance {
-  /** トークンを管理するコントラクトのアドレス（ContractEntity.address に対応）。 */
+  /**
+   * トークンを管理するコントラクトのアドレス（ContractEntity.address に対応）。
+   * ChainAdapter 実装は ContractEntity.address と**同一の表記**（Ethereum
+   * アダプタでは小文字正規化済み）で載せること。フロントはこの2つを文字列
+   * 一致で突き合わせる（表記が食い違う分は「対応するコントラクト未観測」と
+   * 同じ扱いで表示されない）。
+   */
   contractAddress: string;
   /** トークンの最小単位での残高（10 進文字列。balance と同じく精度落ち防止）。 */
   amount: string;

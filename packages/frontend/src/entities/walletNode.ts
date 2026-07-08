@@ -8,6 +8,7 @@ import type { Node } from "@xyflow/react";
 import type { GridOptions } from "./infraNode.js";
 import { DEFAULT_GRID, defaultGridPosition } from "./infraNode.js";
 import { resolveWalletTransactions } from "./transaction.js";
+import { formatUnits } from "./tokenAmount.js";
 import type { LayoutMap } from "../layout/layoutStore.js";
 
 /**
@@ -57,29 +58,17 @@ export function isWalletEntity(
   return entity.kind === "wallet";
 }
 
-/** 1 Ether を表す wei（10^18）。 */
-const WEI_PER_ETHER = 1_000_000_000_000_000_000n;
-
 /**
  * wei 建ての残高（整数文字列）を Ether 表記へ変換する。BigInt で小数誤差なく
  * 計算し、小数第4位までを表示する。数値として解釈できない入力はそのまま返す。
+ *
+ * ETH は decimals=18 固定のトークンとみなせるため、decimals 可変の
+ * `formatUnits`（tokenAmount.ts。トークン残高表示と共用。ARCHITECTURE.md
+ * §6.7「formatEther は decimals 可変の formatUnits へ一般化して共用する」）
+ * の特殊ケースとして実装する。
  */
 export function formatEther(weiString: string, fractionDigits = 4): string {
-  let wei: bigint;
-  try {
-    wei = BigInt(weiString);
-  } catch {
-    return weiString;
-  }
-  const negative = wei < 0n;
-  const abs = negative ? -wei : wei;
-  const whole = abs / WEI_PER_ETHER;
-  const frac = abs % WEI_PER_ETHER;
-  // 10^18 でゼロ埋めした小数部の先頭 fractionDigits 桁を取る。
-  const fracFull = frac.toString().padStart(18, "0");
-  const fracShown = fracFull.slice(0, fractionDigits);
-  const sign = negative ? "-" : "";
-  return `${sign}${whole.toString()}.${fracShown}`;
+  return formatUnits(weiString, 18, fractionDigits);
 }
 
 export interface WalletNodeContext {
