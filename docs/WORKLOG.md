@@ -97,4 +97,5 @@
 | #162 | Issue #162 カタログABIによる関数呼び出し・イベントログの復号(contractCall/contractEvents) | [2026-07-07](worklog/issue-162.md) |
 | #164 | Issue #164 追跡中トークンコントラクトの残高ポーリング(WalletEntity.tokenBalances) | [2026-07-07](worklog/issue-164.md) |
 | #165 | Issue #165 ContractEntityのカード表示とポップオーバー(未知のコントラクトの差別化・デプロイエッジ) | [2026-07-08](worklog/issue-165.md) |
+| #166 | Issue #166 コントラクト呼び出し・イベントログの可視化(活動チップ列・tx確定時のアニメーション・tx チップ「意味」優先表示・WalletPopoverの呼び出し内容追記) | [2026-07-08](worklog/issue-166.md) |
 | - | 特定Issueに紐付かない記録(PLAN.md/CLAUDE.md更新等) | [2026-07-05〜2026-07-07](worklog/meta.md) |
