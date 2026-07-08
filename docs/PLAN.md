@@ -584,6 +584,8 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       [#218](https://github.com/morichikawa/chainviz/issues/218)
 - [ ] ウォレットがスマートコントラクトに対して何ができるのか分かりにくい
       [#219](https://github.com/morichikawa/chainviz/issues/219)
+- [ ] ノード追加・ワークベンチ追加のボタンが作成中でも連打できてしまう
+      [#220](https://github.com/morichikawa/chainviz/issues/220)
 
 ## 運用ルール（全ステップ共通）
 
