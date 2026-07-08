@@ -9,6 +9,7 @@ import {
   executionMetricsTargets,
   executionPeerTargets,
   executionRpcUrls,
+  executionStableIdForBeacon,
   executionTargets,
 } from "./targets.js";
 
@@ -632,6 +633,107 @@ describe("beaconStableIdForExecution", () => {
     expect(
       beaconStableIdForExecution(rethNested, [rethNested, beaconNested]),
     ).toBe("proj/extra/beacon1");
+  });
+});
+
+describe("executionStableIdForBeacon (Issue #186)", () => {
+  it("maps a beacon container to the execution node in the same logical node", () => {
+    expect(
+      executionStableIdForBeacon(beacon1, [obs(), beacon1, validator1]),
+    ).toBe("chainviz-ethereum/reth1");
+  });
+
+  it("does not confuse different node groups", () => {
+    const beacon2 = obs({
+      stableId: "chainviz-ethereum/beacon2",
+      labels: { "com.docker.compose.service": "beacon2" },
+      image: "sigp/lighthouse:latest",
+      ip: "172.28.2.2",
+      processes: [{ command: "lighthouse bn", name: "lighthouse" }],
+    });
+    // beacon2 に対応する reth2 は無いので、reth1 に誤って対応付けない。
+    expect(
+      executionStableIdForBeacon(beacon2, [obs(), beacon2]),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when called with a validator container (not a beacon)", () => {
+    // validator1 も lighthouse だが isBeaconService が false になるため、
+    // 「そもそも beacon 役ではない」経路で undefined を返す。
+    expect(
+      executionStableIdForBeacon(validator1, [obs(), beacon1, validator1]),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when called with an execution container (not a beacon)", () => {
+    // pollInfra は全 NodeEntity に対して機械的に呼ぶため、reth 自身に対して
+    // 呼んでも自己参照や無関係な対応付けを返さない自己防衛を確認する。
+    expect(
+      executionStableIdForBeacon(obs(), [obs(), beacon1]),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when called with a workbench container (not a beacon)", () => {
+    expect(
+      executionStableIdForBeacon(workbench, [obs(), beacon1, workbench]),
+    ).toBeUndefined();
+  });
+
+  it("matches single-node setups without a numeric suffix", () => {
+    const reth = obs({
+      stableId: "chainviz-ethereum/reth",
+      labels: { "com.docker.compose.service": "reth" },
+    });
+    const beacon = obs({
+      stableId: "chainviz-ethereum/beacon",
+      labels: { "com.docker.compose.service": "beacon" },
+      image: "sigp/lighthouse:latest",
+      ip: "172.28.2.9",
+      processes: [{ command: "lighthouse bn", name: "lighthouse" }],
+    });
+    expect(executionStableIdForBeacon(beacon, [reth, beacon])).toBe(
+      "chainviz-ethereum/reth",
+    );
+  });
+
+  it("picks the paired execution among multiple execution candidates in the same project", () => {
+    // beacon1 のノード群キーは "1" なので同一プロジェクト内に reth1/reth2 が
+    // あっても reth1 だけに対応し、reth2 へ誤って対応付けない。
+    const reth2 = obs({
+      stableId: "chainviz-ethereum/reth2",
+      name: "chainviz-ethereum-reth2-1",
+      labels: { "com.docker.compose.service": "reth2" },
+      ip: "172.28.1.2",
+    });
+    expect(executionStableIdForBeacon(beacon1, [obs(), reth2, beacon1])).toBe(
+      "chainviz-ethereum/reth1",
+    );
+  });
+
+  it("does not map a beacon to an execution node in a different compose project", () => {
+    // ノード群キー "1" は一致するが projectOf が異なる（projA ≠ projB）ため
+    // findPairedStableId のプロジェクトスコープにより対応付けない。1 つの
+    // collector が複数 compose プロジェクトを同時観測する状況（QA 検証等）で
+    // 別プロジェクトのコンテナを誤って対応付けないことを固定する。
+    const beaconProjA = obs({
+      stableId: "projA/beacon1",
+      labels: { "com.docker.compose.service": "beacon1" },
+      image: "sigp/lighthouse:latest",
+      ip: "172.28.20.1",
+      processes: [{ command: "lighthouse bn", name: "lighthouse" }],
+    });
+    const rethProjB = obs({
+      stableId: "projB/reth1",
+      labels: { "com.docker.compose.service": "reth1" },
+      ip: "172.28.20.2",
+    });
+    expect(
+      executionStableIdForBeacon(beaconProjA, [beaconProjA, rethProjB]),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when the observations list is empty", () => {
+    expect(executionStableIdForBeacon(beacon1, [])).toBeUndefined();
   });
 });
 
