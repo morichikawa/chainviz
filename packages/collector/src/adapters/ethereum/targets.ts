@@ -6,6 +6,7 @@
 import type { ContainerObservation } from "../../docker/types.js";
 import { BEACON_API_PORT } from "./beacon-api.js";
 import { classifyContainer } from "./classify.js";
+import { EXECUTION_METRICS_PORT } from "./reth-metrics-client.js";
 
 const COMPOSE_SERVICE_LABEL = "com.docker.compose.service";
 
@@ -51,6 +52,17 @@ export interface ExecutionPeerTarget {
   rpcUrl: string;
   /** グルーピング用のネットワーク識別子（`<project>-execution`）。 */
   networkId: string;
+}
+
+/**
+ * D層: ノード内部メトリクス（Prometheus、Issue #184/#185）をポーリングする
+ * Execution ノードの到達先。
+ */
+export interface ExecutionMetricsTarget {
+  /** ノードの安定識別子（NodeEntity.id と一致）。 */
+  stableId: string;
+  /** `/metrics` の URL。 */
+  metricsUrl: string;
 }
 
 /** ブロック受信時刻を購読する Execution ノードの到達先。 */
@@ -236,6 +248,28 @@ export function executionRpcUrls(
     urls.push(`http://${obs.ip}:${EXECUTION_RPC_PORT}`);
   }
   return urls;
+}
+
+/**
+ * D層のノード内部メトリクス（Prometheus）のポーリング対象になる Execution
+ * ノードを観測値から抽出する。executionRpcUrls / executionPeerTargets と
+ * 同じ選別基準（execution クライアントであり IP が取れるコンテナだけ）。
+ */
+export function executionMetricsTargets(
+  observations: ContainerObservation[],
+): ExecutionMetricsTarget[] {
+  const targets: ExecutionMetricsTarget[] = [];
+  for (const obs of observations) {
+    if (!obs.ip) continue;
+    const { kind, clientType } = classifyContainer(obs);
+    if (kind !== "node") continue;
+    if (!EXECUTION_CLIENTS.includes(clientType)) continue;
+    targets.push({
+      stableId: obs.stableId,
+      metricsUrl: `http://${obs.ip}:${EXECUTION_METRICS_PORT}/metrics`,
+    });
+  }
+  return targets;
 }
 
 /**
