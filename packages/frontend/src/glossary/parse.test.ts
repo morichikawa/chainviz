@@ -20,6 +20,7 @@ const bNetworkPath = findGlossaryFile("glossary/ethereum/terms/b-network.yaml");
 const cTransactionPath = findGlossaryFile(
   "glossary/ethereum/terms/c-transaction.yaml",
 );
+const dInternalPath = findGlossaryFile("glossary/ethereum/terms/d-internal.yaml");
 
 describe("parseGlossaryYaml", () => {
   it("parses the real A-layer glossary file", () => {
@@ -185,6 +186,7 @@ describe("real glossary data files (regression: duplicate keys, merge conflicts)
     { name: "a-infra", path: aInfraPath },
     { name: "b-network", path: bNetworkPath },
     { name: "c-transaction", path: cTransactionPath },
+    { name: "d-internal", path: dInternalPath },
   ];
 
   it("parses every real glossary file without throwing", () => {
@@ -212,11 +214,12 @@ describe("real glossary data files (regression: duplicate keys, merge conflicts)
     }
   });
 
-  it("merges all three real files into a single glossary without key collisions", () => {
+  it("merges all real files into a single glossary without key collisions", () => {
     const merged = mergeGlossaries(
       parseGlossaryYaml(readFileSync(aInfraPath, "utf8")),
       parseGlossaryYaml(readFileSync(bNetworkPath, "utf8")),
       parseGlossaryYaml(readFileSync(cTransactionPath, "utf8")),
+      parseGlossaryYaml(readFileSync(dInternalPath, "utf8")),
     );
     const individualCounts = files.map(
       (file) =>

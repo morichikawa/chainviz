@@ -4,6 +4,7 @@
 import aInfraRaw from "@glossary/ethereum/terms/a-infra.yaml?raw";
 import bNetworkRaw from "@glossary/ethereum/terms/b-network.yaml?raw";
 import cTransactionRaw from "@glossary/ethereum/terms/c-transaction.yaml?raw";
+import dInternalRaw from "@glossary/ethereum/terms/d-internal.yaml?raw";
 import { mergeGlossaries, parseGlossaryYaml } from "./parse.js";
 import type { Glossary } from "./types.js";
 
@@ -11,4 +12,5 @@ export const glossary: Glossary = mergeGlossaries(
   parseGlossaryYaml(aInfraRaw),
   parseGlossaryYaml(bNetworkRaw),
   parseGlossaryYaml(cTransactionRaw),
+  parseGlossaryYaml(dInternalRaw),
 );

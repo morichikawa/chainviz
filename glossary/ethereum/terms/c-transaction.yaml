@@ -35,7 +35,7 @@ mempool:
       block. A submitted tx lands here and is picked up when a proposer builds a
       block. The "pending" state lingers here until inclusion.
   layer: c-transaction
-  relatedTerms: [transaction, gas]
+  relatedTerms: [transaction, gas, txpool]
 
 nonce:
   name:
