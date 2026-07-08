@@ -13,6 +13,7 @@ import type {
   ContractEvent,
   InfraEntity,
   NodeEntity,
+  NodeInternalsHandlers,
   PeerEdge,
   TransactionEntity,
   WorkbenchEntity,
@@ -54,10 +55,23 @@ import {
 import { createFetchHttpClient, type HttpClient } from "./http-client.js";
 import { toPeerEdges, type NodePeers } from "./peers.js";
 import {
+  createFetchRethMetricsClient,
+  type RethMetricsClient,
+} from "./reth-metrics-client.js";
+import {
+  NODE_INTERNALS_POLL_INTERVAL_MS,
+  RethMetricsTracker,
+} from "./reth-metrics-tracker.js";
+import { pollRethNodeInternals } from "./reth-node-internals.js";
+import {
+  beaconStableIdForExecution,
   beaconTargets,
+  executionMetricsTargets,
   executionPeerTargets,
+  executionStableIdForBeacon,
   executionTargets,
   type BeaconTarget,
+  type ExecutionMetricsTarget,
   type ExecutionPeerTarget,
 } from "./targets.js";
 import { TransactionLifecycleTracker } from "./transactions.js";
@@ -103,6 +117,17 @@ export interface EthereumAdapterDeps {
    * readContractCatalog() の失敗をログしたうえで undefined を渡す）。
    */
   catalog?: ContractCatalog;
+  /**
+   * D層: ノード内部メトリクス（Prometheus、Issue #184/#185）を取得する HTTP
+   * クライアント。未指定なら `createFetchRethMetricsClient()`（実 fetch）。
+   */
+  rethMetricsClient?: RethMetricsClient;
+  /**
+   * D層: ノード内部メトリクスのスクレイプ間隔。未指定なら
+   * `NODE_INTERNALS_POLL_INTERVAL_MS`（3000ms。前提条件は
+   * reth-metrics-tracker.ts のコメント参照）。
+   */
+  nodeInternalsPollIntervalMs?: number;
 }
 
 /**
@@ -137,6 +162,9 @@ export class EthereumAdapter implements ChainAdapter {
   private readonly blockTracker = new BlockPropagationTracker();
   private readonly txTracker = new TransactionLifecycleTracker();
   private readonly contractTracker: ContractTracker;
+  private readonly rethMetricsClient: RethMetricsClient;
+  private readonly rethMetricsTracker = new RethMetricsTracker();
+  private readonly nodeInternalsPollIntervalMs: number;
 
   private peerTimer?: ReturnType<typeof setTimeout>;
   private peerLoopRunning = false;
@@ -151,6 +179,16 @@ export class EthereumAdapter implements ChainAdapter {
   private readonly processedBlocks = new Set<string>();
   private readonly maxProcessedBlocks = 500;
 
+  // subscribeNodeInternals（D層）の周期ループ用状態。subscribePeers と同型
+  // （ノード横断で使い回す RethMetricsTracker とは別に、ループの生死管理だけ
+  // ここに持つ）。
+  private nodeInternalsTimer?: ReturnType<typeof setTimeout>;
+  private nodeInternalsLoopRunning = false;
+  // 前回 tick で観測できた execution ノードの stableId 集合。ノードが観測から
+  // 消えた（removeNode 等）場合に RethMetricsTracker.forgetNode() で前回値を
+  // 破棄するために保持する（Issue #185 の申し送り）。
+  private trackedNodeInternalsIds = new Set<string>();
+
   constructor(
     private readonly poller: DockerPoller,
     deps: EthereumAdapterDeps = {},
@@ -164,6 +202,10 @@ export class EthereumAdapter implements ChainAdapter {
     this.deriveAddress = deps.deriveAddress ?? deriveWalletAddress;
     this.rpcTargetHost = deps.rpcTargetHost;
     this.contractTracker = new ContractTracker(this.chainType, deps.catalog);
+    this.rethMetricsClient =
+      deps.rethMetricsClient ?? createFetchRethMetricsClient();
+    this.nodeInternalsPollIntervalMs =
+      deps.nodeInternalsPollIntervalMs ?? NODE_INTERNALS_POLL_INTERVAL_MS;
   }
 
   /**
@@ -180,6 +222,12 @@ export class EthereumAdapter implements ChainAdapter {
    * 静的ワークベンチと同じくロギングプロキシ経由になったため（node-lifecycle.ts
    * の resolveWorkbenchRpcUrl 参照）、rpcTargetNodeId の解決先と実際の
    * RPC呼び出し先は一致する。
+   *
+   * D層（Issue #186）: 同じポーリング観測から、beacon（CL）ノードが内部 API
+   * （Engine API）で駆動する Execution（EL）ノードの stableId も毎回解決し、
+   * `NodeEntity.drivesNodeId` に設定する（`rpcTargetNodeId` と同じ
+   * 「独立した購読ではなく A 層のポーリングで毎回解決する」流儀。
+   * docs/ARCHITECTURE.md §7.3）。
    */
   async pollInfra(): Promise<Partial<WorldStateSnapshot>> {
     const observations = await this.poller.pollOnce();
@@ -190,6 +238,7 @@ export class EthereumAdapter implements ChainAdapter {
         if (entity.kind === "workbench") entity.rpcTargetNodeId = rpcTargetNodeId;
       }
     }
+    this.resolveDrivesNodeId(entities, observations);
     return {
       chainType: this.chainType,
       entities,
@@ -209,6 +258,28 @@ export class EthereumAdapter implements ChainAdapter {
       (e): e is NodeEntity => e.kind === "node" && e.ip === this.rpcTargetHost,
     );
     return target?.id;
+  }
+
+  /**
+   * 各 NodeEntity について、対応する ContainerObservation を
+   * `executionStableIdForBeacon()` に渡し、解決できれば `drivesNodeId` を
+   * その場でパッチする（beacon ではないノード・対応が取れないノードは
+   * 何もしない。省略 = 無し/不明の流儀）。`executionStableIdForBeacon` は
+   * beacon 役でないコンテナに対して呼んでも常に undefined を返すため、全
+   * NodeEntity へ機械的に呼んで問題ない。
+   */
+  private resolveDrivesNodeId(
+    entities: (NodeEntity | WorkbenchEntity)[],
+    observations: ContainerObservation[],
+  ): void {
+    const obsById = new Map(observations.map((o) => [o.stableId, o]));
+    for (const entity of entities) {
+      if (entity.kind !== "node") continue;
+      const obs = obsById.get(entity.id);
+      if (!obs) continue;
+      const drivesNodeId = executionStableIdForBeacon(obs, observations);
+      if (drivesNodeId !== undefined) entity.drivesNodeId = drivesNodeId;
+    }
   }
 
   private toEntity(obs: ContainerObservation): NodeEntity | WorkbenchEntity {
@@ -654,6 +725,116 @@ export class EthereumAdapter implements ChainAdapter {
     );
   }
 
+  // --- D 層: ノード内部（Issue #185/#186） ---
+
+  /**
+   * D層: 各 Execution（reth）ノードのノード内部メトリクス（Prometheus、
+   * Issue #184/#185）を周期ポーリングし、ノード内部状態の更新
+   * （`handlers.onInternals`）と駆動リンク上の Engine API 呼び出し活動
+   * （`handlers.onLinkActivity`）を購読する。`subscribePeers` と同型の
+   * 独立した setTimeout ループとして実装する（毎 tick で Docker 観測を
+   * 取り直すため、addNode/removeNode で execution ノードが増減しても
+   * 追従する）。
+   */
+  async subscribeNodeInternals(handlers: NodeInternalsHandlers): Promise<void> {
+    if (this.nodeInternalsLoopRunning) return;
+    this.nodeInternalsLoopRunning = true;
+    void this.nodeInternalsTick(handlers);
+  }
+
+  private async nodeInternalsTick(
+    handlers: NodeInternalsHandlers,
+  ): Promise<void> {
+    if (!this.nodeInternalsLoopRunning) return;
+    try {
+      await this.pollNodeInternalsOnce(handlers);
+    } catch (err) {
+      console.error("[ethereum] node internals poll failed:", err);
+    }
+    if (this.nodeInternalsLoopRunning) {
+      this.nodeInternalsTimer = setTimeout(
+        () => void this.nodeInternalsTick(handlers),
+        this.nodeInternalsPollIntervalMs,
+      );
+    }
+  }
+
+  /**
+   * ノード内部メトリクスを 1 巡ポーリングする。対象の execution ノードごとに
+   * `pollRethNodeInternals`（Issue #185）を並行に呼び、結果を
+   * `handlers.onInternals` / `handlers.onLinkActivity` へ振り分ける。
+   *
+   * - `internals`（syncStages/mempool）は観測できればそのまま
+   *   `onInternals(target.stableId, internals)` へ渡す（target.stableId は
+   *   観測対象の execution ノード自身の id）。
+   * - `calls`（Engine API 呼び出しの増分）が 1 件以上あれば、対応する
+   *   beacon（CL）ノードの stableId を `beaconStableIdForExecution()` で
+   *   解決し、`fromNodeId`（駆動する側 = beacon） / `toNodeId`（駆動される
+   *   側 = execution 自身）として `onLinkActivity` へ渡す。beacon が解決
+   *   できない場合は docs/ARCHITECTURE.md §7.3 の決定どおり配信せず、
+   *   その旨をログに残す（黙って捨てない）。
+   * - 前回 tick で観測できた stableId のうち今回観測できなくなったものは
+   *   `RethMetricsTracker.forgetNode()` で前回値を破棄する（ノード削除の
+   *   後始末。Issue #185 の申し送り）。
+   */
+  private async pollNodeInternalsOnce(
+    handlers: NodeInternalsHandlers,
+  ): Promise<void> {
+    const observations = await this.poller.pollOnce();
+    const targets = executionMetricsTargets(observations);
+    const obsByStableId = new Map(observations.map((o) => [o.stableId, o]));
+
+    const currentIds = new Set(targets.map((t) => t.stableId));
+    for (const id of this.trackedNodeInternalsIds) {
+      if (!currentIds.has(id)) this.rethMetricsTracker.forgetNode(id);
+    }
+    this.trackedNodeInternalsIds = currentIds;
+
+    await Promise.all(
+      targets.map((target) =>
+        this.pollOneNodeInternals(target, observations, obsByStableId, handlers),
+      ),
+    );
+  }
+
+  /** 1 execution ノード分のノード内部メトリクス観測を処理する。 */
+  private async pollOneNodeInternals(
+    target: ExecutionMetricsTarget,
+    observations: ContainerObservation[],
+    obsByStableId: Map<string, ContainerObservation>,
+    handlers: NodeInternalsHandlers,
+  ): Promise<void> {
+    const result = await pollRethNodeInternals(
+      this.rethMetricsClient,
+      target,
+      this.rethMetricsTracker,
+    );
+    // 取得・パース失敗（pollRethNodeInternals が既に stableId と実際の
+    // エラー内容をログ済み）はここでは何もしない。
+    if (!result) return;
+
+    if (result.internals) handlers.onInternals(target.stableId, result.internals);
+
+    if (result.calls.length === 0) return;
+    const executionObs = obsByStableId.get(target.stableId);
+    const fromNodeId = executionObs
+      ? beaconStableIdForExecution(executionObs, observations)
+      : undefined;
+    if (fromNodeId === undefined) {
+      console.error(
+        `[ethereum] cannot resolve the driving beacon node for ${target.stableId}; ` +
+          `dropping ${result.calls.length} internal call stat(s)`,
+      );
+      return;
+    }
+    handlers.onLinkActivity({
+      fromNodeId,
+      toNodeId: target.stableId,
+      calls: result.calls,
+      observedAt: this.now(),
+    });
+  }
+
   /**
    * ブロックハッシュを「処理中/処理済み」として記録し、初回なら true を返す。
    * 既に記録済みなら false（別ノードからの重複通知）。RPC 取得に失敗した場合は
@@ -672,7 +853,10 @@ export class EthereumAdapter implements ChainAdapter {
     return true;
   }
 
-  /** ピアポーリング・ブロック購読・tx 購読を停止する（テスト・シャットダウン用）。 */
+  /**
+   * ピアポーリング・ブロック購読・tx 購読・ノード内部メトリクスポーリングを
+   * 停止する（テスト・シャットダウン用）。
+   */
   dispose(): void {
     this.peerLoopRunning = false;
     if (this.peerTimer) {
@@ -683,5 +867,10 @@ export class EthereumAdapter implements ChainAdapter {
     this.blockSubscriptions = [];
     for (const sub of this.txSubscriptions) sub.close();
     this.txSubscriptions = [];
+    this.nodeInternalsLoopRunning = false;
+    if (this.nodeInternalsTimer) {
+      clearTimeout(this.nodeInternalsTimer);
+      this.nodeInternalsTimer = undefined;
+    }
   }
 }

@@ -580,3 +580,208 @@ describe("EthereumAdapter.pollInfra rpcTargetNodeId resolution (Issue #123)", ()
     expect(secondWorkbench.rpcTargetNodeId).toBe(secondNode.id);
   });
 });
+
+const beaconFixture: Fixture = {
+  summary: {
+    Id: "id-beacon1",
+    Names: ["/chainviz-ethereum-beacon1-1"],
+    Image: "sigp/lighthouse:latest",
+    State: "running",
+    Labels: {
+      "com.docker.compose.project": "chainviz-ethereum",
+      "com.docker.compose.service": "beacon1",
+    },
+    NetworkSettings: { Networks: { chain: { IPAddress: "172.28.2.1" } } },
+  },
+  top: { Titles: ["CMD"], Processes: [["lighthouse bn"]] },
+};
+
+/** validator も lighthouse イメージだが beacon サービス名を持たない（Issue #186）。 */
+const validatorFixture: Fixture = {
+  summary: {
+    Id: "id-validator1",
+    Names: ["/chainviz-ethereum-validator1-1"],
+    Image: "sigp/lighthouse:latest",
+    State: "running",
+    Labels: {
+      "com.docker.compose.project": "chainviz-ethereum",
+      "com.docker.compose.service": "validator1",
+    },
+    NetworkSettings: { Networks: { chain: { IPAddress: "172.28.0.3" } } },
+  },
+  top: { Titles: ["CMD"], Processes: [["lighthouse vc"]] },
+};
+
+/** 2 組目の EL/CL ペア（複数ノード環境での対応付けを検証するため）。 */
+const reth2Fixture: Fixture = {
+  summary: {
+    Id: "id-reth2",
+    Names: ["/chainviz-ethereum-reth2-1"],
+    Image: "ghcr.io/paradigmxyz/reth:latest",
+    State: "running",
+    Labels: {
+      "com.docker.compose.project": "chainviz-ethereum",
+      "com.docker.compose.service": "reth2",
+    },
+    NetworkSettings: { Networks: { chain: { IPAddress: "172.28.1.2" } } },
+  },
+  top: { Titles: ["CMD"], Processes: [["reth node"]] },
+};
+
+const beacon2Fixture: Fixture = {
+  summary: {
+    Id: "id-beacon2",
+    Names: ["/chainviz-ethereum-beacon2-1"],
+    Image: "sigp/lighthouse:latest",
+    State: "running",
+    Labels: {
+      "com.docker.compose.project": "chainviz-ethereum",
+      "com.docker.compose.service": "beacon2",
+    },
+    NetworkSettings: { Networks: { chain: { IPAddress: "172.28.2.2" } } },
+  },
+  top: { Titles: ["CMD"], Processes: [["lighthouse bn"]] },
+};
+
+describe("EthereumAdapter.pollInfra drivesNodeId resolution (Issue #186)", () => {
+  it("sets drivesNodeId on the beacon node to the paired execution node's id", async () => {
+    const adapter = new EthereumAdapter(
+      new DockerPoller(clientFrom([rethFixture, beaconFixture])),
+    );
+    const partial = await adapter.pollInfra();
+    const entities = (partial.entities ?? []) as NodeEntity[];
+    const beacon = entities.find((e) => e.id === "chainviz-ethereum/beacon1");
+    const reth = entities.find((e) => e.id === "chainviz-ethereum/reth1");
+    expect(beacon?.drivesNodeId).toBe(reth?.id);
+  });
+
+  it("omits drivesNodeId on the execution node itself (drives, not driven)", async () => {
+    const adapter = new EthereumAdapter(
+      new DockerPoller(clientFrom([rethFixture, beaconFixture])),
+    );
+    const partial = await adapter.pollInfra();
+    const entities = (partial.entities ?? []) as NodeEntity[];
+    const reth = entities.find((e) => e.id === "chainviz-ethereum/reth1");
+    expect(reth?.drivesNodeId).toBeUndefined();
+  });
+
+  it("omits drivesNodeId on a validator node even though it shares the lighthouse client type", async () => {
+    const adapter = new EthereumAdapter(
+      new DockerPoller(
+        clientFrom([rethFixture, beaconFixture, validatorFixture]),
+      ),
+    );
+    const partial = await adapter.pollInfra();
+    const entities = (partial.entities ?? []) as NodeEntity[];
+    const validator = entities.find(
+      (e) => e.id === "chainviz-ethereum/validator1",
+    );
+    expect(validator?.drivesNodeId).toBeUndefined();
+  });
+
+  it("omits drivesNodeId when the beacon has no paired execution node observed", async () => {
+    const adapter = new EthereumAdapter(
+      new DockerPoller(clientFrom([beaconFixture])),
+    );
+    const partial = await adapter.pollInfra();
+    const beacon = partial.entities?.[0] as NodeEntity;
+    expect(beacon.drivesNodeId).toBeUndefined();
+  });
+
+  it("re-resolves on every poll instead of caching a fixed result (execution ノードが後から現れる)", async () => {
+    let containers: DockerContainerSummary[] = [beaconFixture.summary];
+    const byId = new Map([
+      [rethFixture.summary.Id, rethFixture],
+      [beaconFixture.summary.Id, beaconFixture],
+    ]);
+    const client: DockerClient = {
+      listContainers: async () => containers,
+      getContainer: (id: string) => ({
+        top: async () => byId.get(id)?.top ?? { Titles: ["CMD"], Processes: [] },
+        stats: async () => zeroStats,
+      }),
+    };
+    const adapter = new EthereumAdapter(new DockerPoller(client));
+
+    const first = await adapter.pollInfra();
+    const firstBeacon = first.entities?.[0] as NodeEntity;
+    expect(firstBeacon.drivesNodeId).toBeUndefined();
+
+    containers = [rethFixture.summary, beaconFixture.summary];
+    const second = await adapter.pollInfra();
+    const secondEntities = (second.entities ?? []) as NodeEntity[];
+    const secondBeacon = secondEntities.find(
+      (e) => e.id === "chainviz-ethereum/beacon1",
+    );
+    const secondReth = secondEntities.find(
+      (e) => e.id === "chainviz-ethereum/reth1",
+    );
+    expect(secondBeacon?.drivesNodeId).toBe(secondReth?.id);
+  });
+
+  it("pairs each beacon with its own execution node in a multi-node environment", async () => {
+    const adapter = new EthereumAdapter(
+      new DockerPoller(
+        clientFrom([
+          rethFixture,
+          beaconFixture,
+          reth2Fixture,
+          beacon2Fixture,
+        ]),
+      ),
+    );
+    const partial = await adapter.pollInfra();
+    const entities = (partial.entities ?? []) as NodeEntity[];
+    const beacon1 = entities.find((e) => e.id === "chainviz-ethereum/beacon1");
+    const beacon2 = entities.find((e) => e.id === "chainviz-ethereum/beacon2");
+    // beacon1→reth1 / beacon2→reth2 と、ノード群キーごとに正しく対応付き、
+    // 相手を取り違えない。
+    expect(beacon1?.drivesNodeId).toBe("chainviz-ethereum/reth1");
+    expect(beacon2?.drivesNodeId).toBe("chainviz-ethereum/reth2");
+    // execution ノード自身は駆動される側なので drivesNodeId を持たない。
+    const reth1 = entities.find((e) => e.id === "chainviz-ethereum/reth1");
+    const reth2 = entities.find((e) => e.id === "chainviz-ethereum/reth2");
+    expect(reth1?.drivesNodeId).toBeUndefined();
+    expect(reth2?.drivesNodeId).toBeUndefined();
+  });
+
+  it("leaves the execution node without drivesNodeId after its driving beacon is removed", async () => {
+    // drivesNodeId は beacon（CL）側のエンティティに載る。beacon が消えると
+    // そのエンティティごと消え、pollInfra は毎回 observations から作り直すため
+    // execution（EL）側に古い drivesNodeId が残ることはない（そもそも EL 側は
+    // 一度も drivesNodeId を持たない）ことを固定する。
+    let containers: DockerContainerSummary[] = [
+      rethFixture.summary,
+      beaconFixture.summary,
+    ];
+    const byId = new Map([
+      [rethFixture.summary.Id, rethFixture],
+      [beaconFixture.summary.Id, beaconFixture],
+    ]);
+    const client: DockerClient = {
+      listContainers: async () => containers,
+      getContainer: (id: string) => ({
+        top: async () => byId.get(id)?.top ?? { Titles: ["CMD"], Processes: [] },
+        stats: async () => zeroStats,
+      }),
+    };
+    const adapter = new EthereumAdapter(new DockerPoller(client));
+
+    const first = await adapter.pollInfra();
+    const firstEntities = (first.entities ?? []) as NodeEntity[];
+    const firstBeacon = firstEntities.find(
+      (e) => e.id === "chainviz-ethereum/beacon1",
+    );
+    expect(firstBeacon?.drivesNodeId).toBe("chainviz-ethereum/reth1");
+
+    // beacon を取り除く（reth だけ残る）。
+    containers = [rethFixture.summary];
+    const second = await adapter.pollInfra();
+    const secondEntities = (second.entities ?? []) as NodeEntity[];
+    expect(
+      secondEntities.find((e) => e.id === "chainviz-ethereum/beacon1"),
+    ).toBeUndefined();
+    const reth = secondEntities.find((e) => e.id === "chainviz-ethereum/reth1");
+    expect(reth?.drivesNodeId).toBeUndefined();
+  });
+});
