@@ -16,6 +16,38 @@ export type TxStatus = TransactionEntity["status"];
 /** ウォレットカードに載せる直近 tx の既定表示件数。 */
 export const DEFAULT_RECENT_TX_LIMIT = 6;
 
+/**
+ * ウォレット tx チップのラベル種別（ARCHITECTURE.md §6.6「意味」優先の
+ * 表示）。`deploy` の場合は表示文言を i18n（`tx.chip.deploy`）から取るため、
+ * `text` は空文字にしておき、呼び出し側（WalletCard）が置き換える。
+ */
+export type TxChipLabelKind = "function" | "deploy" | "raw" | "hash";
+
+export interface TxChipLabel {
+  kind: TxChipLabelKind;
+  /** 表示テキスト。`kind === "deploy"` のときは呼び出し側が i18n 訳語に置き換える。 */
+  text: string;
+}
+
+/**
+ * ウォレットの tx チップに出すラベルを「意味」優先で導出する（ARCHITECTURE.md
+ * §6.6）。優先順位: `contractCall.functionName` → デプロイ
+ * （`createdContractAddress` あり）→ `contractCall.rawFunctionId` の短縮表示
+ * → 素の送金・情報なしの場合は従来どおり tx hash の短縮表示。
+ */
+export function txChipLabel(tx: TransactionEntity): TxChipLabel {
+  if (tx.contractCall?.functionName !== undefined) {
+    return { kind: "function", text: tx.contractCall.functionName };
+  }
+  if (tx.createdContractAddress !== undefined) {
+    return { kind: "deploy", text: "" };
+  }
+  if (tx.contractCall?.rawFunctionId !== undefined) {
+    return { kind: "raw", text: shortHex(tx.contractCall.rawFunctionId, 4, 3) };
+  }
+  return { kind: "hash", text: shortHex(tx.hash, 4, 3) };
+}
+
 /** 16 進文字列（アドレス・ハッシュ）を先頭 + 末尾に短縮して表示する。 */
 export function shortHex(hex: string, lead = 6, tail = 4): string {
   if (!hex.startsWith("0x")) return hex;
