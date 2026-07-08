@@ -286,31 +286,36 @@ function counterDeployTx(): TransactionEntity {
 }
 
 /** カタログ既知・トークンを持つコントラクト。Alice がデプロイした体で、
- * デプロイエッジ（Alice ウォレット → このカード）を確認できる。 */
+ * デプロイエッジ（Alice ウォレット → このカード）を確認できる。
+ * `catalogKey`/`token.symbol` は実カタログ（profiles/ethereum/contracts/
+ * catalog.json）の "ChainvizToken" / "CVZ" と完全に一致させる（Issue #167 で
+ * 修正: 以前は "chainviz-token" / "CVT" という実環境と異なる値だった。値が
+ * ずれると操作パネルの呼び出しタブの照合 §6.5 が実環境と噛み合わなくなる）。 */
 function chainvizTokenContract(): ContractEntity {
   return {
     kind: "contract",
     address: TOKEN_CONTRACT,
     chainType: "ethereum",
     name: "ChainvizToken",
-    catalogKey: "chainviz-token",
+    catalogKey: "ChainvizToken",
     deployerAddress: ALICE_WALLET,
     createdByTxHash: TOKEN_DEPLOY_TX,
-    token: { symbol: "CVT", decimals: 18 },
+    token: { symbol: "CVZ", decimals: 18 },
   };
 }
 
 /** カタログ既知・トークンを持たないコントラクト。所有者が削除された Bob
  * ウォレットがデプロイした体にし、「所有者は削除済み」のウォレットでも
  * デプロイエッジ自体は張られる（ウォレットカードの生存だけを見る）ことを
- * 確認できるようにする。 */
+ * 確認できるようにする。`catalogKey` は実カタログの "Counter" と一致させる
+ * （chainvizTokenContract の docstring 参照）。 */
 function counterContract(): ContractEntity {
   return {
     kind: "contract",
     address: COUNTER_CONTRACT,
     chainType: "ethereum",
     name: "Counter",
-    catalogKey: "counter",
+    catalogKey: "Counter",
     deployerAddress: BOB_WALLET,
     createdByTxHash: COUNTER_DEPLOY_TX,
   };
@@ -511,6 +516,21 @@ function newWorkbench(seq: number, label: string): WorkbenchEntity {
  */
 export const ADD_NODE_PEER_CONNECT_DELAY_MS = 4000;
 
+/**
+ * runWorkbenchOperation(deployContract) のモック応答が組み立てる、最小限の
+ * カタログ表示情報（Issue #167）。実カタログ（profiles/ethereum/contracts/
+ * catalog.json）の ChainvizToken/Counter に対応する。ABI は持たない
+ * （型解釈は実際には collector 側 ChainAdapter の責務であり、モックは
+ * その結果だけを模す）。
+ */
+const MOCK_DEPLOYABLE_CATALOG: Record<
+  string,
+  { name: string; token?: { symbol: string; decimals: number } }
+> = {
+  ChainvizToken: { name: "ChainvizToken", token: { symbol: "CVZ", decimals: 18 } },
+  Counter: { name: "Counter" },
+};
+
 export interface MockClientOptions {
   /** ブロック高を進める diff の送出間隔(ms)。0 以下でタイマーを起動しない。 */
   intervalMs?: number;
@@ -548,6 +568,16 @@ export function createMockClient(
   // 追加・削除の判定に使う、現在存在するエンティティ id の集合。
   const nodeIds = new Set(["reth-node-1", "reth-node-2", "lighthouse-1"]);
   const workbenchIds = new Set(["workbench-alice"]);
+
+  // runWorkbenchOperation(callContract) の対象照合に使う、デプロイ済み・
+  // カタログ既知コントラクトの address -> catalogKey 索引（Issue #167）。
+  // 初期スナップショットの2件（ChainvizToken/Counter）で種を蒔き、
+  // deployContract が成功するたびに追加する。
+  const deployedContractCatalogKeys = new Map<string, string>([
+    [TOKEN_CONTRACT, "ChainvizToken"],
+    [COUNTER_CONTRACT, "Counter"],
+  ]);
+  let deploySeq = 0;
 
   // C層 tx ライフサイクルの live シミュレーション状態。connect のたびに
   // resetTxState で初期化し、送出するスナップショットと整合させる。
@@ -750,13 +780,61 @@ export function createMockClient(
         };
       }
       case "runWorkbenchOperation": {
-        // モックはワークベンチ内のツール実行を再現しない。UI 実装
-        // （ステップ8のフロント担当）でモック応答が必要になった時点で、
-        // tx ライフサイクルのモックと同様の再現を追加する。
-        return {
-          ok: false,
-          error: "runWorkbenchOperation is not supported by the mock client",
-        };
+        // Issue #167: 操作パネル（送金/デプロイ/コントラクト呼び出し）を
+        // collector なしで確認できるよう、実際に成功/失敗をシミュレートする
+        // （以前は ok:false 固定だった）。
+        const { workbenchId, operation } = command;
+        if (!workbenchIds.has(workbenchId)) {
+          return { ok: false, error: `workbench not found: ${workbenchId}` };
+        }
+        switch (operation.type) {
+          case "transfer": {
+            if (operation.to.trim() === "") {
+              return {
+                ok: false,
+                error: "transfer requires a non-empty destination address",
+              };
+            }
+            return { ok: true };
+          }
+          case "deployContract": {
+            const catalogEntry = MOCK_DEPLOYABLE_CATALOG[operation.contractKey];
+            if (!catalogEntry) {
+              return {
+                ok: false,
+                error: `unknown contract catalog key: ${operation.contractKey}`,
+              };
+            }
+            const address = addr(`dep1${++deploySeq}`);
+            const createdByTxHash = txHash(`dep1${deploySeq}`);
+            deployedContractCatalogKeys.set(address, operation.contractKey);
+            const entity: ContractEntity = {
+              kind: "contract",
+              address,
+              chainType: "ethereum",
+              name: catalogEntry.name,
+              catalogKey: operation.contractKey,
+              // モック上、デプロイ元ウォレットを解決できるのは
+              // workbench-alice（Alice のウォレットを所有）だけ。それ以外の
+              // ワークベンチはウォレットの対応関係を持たないため省略する
+              // （実環境の「解決できなければ省略」フォールバックと同じ流儀）。
+              deployerAddress:
+                workbenchId === "workbench-alice" ? ALICE_WALLET : undefined,
+              createdByTxHash,
+              token: catalogEntry.token,
+            };
+            return { ok: true, diffs: [{ type: "entityAdded", entity }] };
+          }
+          case "callContract": {
+            if (!deployedContractCatalogKeys.has(operation.contractAddress)) {
+              return {
+                ok: false,
+                error: `not a deployed/cataloged contract: ${operation.contractAddress}`,
+              };
+            }
+            return { ok: true };
+          }
+        }
       }
     }
   }
