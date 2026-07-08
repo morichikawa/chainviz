@@ -100,4 +100,5 @@
 | #166 | Issue #166 コントラクト呼び出し・イベントログの可視化(活動チップ列・tx確定時のアニメーション・tx チップ「意味」優先表示・WalletPopoverの呼び出し内容追記) | [2026-07-08](worklog/issue-166.md) |
 | #167 | Issue #167 ワークベンチカードから定型操作(送金・デプロイ・コントラクト呼び出し)を実行するUI | [2026-07-08](worklog/issue-167.md) |
 | #168 | Issue #168 ウォレットカードへのトークン残高表示(formatUnits一般化・ダングリングガード) | [2026-07-08](worklog/issue-168.md) |
+| #190 | Issue #190 D層用語データ(engine-api/el-cl-separation/staged-sync/txpool)をglossaryへ追加 | [2026-07-08](worklog/issue-190.md) |
 | - | 特定Issueに紐付かない記録(PLAN.md/CLAUDE.md更新等、Phase5設計メモ) | [2026-07-05〜2026-07-08](worklog/meta.md) |
