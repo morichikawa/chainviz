@@ -10,6 +10,7 @@ import {
   saveLanguage,
   translate,
 } from "./i18n.js";
+import { messages } from "./messages.js";
 
 function memoryStorage(initial: Record<string, string> = {}): LanguageStorage {
   const map = new Map(Object.entries(initial));
@@ -75,9 +76,9 @@ describe("translate", () => {
 describe("loadLanguage / saveLanguage", () => {
   it("defaults to Japanese when unset or invalid", () => {
     expect(loadLanguage(memoryStorage())).toBe("ja");
-    expect(
-      loadLanguage(memoryStorage({ [LANGUAGE_STORAGE_KEY]: "zz" })),
-    ).toBe("ja");
+    expect(loadLanguage(memoryStorage({ [LANGUAGE_STORAGE_KEY]: "zz" }))).toBe(
+      "ja",
+    );
   });
 
   it("round-trips a saved language", () => {
@@ -91,6 +92,40 @@ describe("nextLanguage", () => {
   it("toggles between the two supported languages", () => {
     expect(nextLanguage("ja")).toBe("en");
     expect(nextLanguage("en")).toBe("ja");
+  });
+});
+
+describe("contract card message keys (Issue #165)", () => {
+  const contractKeys = [
+    "card.contract",
+    "contract.unknown",
+    "contract.badge.everyNode",
+    "contract.badge.uncataloged",
+    "contract.popover.description",
+    "contract.popover.unknownDescription",
+    "field.deployer",
+    "field.createdByTx",
+    "field.token",
+    "edge.deployedBy",
+  ] as const;
+
+  it.each(contractKeys)(
+    "has non-empty ja and en translations for %s",
+    (key) => {
+      const entry = messages[key];
+      expect(entry.ja.length).toBeGreaterThan(0);
+      expect(entry.en.length).toBeGreaterThan(0);
+      // 訳し忘れ（ja と en が同一）を検出する。テンプレート文だけ許容する。
+      if (key !== "edge.deployedBy") {
+        expect(entry.ja).not.toBe(entry.en);
+      }
+    },
+  );
+
+  it("keeps the {address} placeholder in both languages of edge.deployedBy", () => {
+    // format() で埋め込む {address} プレースホルダが両言語に残っていること。
+    expect(messages["edge.deployedBy"].ja).toContain("{address}");
+    expect(messages["edge.deployedBy"].en).toContain("{address}");
   });
 });
 

@@ -25,6 +25,11 @@
      （青緑系パレット）・C層の所有エッジ（琥珀）のどちらとも混同しないよう、
      別系統のマゼンタにする。operationEdge.ts の OPERATION_EDGE_COLOR と一致。 */
   --op-edge: #ff5db1;
+  /* C層拡張のコントラクトの識別色（カード枠・「全ノードで実行」ピル・
+     デプロイエッジで共通使用。ARCHITECTURE.md §6.3）。所有エッジの琥珀・
+     操作エッジのマゼンタ・ピア接続の既存パレット（peerEdge.ts の
+     NETWORK_COLORS）のどれとも混同しないインディゴ系にする。 */
+  --contract-edge: #6f7dea;
   font-family:
     "Inter", system-ui, -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN",
     "Noto Sans JP", sans-serif;
@@ -279,6 +284,81 @@ body {
 .infra-card--wallet {
   border-color: var(--own-edge);
   min-width: 210px;
+}
+
+/* --- C層拡張: コントラクトカード（ARCHITECTURE.md §6.3/§6.4） --- */
+.infra-card--contract {
+  border-color: var(--contract-edge);
+  min-width: 210px;
+}
+
+/* カタログ未登録（未知のコントラクト）は破線 + muted 色にし、既知カードと
+   ひと目で区別できるようにする（§6.4）。 */
+.infra-card--contract-unknown {
+  border-style: dashed;
+  border-color: var(--muted);
+}
+
+.contract-card__badges {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 「全ノードで実行」ピル。infra-card__badge--bootnode と同型の見た目で、
+   コントラクトの識別色にする。 */
+.contract-card__badge--everynode {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: var(--contract-edge);
+  border: 1px solid var(--contract-edge);
+  background: rgba(111, 125, 234, 0.14);
+  white-space: nowrap;
+}
+
+.contract-card__badge--uncataloged {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: var(--muted);
+  border: 1px dashed var(--muted);
+  white-space: nowrap;
+}
+
+.contract-popover__description {
+  margin: 0 0 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--divider);
+  color: var(--muted);
+  line-height: 1.5;
+  font-size: 12px;
+}
+
+/* --- C層拡張: デプロイエッジ（ウォレット → コントラクト） --- */
+/* 所有エッジ（琥珀の点線）・操作エッジ（マゼンタ）と混同しないよう、
+   コントラクト識別色の低彩度な細線にする（§6.3）。 */
+.deploy-edge .react-flow__edge-path {
+  stroke: var(--contract-edge);
+  stroke-width: 1.4;
+  stroke-dasharray: 5 4;
+  stroke-opacity: 0.55;
+}
+
+.deploy-edge--hovered {
+  stroke-opacity: 0.95 !important;
+}
+
+.deploy-popover {
+  min-width: 200px;
+  max-width: 260px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #0c1119;
+  border: 1px solid var(--contract-edge);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  font-size: 11px;
 }
 
 .wallet-card__orphan {

@@ -14,6 +14,10 @@ import {
   type NodeChange,
 } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { ContractCard } from "../entities/ContractCard.js";
+import { CONTRACT_NODE_TYPE } from "../entities/contractNode.js";
+import { DeployEdge } from "../entities/DeployEdge.js";
+import { DEPLOY_EDGE_TYPE, isDeployFlowEdge } from "../entities/deployEdge.js";
 import { GhostNodeCard } from "../entities/GhostNodeCard.js";
 import { GHOST_NODE_TYPE } from "../entities/ghostNode.js";
 import { InfraNodeCard } from "../entities/InfraNodeCard.js";
@@ -44,11 +48,13 @@ import type { Position } from "../layout/layoutStore.js";
 const nodeTypes: NodeTypes = {
   infra: InfraNodeCard,
   [WALLET_NODE_TYPE]: WalletCard,
+  [CONTRACT_NODE_TYPE]: ContractCard,
   [GHOST_NODE_TYPE]: GhostNodeCard,
 };
 const edgeTypes: EdgeTypes = {
   [PEER_EDGE_TYPE]: PeerPropagationEdge,
   [OWNERSHIP_EDGE_TYPE]: OwnershipEdge,
+  [DEPLOY_EDGE_TYPE]: DeployEdge,
   [OPERATION_EDGE_TYPE]: OperationPulseEdge,
   [PENDING_CONNECTION_EDGE_TYPE]: PendingConnectionEdge,
   [CONNECTING_EDGE_TYPE]: ConnectingEdge,
@@ -71,6 +77,12 @@ function CanvasInner({ nodes, edges = [], onPersistPosition }: CanvasProps) {
   const [hoveredPeerEdgeId, setHoveredPeerEdgeId] = useState<string | null>(
     null,
   );
+  // ホバー中のデプロイエッジの id。ピア接続と同じ仕組みでホバー強調・
+  // ポップオーバー表示を行う（ARCHITECTURE.md §6.3）。デプロイエッジ以外
+  // では常に null のまま。
+  const [hoveredDeployEdgeId, setHoveredDeployEdgeId] = useState<
+    string | null
+  >(null);
 
   // ワールドステート更新で親が nodes を再計算したら反映する。React Flow は
   // 実測済み(measured)の情報を持たないノードオブジェクトを受け取ると再計測
@@ -104,17 +116,23 @@ function CanvasInner({ nodes, edges = [], onPersistPosition }: CanvasProps) {
     [onPersistPosition],
   );
 
-  // ピア接続だけホバー状態を追う（所有エッジ・操作エッジはホバー説明の
-  // 対象外。Issue #124 B）。
+  // ピア接続・デプロイエッジだけホバー状態を追う（所有エッジ・操作エッジは
+  // ホバー説明の対象外。Issue #124 B、デプロイエッジは ARCHITECTURE.md §6.3）。
   const onEdgeMouseEnter = useCallback(
     (_event: unknown, edge: Edge) => {
       if (edge.type === PEER_EDGE_TYPE) setHoveredPeerEdgeId(edge.id);
+      if (edge.type === DEPLOY_EDGE_TYPE) setHoveredDeployEdgeId(edge.id);
     },
     [],
   );
   const onEdgeMouseLeave = useCallback((_event: unknown, edge: Edge) => {
     if (edge.type === PEER_EDGE_TYPE) {
       setHoveredPeerEdgeId((current) => (current === edge.id ? null : current));
+    }
+    if (edge.type === DEPLOY_EDGE_TYPE) {
+      setHoveredDeployEdgeId((current) =>
+        current === edge.id ? null : current,
+      );
     }
   }, []);
 
@@ -123,12 +141,19 @@ function CanvasInner({ nodes, edges = [], onPersistPosition }: CanvasProps) {
   const displayEdges = useMemo(
     () =>
       rfEdges.map((edge) => {
-        if (!isPeerFlowEdge(edge)) return edge;
-        const hovered = edge.id === hoveredPeerEdgeId;
-        if ((edge.data?.hovered ?? false) === hovered) return edge;
-        return { ...edge, data: { ...edge.data, hovered } };
+        if (isPeerFlowEdge(edge)) {
+          const hovered = edge.id === hoveredPeerEdgeId;
+          if ((edge.data?.hovered ?? false) === hovered) return edge;
+          return { ...edge, data: { ...edge.data, hovered } };
+        }
+        if (isDeployFlowEdge(edge)) {
+          const hovered = edge.id === hoveredDeployEdgeId;
+          if ((edge.data?.hovered ?? false) === hovered) return edge;
+          return { ...edge, data: { ...edge.data, hovered } };
+        }
+        return edge;
       }),
-    [rfEdges, hoveredPeerEdgeId],
+    [rfEdges, hoveredPeerEdgeId, hoveredDeployEdgeId],
   );
 
   // ネットワーク凡例（Issue #124 A）に渡す、現在描画中のピア接続だけの一覧。

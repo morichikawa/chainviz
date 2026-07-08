@@ -1,5 +1,6 @@
 import type {
   Command,
+  ContractEntity,
   DiffEvent,
   NodeEntity,
   OperationEdge,
@@ -169,6 +170,64 @@ function bobIncludedTx(): TransactionEntity {
   };
 }
 
+// C層拡張（コントラクト。Issue #165）のモック用サンプル。collector 側の
+// カタログ・デプロイ検知（#158/#159/#161）はオフラインのモックには反映
+// されないため、フロントの表示・ポップオーバー・デプロイエッジ確認用に
+// ここでサンプルを持つ（実カタログの ChainvizToken / Counter に合わせた名前
+// にして、実環境と見比べたときに違和感が無いようにする）。
+const TOKEN_CONTRACT = addr("cafe01");
+const COUNTER_CONTRACT = addr("c0de02");
+const UNKNOWN_CONTRACT = addr("dead01");
+
+const TOKEN_DEPLOY_TX = txHash("dep70ken1");
+const COUNTER_DEPLOY_TX = txHash("dep70cnt1");
+
+/** カタログ既知・トークンを持つコントラクト。Alice がデプロイした体で、
+ * デプロイエッジ（Alice ウォレット → このカード）を確認できる。 */
+function chainvizTokenContract(): ContractEntity {
+  return {
+    kind: "contract",
+    address: TOKEN_CONTRACT,
+    chainType: "ethereum",
+    name: "ChainvizToken",
+    catalogKey: "chainviz-token",
+    deployerAddress: ALICE_WALLET,
+    createdByTxHash: TOKEN_DEPLOY_TX,
+    token: { symbol: "CVT", decimals: 18 },
+  };
+}
+
+/** カタログ既知・トークンを持たないコントラクト。所有者が削除された Bob
+ * ウォレットがデプロイした体にし、「所有者は削除済み」のウォレットでも
+ * デプロイエッジ自体は張られる（ウォレットカードの生存だけを見る）ことを
+ * 確認できるようにする。 */
+function counterContract(): ContractEntity {
+  return {
+    kind: "contract",
+    address: COUNTER_CONTRACT,
+    chainType: "ethereum",
+    name: "Counter",
+    catalogKey: "counter",
+    deployerAddress: BOB_WALLET,
+    createdByTxHash: COUNTER_DEPLOY_TX,
+  };
+}
+
+/**
+ * カタログ未登録（手動デプロイ・追跡外アドレスからのデプロイを想定）の
+ * コントラクト。名前・カタログキー・デプロイ元のいずれも観測できなかった
+ * 状態を再現し、「未知のコントラクト」表示（破線ボーダー・カタログ外ピル・
+ * デプロイエッジ無し）をオフラインで確認できるようにする
+ * （ARCHITECTURE.md §6.4）。
+ */
+function unknownContract(): ContractEntity {
+  return {
+    kind: "contract",
+    address: UNKNOWN_CONTRACT,
+    chainType: "ethereum",
+  };
+}
+
 /**
  * 実環境（Ethereum プロファイル1つ）の P2P ネットワーク ID。
  * profiles/ethereum の CHAIN_ID と揃える。networkId は今のところ1種類。
@@ -208,6 +267,9 @@ export function createMockSnapshot(): WorldStateSnapshot {
       safeWallet(),
       alicePendingTx(),
       bobIncludedTx(),
+      chainvizTokenContract(),
+      counterContract(),
+      unknownContract(),
     ],
     // 2つの reth ノードが実行層 P2P で直接ピア接続している状態を表す。
     edges: [

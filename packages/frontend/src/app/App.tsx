@@ -16,6 +16,14 @@ import { attachPulsesToEdges } from "../entities/blockPulse.js";
 import { resolveBootNodes } from "../entities/connectionTargets.js";
 import { connectingEdgesToFlowEdges } from "../entities/connectingEdge.js";
 import {
+  CONTRACT_GRID,
+  type ContractFlowNode,
+  contractsToFlowNodes,
+  isContractEntity,
+  isSameContractNode,
+} from "../entities/contractNode.js";
+import { deployEdgesToFlowEdges } from "../entities/deployEdge.js";
+import {
   type InfraFlowNode,
   entitiesToFlowNodes,
   isInfraEntity,
@@ -134,17 +142,41 @@ function AppShell({
     setLayout(next);
   }, [entities, layout, storage]);
 
-  // 実カード到着からの新着強調（Issue #123 UX設計 §4-4）。
+  // コントラクト行も同じ「初出時に空きスロットを確定して即保存」ルールに
+  // 従う（ARCHITECTURE.md §6.2。ウォレット行とは異なりコントラクトは
+  // インフラと同じ確定配置にする決定）。安定 ID は address、グリッドは
+  // 専用の CONTRACT_GRID を使う。
+  useEffect(() => {
+    const addresses = entities
+      .filter(isContractEntity)
+      .map((entity) => entity.address);
+    const next = resolveLayoutPositions(addresses, layout, CONTRACT_GRID);
+    if (next === layout) return;
+    saveLayout(storage, next);
+    setLayout(next);
+  }, [entities, layout, storage]);
+
+  // 実カード到着からの新着強調（Issue #123 UX設計 §4-4）。コントラクト行にも
+  // 同じ発光を当てる（ARCHITECTURE.md §6.2）ため、対象 id にコントラクトの
+  // address も含める。
   const infraEntityIds = useMemo(
     () => entities.filter(isInfraEntity).map((entity) => entity.id),
     [entities],
+  );
+  const contractEntityIds = useMemo(
+    () => entities.filter(isContractEntity).map((entity) => entity.address),
+    [entities],
+  );
+  const newArrivalIds = useMemo(
+    () => [...infraEntityIds, ...contractEntityIds],
+    [infraEntityIds, contractEntityIds],
   );
   // 最初のスナップショット到着前は判定・基準確立とも行わない
   // （useNewArrivalHighlight のdocstring参照。`status === "connected"`は
   // WebSocketの接続確立時点であり、その後に届くスナップショットとは
   // タイミングがずれるため使わない。実クライアントでは両者の間に
   // 「connectedだがentitiesは空」のレンダーが挟まり得る）。
-  const newArrivals = useNewArrivalHighlight(infraEntityIds, hasReceivedSnapshot);
+  const newArrivals = useNewArrivalHighlight(newArrivalIds, hasReceivedSnapshot);
 
   // ノードカードのちらつき対策(Issue #119)。本質的な対策は Canvas.tsx の
   // preserveMeasuredDimensions(React Flow が実測した measured を引き継ぐ)
@@ -250,6 +282,47 @@ function AppShell({
     [wallets, infraNodeIds],
   );
 
+  // C層拡張: コントラクト（ARCHITECTURE.md §6.2〜§6.4）。
+  const contracts = useMemo(
+    () => entities.filter(isContractEntity),
+    [entities],
+  );
+  // infraNodes/walletNodes と同じ理由(Issue #119)でコントラクトカードも
+  // 参照を安定化する。
+  const previousContractNodesRef = useRef<ContractFlowNode[]>([]);
+  const contractNodes = useMemo(() => {
+    const next = stabilizeNodes(
+      contractsToFlowNodes(contracts, { layout }),
+      previousContractNodesRef.current,
+      isSameContractNode,
+    );
+    previousContractNodesRef.current = next;
+    return next;
+  }, [contracts, layout]);
+
+  // 新着強調フラグの後付け（infraNodesWithHighlight と同じ狙い）。
+  const contractNodesWithHighlight = useMemo(
+    () =>
+      contractNodes.map((node) => {
+        const isNew = newArrivals.has(node.id);
+        if (isNew === (node.data.isNew ?? false)) return node;
+        return { ...node, data: { ...node.data, isNew } };
+      }),
+    [contractNodes, newArrivals],
+  );
+
+  // 現在キャンバスに存在するウォレットの address 集合（デプロイエッジの
+  // 端点存在判定に使う。ownershipEdges の infraNodeIds と同じ狙い）。
+  const walletAddressIds = useMemo(
+    () => new Set(walletNodes.map((n) => n.id)),
+    [walletNodes],
+  );
+  // ウォレット → コントラクトのデプロイエッジ（常設。ARCHITECTURE.md §6.3）。
+  const deployEdges = useMemo(
+    () => deployEdgesToFlowEdges(contracts, walletAddressIds),
+    [contracts, walletAddressIds],
+  );
+
   // ワークベンチ → ノードの操作（RPC 呼び出し）を、観測された瞬間だけ一時的な
   // エッジ + パルスとして描く（走り終わると消える揮発性のエッジ）。
   const operationEdges = useOperationPulses(operations, infraNodeIds);
@@ -285,13 +358,19 @@ function AppShell({
   );
 
   const nodes = useMemo(
-    () => [...infraNodesWithHighlight, ...walletNodes, ...ghosts],
-    [infraNodesWithHighlight, walletNodes, ghosts],
+    () => [
+      ...infraNodesWithHighlight,
+      ...walletNodes,
+      ...contractNodesWithHighlight,
+      ...ghosts,
+    ],
+    [infraNodesWithHighlight, walletNodes, contractNodesWithHighlight, ghosts],
   );
   const edges = useMemo(
     () => [
       ...peerEdgesWithPulses,
       ...ownershipEdges,
+      ...deployEdges,
       ...operationEdges,
       ...pendingConnectionEdges,
       ...connectingEdges,
@@ -300,6 +379,7 @@ function AppShell({
     [
       peerEdgesWithPulses,
       ownershipEdges,
+      deployEdges,
       operationEdges,
       pendingConnectionEdges,
       connectingEdges,
