@@ -1,4 +1,4 @@
-import type { ContractEntity, NodeEntity } from "@chainviz/shared";
+import type { ContractEntity, NodeEntity, TransactionEntity } from "@chainviz/shared";
 import { describe, expect, it } from "vitest";
 import {
   CONTRACT_GRID,
@@ -7,6 +7,18 @@ import {
   isSameContractNode,
 } from "./contractNode.js";
 import { DEFAULT_GRID } from "./infraNode.js";
+
+function tx(overrides: Partial<TransactionEntity> = {}): TransactionEntity {
+  return {
+    kind: "transaction",
+    hash: "0xtx",
+    from: "0xfrom",
+    to: "0xabc",
+    status: "included",
+    blockHash: "0xb1",
+    ...overrides,
+  };
+}
 
 function contract(overrides: Partial<ContractEntity> = {}): ContractEntity {
   return {
@@ -152,6 +164,59 @@ describe("contractsToFlowNodes", () => {
     const nodes = contractsToFlowNodes([entity], ctx());
     expect(nodes[0].data.entity).toBe(entity);
   });
+
+  it("derives an empty activity array when no transactions/blockNumberByHash are given (Issue #166)", () => {
+    const nodes = contractsToFlowNodes([contract({ address: "0xa" })], ctx());
+    expect(nodes[0].data.activity).toEqual([]);
+  });
+
+  it("derives activity chips from ctx.transactions, filtered by contract address", () => {
+    const nodes = contractsToFlowNodes(
+      [contract({ address: "0xabc" })],
+      ctx({
+        transactions: [
+          tx({
+            hash: "0xcall",
+            contractCall: { contractAddress: "0xabc", functionName: "transfer" },
+          }),
+        ],
+      }),
+    );
+    expect(nodes[0].data.activity).toEqual([
+      {
+        key: "0xcall-call",
+        kind: "call",
+        label: "transfer",
+        decoded: true,
+        args: [],
+        txHash: "0xcall",
+      },
+    ]);
+  });
+
+  it("uses ctx.blockNumberByHash to order activity chips newest-first", () => {
+    const older = tx({
+      hash: "0xold",
+      blockHash: "0xb1",
+      contractCall: { contractAddress: "0xabc", functionName: "old" },
+    });
+    const newer = tx({
+      hash: "0xnew",
+      blockHash: "0xb2",
+      contractCall: { contractAddress: "0xabc", functionName: "new" },
+    });
+    const nodes = contractsToFlowNodes(
+      [contract({ address: "0xabc" })],
+      ctx({
+        transactions: [older, newer],
+        blockNumberByHash: new Map([
+          ["0xb1", 1],
+          ["0xb2", 2],
+        ]),
+      }),
+    );
+    expect(nodes[0].data.activity.map((c) => c.label)).toEqual(["new", "old"]);
+  });
 });
 
 describe("isSameContractNode", () => {
@@ -229,6 +294,50 @@ describe("isSameContractNode", () => {
     const previous = { ...base, data: { ...base.data, isNew: false } };
     const next = { ...base, data: { ...base.data, isNew: true } };
     expect(isSameContractNode(previous, next)).toBe(true);
+  });
+
+  it("ignores the flashKind settle-flash flag when comparing (added by App.tsx after stabilize)", () => {
+    const entity = contract({ address: "0xa" });
+    const base = contractsToFlowNodes([entity], ctx())[0];
+    const previous = { ...base, data: { ...base.data, flashKind: undefined } };
+    const next = { ...base, data: { ...base.data, flashKind: "success" as const } };
+    expect(isSameContractNode(previous, next)).toBe(true);
+  });
+
+  it("returns true when activity is recomputed with the same content (Issue #119: content, not reference)", () => {
+    // deriveContractActivity は毎回新しいチップオブジェクトを作るため、内容が
+    // 同じなら「変化なし」とみなす必要がある（sameContractActivity 経由）。
+    const entity = contract({ address: "0xabc" });
+    const transactions = [
+      tx({
+        hash: "0xcall",
+        contractCall: { contractAddress: "0xabc", functionName: "transfer" },
+      }),
+    ];
+    const previous = contractsToFlowNodes([entity], ctx({ transactions }))[0];
+    const next = contractsToFlowNodes([entity], ctx({ transactions }))[0];
+    expect(previous.data.activity).not.toBe(next.data.activity);
+    expect(isSameContractNode(previous, next)).toBe(true);
+  });
+
+  it("returns false when activity content actually changed (new tx settled)", () => {
+    const entity = contract({ address: "0xabc" });
+    const previous = contractsToFlowNodes(
+      [entity],
+      ctx({ transactions: [] }),
+    )[0];
+    const next = contractsToFlowNodes(
+      [entity],
+      ctx({
+        transactions: [
+          tx({
+            hash: "0xcall",
+            contractCall: { contractAddress: "0xabc", functionName: "transfer" },
+          }),
+        ],
+      }),
+    )[0];
+    expect(isSameContractNode(previous, next)).toBe(false);
   });
 });
 

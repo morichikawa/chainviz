@@ -1,4 +1,5 @@
 import type { ConnectingFlowEdge } from "./connectingEdge.js";
+import type { ContractCallPulseFlowEdge } from "./contractCallPulseEdge.js";
 import type { ContractFlowNode } from "./contractNode.js";
 import type { DeployFlowEdge } from "./deployEdge.js";
 import { GHOST_NODE_TYPE, type GhostFlowNode } from "./ghostNode.js";
@@ -15,8 +16,8 @@ import type { WalletFlowNode } from "./walletNode.js";
  * C層拡張のコントラクトカード + 追加コマンド送信直後の仮カード）と全エッジ
  * 種別（B層のピア接続 + C層の所有エッジ + C層拡張のデプロイエッジ +
  * ワークベンチ → ノードの操作エッジ + Issue #123 の予告/確立中/常設操作先
- * エッジ）の合併型。Canvas はこの合併型でノード/エッジを受け取り、種別ごとに
- * nodeTypes / edgeTypes へ振り分ける。
+ * エッジ + C層拡張のtx確定パルスエッジ）の合併型。Canvas はこの合併型で
+ * ノード/エッジを受け取り、種別ごとに nodeTypes / edgeTypes へ振り分ける。
  */
 export type CanvasFlowNode =
   | InfraFlowNode
@@ -31,7 +32,8 @@ export type CanvasFlowEdge =
   | OperationFlowEdge
   | PendingConnectionFlowEdge
   | ConnectingFlowEdge
-  | OperationTargetFlowEdge;
+  | OperationTargetFlowEdge
+  | ContractCallPulseFlowEdge;
 
 /**
  * ノードの位置永続化に使う安定 ID を返す。インフラカードは containerName、

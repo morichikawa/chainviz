@@ -336,6 +336,113 @@ body {
   font-size: 12px;
 }
 
+/* --- C層拡張: コントラクトカードの「直近の呼び出し・イベント」チップ列
+   （ARCHITECTURE.md §6.6。Issue #166） --- */
+.contract-card__activity {
+  margin-top: 10px;
+  border-top: 1px solid var(--divider);
+  padding-top: 8px;
+}
+
+.contract-card__activity-label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.contract-card__activity-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.contract-card__activity-empty {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* 呼び出し/イベントのチップ。イベント側は "◆" プレフィックスに加え、
+   枠線の見た目も変えてひと目で区別できるようにする（§6.6）。 */
+.contract-activity-chip {
+  position: relative;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--contract-edge);
+  color: var(--contract-edge);
+  background: rgba(111, 125, 234, 0.14);
+  white-space: nowrap;
+  cursor: help;
+}
+
+.contract-activity-chip--event {
+  border-style: dashed;
+}
+
+/* 復号できなかったチップ（カタログ外 or 未定義の識別子）は muted 色にし、
+   既知の関数名/イベント名と区別できるようにする。 */
+.contract-activity-chip--undecoded {
+  color: var(--muted);
+  border-color: var(--muted);
+  background: transparent;
+}
+
+.contract-activity-chip__popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: max-content;
+  max-width: 240px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: #0c1119;
+  border: 1px solid var(--border);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  font-size: 11px;
+  white-space: normal;
+  text-align: left;
+  color: var(--text);
+}
+
+.contract-activity-chip__arg {
+  font-variant-numeric: tabular-nums;
+}
+
+/* tx確定時のコントラクトカードへの確定フラッシュ（§6.6「確定時のコントラ
+   クトへのパルス」）。ウォレットの tx チップの is-settling と同系の演出だが、
+   カード全体（枠線）に当てる。failed の tx は失敗色にする。 */
+.contract-card--settle-success {
+  animation: contract-card-settle 1.4s ease-out 1;
+}
+
+.contract-card--settle-failed {
+  animation: contract-card-settle-failed 1.4s ease-out 1;
+}
+
+@keyframes contract-card-settle {
+  0% {
+    box-shadow: 0 0 0 0 rgba(111, 125, 234, 0.85);
+  }
+  100% {
+    box-shadow: 0 0 0 12px rgba(111, 125, 234, 0);
+  }
+}
+
+@keyframes contract-card-settle-failed {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 107, 107, 0.85);
+  }
+  100% {
+    box-shadow: 0 0 0 12px rgba(255, 107, 107, 0);
+  }
+}
+
 /* --- C層拡張: デプロイエッジ（ウォレット → コントラクト） --- */
 /* 所有エッジ（琥珀の点線）・操作エッジ（マゼンタ）と混同しないよう、
    コントラクト識別色の低彩度な細線にする（§6.3）。 */
@@ -553,6 +660,26 @@ body {
 .operation-pulse {
   fill: #ffd9ee;
   filter: drop-shadow(0 0 5px var(--op-edge)) drop-shadow(0 0 10px var(--op-edge));
+  pointer-events: none;
+  animation-name: pulse-travel;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+/* --- C層拡張: ウォレット → コントラクトのtx確定パルス（ARCHITECTURE.md
+   §6.6「確定時のコントラクトへのパルス」。Issue #166） --- */
+/* 呼び出し/デプロイ tx が確定した瞬間だけ一時的に現れるエッジ。操作エッジ
+   （マゼンタ）・所有エッジ（琥珀）と混同しないよう、コントラクト識別色にする。 */
+.contract-call-pulse-edge .react-flow__edge-path {
+  stroke-opacity: 0.85;
+  stroke-dasharray: 3 4;
+}
+
+/* パルス自体は .operation-pulse と共通の offset-path 走行（pulse-travel
+   キーフレーム）を使い、発光色だけコントラクト識別色にする。 */
+.contract-call-pulse {
+  fill: #dfe3ff;
+  filter: drop-shadow(0 0 5px var(--contract-edge)) drop-shadow(0 0 10px var(--contract-edge));
   pointer-events: none;
   animation-name: pulse-travel;
   animation-timing-function: linear;
