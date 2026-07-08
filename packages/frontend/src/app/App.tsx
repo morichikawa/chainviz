@@ -31,6 +31,7 @@ import {
   isSameInfraNode,
   resolveLayoutPositions,
 } from "../entities/infraNode.js";
+import { internalLinkEdgesToFlowEdges } from "../entities/internalLinkEdge.js";
 import { peerEdgesToFlowEdges } from "../entities/peerEdge.js";
 import { ownershipEdgesToFlowEdges } from "../entities/ownershipEdge.js";
 import { operationTargetEdgesToFlowEdges } from "../entities/operationTargetEdge.js";
@@ -40,6 +41,7 @@ import { indexTransactions } from "../entities/transaction.js";
 import { useBlockPulses } from "../entities/useBlockPulses.js";
 import { useContractSettlementEffects } from "../entities/useContractSettlementEffects.js";
 import { useNewArrivalHighlight } from "../entities/useNewArrivalHighlight.js";
+import { useNodeLinkActivityPulses } from "../entities/useNodeLinkActivityPulses.js";
 import { useOperationPulses } from "../entities/useOperationPulses.js";
 import { useTxLifecycle } from "../entities/useTxLifecycle.js";
 import {
@@ -121,6 +123,7 @@ function AppShell({
     status,
     hasReceivedSnapshot,
     operations,
+    nodeLinkActivities,
     actions,
     ghosts,
     pendingOperationWorkbenchIds,
@@ -433,6 +436,18 @@ function AppShell({
     [workbenchEntities, infraNodeIds],
   );
 
+  // D層: 内部リンクエッジ（beacon(CL) → reth(EL)、常設。ARCHITECTURE.md
+  // §7.6.3）の土台。`nodeLinkActivity` の活動パルス・直近観測は
+  // `useNodeLinkActivityPulses` がこの土台へ合成する（Issue #188）。
+  const internalLinkBaseEdges = useMemo(
+    () => internalLinkEdgesToFlowEdges(nodeEntities, infraNodeIds),
+    [nodeEntities, infraNodeIds],
+  );
+  const internalLinkEdges = useNodeLinkActivityPulses(
+    nodeLinkActivities,
+    internalLinkBaseEdges,
+  );
+
   const nodes = useMemo(
     () => [
       ...infraNodesWithHighlight,
@@ -452,6 +467,7 @@ function AppShell({
       ...connectingEdges,
       ...operationTargetEdges,
       ...contractCallPulseEdges,
+      ...internalLinkEdges,
     ],
     [
       peerEdgesWithPulses,
@@ -462,6 +478,7 @@ function AppShell({
       connectingEdges,
       operationTargetEdges,
       contractCallPulseEdges,
+      internalLinkEdges,
     ],
   );
 

@@ -216,6 +216,32 @@ export const messages = {
   },
   "operation.pending": { ja: "実行中…", en: "Running…" },
   "ghost.contract.deploying": { ja: "デプロイ中… {name}", en: "Deploying… {name}" },
+  // --- D層: 内部リンクエッジ・活動パルス（ARCHITECTURE.md §7.6.3/§7.6.4。
+  // Issue #188） ---
+  "edge.internalLink": { ja: "内部リンク（Engine API）", en: "Internal link (Engine API)" },
+  // ARCHITECTURE.md §7.6.8 の初稿は `internalEdge.pair` を1本の完成文として
+  // 定義しているが、文中に GlossaryTerm(el-cl-separation) を埋め込む必要が
+  // あるため、`legend.hint.prefix/term/suffix` と同じ手法で3分割する
+  // （意味・文面は初稿のまま、実装上の都合での分割）。
+  "internalEdge.pair.prefix": {
+    ja: "この2つのコンテナは、合意（beacon）と実行（reth）を分担する",
+    en: "These two containers form ",
+  },
+  "internalEdge.pair.term": { ja: "1つの Ethereum ノード", en: "one Ethereum node" },
+  "internalEdge.pair.suffix": {
+    ja: "です。合意した結果を Engine API で実行クライアントへ伝えて駆動します",
+    en: ", splitting consensus (beacon) and execution (reth). Each agreed result is pushed to the execution client over the Engine API.",
+  },
+  "internalEdge.recentCalls": {
+    ja: "直近{seconds}秒の呼び出し",
+    en: "Calls in the last {seconds}s",
+  },
+  "internalEdge.noRecentCalls": {
+    ja: "最近の呼び出しはありません",
+    en: "No recent calls",
+  },
+  "internalEdge.latency": { ja: "平均 {ms} ms", en: "avg {ms} ms" },
+  "field.drivesNode": { ja: "駆動する実行ノード", en: "Drives execution node" },
 } as const satisfies Record<string, Localized>;
 
 export type MessageKey = keyof typeof messages;

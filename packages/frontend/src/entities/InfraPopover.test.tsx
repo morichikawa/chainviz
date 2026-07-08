@@ -37,11 +37,15 @@ const workbench: WorkbenchEntity = {
   removable: true,
 };
 
-function renderPopover(entity: InfraEntity, lang: "ja" | "en" = "ja") {
+function renderPopover(
+  entity: InfraEntity,
+  lang: "ja" | "en" = "ja",
+  drivesNodeContainerName?: string,
+) {
   return render(
     <LanguageProvider initialLanguage={lang}>
       <GlossaryProvider glossary={{}}>
-        <InfraPopover entity={entity} />
+        <InfraPopover entity={entity} drivesNodeContainerName={drivesNodeContainerName} />
       </GlossaryProvider>
     </LanguageProvider>,
   );
@@ -93,5 +97,34 @@ describe("InfraPopover role row (Issue #124 C)", () => {
     renderPopover({ ...node, p2pRole: "bootnode" }, "en");
     expect(screen.getByText("Role")).toBeTruthy();
     expect(screen.getByText("Bootnode")).toBeTruthy();
+  });
+});
+
+describe("InfraPopover drivesNode row (ARCHITECTURE.md §7.6.3, Issue #188)", () => {
+  it("shows a drivesNode row with the resolved execution node's containerName", () => {
+    renderPopover(node, "ja", "chainviz-reth-1");
+    expect(screen.getByText("駆動する実行ノード")).toBeTruthy();
+    expect(screen.getByText("chainviz-reth-1")).toBeTruthy();
+  });
+
+  it("does not show the drivesNode row when it cannot be resolved", () => {
+    renderPopover(node, "ja", undefined);
+    expect(screen.queryByText("駆動する実行ノード")).toBeNull();
+  });
+
+  it("does not show the drivesNode row for a workbench", () => {
+    renderPopover(workbench, "ja", "chainviz-reth-1");
+    expect(screen.queryByText("駆動する実行ノード")).toBeNull();
+  });
+
+  it("localizes the drivesNode row to English", () => {
+    renderPopover(node, "en", "chainviz-reth-1");
+    expect(screen.getByText("Drives execution node")).toBeTruthy();
+  });
+
+  it("shows the drivesNode row alongside sync/blockHeight fields", () => {
+    renderPopover({ ...node, syncStatus: "syncing" }, "ja", "chainviz-reth-1");
+    expect(screen.getByText("同期中")).toBeTruthy();
+    expect(screen.getByText("駆動する実行ノード")).toBeTruthy();
   });
 });
