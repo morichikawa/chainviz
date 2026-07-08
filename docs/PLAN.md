@@ -335,7 +335,7 @@ runWorkbenchOperation コマンド・ChainAdapter.subscribeContracts）は設計
 
 **frontend**:
 
-- [ ] ContractEntityのカード表示とポップオーバー（未知のコントラクトの
+- [x] ContractEntityのカード表示とポップオーバー（未知のコントラクトの
       表示を含む）を実装する
       [#165](https://github.com/morichikawa/chainviz/issues/165)
 - [ ] コントラクト呼び出し・イベントログの可視化（復号済み関数名・引数・
