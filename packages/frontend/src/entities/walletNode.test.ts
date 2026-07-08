@@ -1,9 +1,13 @@
 import type {
+  ContractEntity,
   NodeEntity,
   TransactionEntity,
   WalletEntity,
+  WorldStateEntity,
 } from "@chainviz/shared";
 import { describe, expect, it } from "vitest";
+import { isContractEntity } from "./contractNode.js";
+import { stabilizeArrayReference } from "./nodeStability.js";
 import { indexTransactions } from "./transaction.js";
 import {
   WALLET_GRID,
@@ -12,6 +16,14 @@ import {
   isWalletEntity,
   walletsToFlowNodes,
 } from "./walletNode.js";
+
+/**
+ * `ctx()` の既定 `contractsByAddress`。同じ内容の複数回呼び出しでも常に
+ * 同一の参照を返すことで、実運用（App.tsx が useMemo で安定させる索引を
+ * 渡す）を模す。単に `new Map()` を都度作ると Issue #119 の参照安定化
+ * テストが壊れる（内容は空同士でも参照が変われば「変化した」と誤検出する）。
+ */
+const EMPTY_CONTRACTS = new Map<string, ContractEntity>();
 
 function wallet(overrides: Partial<WalletEntity> = {}): WalletEntity {
   return {
@@ -48,6 +60,7 @@ function ctx(overrides: Partial<Parameters<typeof walletsToFlowNodes>[1]> = {}) 
     txByHash: new Map<string, TransactionEntity>(),
     settling: new Set<string>(),
     presentInfraIds: new Set<string>(),
+    contractsByAddress: EMPTY_CONTRACTS,
     ...overrides,
   };
 }
@@ -164,6 +177,32 @@ describe("walletsToFlowNodes", () => {
       ctx({ presentInfraIds: new Set(["wb-1"]) }),
     );
     expect(nodes[0].data.ownerPresent).toBe(false);
+  });
+
+  it("attaches the given contractsByAddress index to every wallet's data", () => {
+    const contract: ContractEntity = {
+      kind: "contract",
+      address: "0xc",
+      chainType: "ethereum",
+      name: "ChainvizToken",
+    };
+    const byAddress = new Map([["0xc", contract]]);
+    const nodes = walletsToFlowNodes(
+      [wallet({ address: "0xa" }), wallet({ address: "0xb" })],
+      ctx({ contractsByAddress: byAddress }),
+    );
+    expect(nodes[0].data.contractsByAddress).toBe(byAddress);
+    expect(nodes[1].data.contractsByAddress).toBe(byAddress);
+  });
+
+  it("falls back to an empty contractsByAddress index when omitted", () => {
+    const nodes = walletsToFlowNodes([wallet({ address: "0xa" })], {
+      layout: {},
+      txByHash: new Map<string, TransactionEntity>(),
+      settling: new Set<string>(),
+      presentInfraIds: new Set<string>(),
+    });
+    expect(nodes[0].data.contractsByAddress.size).toBe(0);
   });
 });
 
@@ -317,6 +356,19 @@ describe("isSameWalletNode", () => {
     expect(isSameWalletNode(previous, next)).toBe(false);
   });
 
+  it("returns false when the contractsByAddress reference changed", () => {
+    const entity = wallet({ address: "0xa" });
+    const previous = walletsToFlowNodes(
+      [entity],
+      ctx({ contractsByAddress: new Map() }),
+    )[0];
+    const next = walletsToFlowNodes(
+      [entity],
+      ctx({ contractsByAddress: new Map() }),
+    )[0];
+    expect(isSameWalletNode(previous, next)).toBe(false);
+  });
+
   it("detects a deep entity field change via the new entity reference the store hands back", () => {
     // balance のような入れ子でないフィールドでも、entity 参照が変わるため検出する。
     const base = wallet({ address: "0xa", balance: "0" });
@@ -324,5 +376,96 @@ describe("isSameWalletNode", () => {
     const previous = walletsToFlowNodes([base], ctx())[0];
     const next = walletsToFlowNodes([changed], ctx())[0];
     expect(isSameWalletNode(previous, next)).toBe(false);
+  });
+});
+
+/**
+ * Issue #166 差し戻し対応の回帰テスト。
+ *
+ * App.tsx は `entities`（`listEntities(state)`）が state 更新のたびに
+ * 新しい配列になるため、`contracts`（`entities.filter(isContractEntity)`）も
+ * `contractsByAddress`（`new Map(contracts.map(...))`）も、無関係な更新の
+ * たびに新しいインスタンスとして作り直されていた。isSameWalletNode は
+ * `contractsByAddress` を参照比較するため、中身が同じでも常に「変化した」と
+ * 誤判定し、Issue #119 の参照安定化（不要な再レンダー防止）を無効化していた。
+ * ここでは実際の App.tsx の派生パターン（filter → stabilizeArrayReference →
+ * Map化）を模して、この2ケースを検証する。
+ */
+describe("contractsByAddress reference stability across recomputations (Issue #166 regression)", () => {
+  const contractEntity: ContractEntity = {
+    kind: "contract",
+    address: "0xc",
+    chainType: "ethereum",
+    name: "ChainvizToken",
+  };
+  const walletEntity = wallet({ address: "0xa" });
+
+  /**
+   * App.tsx の `entities` useMemo が state 更新のたびに作り直す配列を模す。
+   * 配列自体は毎回新しいが、無関係な差分適用ではエンティティ自体の参照は
+   * 変わらない（world-state/store.ts の applyDiff は変更の無いエンティティの
+   * 参照をそのまま引き継ぐ）。
+   */
+  function renderEntities(): WorldStateEntity[] {
+    return [contractEntity, walletEntity];
+  }
+
+  it("reproduces the bug: without stabilization, an unrelated re-render breaks isSameWalletNode even though nothing meaningful changed", () => {
+    // App.tsx 修正前の派生パターン: filter の結果をそのまま Map 化するだけ。
+    const deriveContractsByAddressNaive = (entities: WorldStateEntity[]) =>
+      new Map(entities.filter(isContractEntity).map((c) => [c.address, c]));
+
+    const previous = walletsToFlowNodes(
+      renderEntities().filter(isWalletEntity),
+      ctx({ contractsByAddress: deriveContractsByAddressNaive(renderEntities()) }),
+    )[0];
+    const next = walletsToFlowNodes(
+      renderEntities().filter(isWalletEntity),
+      ctx({ contractsByAddress: deriveContractsByAddressNaive(renderEntities()) }),
+    )[0];
+
+    // 中身は同一(同じ contractEntity 参照1件)なのに Map インスタンスが毎回
+    // 別物になるため、isSameWalletNode が誤って「変化した」と判定してしまう
+    // (これが Issue #166 差し戻しで指摘されたバグそのもの)。
+    expect(previous.data.contractsByAddress).not.toBe(
+      next.data.contractsByAddress,
+    );
+    expect(isSameWalletNode(previous, next)).toBe(false);
+  });
+
+  it("fix: stabilizing the contracts array with stabilizeArrayReference keeps the Map reference stable across unrelated re-renders", () => {
+    // App.tsx 修正後の派生パターン: previousContractsRef + useMemo を模した
+    // クロージャで、contracts 配列と contractsByAddress の Map をそれぞれ
+    // 前回参照が使えるときは使い回す(App.tsx の実際の useMemo 依存関係と同じ)。
+    let previousContracts: ContractEntity[] = [];
+    let previousMap: ReadonlyMap<string, ContractEntity> | undefined;
+    let previousMapSource: ContractEntity[] | undefined;
+
+    const deriveContractsByAddressFixed = (entities: WorldStateEntity[]) => {
+      const contracts = stabilizeArrayReference(
+        entities.filter(isContractEntity),
+        previousContracts,
+      );
+      previousContracts = contracts;
+      if (previousMap !== undefined && previousMapSource === contracts) {
+        return previousMap;
+      }
+      const map = new Map(contracts.map((c) => [c.address, c]));
+      previousMap = map;
+      previousMapSource = contracts;
+      return map;
+    };
+
+    const previous = walletsToFlowNodes(
+      renderEntities().filter(isWalletEntity),
+      ctx({ contractsByAddress: deriveContractsByAddressFixed(renderEntities()) }),
+    )[0];
+    const next = walletsToFlowNodes(
+      renderEntities().filter(isWalletEntity),
+      ctx({ contractsByAddress: deriveContractsByAddressFixed(renderEntities()) }),
+    )[0];
+
+    expect(previous.data.contractsByAddress).toBe(next.data.contractsByAddress);
+    expect(isSameWalletNode(previous, next)).toBe(true);
   });
 });

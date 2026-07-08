@@ -1,4 +1,5 @@
 import type {
+  ContractEntity,
   TransactionEntity,
   WalletEntity,
   WorldStateEntity,
@@ -26,6 +27,13 @@ export interface WalletNodeData extends Record<string, unknown> {
    * （CONCEPT.md「ノード/ワークベンチを削除したときの過去データの扱い」）。
    */
   ownerPresent: boolean;
+  /**
+   * アドレス -> ContractEntity の索引。WalletPopover の tx 一覧に「呼び出し
+   * 内容」（関数名＋引数プレビュー＋宛先コントラクト名）を追記するために使う
+   * （ARCHITECTURE.md §6.6、Issue #166）。カード自体の tx チップ表示には
+   * 使わない（そちらは tx 単体の情報だけで完結する `txChipLabel` 参照）。
+   */
+  contractsByAddress: ReadonlyMap<string, ContractEntity>;
 }
 
 export type WalletFlowNode = Node<WalletNodeData, "wallet">;
@@ -82,6 +90,12 @@ export interface WalletNodeContext {
   settling: ReadonlySet<string>;
   /** 現在キャンバスに存在するインフラノードの id 集合（所有者の生存判定用）。 */
   presentInfraIds: ReadonlySet<string>;
+  /**
+   * アドレス -> ContractEntity の索引（WalletPopover の呼び出し内容表示に
+   * 使う。§6.6）。省略時は空 Map（呼び出し内容の宛先名はすべて短縮アドレス
+   * 表示にフォールバックする）。
+   */
+  contractsByAddress?: ReadonlyMap<string, ContractEntity>;
   grid?: GridOptions;
 }
 
@@ -98,6 +112,7 @@ export function walletsToFlowNodes(
   ctx: WalletNodeContext,
 ): WalletFlowNode[] {
   const grid = ctx.grid ?? WALLET_GRID;
+  const contractsByAddress = ctx.contractsByAddress ?? new Map<string, ContractEntity>();
   const wallets = entities
     .filter(isWalletEntity)
     .sort((a, b) => a.address.localeCompare(b.address));
@@ -116,7 +131,7 @@ export function walletsToFlowNodes(
       id: entity.address,
       type: WALLET_NODE_TYPE,
       position: { x: position.x, y: position.y },
-      data: { entity, transactions, settlingHashes, ownerPresent },
+      data: { entity, transactions, settlingHashes, ownerPresent, contractsByAddress },
     };
   });
 }
@@ -144,6 +159,7 @@ export function isSameWalletNode(
   return (
     previous.data.entity === next.data.entity &&
     previous.data.ownerPresent === next.data.ownerPresent &&
+    previous.data.contractsByAddress === next.data.contractsByAddress &&
     previous.position.x === next.position.x &&
     previous.position.y === next.position.y &&
     sameByReference(previous.data.transactions, next.data.transactions) &&

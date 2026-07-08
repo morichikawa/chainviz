@@ -1,9 +1,10 @@
-import type { TransactionEntity, WalletEntity } from "@chainviz/shared";
+import type { ContractEntity, TransactionEntity, WalletEntity } from "@chainviz/shared";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import type { MessageKey } from "../i18n/messages.js";
 import { formatEther } from "./walletNode.js";
 import { shortHex } from "./transaction.js";
+import { deriveTxCallPreview } from "./txCallPreview.js";
 
 const TX_STATUS_KEY: Record<TransactionEntity["status"], MessageKey> = {
   pending: "tx.status.pending",
@@ -12,15 +13,54 @@ const TX_STATUS_KEY: Record<TransactionEntity["status"], MessageKey> = {
 };
 
 /**
+ * 「呼び出し内容」プレビュー1件（ARCHITECTURE.md §6.6「WalletPopover の tx
+ * 一覧に呼び出し内容を追記する」）。関数名＋引数の先頭 1〜2 個のプレビュー
+ * ＋宛先コントラクト名（未知なら短縮アドレス）を1行で出す。deploy は
+ * `tx.chip.deploy` の訳語をラベル代わりに使う。
+ */
+function TxCallPreviewLine({
+  tx,
+  contractsByAddress,
+}: {
+  tx: TransactionEntity;
+  contractsByAddress: ReadonlyMap<string, ContractEntity>;
+}) {
+  const { t } = useLanguage();
+  const preview = deriveTxCallPreview(tx, contractsByAddress);
+  if (!preview) return null;
+
+  const targetLabel = preview.contractName ?? shortHex(preview.contractAddress);
+  const callLabel =
+    preview.kind === "deploy"
+      ? t("tx.chip.deploy")
+      : `${preview.label}(${preview.argsPreview
+          .map((arg) => `${arg.name}: ${shortHex(arg.value)}`)
+          .join(", ")})`;
+
+  return (
+    <span
+      className="wallet-popover__tx-call"
+      data-testid={`wallet-tx-call-${tx.hash}`}
+    >
+      {callLabel} → {targetLabel}
+    </span>
+  );
+}
+
+/**
  * ウォレットカードのホバーで出る詳細ポップオーバー。アドレス全文・残高
- * （wei と Ether）・nonce・所有者・直近 tx の一覧を表示する。
+ * （wei と Ether）・nonce・所有者・直近 tx の一覧を表示する。tx がコントラクト
+ * 呼び出し/デプロイであれば、関数名＋引数プレビュー＋宛先コントラクト名を
+ * 追記する（ARCHITECTURE.md §6.6、Issue #166）。
  */
 export function WalletPopover({
   entity,
   transactions,
+  contractsByAddress = new Map(),
 }: {
   entity: WalletEntity;
   transactions: TransactionEntity[];
+  contractsByAddress?: ReadonlyMap<string, ContractEntity>;
 }) {
   const { t } = useLanguage();
 
@@ -66,6 +106,7 @@ export function WalletPopover({
                 <span className={`wallet-tx-chip wallet-tx-chip--${tx.status}`}>
                   {t(TX_STATUS_KEY[tx.status])}
                 </span>
+                <TxCallPreviewLine tx={tx} contractsByAddress={contractsByAddress} />
               </li>
             ))}
           </ul>
