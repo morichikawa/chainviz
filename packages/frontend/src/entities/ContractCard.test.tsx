@@ -36,6 +36,7 @@ function data(
 ): ContractFlowNode["data"] {
   return {
     entity: contract(),
+    activity: [],
     ...overrides,
   };
 }
@@ -167,5 +168,195 @@ describe("ContractCard", () => {
     expect(screen.getByRole("tooltip")).toBeTruthy();
     fireEvent.mouseLeave(card);
     expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
+  // --- 「直近の呼び出し・イベント」チップ列（ARCHITECTURE.md §6.6, Issue #166） ---
+
+  it("shows the empty-activity message when there is no activity", () => {
+    renderCard(data({ activity: [] }));
+    expect(screen.getByText("まだ呼び出しがありません")).toBeTruthy();
+  });
+
+  it("renders a decoded call chip with its function name", () => {
+    renderCard(
+      data({
+        activity: [
+          {
+            key: "0xabc-call",
+            kind: "call",
+            label: "transfer",
+            decoded: true,
+            args: [{ name: "to", value: "0xbob" }],
+            txHash: "0xabc",
+          },
+        ],
+      }),
+    );
+    const chip = screen.getByTestId("contract-activity-chip-0xabc-call");
+    expect(chip.textContent).toContain("transfer");
+    expect(chip.className).toContain("contract-activity-chip--call");
+    expect(chip.className).not.toContain("contract-activity-chip--undecoded");
+  });
+
+  it("renders an event chip with the '◆' prefix and a distinct style", () => {
+    renderCard(
+      data({
+        activity: [
+          {
+            key: "0xabc-event-0",
+            kind: "event",
+            label: "Transfer",
+            decoded: true,
+            args: [],
+            txHash: "0xabc",
+          },
+        ],
+      }),
+    );
+    const chip = screen.getByTestId("contract-activity-chip-0xabc-event-0");
+    expect(chip.textContent).toContain("◆");
+    expect(chip.textContent).toContain("Transfer");
+    expect(chip.className).toContain("contract-activity-chip--event");
+  });
+
+  it("marks an undecoded chip with the undecoded modifier class", () => {
+    renderCard(
+      data({
+        activity: [
+          {
+            key: "0xabc-call",
+            kind: "call",
+            label: "0xa9059cbb",
+            decoded: false,
+            args: [],
+            txHash: "0xabc",
+          },
+        ],
+      }),
+    );
+    const chip = screen.getByTestId("contract-activity-chip-0xabc-call");
+    expect(chip.className).toContain("contract-activity-chip--undecoded");
+  });
+
+  it("shows each arg's name/value on hover for a decoded chip", () => {
+    renderCard(
+      data({
+        activity: [
+          {
+            key: "0xabc-call",
+            kind: "call",
+            label: "transfer",
+            decoded: true,
+            args: [{ name: "to", value: "0xbob" }],
+            txHash: "0xabc",
+          },
+        ],
+      }),
+    );
+    const chip = screen.getByTestId("contract-activity-chip-0xabc-call");
+    expect(screen.queryByText("to: 0xbob")).toBeNull();
+    fireEvent.mouseEnter(chip);
+    expect(screen.getByText("to: 0xbob")).toBeTruthy();
+    fireEvent.mouseLeave(chip);
+    expect(screen.queryByText("to: 0xbob")).toBeNull();
+  });
+
+  it("shows the 'cannot decode' message on hover for an undecoded chip", () => {
+    renderCard(
+      data({
+        activity: [
+          {
+            key: "0xabc-call",
+            kind: "call",
+            label: "0xa9059cbb",
+            decoded: false,
+            args: [],
+            txHash: "0xabc",
+          },
+        ],
+      }),
+    );
+    const chip = screen.getByTestId("contract-activity-chip-0xabc-call");
+    fireEvent.mouseEnter(chip);
+    expect(
+      screen.getByText("カタログに定義が無いため復号できません（生の識別子）"),
+    ).toBeTruthy();
+  });
+
+  it("does not show a hover popover for a decoded chip with no args", () => {
+    renderCard(
+      data({
+        activity: [
+          {
+            key: "0xabc-call",
+            kind: "call",
+            label: "increment",
+            decoded: true,
+            args: [],
+            txHash: "0xabc",
+          },
+        ],
+      }),
+    );
+    const chip = screen.getByTestId("contract-activity-chip-0xabc-call");
+    fireEvent.mouseEnter(chip);
+    // チップ自身の引数ポップオーバーは出さない。カード全体のホバーで開く
+    // ContractPopover（既存の入れ子ホバーの流儀。GlossaryTerm と同型）は
+    // 対象外にするため、チップ配下だけを見る。
+    expect(chip.querySelector(".contract-activity-chip__popover")).toBeNull();
+  });
+
+  it("renders multiple activity chips in order", () => {
+    renderCard(
+      data({
+        activity: [
+          {
+            key: "0xabc-call",
+            kind: "call",
+            label: "transfer",
+            decoded: true,
+            args: [],
+            txHash: "0xabc",
+          },
+          {
+            key: "0xabc-event-0",
+            kind: "event",
+            label: "Transfer",
+            decoded: true,
+            args: [],
+            txHash: "0xabc",
+          },
+        ],
+      }),
+    );
+    expect(
+      screen.getByTestId(`contract-activity-${contract().address}`).textContent,
+    ).toContain("transfer");
+    expect(screen.getByTestId("contract-activity-chip-0xabc-call")).toBeTruthy();
+    expect(
+      screen.getByTestId("contract-activity-chip-0xabc-event-0"),
+    ).toBeTruthy();
+  });
+
+  // --- tx確定時の確定フラッシュ（ARCHITECTURE.md §6.6, Issue #166） ---
+
+  it("applies the success settle-flash class when flashKind is 'success'", () => {
+    const { container } = renderCard(data({ flashKind: "success" }));
+    expect(
+      container.querySelector(".contract-card--settle-success"),
+    ).not.toBeNull();
+  });
+
+  it("applies the failed settle-flash class when flashKind is 'failed'", () => {
+    const { container } = renderCard(data({ flashKind: "failed" }));
+    expect(
+      container.querySelector(".contract-card--settle-failed"),
+    ).not.toBeNull();
+  });
+
+  it("applies no settle-flash class when flashKind is omitted", () => {
+    const { container } = renderCard(data());
+    expect(container.querySelector(".contract-card--settle-success")).toBeNull();
+    expect(container.querySelector(".contract-card--settle-failed")).toBeNull();
   });
 });
