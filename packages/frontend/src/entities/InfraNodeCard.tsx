@@ -1,8 +1,11 @@
 import { Handle, type NodeProps, Position } from "@xyflow/react";
 import { useState } from "react";
+import { ActionHint } from "../canvas/ActionHint.js";
 import { useCommandActions } from "../commands/CommandActionsContext.js";
+import { resolveWorkbenchOperationsHint } from "../commands/commandMessages.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
+import { OperationPanel } from "../operations/OperationPanel.js";
 import { InfraPopover } from "./InfraPopover.js";
 import type { InfraFlowNode } from "./infraNode.js";
 
@@ -10,12 +13,17 @@ import type { InfraFlowNode } from "./infraNode.js";
  * A層のコンテナを表すキャンバス上のカード（React Flow カスタムノード）。
  * ヘッダにコンテナ名、サブタイトルにクライアント種別/ラベルを出し、
  * ホバーで詳細ポップオーバー（InfraPopover）を表示する。
+ *
+ * entity が workbench の場合のみ、カード下部に定型操作パネル（送金/デプロイ/
+ * コントラクト呼び出し）を開く全幅ボタンを持つ（ARCHITECTURE.md §6.5。
+ * 「操作は必ずワークベンチという実体から発する」ため起点はカード側に置く）。
  */
 export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
-  const { entity, rpcTargetContainerName, isNew } = data;
+  const { entity, rpcTargetContainerName, isNew, operationPending } = data;
   const { t } = useLanguage();
   const actions = useCommandActions();
   const [hovered, setHovered] = useState(false);
+  const [operationPanelOpen, setOperationPanelOpen] = useState(false);
 
   const kindLabel = entity.kind === "node" ? t("card.node") : t("card.workbench");
   const subtitle =
@@ -102,8 +110,38 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
       </div>
       <div className="infra-card__name">{entity.containerName}</div>
       <div className="infra-card__subtitle">{subtitle}</div>
+      {entity.kind === "workbench" && (
+        <div className="infra-card__operate-wrapper">
+          <ActionHint hint={resolveWorkbenchOperationsHint(rpcTargetContainerName, t)}>
+            <button
+              type="button"
+              className={
+                operationPending
+                  ? "infra-card__operate nodrag infra-card__operate--pending"
+                  : "infra-card__operate nodrag"
+              }
+              aria-busy={operationPending}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={() => setOperationPanelOpen((current) => !current)}
+              data-testid={`infra-card-operate-${entity.id}`}
+            >
+              {operationPending && (
+                <span className="infra-card__operate-spinner" aria-hidden="true" />
+              )}
+              {t("action.workbenchOperations")}
+              {operationPending ? ` (${t("operation.pending")})` : ""}
+            </button>
+          </ActionHint>
+        </div>
+      )}
       {hovered && (
         <InfraPopover entity={entity} rpcTargetContainerName={rpcTargetContainerName} />
+      )}
+      {entity.kind === "workbench" && operationPanelOpen && (
+        <OperationPanel
+          workbenchId={entity.id}
+          onClose={() => setOperationPanelOpen(false)}
+        />
       )}
     </div>
   );
