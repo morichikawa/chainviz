@@ -1,0 +1,183 @@
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { describe, expect, it } from "vitest";
+import {
+  ETHEREUM_OPERATION_CATALOG,
+  type OperationArgType,
+  getOperationCatalogEntry,
+} from "./operationCatalog.js";
+
+describe("ETHEREUM_OPERATION_CATALOG", () => {
+  it("keys every entry with the exact catalogKey collector/catalog.json use (ChainvizToken/Counter)", () => {
+    const keys = ETHEREUM_OPERATION_CATALOG.map((entry) => entry.catalogKey);
+    expect(keys).toEqual(["ChainvizToken", "Counter"]);
+  });
+
+  it("gives every function a full cast signature (name + parens), not just a bare name", () => {
+    for (const entry of ETHEREUM_OPERATION_CATALOG) {
+      for (const fn of entry.functions) {
+        expect(fn.signature).toMatch(/^[a-zA-Z_][a-zA-Z0-9_]*\(.*\)$/);
+      }
+    }
+  });
+
+  it("keeps each function's arg count consistent with the signature's comma count", () => {
+    for (const entry of ETHEREUM_OPERATION_CATALOG) {
+      for (const fn of entry.functions) {
+        const inner = fn.signature.slice(
+          fn.signature.indexOf("(") + 1,
+          fn.signature.lastIndexOf(")"),
+        );
+        const expectedArgCount = inner === "" ? 0 : inner.split(",").length;
+        expect(fn.args).toHaveLength(expectedArgCount);
+      }
+    }
+  });
+
+  it("gives ChainvizToken a single uint constructor arg (initialSupply)", () => {
+    const entry = getOperationCatalogEntry("ChainvizToken");
+    expect(entry?.constructorArgs).toEqual([
+      { name: "initialSupply", type: "uint" },
+    ]);
+  });
+
+  it("gives Counter no constructor args", () => {
+    const entry = getOperationCatalogEntry("Counter");
+    expect(entry?.constructorArgs).toEqual([]);
+  });
+
+  it("marks no sample function as payable (no payable functions exist in the sample contracts)", () => {
+    for (const entry of ETHEREUM_OPERATION_CATALOG) {
+      for (const fn of entry.functions) {
+        expect(fn.payable).toBe(false);
+      }
+    }
+  });
+});
+
+describe("getOperationCatalogEntry", () => {
+  it("returns undefined for an unknown catalog key", () => {
+    expect(getOperationCatalogEntry("NotInCatalog")).toBeUndefined();
+  });
+
+  it("is case-sensitive (catalogKey must match exactly, e.g. not 'chainviztoken')", () => {
+    expect(getOperationCatalogEntry("chainviztoken")).toBeUndefined();
+  });
+});
+
+/**
+ * `operationCatalog.ts` はフロント表現セット（ABI そのものではない UI 用の
+ * 静的データ）だが、その catalogKey・関数シグネチャ・コンストラクタ引数・
+ * payable 判定・引数名は `profiles/ethereum/contracts/catalog.json` の実 ABI
+ * と食い違ってはならない（ずれるとデプロイの forge 解決・呼び出しタブの照合が
+ * 壊れる。実装担当が「catalogKey の食い違いを修正した」と報告した箇所の回帰
+ * ガード）。カタログ JSON はパッケージ外（リポジトリ直下 profiles/）にあるため
+ * node の fs で直接読んで突き合わせる。
+ */
+describe("ETHEREUM_OPERATION_CATALOG matches the real catalog.json ABI", () => {
+  interface AbiInput {
+    name: string;
+    type: string;
+  }
+  interface AbiEntry {
+    type: string;
+    name?: string;
+    stateMutability?: string;
+    inputs?: AbiInput[];
+  }
+  // カタログ JSON はリポジトリ直下 profiles/ にあり、パッケージ相対では
+  // テスト実行時の cwd（vitest はパッケージ配下）に依存する。cwd から上へ
+  // たどって profiles/ethereum/contracts/catalog.json を探す（実行位置に
+  // 依存しないようにする）。
+  function findCatalogJson(): string {
+    const relative = "profiles/ethereum/contracts/catalog.json";
+    let dir = process.cwd();
+    for (;;) {
+      const candidate = resolve(dir, relative);
+      if (existsSync(candidate)) return candidate;
+      const parent = dirname(dir);
+      if (parent === dir) {
+        throw new Error(`could not locate ${relative} above ${process.cwd()}`);
+      }
+      dir = parent;
+    }
+  }
+  const catalogJson = JSON.parse(
+    readFileSync(findCatalogJson(), "utf8"),
+  ) as Record<string, { abi: AbiEntry[] }>;
+
+  /** ABI のソリディティ型を UI 側の入力補助分類へ写す。 */
+  function abiTypeToArgType(abiType: string): OperationArgType {
+    if (abiType === "address") return "address";
+    if (abiType === "bool") return "bool";
+    if (abiType === "string") return "string";
+    if (/^u?int\d*$/.test(abiType)) return "uint";
+    throw new Error(`unmapped ABI type: ${abiType}`);
+  }
+
+  /** state を変える（cast send で呼ぶ意味がある）関数だけ抜き出す。 */
+  function stateChangingFunctions(abi: AbiEntry[]): AbiEntry[] {
+    return abi.filter(
+      (entry) =>
+        entry.type === "function" &&
+        entry.stateMutability !== "view" &&
+        entry.stateMutability !== "pure",
+    );
+  }
+
+  function signatureOf(entry: AbiEntry): string {
+    const types = (entry.inputs ?? []).map((input) => input.type).join(",");
+    return `${entry.name}(${types})`;
+  }
+
+  it("only lists catalogKeys that exist as top-level keys in catalog.json", () => {
+    for (const entry of ETHEREUM_OPERATION_CATALOG) {
+      expect(Object.keys(catalogJson)).toContain(entry.catalogKey);
+    }
+  });
+
+  it("matches each contract's constructor args (name, order, mapped type) to the ABI", () => {
+    for (const entry of ETHEREUM_OPERATION_CATALOG) {
+      const abi = catalogJson[entry.catalogKey].abi;
+      const ctor = abi.find((item) => item.type === "constructor");
+      const abiCtorArgs = ctor?.inputs ?? [];
+      expect(entry.constructorArgs.map((arg) => arg.name)).toEqual(
+        abiCtorArgs.map((input) => input.name),
+      );
+      entry.constructorArgs.forEach((arg, index) => {
+        expect(arg.type).toBe(abiTypeToArgType(abiCtorArgs[index].type));
+      });
+    }
+  });
+
+  it("lists exactly the ABI's state-changing functions (no missing, no phantom, view/pure excluded)", () => {
+    for (const entry of ETHEREUM_OPERATION_CATALOG) {
+      const abi = catalogJson[entry.catalogKey].abi;
+      const abiSignatures = stateChangingFunctions(abi).map(signatureOf).sort();
+      const catalogSignatures = entry.functions.map((fn) => fn.signature).sort();
+      expect(catalogSignatures).toEqual(abiSignatures);
+    }
+  });
+
+  it("matches each function's arg names/types and payable flag to the ABI", () => {
+    for (const entry of ETHEREUM_OPERATION_CATALOG) {
+      const abi = catalogJson[entry.catalogKey].abi;
+      const abiBySignature = new Map(
+        stateChangingFunctions(abi).map((fn) => [signatureOf(fn), fn] as const),
+      );
+      for (const fn of entry.functions) {
+        const abiFn = abiBySignature.get(fn.signature);
+        expect(abiFn).toBeDefined();
+        if (!abiFn) continue;
+        const abiInputs = abiFn.inputs ?? [];
+        expect(fn.args.map((arg) => arg.name)).toEqual(
+          abiInputs.map((input) => input.name),
+        );
+        fn.args.forEach((arg, index) => {
+          expect(arg.type).toBe(abiTypeToArgType(abiInputs[index].type));
+        });
+        expect(fn.payable).toBe(abiFn.stateMutability === "payable");
+      }
+    }
+  });
+});
