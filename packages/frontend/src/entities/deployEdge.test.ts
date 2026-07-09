@@ -150,6 +150,37 @@ describe("deployEdgesToFlowEdges address casing (Issue #201)", () => {
     );
     expect(edges).toEqual([]);
   });
+
+  it("matches when both sides use mixed casing that differs from each other", () => {
+    // deployerAddress と presentWalletIds が互いに異なる混在表記でも、
+    // どちらも同じ小文字キーに正規化されるので一致する。
+    const edges = deployEdgesToFlowEdges(
+      [contract({ address: "0xC1", deployerAddress: "0xAbCdEf" })],
+      ["0xaBcDeF"],
+    );
+    expect(edges).toHaveLength(1);
+    // 端点にはキャンバス上に実在する表記（present 側）を採用する。
+    expect(edges[0]).toMatchObject({
+      source: "0xaBcDeF",
+      target: "0xC1",
+      id: "deploy-0xaBcDeF-0xC1",
+    });
+  });
+
+  it("resolves to the last representation when presentWalletIds contains casing duplicates (defensive)", () => {
+    // 通常は起きないが、presentWalletIds に同一アドレスの表記揺れが複数
+    // 混在した場合、小文字キーの Map は後勝ちになる。エッジは 1 本だけ作られ、
+    // 端点には最後に現れた表記が採られる（重複エッジを作らないことの回帰）。
+    const edges = deployEdgesToFlowEdges(
+      [contract({ address: "0xc1", deployerAddress: "0xabcdef" })],
+      ["0xABCDEF", "0xAbCdEf"],
+    );
+    expect(edges).toHaveLength(1);
+    expect(edges[0]).toMatchObject({
+      source: "0xAbCdEf",
+      id: "deploy-0xAbCdEf-0xc1",
+    });
+  });
 });
 
 describe("isDeployFlowEdge", () => {
