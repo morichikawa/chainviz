@@ -151,7 +151,7 @@ test.describe.serial("UI-CMD ノード追加・削除の連鎖シナリオ", () 
     });
 
     await test.step(
-      "追加された beacon と既存ノードのあいだにピアエッジ（または接続確立中エッジ）が描画される",
+      "追加された beacon と既存ノードのあいだにピアエッジが描画される",
       async () => {
         await expect(
           page.locator(
