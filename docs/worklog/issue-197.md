@@ -171,3 +171,36 @@
 - 実装バグらしきものは検出されなかった。ロック解放の順序・失敗時の
   クリーンアップはいずれも設計どおりに動作している。
 
+### レビュー記録(chainviz-reviewer)
+
+- 判定: **合格**
+- 確認内容:
+  - ARCHITECTURE.md §8.2/§8.3/§8.6 との整合: パッケージ構成(`playwright.config.ts`・
+    `src/ui/*.spec.ts`・helpers 共有)、起動トポロジ(acquireE2eLock →
+    ensureChainRunning → startCollector(4125) → webServer vite dev 5275 →
+    teardown で collector 停止 → ロック解放、Docker スタック残置)、
+    ポート割り当て(4125/5275)がすべて設計どおり
+  - 既存ヘルパーの再利用: `e2e-lock.ts` / `docker.ts` / `collector.ts` を
+    変更なしにそのまま使っており、UI 層専用の重複ロジックは無い。
+    `startCollector(port)` のシグネチャとも一致
+  - エラー処理: ロック取得失敗時はロックパス入りのログを出して元の
+    エラーを伝播、Docker/collector 起動失敗時は取得済みロックを解放して
+    から伝播。握りつぶし箇所なし
+  - `vi.mock` の例外的採用: Playwright の globalSetup が引数無しで呼ばれる
+    仕様上、依存注入の口が無いことが理由としてファイル冒頭に明記されて
+    おり妥当。テストは実行順序・異常系3種・teardown 順序をカバーし、
+    回帰検出能力も worklog 記載のとおり確認済み
+  - タイムアウト定数(webServer 30s / テスト 60s / 接続バッジ 30s)は
+    いずれも「起動待ちの上限」であり、チェーンの稼働時間・進行済み
+    ブロック数に依存する値ではない(過去の固定120秒問題とは性質が異なる)
+  - `pnpm build` / `pnpm lint` / `pnpm test`(e2e パッケージのユニット
+    50件含む)がすべて通ることを確認
+  - docs 整合: PLAN.md チェック+Issue リンク、WORKLOG.md 索引行、
+    CONTRIBUTING.md の前提記載、いずれも実装と一致
+  - コミット粒度: 5コミットとも単一関心事で適切
+- 軽微な指摘(差し戻し不要):
+  - teardown 内で `collector.stop()` が例外を投げると `lock.release()` が
+    スキップされるが、プロセス終了後は e2e-lock の stale ロック回収
+    (保持 PID の死亡判定)で自己修復されるため実害なし
+  - c6c9022 の tsconfig.json 変更に既存の漏れ(`vitest.unit.config.ts` の
+    include 追加)の修正が同居しているが、worklog に明記されており許容範囲
