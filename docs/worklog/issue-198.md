@@ -99,3 +99,45 @@ tests、いずれも green)。
   中身の個々の要素に既存の testid があるため)。もし #201 実装時にこれら
   ポップオーバー自体をロケータとして直接扱う必要が出た場合は、同じ命名
   規則(`<種別>-popover-<識別子>`)で追加してよい
+
+### 2026-07-09 Issue #198 テスト強化記録
+
+- 担当: tester
+- ブランチ: issue-198-frontend-testids
+
+実装担当が追加した data-testid が「属性が付いているだけ」でなく、想定の
+条件・タイミングで DOM に現れることを検証する観点でテストを追加した。
+関心事ごとに新規ファイルへ分離し、既存テストファイルは肥大化させない。
+
+追加ファイルとカバーした観点:
+
+- `src/glossary/GlossaryTerm.testid.test.tsx`(新規)
+  - popover の testid が閉じている間は DOM に存在せず、ホバー
+    (mouseEnter/mouseLeave)・フォーカス(focus/blur)の開閉に合わせて
+    出入りすること(アンカーの testid は常時存在)
+  - unknown term(glossary に無い用語)はプレーン span へフォールバック
+    するため `glossary-term-*` / `glossary-popover-*` の testid 自体が
+    存在しないこと
+  - 複数の異なる termKey を同時にレンダーしたとき各アンカーが一意に
+    識別でき、ホバーした用語の popover だけが対応する termKey で開くこと
+  - 同一 termKey を複数箇所で使うと testid が一意にならない(getByTestId
+    が例外、getAllByTestId で複数取得)という制約を挙動として固定
+- `src/entities/InfraPopover.testid.test.tsx`(新規)
+  - entity.id が変わったとき(ゴースト仮 id → 実 id への差し替え)に
+    testid が新しい id へ追従し、古い id の testid が残らないこと
+  - testid は containerName ではなく id をキーにすること
+  - node と workbench の popover を同時にレンダーしても id ごとに
+    別要素として一意に識別できること
+
+接続ステータスバッジ(`connection-status-badge`)の「接続状態が変化した
+ときにも同じ testid を保つ」観点は、モッククライアントが connect() で
+同期的に connected へ遷移し connecting 状態を経由しない・StatusBadge が
+非 export のため、実装を変えずに `<App>` 経由で状態遷移を駆動する手段が
+無い。既存の `App.connectionStatusBadge.test.tsx` が connected 表示と
+isMock の出し分けを固定しているため、追加のテストは見送った(実装変更を
+避けるため)。
+
+作業中に見つけた不具合・改善要望は無し(GitHub Issue の起票は無し)。
+
+`pnpm build && pnpm lint && pnpm test` をリポジトリ全体で実行し全パッケージ
+green を確認(frontend: 91 test files / 1368 tests)。
