@@ -5,6 +5,10 @@ dist/
 .env.local
 .dev-pids/
 
+# Playwright(packages/e2e の UI 層 E2E)の実行成果物
+playwright-report/
+test-results/
+
 # Foundry ビルド成果物(profiles/ethereum/contracts/。ソースと
 # catalog.json はコミットするが、out/cache/lib はビルドのたびに生成される
 # ためコミットしない)

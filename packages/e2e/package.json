@@ -6,6 +6,7 @@
   "scripts": {
     "test": "vitest run --config vitest.unit.config.ts",
     "test:e2e": "vitest run",
+    "test:e2e:ui": "playwright test",
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit"
   },
