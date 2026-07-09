@@ -108,7 +108,7 @@
 | #188 | Issue #188 内部リンクエッジ(beacon→reth)の常設描画とnodeLinkActivityの活動パルス | [2026-07-08](worklog/issue-188.md) |
 | #189 | Issue #189 ノードカード/ポップオーバーに同期ステージ・mempool内訳を表示 | [2026-07-08](worklog/issue-189.md) |
 | #191 | Issue #191 D層のプロトコル層E2Eテスト(PROTO-D-01。internals/drivesNodeId/nodeLinkActivity)を追加 | [2026-07-08](worklog/issue-191.md) |
-| - | 特定Issueに紐付かない記録(PLAN.md/CLAUDE.md更新等、Phase5設計メモ) | [2026-07-05〜2026-07-08](worklog/meta.md) |
+| - | 特定Issueに紐付かない記録(PLAN.md/CLAUDE.md更新等、Phase5設計メモ) | [2026-07-05〜2026-07-09](worklog/meta.md) |
 | #197 | Issue #197 Playwright基盤の導入(playwright.config.ts・globalSetup・webServer・pnpm test:e2e:ui配線) | [2026-07-09](worklog/issue-197.md) |
 | #198 | Issue #198 SCENARIOS.mdが参照するdata-testidをfrontendへ追加(接続バッジ・ツールバー・言語トグル・用語/インフラポップオーバー) | [2026-07-09](worklog/issue-198.md) |
 | #199 | Issue #199 基本表示シナリオ(UI-CONN・UI-A・UI-B)のPlaywright実装 | [2026-07-09](worklog/issue-199.md) |
