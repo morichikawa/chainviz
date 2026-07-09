@@ -23,6 +23,8 @@ import { serviceEntityId } from "./support/serviceIds.js";
 const INFRA_SNAPSHOT_TIMEOUT_MS = 20_000;
 
 const RETH1_ID = serviceEntityId("reth1");
+const RETH2_ID = serviceEntityId("reth2");
+const BEACON1_ID = serviceEntityId("beacon1");
 const WORKBENCH_ID = serviceEntityId("workbench");
 
 const COMPOSE_NODES: ReadonlyArray<{ service: string; clientType: string }> = [
@@ -110,9 +112,18 @@ test("UI-A-01: compose の全ノードとワークベンチがカード表示さ
 
   await test.step("ブートノードのカードにブートノードバッジが表示される", async () => {
     // reth1/beacon1 は docker-compose.yml で com.chainviz.p2p-role: bootnode。
+    // 2つのブートノード両方にバッジが出ること、および非ブートノード(reth2)には
+    // 出ないことを確認する。後者を確認しないとバッジが常時表示でも合格して
+    // しまい「ブートノード固有の表示」を検証できないため、境界として付ける。
     await expect(
       page.getByTestId(`infra-card-${RETH1_ID}`).getByTestId(`infra-card-bootnode-${RETH1_ID}`),
     ).toBeVisible();
+    await expect(
+      page.getByTestId(`infra-card-${BEACON1_ID}`).getByTestId(`infra-card-bootnode-${BEACON1_ID}`),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId(`infra-card-${RETH2_ID}`).getByTestId(`infra-card-bootnode-${RETH2_ID}`),
+    ).toHaveCount(0);
   });
 });
 
