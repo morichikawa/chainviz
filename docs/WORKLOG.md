@@ -109,3 +109,4 @@
 | #189 | Issue #189 ノードカード/ポップオーバーに同期ステージ・mempool内訳を表示 | [2026-07-08](worklog/issue-189.md) |
 | #191 | Issue #191 D層のプロトコル層E2Eテスト(PROTO-D-01。internals/drivesNodeId/nodeLinkActivity)を追加 | [2026-07-08](worklog/issue-191.md) |
 | - | 特定Issueに紐付かない記録(PLAN.md/CLAUDE.md更新等、Phase5設計メモ) | [2026-07-05〜2026-07-08](worklog/meta.md) |
+| #197 | Issue #197 Playwright基盤の導入(playwright.config.ts・globalSetup・webServer・pnpm test:e2e:ui配線) | [2026-07-09](worklog/issue-197.md) |

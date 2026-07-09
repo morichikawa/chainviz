@@ -445,7 +445,7 @@ UI で同等以上に検証できるシナリオは Playwright（実ブラウザ
 （シナリオカタログ。設計時に作成済み）を参照。`@playwright/test` の依存
 追加とこの環境での chromium 実行可否の実証は設計時に完了している。
 
-- [ ] Playwright 基盤の導入(playwright.config.ts・globalSetup での排他
+- [x] Playwright 基盤の導入(playwright.config.ts・globalSetup での排他
       ロック/Docker/collector 起動・webServer での vite dev 起動・
       pnpm test:e2e:ui の配線・CONTRIBUTING.md への前提記載)
       [#197](https://github.com/morichikawa/chainviz/issues/197)
