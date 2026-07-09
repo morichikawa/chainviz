@@ -70,6 +70,20 @@ describe("buildOperationCommand", () => {
     expect(cmd).not.toContain("--constructor-args");
   });
 
+  it("does not add --constructor-args when constructorArgs is an empty array (Issue #201)", () => {
+    // DeployForm.tsx はコンストラクタ引数を持たないコントラクトでも
+    // `constructorArgs: []`(省略ではなく空配列)を送る。フラグだけ付けて
+    // 値を1つも渡さないと forge create が失敗するため、undefined と同様に
+    // フラグ自体を付けないことを確認する。
+    const operation: WorkbenchOperation = {
+      type: "deployContract",
+      contractKey: "src/Counter.sol:Counter",
+      constructorArgs: [],
+    };
+    const cmd = buildOperationCommand(operation, ctx);
+    expect(cmd).not.toContain("--constructor-args");
+  });
+
   it("appends --constructor-args with each value as a distinct token when constructorArgs is given", () => {
     const operation: WorkbenchOperation = {
       type: "deployContract",
