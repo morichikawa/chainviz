@@ -204,3 +204,42 @@
     (保持 PID の死亡判定)で自己修復されるため実害なし
   - c6c9022 の tsconfig.json 変更に既存の漏れ(`vitest.unit.config.ts` の
     include 追加)の修正が同居しているが、worklog に明記されており許容範囲
+
+### QA検証記録(chainviz-qa)
+
+- 判定: **合格**（Issue #197 の完了条件・実機検証項目をすべて満たす）
+- 検証環境: 既存稼働中の chainviz-ethereum スタックを再利用（reth1 で
+  ブロックが 0x21b→0x21d と進行していることを確認したうえで検証）。この
+  開発機には Playwright chromium 実行に必要なシステムライブラリ
+  (libnspr4/libnss3/libasound2t64)が未導入で `sudo` がパスワードを要求
+  したため、CONTRIBUTING.md の `sudo ... install-deps` は使えなかった。
+  代わりに `apt-get download` で該当 deb を取得し `dpkg-deb -x` でユーザー
+  権限のまま展開したディレクトリを `LD_LIBRARY_PATH` に渡して chromium を
+  起動した（この回避策は検証時のみの一時的なもので、リポジトリには含めて
+  いない）。ldd で chrome の依存が未解決ライブラリ無しになることを確認した
+  うえで実行した。
+- 検証項目と結果:
+  1. `pnpm test:e2e:ui` を実行し、`foundation-smoke.spec.ts` が green に
+     なることを2回とも確認（1 passed / 各約14.5秒）。
+  2. globalSetup の起動順序をポート/ロックファイルの実監視で確認。
+     タイムライン: vite dev(5275) が t=1.48s に先行起動（webServer が
+     globalSetup より先という設計どおりの挙動）、その後 globalSetup 内で
+     ロックファイル取得 t=1.90s → Docker 起動確認(約12秒)を挟んで
+     collector(4125) 起動 t=14.05s。ロック取得 → Docker 起動確認 →
+     collector(4125) 起動の順序どおり。
+  3. globalTeardown の後片付けを確認。テスト終了後、ポート4125・5275が
+     ともに解放され、ロックファイル(/tmp/chainviz-test-e2e.lock)が残らない
+     ことを2回の実行後それぞれで確認。
+  4. vite dev(5275) が起動し、chromium が baseURL 経由でページを開いて
+     タイトル("chainviz")と接続ステータス(`.status-badge--connected`)を
+     検証できること＝実 collector(4125)への WebSocket 接続が成立している
+     ことをテスト成功をもって確認。
+  5. 競合・ポート衝突の確認。UI 層(4125/5275)はプロトコル層(既定4123・
+     衝突テスト4199)・dev(4000/5173)と重複しない。同一ロックファイルを
+     共用するため同時実行は排他される設計。`pnpm test:e2e`(プロトコル層
+     24 tests 全通過)・`pnpm test`(全パッケージ ユニット。e2e パッケージの
+     `test` は vitest.unit.config.ts 限定で Docker/ポート不使用)・
+     `pnpm --filter @chainviz/e2e test`(50 tests、うち
+     playwright-global-setup.unit.test.ts 6件を含む)がいずれも通過する
+     ことを確認。
+- 差し戻し事項: なし。
