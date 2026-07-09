@@ -98,7 +98,10 @@ function StatusBadge({
 }) {
   const { t } = useLanguage();
   return (
-    <span className={`status-badge status-badge--${status}`}>
+    <span
+      className={`status-badge status-badge--${status}`}
+      data-testid="connection-status-badge"
+    >
       {t(STATUS_KEY[status])}
       {isMock ? ` · ${t("connection.mock")}` : ""}
     </span>

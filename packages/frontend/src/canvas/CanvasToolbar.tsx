@@ -65,6 +65,7 @@ export function CanvasToolbar({
           }
           aria-busy={pendingAddNode}
           onClick={() => actions.addNode()}
+          data-testid="canvas-toolbar-add-node"
         >
           {pendingAddNode && (
             <span className="canvas-toolbar__spinner" aria-hidden="true" />
@@ -81,6 +82,7 @@ export function CanvasToolbar({
           placeholder={t("action.workbenchLabelPlaceholder")}
           aria-label={t("action.workbenchLabelPlaceholder")}
           onChange={(event) => setLabel(event.target.value)}
+          data-testid="canvas-toolbar-workbench-label"
         />
         <ActionHint hint={addWorkbenchHint}>
           <button
@@ -91,6 +93,7 @@ export function CanvasToolbar({
                 : "canvas-toolbar__button"
             }
             aria-busy={pendingAddWorkbench}
+            data-testid="canvas-toolbar-add-workbench"
           >
             {pendingAddWorkbench && (
               <span className="canvas-toolbar__spinner" aria-hidden="true" />

@@ -449,7 +449,7 @@ UI で同等以上に検証できるシナリオは Playwright（実ブラウザ
       ロック/Docker/collector 起動・webServer での vite dev 起動・
       pnpm test:e2e:ui の配線・CONTRIBUTING.md への前提記載)
       [#197](https://github.com/morichikawa/chainviz/issues/197)
-- [ ] frontend の計装(SCENARIOS.md の UI シナリオが参照する data-testid の
+- [x] frontend の計装(SCENARIOS.md の UI シナリオが参照する data-testid の
       追加: 接続バッジ・ツールバー・言語トグル・用語/インフラポップ
       オーバー)
       [#198](https://github.com/morichikawa/chainviz/issues/198)

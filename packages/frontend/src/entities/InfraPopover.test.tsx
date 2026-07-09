@@ -56,6 +56,22 @@ function renderPopover(
   );
 }
 
+describe("InfraPopover data-testid instrumentation (Issue #198, ARCHITECTURE.md §8.5)", () => {
+  it("exposes the popover root via data-testid keyed by the entity id", () => {
+    renderPopover(node);
+    expect(screen.getByTestId(`infra-popover-${node.id}`)).toBe(
+      screen.getByRole("tooltip"),
+    );
+  });
+
+  it("keys the testid by the workbench's id too", () => {
+    renderPopover(workbench);
+    expect(screen.getByTestId(`infra-popover-${workbench.id}`)).toBe(
+      screen.getByRole("tooltip"),
+    );
+  });
+});
+
 describe("InfraPopover role row (Issue #124 C)", () => {
   it("shows a role row with the bootnode value for a bootnode node", () => {
     renderPopover({ ...node, p2pRole: "bootnode" });

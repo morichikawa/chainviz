@@ -117,6 +117,21 @@ describe("CanvasToolbar", () => {
     expect(actions.removeWorkbench).not.toHaveBeenCalled();
   });
 
+  describe("data-testid instrumentation (Issue #198, ARCHITECTURE.md §8.5)", () => {
+    it("exposes the add-node button, workbench label input, and add-workbench button via data-testid", () => {
+      renderToolbar();
+      expect(screen.getByTestId("canvas-toolbar-add-node")).toBe(
+        screen.getByRole("button", { name: /ノードを追加/ }),
+      );
+      expect(screen.getByTestId("canvas-toolbar-workbench-label")).toBe(
+        screen.getByPlaceholderText("ワークベンチ名"),
+      );
+      expect(screen.getByTestId("canvas-toolbar-add-workbench")).toBe(
+        screen.getByRole("button", { name: /ワークベンチを追加/ }),
+      );
+    });
+  });
+
   describe("pending feedback (Issue #102)", () => {
     it("shows no pending indication by default", () => {
       renderToolbar();

@@ -13,6 +13,7 @@ export function LanguageToggle() {
       onClick={toggle}
       aria-label={t("language.toggle")}
       data-lang={lang}
+      data-testid="language-toggle"
     >
       {t("language.toggle")}
     </button>

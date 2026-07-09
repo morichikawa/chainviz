@@ -58,7 +58,11 @@ export function InfraPopover({
     (entity.process.version ? ` (${entity.process.version})` : "");
 
   return (
-    <div className="infra-popover" role="tooltip">
+    <div
+      className="infra-popover"
+      role="tooltip"
+      data-testid={`infra-popover-${entity.id}`}
+    >
       <Field label={t("field.ip")} value={entity.ip} />
       <div className="infra-field">
         <span className="infra-field__label">
