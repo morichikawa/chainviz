@@ -29,6 +29,14 @@ function isInfraEntity(entity: WorldStateEntity): boolean {
   return entity.kind === "node" || entity.kind === "workbench";
 }
 
+/**
+ * `WalletEntity.recentTxHashes` に保持する tx hash 数の上限。フロント側
+ * （`entities/transaction.ts` の `DEFAULT_RECENT_TX_LIMIT`、既定 6）が表示
+ * 件数を絞るため、ここでは無制限に増やさない程度の余裕を持たせるだけの
+ * 上限（フロントの表示件数と厳密に一致させる必要はない）。
+ */
+const MAX_WALLET_RECENT_TX_HASHES = 20;
+
 export class WorldStateStore {
   private readonly entities = new Map<string, WorldStateEntity>();
   private edges: PeerEdge[] = [];
@@ -87,6 +95,54 @@ export class WorldStateStore {
    */
   applyTransaction(tx: TransactionEntity): DiffEvent[] {
     return this.applyKeyed(tx);
+  }
+
+  /**
+   * この tx の `from`/`to` に一致する既存の `WalletEntity` があれば、その
+   * `recentTxHashes` へこの tx の hash を反映する（ウォレットカードの
+   * tx チップ表示。`WalletEntity.recentTxHashes` は元々この用途で
+   * 定義されていたが、Issue #201 の E2E 実装で「実際の collector からは
+   * 一度も更新されない」欠落が発覚したため追加した）。
+   *
+   * アドレスの表記揺れ（tx.from/to は RPC 由来の小文字表記、WalletEntity.
+   * address は mnemonic から導出した EIP-55 チェックサム表記になりうる。
+   * `wallet-derivation.ts` 参照）を吸収するため、小文字化して比較する
+   * （`contracts.ts` の `normalizeAddress` と同じ考え方。ただし store の
+   * 既存キー・他ルックアップとの一貫性を保つため `WalletEntity.address`
+   * 自体の表記は変更しない）。
+   *
+   * 一致するウォレットが無い（まだ観測されていない・ワークベンチ所有の
+   * ウォレットではない相手）場合はそのアドレス分は何もしない
+   * （ダングリング参照ガード。ARCHITECTURE.md「対応するエンティティが
+   * 未観測なら表示しない」と同じ流儀）。同一 hash が既に載っている場合
+   * （pending → included で同じ tx が複数回 applyTransaction される）も
+   * 重複追加しない。返り値は適用した差分イベント。
+   */
+  linkTransactionToWallets(tx: TransactionEntity): DiffEvent[] {
+    const candidateAddresses = new Set(
+      [tx.from, tx.to]
+        .filter((address): address is string => typeof address === "string" && address.length > 0)
+        .map((address) => address.toLowerCase()),
+    );
+    if (candidateAddresses.size === 0) return [];
+
+    const events: DiffEvent[] = [];
+    for (const entity of this.entities.values()) {
+      if (entity.kind !== "wallet") continue;
+      if (!candidateAddresses.has(entity.address.toLowerCase())) continue;
+      if (entity.recentTxHashes.includes(tx.hash)) continue;
+
+      const recentTxHashes = [tx.hash, ...entity.recentTxHashes].slice(
+        0,
+        MAX_WALLET_RECENT_TX_HASHES,
+      );
+      const after: WalletEntity = { ...entity, recentTxHashes };
+      const diff = computeDiff([entity], [after]);
+      for (const event of diff) this.applyEvent(event);
+      events.push(...diff);
+    }
+    if (events.length > 0) this.timestamp = Date.now();
+    return events;
   }
 
   /**
