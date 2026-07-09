@@ -27,8 +27,8 @@ const DRIVEN_RETH = "reth1";
 // ポーリングされる。SLOT_DURATION_MS（既定 2000ms。profiles/ethereum/values.env）
 // ごとに Engine API 呼び出し（newPayload/forkchoiceUpdated）が発生するため、
 // 1 ポーリング間隔の中に必ず 1 回以上の呼び出しが増分として乗る前提。
-// 待ち時間は「初回反映」を待つ他の A/D 層テスト（waitForInfra 等）と同じ
-// 桁数（数十秒）に、ネットワーク・スクレイプの揺らぎ分の余裕を足した値。
+// 待ち時間は「初回反映」を待つ他の A/D 層テストと同じ桁数（数十秒）に、
+// ネットワーク・スクレイプの揺らぎ分の余裕を足した値。
 const INTERNALS_TIMEOUT_MS = 60_000;
 const LINK_ACTIVITY_TIMEOUT_MS = 60_000;
 
