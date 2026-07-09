@@ -60,3 +60,32 @@ beacon間PeerEdge検証）を同等以上に検証済みのため、SCENARIOS.md
 - 軽微な指摘（非ブロッキング）: `packages/e2e/src/d-layer.test.ts:30` の
   コメントが、今回削除した `waitForInfra` を待ち時間の例として参照した
   ままになっている（動作影響なし。別の機会の修正でよい）
+
+#### QA検証記録（chainviz-qa, 2026-07-09）
+
+- 判定: **合格**（完了条件3項目すべて満たす）
+- 検証環境: 稼働中の chainviz-ethereum スタックを再利用。プロトコル層は
+  `pnpm test:e2e`、UI 層は `pnpm test:e2e:ui` を実機で実行した。
+- 検証1（プロトコル層フルラン）: `pnpm test:e2e` を実行し、6ファイル
+  16テストすべて green。うち `src/a-b-layer.test.ts` は「B 層: ブロック
+  伝播タイミング」（PROTO-B-01）の1テストのみが実行され green であることを
+  確認した（削除した A 層スナップショット・beacon 間 PeerEdge の2テストが
+  実行対象から消えている）。所要 約231秒。
+- 検証2（移行先 UI シナリオのカバレッジ確認）: `pnpm test:e2e:ui` を実行し、
+  16テストすべて green。削除2テストの移行先である UI-A-01（compose の全
+  ノード+ワークベンチのカード表示・clientType 表示）と UI-B-01（beacon1-
+  beacon2 間のピアエッジ描画、加えて reth1-reth2 も）が実際に green である
+  ことを確認した。所要 約1分。
+  - 補足（環境依存の対処）: この環境は Playwright のブラウザ起動に必要な
+    共有ライブラリ（libnspr4.so 等）が未導入で、初回実行は browserType.launch
+    が `libnspr4.so: cannot open shared object file` で全滅した。これは
+    Issue #228 の変更起因ではなく環境要因（UI テストは今回の変更対象外）。
+    別セッションが scratchpad に展開済みだった nss/nspr の .deb 展開物を
+    `LD_LIBRARY_PATH` に加えて再実行し、16件 green を得た（issue-199.md と
+    同じ既知の回避策）。恒久対応が必要ならホストへ libnss3/libnspr4 導入が本筋。
+- 検証3（他プロトコル層テストへの悪影響なし）: 上記フルランで commands.test.ts
+  （addNode 追従）、reconnect.test.ts（5件）、d-layer.test.ts（3件）、
+  error-paths.test.ts（4件）、collector-port-collision.test.ts（1件）が
+  すべて green。削除・コメント修正による悪影響は見られなかった。
+- 差し戻しなし。PLAN.md には #228 のチェックボックスが存在しない（バックログ
+  は #224 まで）ため、チェック更新対象は無し。
