@@ -540,6 +540,58 @@ describe("EthereumNodeLifecycle.recoverManagedContainers", () => {
     // "Alice" は既に管理下にあるので "-2" に退避する。
     expect(services).toEqual(["Alice-2"]);
   });
+
+  it("advances to -3 when both the base label and its -2 variant are taken", async () => {
+    // uniqueWorkbenchService の採番ループ（for n=2,3,...）が -2 で止まらず、
+    // 衝突が続く限り正しく次の番号へ進むことを確認する（UI-CMD-06 の一意化
+    // 挙動の境界値。同名を 3 回以上追加した場合に相当する。既存の -2 テストは
+    // ループが 1 周で返るケースしか通らず、増分ロジックのデグレを検知できない）。
+    const ops = fakeOps({
+      managedContainers: [
+        managed("Alice", "workbench", "alice-cid"),
+        managed("Alice-2", "workbench", "alice2-cid"),
+      ],
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+    await lifecycle.recoverManagedContainers();
+
+    await lifecycle.addWorkbench("Alice");
+    const services = ops.created.map(
+      (s) => s.labels?.["com.docker.compose.service"],
+    );
+    expect(services).toEqual(["Alice-3"]);
+  });
+
+  it("falls back to the 'workbench' service name for an empty label", async () => {
+    // 空ラベルはフロント側（resolveWorkbenchLabel）で既定値に置換されるが、
+    // collector を WebSocket 越しに直接叩く経路では素の空文字列が届きうる。
+    // その防御として空/空白のみのラベルは "workbench" にフォールバックする。
+    const ops = fakeOps();
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+
+    await lifecycle.addWorkbench("");
+    expect(ops.created[0]?.labels?.["com.docker.compose.service"]).toBe(
+      "workbench",
+    );
+  });
+
+  it("trims surrounding whitespace and unique-suffixes the default fallback", async () => {
+    // 前後の空白は除去し（"  Bob  " → "Bob"）、空白のみは "workbench" に
+    // フォールバックする。既に "workbench" が居る状態で更に空ラベルを足すと
+    // 一意化ループが働き "workbench-2" になる。
+    const ops = fakeOps({
+      managedContainers: [managed("workbench", "workbench", "wb-cid")],
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+    await lifecycle.recoverManagedContainers();
+
+    await lifecycle.addWorkbench("  Bob  ");
+    await lifecycle.addWorkbench("   ");
+    const services = ops.created.map(
+      (s) => s.labels?.["com.docker.compose.service"],
+    );
+    expect(services).toEqual(["Bob", "workbench-2"]);
+  });
 });
 
 describe("EthereumNodeLifecycle.addNode", () => {

@@ -1,10 +1,19 @@
-// Issue #53: ステップ 5 の操作コマンド（addNode / removeNode / addWorkbench /
-// removeWorkbench）の E2E テスト。特に最重要なのは「addNode で追加した reth が
-// 実際に既存チェーンへ追従してブロック高が進む」ことを実データで確認する点。
-// これは #44 / #46（EL 間 P2P 無効でブロックに追従しない）のような、ユニット
-// テストでは検出できなかった実環境特有の回帰を捕まえるための検証である。
+// Issue #53: 操作コマンド（addNode / removeNode）のプロトコル層 E2E テスト。
+// 特に最重要なのは「addNode で追加した reth が実際に既存チェーンへ追従して
+// ブロック高が進む」ことを実データで確認する点。これは #44 / #46（EL 間 P2P
+// 無効でブロックに追従しない）のような、ユニットテストでは検出できなかった
+// 実環境特有の回帰を捕まえるための検証である。
+//
+// Issue #200: addNode成功時のreth+beaconペア出現・addNodeで追加したノードの
+// removeNode・addWorkbench/removeWorkbenchの基本ハッピーパスはUI層
+// （packages/e2e/src/ui/commands-node.spec.ts /
+// commands-workbench.spec.ts）へ移行し、ここでは削除した
+// （SCENARIOS.md §1 棚卸し参照）。ブロック追従テスト（PROTO-CMD-01）は
+// UI層では検証できない数値判定（RPCによるブロック高比較）のためここに残すが、
+// 従来は前段の「addNode成功」テストが用意したreth/beaconに相乗りしていたのを、
+// このテスト自身がaddNodeを送信するよう自己完結に再構成した。
 
-import type { NodeEntity, WorkbenchEntity } from "@chainviz/shared";
+import type { NodeEntity } from "@chainviz/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { waitForBlockCatchUp } from "./helpers/catch-up.js";
 import { setupHarness, teardownHarness, type Harness } from "./helpers/harness.js";
@@ -21,10 +30,9 @@ const id = (service: string): string => `${PROJECT}/${service}`;
 
 let harness: Harness;
 
-/** テスト間で共有する、addNode で追加したノードの情報。 */
+/** ブロック追従テスト（addNode を自己完結で送信）が追加した reth の ID。
+ * 途中失敗時の後始末（afterAll）にのみ使う。成功時はテスト内でクリアする。 */
 let addedRethId: string | undefined;
-let addedBeaconId: string | undefined;
-let addedRethIp: string | undefined;
 
 beforeAll(async () => {
   harness = await setupHarness();
@@ -52,9 +60,13 @@ function currentRethIds(): Set<string> {
 }
 
 describe("addNode", () => {
-  it("ok:true を返し、新しい reth + beacon ペアが出現する", async () => {
-    // 追加ノードを既存ノードと取り違えないよう、まず compose の reth1/reth2 が
-    // 観測に載りきる（ベースライン確立）まで待ってから現在集合を記録する。
+  it("最重要: 追加した reth が既存チェーンにブロック追従する（0 のままにならない）", async () => {
+    // このテストが検証したいのは「追加した reth がブロック追従するか」の
+    // 数値判定（RPC比較）のみなので、reth+beaconペア出現自体の検証は
+    // UI-CMD-01（packages/e2e/src/ui/commands-node.spec.ts）に委ね、ここでは
+    // 自分自身で addNode を送信し追加 reth の IP を得るところから始める
+    // （Issue #200: 移行前は前段の「addNode成功」テストが用意した
+    // reth/beaconに相乗りしていた）。
     await harness.client.waitForState(
       (client) => {
         const ids = new Set(
@@ -78,7 +90,6 @@ describe("addNode", () => {
     });
     expect(outcome.ok, outcome.error).toBe(true);
 
-    // A 層ポーリングで新しい reth ノードが観測に載るまで待つ。
     const newReth = await harness.client.waitForState(
       (client) =>
         client
@@ -91,30 +102,8 @@ describe("addNode", () => {
           ),
       { timeoutMs: 30_000, description: "a newly added reth node to appear" },
     );
-
     addedRethId = newReth.id;
-    addedRethIp = newReth.ip;
-    // 同じ論理ノードの beacon（reth<n> と同じ番号の beacon<n>）も出現するはず。
-    const index = newReth.id.split("/")[1].replace(/^reth/, "");
-    addedBeaconId = id(`beacon${index}`);
-
-    const beacon = await harness.client.waitForState(
-      (client) =>
-        client
-          .getEntities()
-          .find(
-            (e): e is NodeEntity =>
-              e.kind === "node" && e.id === addedBeaconId,
-          ),
-      { timeoutMs: 30_000, description: `paired beacon ${addedBeaconId} to appear` },
-    );
-    expect(beacon.clientType).toBe("lighthouse");
-    expect(addedRethIp).toMatch(/^172\.28\.1\./);
-  });
-
-  it("最重要: 追加した reth が既存チェーンにブロック追従する（0 のままにならない）", async () => {
-    expect(addedRethIp, "addNode test must have captured the reth IP").toBeTruthy();
-    const newRethUrl = rethRpcUrl(addedRethIp!);
+    const newRethUrl = rethRpcUrl(newReth.ip);
 
     // 既存ノード（reth1）の現在のブロック高を基準にする。追加ノードがここまで
     // 追いつけば、履歴バックフィル + 追従が実際に機能していることになる。
@@ -151,6 +140,15 @@ describe("addNode", () => {
 
     expect(caughtUp).toBeGreaterThan(0);
     expect(caughtUp).toBeGreaterThanOrEqual(target);
+
+    // 検証し終えたので後始末する（成功したのでこの後の afterAll での
+    // 二重削除を避けるため addedRethId をクリアする）。
+    const removeOutcome = await harness.client.sendCommand({
+      action: "removeNode",
+      nodeId: addedRethId,
+    });
+    expect(removeOutcome.ok, removeOutcome.error).toBe(true);
+    addedRethId = undefined;
   }, CATCH_UP_TEST_TIMEOUT_MS);
 });
 
@@ -164,78 +162,5 @@ describe("removeNode", () => {
     expect(outcome.error).toBeTruthy();
     // reth1 は依然として観測に残っている。
     expect(currentRethIds().has(id("reth1"))).toBe(true);
-  });
-
-  it("addNode で追加したノードは削除でき、数秒後に観測から消える", async () => {
-    expect(addedRethId, "addNode test must have run first").toBeTruthy();
-
-    const outcome = await harness.client.sendCommand({
-      action: "removeNode",
-      nodeId: addedRethId!,
-    });
-    expect(outcome.ok, outcome.error).toBe(true);
-
-    // reth・beacon の両方が観測から消えるまで待つ。
-    await harness.client.waitForState(
-      (client) => {
-        const ids = new Set(
-          client
-            .getEntities()
-            .filter((e) => e.kind === "node")
-            .map((e) => (e as NodeEntity).id),
-        );
-        return !ids.has(addedRethId!) && !ids.has(addedBeaconId!);
-      },
-      {
-        timeoutMs: 30_000,
-        description: "added reth and beacon to disappear from the world state",
-      },
-    );
-
-    addedRethId = undefined;
-  });
-});
-
-describe("addWorkbench / removeWorkbench", () => {
-  const label = "e2e-alice";
-  const workbenchId = id(label);
-
-  it("addWorkbench が成功し、ワークベンチが出現する", async () => {
-    const outcome = await harness.client.sendCommand({
-      action: "addWorkbench",
-      label,
-    });
-    expect(outcome.ok, outcome.error).toBe(true);
-
-    const workbench = await harness.client.waitForState(
-      (client) =>
-        client
-          .getEntities()
-          .find(
-            (e): e is WorkbenchEntity =>
-              e.kind === "workbench" && e.id === workbenchId,
-          ),
-      { timeoutMs: 30_000, description: `workbench ${workbenchId} to appear` },
-    );
-    expect(workbench.kind).toBe("workbench");
-  });
-
-  it("removeWorkbench が成功し、ワークベンチが消える", async () => {
-    const outcome = await harness.client.sendCommand({
-      action: "removeWorkbench",
-      workbenchId,
-    });
-    expect(outcome.ok, outcome.error).toBe(true);
-
-    await harness.client.waitForState(
-      (client) =>
-        !client
-          .getEntities()
-          .some((e) => e.kind === "workbench" && e.id === workbenchId),
-      {
-        timeoutMs: 30_000,
-        description: `workbench ${workbenchId} to disappear`,
-      },
-    );
   });
 });

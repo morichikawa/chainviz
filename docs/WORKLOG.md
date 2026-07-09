@@ -112,3 +112,4 @@
 | #197 | Issue #197 Playwright基盤の導入(playwright.config.ts・globalSetup・webServer・pnpm test:e2e:ui配線) | [2026-07-09](worklog/issue-197.md) |
 | #198 | Issue #198 SCENARIOS.mdが参照するdata-testidをfrontendへ追加(接続バッジ・ツールバー・言語トグル・用語/インフラポップオーバー) | [2026-07-09](worklog/issue-198.md) |
 | #199 | Issue #199 基本表示シナリオ(UI-CONN・UI-A・UI-B)のPlaywright実装 | [2026-07-09](worklog/issue-199.md) |
+| #200 | Issue #200 操作シナリオ(UI-CMD)のPlaywright実装と移行済みWSテストの整理 | [2026-07-09](worklog/issue-200.md) |
