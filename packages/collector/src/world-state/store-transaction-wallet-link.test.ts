@@ -141,4 +141,96 @@ describe("WorldStateStore.linkTransactionToWallets", () => {
     expect(diff).toHaveLength(1);
     expect(diff[0]).toMatchObject({ id: "0xsender" });
   });
+
+  it("adds the hash only once for a self-transfer (from === to on the same wallet)", () => {
+    // from と to が同一アドレス（自己送金）でも、candidateAddresses は Set で
+    // 重複を畳むため、そのウォレットには hash が 1 回だけ載る（entityUpdated
+    // も 1 件、recentTxHashes も長さ 1）。
+    const store = new WorldStateStore();
+    seedWallet(store, "0xself");
+    const diff = store.linkTransactionToWallets(
+      tx({ from: "0xself", to: "0xself" }),
+    );
+    expect(diff).toEqual([
+      { type: "entityUpdated", id: "0xself", patch: { recentTxHashes: ["0xtx1"] } },
+    ]);
+  });
+
+  it("adds the hash only once when from/to are the same address in different case", () => {
+    // 自己送金で from と to の大小表記だけが違う場合も、小文字化して畳むため
+    // 1 回だけ載る（二重計上しない）。
+    const store = new WorldStateStore();
+    seedWallet(store, "0xAbCdEf0000000000000000000000000000000000");
+    const diff = store.linkTransactionToWallets(
+      tx({
+        from: "0xabcdef0000000000000000000000000000000000",
+        to: "0xABCDEF0000000000000000000000000000000000",
+      }),
+    );
+    expect(diff).toHaveLength(1);
+    const wallet = store
+      .getSnapshot()
+      .entities.find(
+        (e) =>
+          e.kind === "wallet" &&
+          e.address === "0xAbCdEf0000000000000000000000000000000000",
+      ) as { recentTxHashes: string[] };
+    expect(wallet.recentTxHashes).toEqual(["0xtx1"]);
+  });
+
+  it("links to a wallet matching tx.to when tx.from is not tracked", () => {
+    // 「from/to の片方だけウォレットが存在する」ケースの、to 側だけ存在する版
+    // （from 側だけ存在する版は最初のテストが兼ねる）。
+    const store = new WorldStateStore();
+    seedWallet(store, "0xrecipient");
+    const diff = store.linkTransactionToWallets(
+      tx({ from: "0xuntracked", to: "0xrecipient" }),
+    );
+    expect(diff).toEqual([
+      {
+        type: "entityUpdated",
+        id: "0xrecipient",
+        patch: { recentTxHashes: ["0xtx1"] },
+      },
+    ]);
+  });
+
+  it("only touches the wallets that match, leaving unrelated wallets alone", () => {
+    // from・to にそれぞれ一致するウォレットに加えて、無関係なウォレットを
+    // 混ぜても、無関係な方には差分が出ない（部分一致で巻き込まない）。
+    const store = new WorldStateStore();
+    seedWallet(store, "0xsender");
+    seedWallet(store, "0xrecipient");
+    seedWallet(store, "0xbystander");
+    const diff = store.linkTransactionToWallets(tx());
+    const patchedIds = diff
+      .map((event) => (event.type === "entityUpdated" ? event.id : undefined))
+      .sort();
+    expect(patchedIds).toEqual(["0xrecipient", "0xsender"]);
+  });
+
+  it("ignores an empty-string from and still links the tracked to-wallet", () => {
+    // from が空文字（length 0 のガードで候補から除外される）でも例外にならず、
+    // to 側の一致だけを反映する。
+    const store = new WorldStateStore();
+    seedWallet(store, "0xrecipient");
+    const diff = store.linkTransactionToWallets(
+      tx({ from: "", to: "0xrecipient" }),
+    );
+    expect(diff).toEqual([
+      {
+        type: "entityUpdated",
+        id: "0xrecipient",
+        patch: { recentTxHashes: ["0xtx1"] },
+      },
+    ]);
+  });
+
+  it("does nothing when from is empty and to is null (no candidate addresses)", () => {
+    const store = new WorldStateStore();
+    seedWallet(store, "0xsender");
+    expect(store.linkTransactionToWallets(tx({ from: "", to: null }))).toEqual(
+      [],
+    );
+  });
 });
