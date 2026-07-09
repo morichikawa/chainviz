@@ -95,6 +95,12 @@ test.describe.serial("UI-CMD ノード追加・削除の連鎖シナリオ", () 
     await test.step(
       "押した直後にゴーストカード（ghost-card-<commandId>）が現れる（即時フィードバック。Issue #102）",
       async () => {
+        // addNode は reth(EL) と beacon(CL) の 2 枚のゴーストを生む
+        // (frontend useCommands.ts の dispatch)。ボタンを 1 回だけ押した前提
+        // (Issue #220 の連打防止は未実装)なので、ゴーストはちょうど 2 枚。
+        // 件数を固定しておくことで、コマンドの二重発行が混入した場合(4 枚に
+        // なる)を早期に検知できる。
+        await expect(anyGhostCard(page)).toHaveCount(2);
         await expect(anyGhostCard(page).first()).toBeVisible();
       },
     );

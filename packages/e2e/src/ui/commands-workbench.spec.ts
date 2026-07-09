@@ -85,6 +85,11 @@ test.describe.serial("UI-CMD ワークベンチ追加・削除の連鎖シナリ
     await test.step(
       "ゴーストカードの後、ワークベンチのカードが現れる",
       async () => {
+        // addWorkbench はワークベンチ 1 枚分のゴーストを生む
+        // (frontend useCommands.ts の dispatch)。ボタンを 1 回だけ押した前提
+        // (Issue #220 の連打防止は未実装)なので、ゴーストはちょうど 1 枚。
+        // 件数を固定し、コマンドの二重発行(2 枚になる)を早期に検知する。
+        await expect(anyGhostCard(page)).toHaveCount(1);
         await expect(anyGhostCard(page).first()).toBeVisible();
         await expect(page.getByTestId(`infra-card-${workbenchId}`)).toBeVisible({
           timeout: ADD_WORKBENCH_CARD_TIMEOUT_MS,
