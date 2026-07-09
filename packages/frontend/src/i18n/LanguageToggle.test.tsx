@@ -50,4 +50,16 @@ describe("LanguageToggle", () => {
     );
     expect(screen.getByRole("button").textContent).toBe("日本語");
   });
+
+  it("exposes the button via data-testid (Issue #198, ARCHITECTURE.md §8.5)", () => {
+    const storage = memoryStorage();
+    render(
+      <LanguageProvider storage={storage} initialLanguage="ja">
+        <LanguageToggle />
+      </LanguageProvider>,
+    );
+    expect(screen.getByTestId("language-toggle")).toBe(
+      screen.getByRole("button"),
+    );
+  });
 });
