@@ -5,14 +5,24 @@
 // UI 層専用のポートで collector を起動する（docs/ARCHITECTURE.md §8.3）。
 //
 // Playwright は globalSetup が返した関数を「グローバルティアダウン」として
-// 扱う（同一プロセス内で、全テスト終了後に一度だけ呼ばれる）。これにより、
-// setup 側で起動した collector 子プロセスの参照をクロージャでそのまま
-// teardown 側へ渡せるため、`playwright.config.ts` の `globalTeardown`
-// オプション（別ファイル + 状態受け渡しが必要になる）は使わない。
+// 扱う（全テスト終了後に一度だけ呼ばれる。ただし globalSetup/globalTeardown
+// は実際にテストを走らせる「ワーカープロセス」とは別の OS プロセスで動く
+// ため、ここで起動した collector の参照をワーカー側のテストコードへ
+// クロージャで渡すことはできない）。
+//
+// connection-errors.spec.ts（UI-ERR-01/02）は実際に collector プロセスを
+// 停止・再起動するテストのため、`helpers/collector-registry.ts` の
+// ファイルベースの受け渡し（PID/ポート）を経由して、プロセスをまたいで
+// 「現在の collector」を追跡する（同ファイルの docstring参照）。
 
 import { acquireE2eLock, DEFAULT_LOCK_PATH, type E2eLock } from "./e2e-lock.js";
 import { ensureChainRunning } from "./docker.js";
-import { startCollector, type RunningCollector } from "./collector.js";
+import { startCollector } from "./collector.js";
+import {
+  clearRegisteredCollector,
+  registerCollector,
+  stopRegisteredCollector,
+} from "./collector-registry.js";
 
 /**
  * UI 層 E2E 専用の collector ポート。
@@ -34,17 +44,22 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     throw err;
   }
 
-  let collector: RunningCollector;
   try {
     await ensureChainRunning();
-    collector = await startCollector(UI_E2E_COLLECTOR_PORT);
+    const collector = await startCollector(UI_E2E_COLLECTOR_PORT);
+    registerCollector(collector);
   } catch (err) {
     lock.release();
     throw err;
   }
 
   return async () => {
-    await collector.stop();
+    // connection-errors.spec.ts（UI-ERR-01/02）が collector を停止・再起動
+    // して差し替えている可能性があるため、起動直後の参照ではなく、
+    // レジストリ（受け渡しファイル）経由で「その時点の最新の collector」を
+    // 止める（collector-registry.ts の docstring参照）。
+    await stopRegisteredCollector();
+    clearRegisteredCollector();
     lock.release();
   };
 }

@@ -1,11 +1,11 @@
 // playwright-global-setup.ts のオーケストレーション（ロック取得 → Docker 起動
 // 確認 → collector 起動 → teardown での後片付け）のユニットテスト。
 //
-// 実 Docker / 実 collector 子プロセスには触れず、依存する 3 ヘルパー
-// （acquireE2eLock / ensureChainRunning / startCollector）をモジュールモックに
-// 差し替えて、setup が組み立てる「異常時のクリーンアップ順序」だけを検証する。
-// docker やネットワークに依存しないため vitest.unit.config.ts 側（pnpm test）で
-// 回る。
+// 実 Docker / 実 collector 子プロセスには触れず、依存する4ヘルパー
+// （acquireE2eLock / ensureChainRunning / startCollector /
+// collector-registry.ts の各関数）をモジュールモックに差し替えて、setup が
+// 組み立てる「異常時のクリーンアップ順序」だけを検証する。docker やネット
+// ワークに依存しないため vitest.unit.config.ts 側（pnpm test）で回る。
 //
 // なお本パッケージの他ヘルパー（e2e-lock / collector-launch）のユニットテストは
 // 依存注入・純粋関数で書かれており vi.mock を使っていない。ここで vi.mock を
@@ -25,10 +25,20 @@ vi.mock("./docker.js", () => ({
 vi.mock("./collector.js", () => ({
   startCollector: vi.fn(),
 }));
+vi.mock("./collector-registry.js", () => ({
+  registerCollector: vi.fn(),
+  stopRegisteredCollector: vi.fn(),
+  clearRegisteredCollector: vi.fn(),
+}));
 
 import { acquireE2eLock, DEFAULT_LOCK_PATH } from "./e2e-lock.js";
 import { ensureChainRunning } from "./docker.js";
 import { startCollector } from "./collector.js";
+import {
+  clearRegisteredCollector,
+  registerCollector,
+  stopRegisteredCollector,
+} from "./collector-registry.js";
 import globalSetup, {
   UI_E2E_COLLECTOR_PORT,
 } from "./playwright-global-setup.js";
@@ -36,6 +46,9 @@ import globalSetup, {
 const mockedAcquire = vi.mocked(acquireE2eLock);
 const mockedEnsureChain = vi.mocked(ensureChainRunning);
 const mockedStartCollector = vi.mocked(startCollector);
+const mockedRegister = vi.mocked(registerCollector);
+const mockedStopRegistered = vi.mocked(stopRegisteredCollector);
+const mockedClearRegistered = vi.mocked(clearRegisteredCollector);
 
 /** 呼び出し順の観測用。各モックの実装から名前を push する。 */
 let callOrder: string[];
@@ -48,11 +61,10 @@ function makeLock() {
 }
 
 function makeCollector() {
-  const stop = vi.fn(async () => {
-    callOrder.push("stop");
-  });
-  // RunningCollector のうち teardown が使う stop 以外はダミーで足りる。
-  return { port: UI_E2E_COLLECTOR_PORT, stop } as unknown as Awaited<
+  // RunningCollector のうち setup が使う port 以外はダミーで足りる
+  // （停止処理は registerCollector/stopRegisteredCollector 経由になった
+  // ため、collector 自体の stop メソッドはこのテストでは検証しない）。
+  return { port: UI_E2E_COLLECTOR_PORT } as unknown as Awaited<
     ReturnType<typeof startCollector>
   >;
 }
@@ -68,13 +80,22 @@ describe("playwright-global-setup", () => {
       callOrder.push("startCollector");
       return makeCollector();
     });
+    mockedRegister.mockImplementation(() => {
+      callOrder.push("registerCollector");
+    });
+    mockedStopRegistered.mockImplementation(async () => {
+      callOrder.push("stopRegisteredCollector");
+    });
+    mockedClearRegistered.mockImplementation(() => {
+      callOrder.push("clearRegisteredCollector");
+    });
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("ロック取得 → Docker 起動確認 → collector 起動の順に実行する", async () => {
+  it("ロック取得 → Docker 起動確認 → collector 起動 → 登録の順に実行する", async () => {
     mockedAcquire.mockReturnValue(makeLock());
 
     await globalSetup();
@@ -82,6 +103,7 @@ describe("playwright-global-setup", () => {
     expect(callOrder).toEqual([
       "ensureChainRunning",
       "startCollector",
+      "registerCollector",
     ]);
     expect(mockedAcquire).toHaveBeenCalledTimes(1);
   });
@@ -95,19 +117,41 @@ describe("playwright-global-setup", () => {
     expect(mockedStartCollector).toHaveBeenCalledWith(4125);
   });
 
-  it("返り値の teardown 関数は collector 停止 → ロック解放の順で後片付けする", async () => {
+  it("起動した collector をレジストリへ登録する", async () => {
     mockedAcquire.mockReturnValue(makeLock());
 
-    const teardown = await globalSetup();
-    // setup 完了時点ではまだ後片付けは走っていない。
-    expect(callOrder).not.toContain("stop");
-    expect(callOrder).not.toContain("release");
+    await globalSetup();
 
-    await teardown();
-
-    // stop が release より先。ロックを解放する前に collector を確実に止める。
-    expect(callOrder.slice(-2)).toEqual(["stop", "release"]);
+    expect(mockedRegister).toHaveBeenCalledWith(
+      expect.objectContaining({ port: UI_E2E_COLLECTOR_PORT }),
+    );
   });
+
+  it(
+    "返り値の teardown 関数は「登録済み collector を停止 → 受け渡しファイル" +
+      "削除 → ロック解放」の順で後片付けする",
+    async () => {
+      mockedAcquire.mockReturnValue(makeLock());
+
+      const teardown = await globalSetup();
+      // setup 完了時点ではまだ後片付けは走っていない。
+      expect(callOrder).not.toContain("stopRegisteredCollector");
+      expect(callOrder).not.toContain("release");
+
+      await teardown();
+
+      // stopRegisteredCollector → clearRegisteredCollector → release の順。
+      // クロージャで閉じ込めた collector ではなく、常にレジストリ（受け渡し
+      // ファイル）経由で「その時点の最新の collector」を止める設計であること
+      // を確認する（UI-ERR-01/02 が collector を差し替えても正しく後始末
+      // できる。docs/worklog/issue-202.md 設計メモ参照）。
+      expect(callOrder.slice(-3)).toEqual([
+        "stopRegisteredCollector",
+        "clearRegisteredCollector",
+        "release",
+      ]);
+    },
+  );
 
   it("ロック取得に失敗したら同じエラーを伝播し、Docker・collector には進まない", async () => {
     const boom = new Error("lock held by another run");
@@ -161,5 +205,7 @@ describe("playwright-global-setup", () => {
       "startCollector",
       "release",
     ]);
+    // 起動自体に失敗しているので、レジストリへの登録はしない。
+    expect(mockedRegister).not.toHaveBeenCalled();
   });
 });
