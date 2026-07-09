@@ -124,6 +124,34 @@ describe("deployEdgesToFlowEdges", () => {
   });
 });
 
+describe("deployEdgesToFlowEdges address casing (Issue #201)", () => {
+  it("matches a deployer address that differs in case from the tracked wallet id", () => {
+    // deployerAddress はチェーン側の生の表記(小文字)、presentWalletIds は
+    // EIP-55 チェックサム表記になりうる想定の再現。
+    const edges = deployEdgesToFlowEdges(
+      [contract({ address: "0xc1", deployerAddress: "0xabcdef" })],
+      ["0xABCDEF"],
+    );
+    expect(edges).toHaveLength(1);
+    // React Flow がノードを解決できるよう、source/id にはキャンバス上に
+    // 実在するウォレットの表記(presentWalletIds側)を使う。
+    expect(edges[0]).toMatchObject({
+      source: "0xABCDEF",
+      target: "0xc1",
+      id: "deploy-0xABCDEF-0xc1",
+      data: { deployerAddress: "0xABCDEF" },
+    });
+  });
+
+  it("still rejects a deployer that is not present even case-insensitively", () => {
+    const edges = deployEdgesToFlowEdges(
+      [contract({ address: "0xc1", deployerAddress: "0xabcdef" })],
+      ["0xdifferent"],
+    );
+    expect(edges).toEqual([]);
+  });
+});
+
 describe("isDeployFlowEdge", () => {
   it("narrows deploy edges", () => {
     const [edge] = deployEdgesToFlowEdges(
