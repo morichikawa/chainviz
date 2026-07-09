@@ -5,14 +5,15 @@
 // 実環境特有の回帰を捕まえるための検証である。
 //
 // Issue #200: addNode成功時のreth+beaconペア出現・addNodeで追加したノードの
-// removeNodeの基本ハッピーパスはUI層（packages/e2e/src/ui/commands-node.spec.ts）
-// へ移行し、ここでは削除した（SCENARIOS.md §1 棚卸し参照）。ブロック追従テスト
-// （PROTO-CMD-01）はUI層では検証できない数値判定（RPCによるブロック高比較）
-// のためここに残すが、従来は前段の「addNode成功」テストが用意したreth/beacon
-// に相乗りしていたのを、このテスト自身がaddNodeを送信するよう自己完結に
-// 再構成した。
+// removeNode・addWorkbench/removeWorkbenchの基本ハッピーパスはUI層
+// （packages/e2e/src/ui/commands-node.spec.ts /
+// commands-workbench.spec.ts）へ移行し、ここでは削除した
+// （SCENARIOS.md §1 棚卸し参照）。ブロック追従テスト（PROTO-CMD-01）は
+// UI層では検証できない数値判定（RPCによるブロック高比較）のためここに残すが、
+// 従来は前段の「addNode成功」テストが用意したreth/beaconに相乗りしていたのを、
+// このテスト自身がaddNodeを送信するよう自己完結に再構成した。
 
-import type { NodeEntity, WorkbenchEntity } from "@chainviz/shared";
+import type { NodeEntity } from "@chainviz/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { waitForBlockCatchUp } from "./helpers/catch-up.js";
 import { setupHarness, teardownHarness, type Harness } from "./helpers/harness.js";
@@ -161,49 +162,5 @@ describe("removeNode", () => {
     expect(outcome.error).toBeTruthy();
     // reth1 は依然として観測に残っている。
     expect(currentRethIds().has(id("reth1"))).toBe(true);
-  });
-});
-
-describe("addWorkbench / removeWorkbench", () => {
-  const label = "e2e-alice";
-  const workbenchId = id(label);
-
-  it("addWorkbench が成功し、ワークベンチが出現する", async () => {
-    const outcome = await harness.client.sendCommand({
-      action: "addWorkbench",
-      label,
-    });
-    expect(outcome.ok, outcome.error).toBe(true);
-
-    const workbench = await harness.client.waitForState(
-      (client) =>
-        client
-          .getEntities()
-          .find(
-            (e): e is WorkbenchEntity =>
-              e.kind === "workbench" && e.id === workbenchId,
-          ),
-      { timeoutMs: 30_000, description: `workbench ${workbenchId} to appear` },
-    );
-    expect(workbench.kind).toBe("workbench");
-  });
-
-  it("removeWorkbench が成功し、ワークベンチが消える", async () => {
-    const outcome = await harness.client.sendCommand({
-      action: "removeWorkbench",
-      workbenchId,
-    });
-    expect(outcome.ok, outcome.error).toBe(true);
-
-    await harness.client.waitForState(
-      (client) =>
-        !client
-          .getEntities()
-          .some((e) => e.kind === "workbench" && e.id === workbenchId),
-      {
-        timeoutMs: 30_000,
-        description: `workbench ${workbenchId} to disappear`,
-      },
-    );
   });
 });

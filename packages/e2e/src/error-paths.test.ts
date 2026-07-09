@@ -7,8 +7,11 @@
 // テストでも部分的に覆えるが、ここでは「実際に collector プロセスへ WebSocket 越しに
 // 不正メッセージを流し込んでも接続が切れず、後続の正常なコマンドを処理し続ける」
 // という、プロセス境界をまたいだ実挙動を検証する点に価値がある。
+//
+// Issue #200: addWorkbench のラベル重複一意化テストは UI-CMD-06
+// （packages/e2e/src/ui/commands-workbench.spec.ts）へ移行したためここでは
+// 削除した（SCENARIOS.md §1 棚卸し参照）。
 
-import type { WorkbenchEntity } from "@chainviz/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { countProjectContainers } from "./helpers/docker.js";
 import { setupHarness, teardownHarness, type Harness } from "./helpers/harness.js";
@@ -18,21 +21,12 @@ const id = (service: string): string => `${PROJECT}/${service}`;
 
 let harness: Harness;
 
-/** テスト中に作成したワークベンチ ID（afterAll での後片付け用）。 */
-const createdWorkbenchIds: string[] = [];
-
 beforeAll(async () => {
   harness = await setupHarness();
 }, 300_000);
 
 afterAll(async () => {
   if (!harness) return;
-  // 途中失敗に備え、作成したワークベンチが残っていれば削除する。
-  for (const workbenchId of createdWorkbenchIds) {
-    await harness.client
-      .sendCommand({ action: "removeWorkbench", workbenchId })
-      .catch(() => {});
-  }
   await teardownHarness(harness);
 });
 
@@ -76,91 +70,6 @@ describe("removeWorkbench の異常系", () => {
     });
     expect(outcome.ok).toBe(false);
     expect(outcome.error).toBeTruthy();
-  });
-});
-
-describe("addWorkbench のラベル重複", () => {
-  // 実装（EthereumNodeLifecycle.uniqueWorkbenchService）は、同じラベルが既に
-  // 管理下にある場合 -2, -3... を付けて一意化する。つまり重複ラベルは拒否では
-  // なく「一意化されて成功」する。この実挙動に合わせて検証する。
-  const label = "e2e-dup";
-  const firstId = id(label);
-  const secondId = id(`${label}-2`);
-
-  it("同じラベルで 2 回追加すると、2 つ目は一意化された ID で成功する", async () => {
-    const first = await harness.client.sendCommand({
-      action: "addWorkbench",
-      label,
-    });
-    expect(first.ok, first.error).toBe(true);
-    createdWorkbenchIds.push(firstId);
-
-    await harness.client.waitForState(
-      (client) =>
-        client
-          .getEntities()
-          .find(
-            (e): e is WorkbenchEntity =>
-              e.kind === "workbench" && e.id === firstId,
-          ),
-      { timeoutMs: 30_000, description: `workbench ${firstId} to appear` },
-    );
-
-    const second = await harness.client.sendCommand({
-      action: "addWorkbench",
-      label,
-    });
-    expect(second.ok, second.error).toBe(true);
-    createdWorkbenchIds.push(secondId);
-
-    // 2 つ目は元のラベルと衝突しないよう -2 が付いた別 ID で出現する。
-    await harness.client.waitForState(
-      (client) =>
-        client
-          .getEntities()
-          .find(
-            (e): e is WorkbenchEntity =>
-              e.kind === "workbench" && e.id === secondId,
-          ),
-      { timeoutMs: 30_000, description: `workbench ${secondId} to appear` },
-    );
-
-    // 両方が別々の ID で共存していること。
-    const ids = new Set(
-      harness.client
-        .getEntities()
-        .filter((e) => e.kind === "workbench")
-        .map((e) => (e as WorkbenchEntity).id),
-    );
-    expect(ids.has(firstId)).toBe(true);
-    expect(ids.has(secondId)).toBe(true);
-  });
-
-  it("重複で作成した 2 つのワークベンチはどちらも削除できる", async () => {
-    for (const workbenchId of [firstId, secondId]) {
-      const outcome = await harness.client.sendCommand({
-        action: "removeWorkbench",
-        workbenchId,
-      });
-      expect(outcome.ok, outcome.error).toBe(true);
-    }
-    // afterAll での二重削除を避けるため、登録から外す。
-    createdWorkbenchIds.length = 0;
-
-    await harness.client.waitForState(
-      (client) =>
-        !client
-          .getEntities()
-          .some(
-            (e) =>
-              e.kind === "workbench" &&
-              (e.id === firstId || e.id === secondId),
-          ),
-      {
-        timeoutMs: 30_000,
-        description: `workbenches ${firstId} / ${secondId} to disappear`,
-      },
-    );
   });
 });
 
