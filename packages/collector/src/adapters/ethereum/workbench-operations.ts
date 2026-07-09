@@ -65,8 +65,16 @@ export function buildOperationCommand(
       // オプションのため、後ろに他のフラグを置くと誤って取り込まれてしまう。
       // Foundry 公式の使用例に倣い、CONTRACT 位置引数を先頭（create 直後）に
       // 置いた上で、--constructor-args はコマンド列の最後に置く。
+      //
+      // コンストラクタ引数を持たないコントラクト（例: Counter）の場合、
+      // フロント（DeployForm.tsx）は `constructorArgs` を省略せず常に空配列
+      // `[]` を送る。空配列は「引数が無い」という意味であり、`undefined` との
+      // 区別に意味は無いため、値が1件も無いときはフラグ自体を付けない
+      // （フラグだけ付けて値を1つも渡さないと forge create が
+      // `a value is required for '--constructor-args <ARGS>...' but none was
+      // supplied` で失敗する。Issue #201 の E2E 実装で実際に発覚した不具合）。
       const constructorArgs =
-        operation.constructorArgs !== undefined
+        operation.constructorArgs !== undefined && operation.constructorArgs.length > 0
           ? ["--constructor-args", ...operation.constructorArgs]
           : [];
       return [

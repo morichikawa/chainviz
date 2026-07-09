@@ -42,29 +42,40 @@ export function isDeployFlowEdge(edge: Edge): edge is DeployFlowEdge {
  * - デプロイ元のウォレットが現在キャンバス上に存在しない場合も作らない
  *   （ダングリング参照ガード。ARCHITECTURE.md §6.3）。
  * - source = ウォレットの address、target = コントラクトの address。
+ *
+ * 端点の一致判定は大文字小文字を無視する。`ContractEntity.deployerAddress`
+ * は tx の receipt（`from`）由来でチェーン側の生の表記（Ethereum アダプタでは
+ * 全小文字）になる一方、`presentWalletIds`（`WalletEntity.address`）は
+ * mnemonic から viem で導出した EIP-55 チェックサム表記になりうる
+ * （`wallet-derivation.ts` 参照）。単純な文字列一致では常に不一致となり、
+ * 実際にデプロイされたコントラクトでもデプロイエッジが一切描画されない
+ * 不具合を実機（Issue #201 の E2E 実装）で確認したため、大文字小文字を
+ * 無視して照合したうえで、実際にキャンバス上に存在するウォレットの表記
+ * （React Flow のノード id と一致する表記）を edge の端点として使う
+ * （表記がずれたままだと React Flow がノードを解決できずエッジを描画
+ * できないため、`present` 側の元の表記を採用する）。
  */
 export function deployEdgesToFlowEdges(
   contracts: ContractEntity[],
   presentWalletIds: Iterable<string>,
 ): DeployFlowEdge[] {
-  const present =
-    presentWalletIds instanceof Set
-      ? presentWalletIds
-      : new Set<string>(presentWalletIds);
+  const presentByLowerCase = new Map<string, string>();
+  for (const id of presentWalletIds) presentByLowerCase.set(id.toLowerCase(), id);
   const result: DeployFlowEdge[] = [];
 
   for (const contract of contracts) {
     const deployer = contract.deployerAddress;
     if (!deployer) continue;
-    if (!present.has(deployer)) continue;
+    const resolvedDeployerId = presentByLowerCase.get(deployer.toLowerCase());
+    if (!resolvedDeployerId) continue;
 
     result.push({
-      id: `deploy-${deployer}-${contract.address}`,
+      id: `deploy-${resolvedDeployerId}-${contract.address}`,
       type: DEPLOY_EDGE_TYPE,
-      source: deployer,
+      source: resolvedDeployerId,
       target: contract.address,
       className: "deploy-edge",
-      data: { deployerAddress: deployer },
+      data: { deployerAddress: resolvedDeployerId },
     });
   }
 

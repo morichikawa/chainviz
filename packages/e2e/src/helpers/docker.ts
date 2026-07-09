@@ -102,3 +102,38 @@ export async function countProjectContainers(): Promise<number> {
 export async function tearDownChain(): Promise<void> {
   await compose(["down", "-v"]);
 }
+
+/**
+ * ワークベンチコンテナ内で `forge create` を直接叩き、collector の
+ * `deployContract` コマンド経由の登録（`registerContractDeployment`）を
+ * 経ないコントラクトデプロイを行う（UI-C-06「カタログ外のコントラクト」の
+ * セットアップ用）。
+ *
+ * デプロイ対象自体は既存のカタログ内コントラクト（`Counter`）を使い回す。
+ * 新しい Solidity ファイルを追加する必要はない。`ContractTracker`
+ * （`packages/collector/src/adapters/ethereum/contracts.ts`）は「手動デプロイ
+ * （runWorkbenchOperation の deployContract 経由でない）はデプロイ済み
+ * バイトコードとの照合を一切行わず、常に『未知のコントラクト』として扱う」
+ * 設計のため、カタログに載っている Counter を手動 forge create しても
+ * 「未知のコントラクト」として観測される（docs/worklog/issue-201.md 設計メモ参照）。
+ *
+ * mnemonic は `docker-compose.yml` の workbench サービスが `env_file` で
+ * 読み込み済みの `$EL_AND_CL_MNEMONIC` をコンテナ内のシェル展開で参照し、
+ * このファイル側で値を二重管理しない。RPC 接続先も同様にコンテナの
+ * `ETH_RPC_URL` 環境変数（ロギングプロキシ経由）へ委ねる。
+ *
+ * この関数は docker compose exec への薄い委譲（分岐なし）のため、
+ * `countProjectContainers`/`tearDownChain` と同様に専用のユニットテストは
+ * 書かない（実 Docker が必須でユニットテスト化できないという、このファイル
+ * 内の既存関数群と同じ事情）。
+ */
+export async function deployUncatalogedContractInWorkbench(): Promise<void> {
+  await compose([
+    "exec",
+    "-T",
+    "workbench",
+    "sh",
+    "-c",
+    'forge create Counter --root /contracts --broadcast --mnemonic "$EL_AND_CL_MNEMONIC" --mnemonic-index 0',
+  ]);
+}

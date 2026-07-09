@@ -124,6 +124,65 @@ describe("deployEdgesToFlowEdges", () => {
   });
 });
 
+describe("deployEdgesToFlowEdges address casing (Issue #201)", () => {
+  it("matches a deployer address that differs in case from the tracked wallet id", () => {
+    // deployerAddress はチェーン側の生の表記(小文字)、presentWalletIds は
+    // EIP-55 チェックサム表記になりうる想定の再現。
+    const edges = deployEdgesToFlowEdges(
+      [contract({ address: "0xc1", deployerAddress: "0xabcdef" })],
+      ["0xABCDEF"],
+    );
+    expect(edges).toHaveLength(1);
+    // React Flow がノードを解決できるよう、source/id にはキャンバス上に
+    // 実在するウォレットの表記(presentWalletIds側)を使う。
+    expect(edges[0]).toMatchObject({
+      source: "0xABCDEF",
+      target: "0xc1",
+      id: "deploy-0xABCDEF-0xc1",
+      data: { deployerAddress: "0xABCDEF" },
+    });
+  });
+
+  it("still rejects a deployer that is not present even case-insensitively", () => {
+    const edges = deployEdgesToFlowEdges(
+      [contract({ address: "0xc1", deployerAddress: "0xabcdef" })],
+      ["0xdifferent"],
+    );
+    expect(edges).toEqual([]);
+  });
+
+  it("matches when both sides use mixed casing that differs from each other", () => {
+    // deployerAddress と presentWalletIds が互いに異なる混在表記でも、
+    // どちらも同じ小文字キーに正規化されるので一致する。
+    const edges = deployEdgesToFlowEdges(
+      [contract({ address: "0xC1", deployerAddress: "0xAbCdEf" })],
+      ["0xaBcDeF"],
+    );
+    expect(edges).toHaveLength(1);
+    // 端点にはキャンバス上に実在する表記（present 側）を採用する。
+    expect(edges[0]).toMatchObject({
+      source: "0xaBcDeF",
+      target: "0xC1",
+      id: "deploy-0xaBcDeF-0xC1",
+    });
+  });
+
+  it("resolves to the last representation when presentWalletIds contains casing duplicates (defensive)", () => {
+    // 通常は起きないが、presentWalletIds に同一アドレスの表記揺れが複数
+    // 混在した場合、小文字キーの Map は後勝ちになる。エッジは 1 本だけ作られ、
+    // 端点には最後に現れた表記が採られる（重複エッジを作らないことの回帰）。
+    const edges = deployEdgesToFlowEdges(
+      [contract({ address: "0xc1", deployerAddress: "0xabcdef" })],
+      ["0xABCDEF", "0xAbCdEf"],
+    );
+    expect(edges).toHaveLength(1);
+    expect(edges[0]).toMatchObject({
+      source: "0xAbCdEf",
+      id: "deploy-0xAbCdEf-0xc1",
+    });
+  });
+});
+
 describe("isDeployFlowEdge", () => {
   it("narrows deploy edges", () => {
     const [edge] = deployEdgesToFlowEdges(

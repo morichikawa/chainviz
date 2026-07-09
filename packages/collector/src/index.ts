@@ -354,9 +354,15 @@ export async function main(port: number = DEFAULT_PORT): Promise<void> {
 
   // C 層: tx ライフサイクル（mempool 投入 → ブロック取り込み）を購読し、
   // TransactionEntity の差分をワールドステート store 経由でフロントへ配信する。
+  // 併せて、この tx の from/to に一致する既存ウォレットの recentTxHashes
+  // へ反映する（ウォレットカードの tx チップ表示。Issue #201 の E2E 実装で
+  // 発覚した、この配線自体が欠落していたバグの修正）。
   adapter
     .subscribeTransactions((tx) => {
-      const diff = store.applyTransaction(tx);
+      const diff = [
+        ...store.applyTransaction(tx),
+        ...store.linkTransactionToWallets(tx),
+      ];
       server.broadcastDiff(diff);
     })
     .catch((err) =>

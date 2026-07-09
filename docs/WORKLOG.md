@@ -114,3 +114,4 @@
 | #199 | Issue #199 基本表示シナリオ(UI-CONN・UI-A・UI-B)のPlaywright実装 | [2026-07-09](worklog/issue-199.md) |
 | #200 | Issue #200 操作シナリオ(UI-CMD)のPlaywright実装と移行済みWSテストの整理 | [2026-07-09](worklog/issue-200.md) |
 | #228 | Issue #228 SCENARIOS.md棚卸しで削除し忘れていたa-b-layer.test.tsの移行済みWSテスト2件を削除 | [2026-07-09](worklog/issue-228.md) |
+| #201 | Issue #201 C層シナリオ(UI-C: 送金・デプロイ・呼び出し・トークン残高・未知コントラクト)のPlaywright実装。実装中にWalletEntity.recentTxHashes未配線・forge createの--constructor-args空配列不具合(collector)・デプロイエッジのアドレス表記不一致(frontend)を発見し修正 | [2026-07-09](worklog/issue-201.md) |
