@@ -35,3 +35,28 @@ beacon間PeerEdge検証）を同等以上に検証済みのため、SCENARIOS.md
   確認してから削除した（裏取り）
 - `pnpm test:e2e`（vitest、WSプロトコル層）を実際に実行し、残った
   PROTO-B-01を含む全テストがgreenのままであることを確認した
+
+#### レビュー（chainviz-reviewer, 2026-07-09）
+
+- 判定: **合格**（軽微な指摘1件あり、対応は任意）
+- 確認内容:
+  - 削除2テストの移行先カバレッジを実コードで裏取り。A層スナップショット
+    （6ノード+ワークベンチのkind/clientType）は `ui/infra-display.spec.ts`
+    UI-A-01 が7枚のカード表示（`.infra-card--node`/`.infra-card--workbench`
+    での件数確認+`infra-card-<id>` 完全一致）・6ノード全件のclientType表示・
+    ワークベンチ/ノードの種別差（操作ボタンの有無）で同等以上に検証。
+    beacon間PeerEdgeは `ui/p2p-graph.spec.ts` UI-B-01 が beacon1-beacon2 の
+    ピアエッジ（`data-id^="peer-"`）に加え reth1-reth2 も検証しており同等以上
+  - 「残す」指定のPROTO-B-01（ブロック伝播タイミング）は無変更
+    （ファイル冒頭コメントの範囲説明の更新のみ）であることを diff で確認
+  - 未使用となった `NodeEntity`/`WorkbenchEntity` import・`PROJECT`/`id`・
+    `waitForInfra` の除去を確認。他テストファイルは各自ローカル定義を持つため
+    影響なし
+  - SCENARIOS.md 棚卸し表の書式は #200 の既存行「移行済み（#200で削除）」と
+    一貫
+  - `pnpm build` / `pnpm lint` / `pnpm test` 全通過を確認
+  - コミットは「テスト削除」「SCENARIOS.md更新」「worklog追記」の3分割で
+    1変更1コミットの規約に適合
+- 軽微な指摘（非ブロッキング）: `packages/e2e/src/d-layer.test.ts:30` の
+  コメントが、今回削除した `waitForInfra` を待ち時間の例として参照した
+  ままになっている（動作影響なし。別の機会の修正でよい）
