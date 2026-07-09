@@ -183,3 +183,55 @@ green を確認(frontend: 91 test files / 1368 tests)。
   入れない選択も適切
 
 指摘事項: 無し。push・PR作成・マージは統括の判断に委ねる。
+
+### 2026-07-09 Issue #198 QA検証記録
+
+- 担当: qa
+- ブランチ: issue-198-frontend-testids
+- 判定: **合格**
+
+実際に frontend を起動し、追加された data-testid がブラウザ上で人間が
+操作したときの見え方として機能することを確認した。
+
+環境準備:
+
+- Playwright の chromium 本体は導入済みだったが、システムライブラリ
+  (`libnspr4.so` / `libnss3.so` / `libnssutil3.so` / `libasound.so.2`)が
+  未導入で、この環境では `sudo` にパスワードが必要なため
+  `playwright install-deps` を実行できなかった。同一スクラッチパッドに
+  過去セッションが展開済みの当該 .deb 由来ライブラリ一式があったため、
+  `LD_LIBRARY_PATH` にそのディレクトリを指定して chromium を起動した
+  (システムへの変更は行っていない)。
+
+実施した検証と結果:
+
+1. `pnpm test:e2e:ui`(Playwright)を実行し、`foundation-smoke.spec.ts` が
+   `page.getByTestId("connection-status-badge")` のロケータで green に
+   なることを確認した(1 passed)。globalSetup が既存の稼働中
+   chainviz-ethereum スタックを再利用し、UI 層専用ポートで collector を
+   起動、vite dev 経由で実 collector に接続した状態でグリーンになった。
+
+2. frontend をモックデータモード(`VITE_COLLECTOR_URL` 未設定)で vite dev
+   起動し、chromium から操作して以下を確認した(全 10 項目 PASS):
+   - `connection-status-badge` が存在し、テキスト「接続済み・モック
+     データ」、class に `status-badge--connected` を持つ
+   - `canvas-toolbar-add-node` / `canvas-toolbar-workbench-label` /
+     `canvas-toolbar-add-workbench` がいずれも可視
+   - `language-toggle` が存在し、クリックでラベルが「English」→「日本語」に
+     切り替わる(実際にトグルとして機能する)
+   - `glossary-term-*` アンカーが 28 個存在。先頭アンカーにホバーすると
+     対応する `glossary-popover-*` が実際に表示され、ポインタを外すと
+     消える(開閉が機能する)
+   - インフラカードにホバーすると `infra-popover-<entity.id>`
+     (`infra-popover-lighthouse-1`)が実際に表示される
+   - ページ内 JS エラーは 0 件
+
+3. スクリーンショットで実際の描画も確認した。ツールバー・接続バッジ・
+   言語トグルが所定の位置に描画され、用語ポップオーバーは定義文と
+   関連語リンクを含んで可視表示され、インフラポップオーバーは IP・
+   ポート・クライアント・CPU・メモリを含んで可視表示された(DOM 属性の
+   有無だけでなく人間が見たときの見え方としても機能している)。
+
+ARCHITECTURE.md §8.5 の 5 箇所すべてが実機で仕様どおりロケータとして
+機能し、Issue #198 の完了条件を満たしていると判定する。push / PR 作成 /
+マージ / Issue クローズは統括の判断に委ねる。
