@@ -458,7 +458,7 @@ UI で同等以上に検証できるシナリオは Playwright（実ブラウザ
 - [x] 操作シナリオ(UI-CMD: ノード/ワークベンチ追加・削除)の Playwright
       実装と、移行済み WS テストの整理(SCENARIOS.md §1 の棚卸しどおり)
       [#200](https://github.com/morichikawa/chainviz/issues/200)
-- [ ] C層シナリオ(UI-C: 送金・デプロイ・コントラクト呼び出し・トークン
+- [x] C層シナリオ(UI-C: 送金・デプロイ・コントラクト呼び出し・トークン
       残高・未知コントラクト)の Playwright 実装
       [#201](https://github.com/morichikawa/chainviz/issues/201)
 - [ ] 異常系・複数クライアントシナリオ(UI-ERR・UI-MULTI)の Playwright
