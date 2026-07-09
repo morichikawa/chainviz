@@ -228,3 +228,61 @@ CLAUDE.md「見つけたバグは直さずIssue化するだけに留める」の
 コミットは関心事ごとに分割する想定(例: collectorのrecentTxHashes配線・
 collectorの--constructor-args修正・frontendのdeployEdge修正・e2eの
 新規シナリオ本体、をそれぞれ別コミットにする)。
+
+#### テスト強化記録(2026-07-09)
+
+Issue #201 で修正した3件の実プロダクトバグについて、既存のユニット
+テストが異常系・境界値まで十分カバーできているかを確認し、抜けていた
+観点を追加した。実装ロジックには一切手を入れていない(テストの追加のみ)。
+
+**`linkTransactionToWallets`(`store-transaction-wallet-link.test.ts`、6件追加)**
+
+既存テストは from 単独一致・from/to 両方一致・大文字小文字無視・不一致・
+コントラクト生成(to: null)・同一hash重複防止・並び順・上限(20件)到達・
+非ウォレット非干渉をカバー済み。以下の境界を追加した。
+
+- 自己送金(from === to が同一アドレス)で hash が1回だけ載る
+  (candidateAddresses の Set 重複畳み込みの回帰。二重計上しない)
+- 自己送金で from と to の大小表記だけが違う場合も1回だけ載る
+- tx.to だけが追跡ウォレットに一致し tx.from は未追跡のケース
+  (既存は from 単独一致のみで、to 単独一致が未検証だった)
+- from/to に一致する2ウォレットに加えて無関係なウォレットを混ぜても、
+  無関係な方には差分が出ない(部分一致で巻き込まない)
+- from が空文字(length 0 のガードで候補から除外)でも例外にならず、
+  to 側の一致だけを反映する
+- from が空文字かつ to が null で候補ゼロなら何もしない
+
+**`deployEdgesToFlowEdges`(`deployEdge.test.ts`、2件追加)**
+
+既存テストは「表記の食い違い(小文字 deployer vs チェックサム present)で
+一致する」「一致しない deployer は無視」をカバー済み。以下を追加した。
+
+- deployerAddress と presentWalletIds が互いに異なる混在表記でも一致し、
+  端点にはキャンバス上に実在する present 側の表記を採用する
+- presentWalletIds に同一アドレスの表記揺れが複数混在した場合(通常は
+  起きないが防御的に)、エッジは1本だけ作られ、端点には小文字キー Map の
+  後勝ちで最後の表記が採られる(重複エッジを作らないことの回帰)
+
+**`buildOperationCommand` の constructorArgs**
+
+既存テストで undefined・空配列・1件以上・複数件がすべて別テストとして
+区別済みであることを確認した(#201 のバグ修正観点は網羅済み)。追加は不要。
+
+**Playwright シナリオの確認結果**
+
+7つの UI-C シナリオが SCENARIOS.md の「前提・操作・確認」の各箇条書きに
+過不足なく対応していることを確認した。待機は原則 `expect.poll` /
+`toHaveCount` / `waitFor` の web-first リトライで組まれており、固定 sleep に
+依存する箇所は無い。1点、`wallet-balance.spec.ts` の UI-C-02「操作パネルに
+保留中の表示が出る」ステップは送信直後に `aria-busy="true"` を確認しており、
+`toHaveAttribute` の自動リトライ(既定タイムアウト)に依存する。cast send は
+数秒かかるため実測では安定して true を捉えられているが、将来 tx 反映が
+極端に速くなった場合に aria-busy が true→false へ反転しきってからしか
+観測できず flaky になりうる潜在的パターンとして記録に留める(現時点では
+実害が無いため Issue 化はしない)。
+
+**確認**: `pnpm build && pnpm lint && pnpm test` 全て green
+(collector 1103件・frontend 1372件・shared 58件)。稼働中の
+`chainviz-ethereum` スタックを再利用して `playwright test`(UI-C の3ファイル・
+7シナリオ)を実行し全て green、実行後に動的追加ワークベンチの残留が
+無い(compose 起動の7コンテナのみ)ことも確認した。
