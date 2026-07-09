@@ -194,3 +194,80 @@ error-paths.test.tsのみが対象)のため、その場では直さず
 - `describe.serial`でテスト間の状態を引き継ぐ場合は、`test.afterAll`で
   「途中失敗時に残った分の後始末」を必ず入れること(commands.test.tsの
   既存afterAllと同じ考え方)
+
+### 2026-07-09 テスト強化記録(tester)
+
+- 担当: tester
+- ブランチ: issue-200-ui-cmd-scenarios(実装担当の続き)
+
+#### 実施したこと
+
+実装担当が書いた UI-CMD 7シナリオと、移行に伴い削除された WS テストの
+カバレッジを確認し、境界値・異常系・「1回だけ押す」前提の観点で以下を
+追加・強化した。実装ロジックは変更していない。
+
+**1. ワークベンチ名一意化の境界値・異常系(collector ユニット)**
+
+`packages/collector/src/adapters/ethereum/node-lifecycle.test.ts` に3件追加。
+UI-CMD-06 のID重複回避の実体である `uniqueWorkbenchService` は、既存テストが
+`-2` の1ケース(採番ループが1周で返る)しか通っておらず、以下が未検証だった。
+
+- 同名を3回以上追加した場合に相当する `-3`(base と base-2 の両方が使用済みの
+  とき採番ループが正しく次の番号へ進む)
+- 空ラベル → `"workbench"` フォールバック(フロントの `resolveWorkbenchLabel`
+  で既定値化されるが、WebSocket を直接叩く経路では素の空文字列が届きうる
+  ための collector 側の防御)
+- 前後空白の除去と、空白のみ → `"workbench"` フォールバックの一意化
+
+いずれも実装を意図的に壊すと失敗することを確認済み(`-3` 用に採番ループを
+`return base-2` 固定に、フォールバック用に `label.trim()...` を素の `label`
+に置き換えて、対応テストが赤になることを確認してから元に戻した)。
+
+**2. ゴーストカードの枚数固定(e2e UI)**
+
+`commands-node.spec.ts`(UI-CMD-01)・`commands-workbench.spec.ts`(UI-CMD-05)の
+ゴースト検証を、`first()` の可視確認のみから「ちょうどN枚」の件数固定に
+強化した。両シナリオは「ボタンを1回だけ押す」前提(連打防止 Issue #220 は
+未実装)だが、1回の操作で生成されるゴースト枚数を固定していなかったため、
+コマンドの二重発行が混入しても検知できなかった。
+
+- UI-CMD-01: addNode は reth(EL)+beacon(CL) の2枚を生む → `toHaveCount(2)`
+- UI-CMD-05: addWorkbench は1枚を生む → `toHaveCount(1)`
+
+ゴーストは click 時に同期生成され実エンティティ到着まで数秒残るため、
+枚数固定のアサーションは安定して観測できる(flaky にならない)。
+
+#### カバレッジ確認の結論
+
+削除された WS テスト(`commands.test.ts` の addNode成功/addWorkbench/
+removeWorkbench、`error-paths.test.ts` のラベル重複)は、移行先の
+UI-CMD-01/03/05/06/07 が同等以上に検証しており、欠落は無いことを確認した
+(SCENARIOS.md §1 棚卸し表と一致)。SCENARIOS.md の UI-CMD 7シナリオの
+前提・操作・確認は各 `test.step` に過不足なく対応している。UI-CMD-06 の
+2回目追加は、1回目のカード可視化を待ってから2回目を送るため `-2` 採番の
+タイミング競合は起きず、待機の使い方も flaky になりにくい。
+
+#### 動作確認
+
+- `pnpm build` / `pnpm lint` / `pnpm test`(ユニット。collector 1084→1087・
+  frontend 1368・shared 58・e2e unit 50)いずれも green
+- `pnpm test:e2e:ui`(Playwright)を実機で実行し UI層16件すべて green
+  (強化した UI-CMD-01/05 のゴースト枚数固定を含む)。既存の稼働中
+  chainviz-ethereum スタックを再利用
+- `pnpm test:e2e`(プロトコル層 vitest)を実行。最初は PROTO-CMD-01
+  (ブロック追従)が height 0 のまま stall して失敗したが、これは約3時間
+  稼働・ブロック高約6000まで進んだスタック固有の環境要因(追加 reth の履歴
+  バックフィルが時間内に完了しない)であり、テスト強化の変更(テストファイル
+  のみ・collector ランタイム不変)とは無関係。`docker compose down -v`→`up`
+  した若いチェーンに対しては 18/18 green で通ることを確認した。この
+  長時間稼働スタックでの stall は [Issue #229](https://github.com/morichikawa/chainviz/issues/229)
+  として起票した(その場では修正しない)
+
+#### 次の担当への申し送り
+
+- 手元でスタックを長時間起動しっぱなしにしていると PROTO-CMD-01 が偽陰性で
+  落ちうる(#229)。`pnpm test:e2e` を通したいときはスタックを
+  `docker compose down -v`→`up` でリセットしてから実行する
+- Playwright chromium の実行には共有ライブラリ(libnspr4.so 等)が必要。
+  本環境では別セッションが scratchpad に展開済みの nss/nspr を
+  `LD_LIBRARY_PATH` に加えて実行した(#199/#200 実装時と同じ補足)
