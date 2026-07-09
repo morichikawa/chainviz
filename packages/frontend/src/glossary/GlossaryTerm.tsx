@@ -38,10 +38,16 @@ export function GlossaryTerm({ termKey, children }: GlossaryTermProps) {
       onMouseLeave={() => setOpen(false)}
       onFocus={() => setOpen(true)}
       onBlur={() => setOpen(false)}
+      data-testid={`glossary-term-${termKey}`}
     >
       <span className="glossary-term__label">{label}</span>
       {open && (
-        <span className="glossary-popover" id={popoverId} role="tooltip">
+        <span
+          className="glossary-popover"
+          id={popoverId}
+          role="tooltip"
+          data-testid={`glossary-popover-${termKey}`}
+        >
           <span className="glossary-popover__name">
             {pickLocale(term.name, lang)}
           </span>

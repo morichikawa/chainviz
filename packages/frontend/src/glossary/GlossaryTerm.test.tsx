@@ -73,4 +73,15 @@ describe("GlossaryTerm", () => {
         ?.textContent,
     ).toBe("Container");
   });
+
+  it("exposes the anchor and its popover via data-testid (Issue #198, ARCHITECTURE.md §8.5)", () => {
+    wrap(<GlossaryTerm termKey="container">コンテナ</GlossaryTerm>);
+    const term = screen.getByTestId("glossary-term-container");
+    expect(term).toBe(screen.getByRole("button"));
+
+    fireEvent.mouseEnter(term);
+    expect(screen.getByTestId("glossary-popover-container")).toBe(
+      screen.getByRole("tooltip"),
+    );
+  });
 });
