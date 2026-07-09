@@ -27,19 +27,26 @@ function anyGhostCard(page: Page): Locator {
 /**
  * ワークベンチ→ウォレットの所有エッジ(`own-<workbenchId>-<address>` の
  * data-id)から、対象ウォレットのアドレスを取り出す。
+ *
+ * prefixに`-0x`まで含めるのは、workbenchIdどうしが前方一致してしまう
+ * ケース(例: "e2e-ui-carol" と "e2e-ui-carol-2")でロケータが曖昧に
+ * ならないようにするため(アドレスは常に0x始まりのため、この位置まで
+ * 含めれば別workbenchIdのエッジを誤って拾わない)。
  */
 async function ownershipEdgeWalletAddress(
   page: Page,
   workbenchId: string,
 ): Promise<string> {
-  const prefix = `own-${workbenchId}-`;
+  const prefix = `own-${workbenchId}-0x`;
   const edge = page.locator(`[data-id^="${prefix}"]`).first();
   await expect(edge).toHaveCount(1, { timeout: ADD_WORKBENCH_CARD_TIMEOUT_MS });
   const dataId = await edge.getAttribute("data-id");
   if (!dataId) {
     throw new Error(`ownership edge for ${workbenchId} has no data-id`);
   }
-  return dataId.slice(prefix.length);
+  // prefixには曖昧さ回避のため"0x"まで含めているが、戻り値のアドレス
+  // 自体は"0x"を含める必要があるため、その分(2文字)を巻き戻して切り出す。
+  return dataId.slice(prefix.length - 2);
 }
 
 /** ツールバーからラベルを入力してワークベンチ追加ボタンを押す。 */
