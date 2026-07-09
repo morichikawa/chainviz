@@ -453,7 +453,7 @@ UI で同等以上に検証できるシナリオは Playwright（実ブラウザ
       追加: 接続バッジ・ツールバー・言語トグル・用語/インフラポップ
       オーバー)
       [#198](https://github.com/morichikawa/chainviz/issues/198)
-- [ ] 基本表示シナリオ(UI-CONN・UI-A・UI-B)の Playwright 実装
+- [x] 基本表示シナリオ(UI-CONN・UI-A・UI-B)の Playwright 実装
       [#199](https://github.com/morichikawa/chainviz/issues/199)
 - [ ] 操作シナリオ(UI-CMD: ノード/ワークベンチ追加・削除)の Playwright
       実装と、移行済み WS テストの整理(SCENARIOS.md §1 の棚卸しどおり)
