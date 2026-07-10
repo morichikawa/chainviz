@@ -1880,3 +1880,69 @@ shared は本ブランチでコミット済み。node-env と collector と fron
   ため）。QA検証時も同様の再作成が必要になる
 - `docs/PLAN.md` の #215 チェックボックスは、collector・frontend の実装
   まで完了してから更新する（node-env分のみでは単位A全体が未完了のため）
+
+### 2026-07-10 実装記録（単位A、collector分）
+
+- 担当: collector
+- ブランチ: issue-215-node-role-visibility
+- 内容: 上記「14. 設計メモ」の「実装引き継ぎ（依存順）」(2) collector の
+  指示どおり実装した。node-env 分の実装状況（reth1/reth2 =
+  `com.chainviz.role: execution`、beacon1/beacon2 = `consensus`、
+  validator1/validator2 = `validator`、workbench には付与なし）を先に
+  確認し、collector 側は `ROLE_LABEL`（`com.chainviz.role`）を再利用する
+  だけで新規のラベル定義・`node-lifecycle.ts`・`classify.ts` の変更は
+  不要であることを確認したうえで着手した。
+
+**変更したファイル**
+
+- `packages/collector/src/adapters/ethereum/index.ts`: `toEntity()` の
+  node 分岐で `obs.labels[ROLE_LABEL]` を読み、非空文字列であれば
+  `NodeEntity.nodeRole` へ生値のまま設定する。値の検証・解釈（execution/
+  consensus/validator の意味づけ）はしない（p2pRole のような正規化とは
+  異なり、そのまま転記するだけ）。ラベルが無い・空文字列の場合は
+  `nodeRole` キー自体を省略する（省略 = 不明。JSON シリアライズ後に
+  `nodeRole` プロパティが存在しないことまで含めて仕様どおり）
+- `packages/collector/src/adapters/ethereum/labels.ts`: `ROLE_LABEL` の
+  docstring を、従来の「managed=true のコンテナが持つ役割」という説明から、
+  「全ノードコンテナ（静的・動的）が持つ役割宣言であり、
+  `NodeEntity.nodeRole`（Issue #215）の出所でもある」ことが分かる内容に
+  更新した
+- `packages/collector/src/adapters/ethereum/index.test.ts`: `toEntity`
+  経由の `nodeRole` 転記を検証するテストを3種追加した。(1) `execution`/
+  `consensus`/`validator` の3値それぞれが生値のまま転記されること
+  （`it.each`）、(2) ラベル自体が無いコンテナ（既存の `rethFixture`）で
+  `nodeRole` が `undefined` かつプロパティ自体が存在しないこと、(3) ラベル
+  値が空文字列のときも同様に省略されること。既存の `p2pRole` 系テストの
+  直後（"rejects when the underlying poller fails..." の手前）に配置し、
+  同じ `Fixture` 組み立てパターンを踏襲した
+
+**動作確認**
+
+- `pnpm build && pnpm lint && pnpm test`（ルートから全パッケージ対象）が
+  通ることを確認した（shared 62 / collector 1142（追加3件を含む）/
+  e2e 77 / frontend 1606 件 pass）
+- 稼働中の chainviz-ethereum スタック（node-env 分の作業で既にラベル付き
+  コンテナへ再作成済み）に対し、`pnpm dev:down` → `pnpm build` 済みの
+  dist を使って `pnpm dev:up` で collector・frontend を再起動し（Docker
+  スタック自体は既存のものを再利用）、WebSocket スナップショットを直接
+  受信して確認した。結果は設計どおり:
+  - `reth1`/`reth2` → `nodeRole: "execution"`
+  - `beacon1`/`beacon2` → `nodeRole: "consensus"`
+  - `validator1`/`validator2` → `nodeRole: "validator"`
+  - `workbench` エンティティ（kind: "workbench"）には `nodeRole` プロパティ
+    自体が存在しないことも確認した
+
+**起票した Issue**
+
+- 無し。作業中に本 Issue の範囲外の新規問題は見つからなかった
+
+**次の担当が知っておくべきこと**
+
+- 次は frontend（`chain-profiles/ethereum/nodeRoles.ts` 新設、
+  `InfraNodeCard.tsx`/`InfraPopover.tsx` のサブタイトル・役割行・
+  validator の同期状態非表示、`InfraPopover.tsx` の「駆動元」行、
+  `OperationTargetEdge`/`OperationTargetEdgePopover` の新設、glossary の
+  `validator`/`rpc-endpoint` 追加）。設計メモの「実装引き継ぎ（依存順）」
+  (3) を参照
+- `docs/PLAN.md` の #215 チェックボックスは、frontend の実装まで完了して
+  から更新する（node-env・collector分のみでは単位A全体が未完了のため）
