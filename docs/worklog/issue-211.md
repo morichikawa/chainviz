@@ -782,3 +782,46 @@ QA検証記録の差し戻し（条件2・7: pending の未到達段階の説明
 （frontend 1454件を含む全パッケージ）が通ることを確認した。
 
 作業中に見つけた範囲外の問題: 無し。QA差し戻しの範囲内のみを修正した。
+
+### 2026-07-10 QA差し戻し対応の再レビュー（単位D、chainviz-reviewer）
+
+QA差し戻し（pending tx の4段目「ブロック取り込み」が未到達○マークなのに
+完了断定の過去形説明文のままだった件）への修正（コミット 21b7a54）を
+レビューした。結果は合格。
+
+確認した内容:
+
+- `TxLifecyclePopover.tsx` の `stageDescriptionKey` の分岐:
+  `included` 段階について、現在の `deriveTxLifecycle` が返しうる3状態
+  （done / pending / failed）がすべて別々の文言キーに対応した
+  （done → `desc.included`、pending → 新設 `desc.includedPending`、
+  failed → 既存 `desc.includedFailed`）。既存の `includedFailed` と
+  同じパターンで実装されており、分岐漏れなし。分岐の理由もコメントで
+  説明されている
+- i18n 文言: 新設 `tx.lifecycle.desc.includedPending` は ja が
+  「〜すると、〜確定します（まだ起きていません）」と未来形+補足の
+  括弧書きで、`includedFailed` の括弧書きスタイル・文末に句点を
+  付けない既存スタイルと一貫している。en も既存の複文スタイル
+  （`desc.signed` 等）と揃っており、"This has not happened yet." で
+  未到達であることが明確
+- 追加テストの質: pending tx の included 段階について
+  `data-stage-state` が pending であること・旧来の完了断定文を
+  含まないこと・新設文言を含むことの3点を検証しており、実装の詳細を
+  なぞるだけのテストではない。実際に修正コミット直前の
+  `TxLifecyclePopover.tsx` に一時的に戻して該当テストを実行し、
+  1件失敗（旧文言が表示される）することを確認したうえで復元し、
+  15件全件通過に戻ることを確認した（ミューテーション確認）
+- `pnpm build` / `pnpm lint` / `pnpm test`（frontend 1454件を含む
+  全パッケージ）がリポジトリ全体で通ることを確認した
+- コミット粒度: 修正本体（コード+i18n+回帰テスト = 1つの関心事）と
+  worklog 追記が別コミットに分かれており適切
+
+範囲外の観察（差し戻し対象外・非ブロッキング）:
+
+- `txLifecycle.ts` の `deriveTxLifecycle` の default フォールバック
+  （将来 status が増えた場合に全段階 pending を返す経路）では、
+  signed / sent / mempool の3段階も○マーク+過去形説明文の組み合わせに
+  なりうる。ただし `TxStatus` は閉じた union で `never` による網羅性
+  チェックがあるため、この経路はフロント側のコンパイルが通る限り
+  到達しない（collector が未知の status を送ってきた場合のみ）。
+  将来 status を追加する際に、説明文の時制も併せて見直すこと
