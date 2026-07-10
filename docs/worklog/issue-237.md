@@ -88,3 +88,62 @@ E2E側の回避策 `not.toHaveAttribute("aria-busy", "true")` とは逆に、今
   問題が起こり得る。今回のIssue #237の対象は operate ボタン
   （`operationPending`）のみのため意図的に手を付けていない。気づいた
   ものとして記録しておくので、必要であれば別途Issue化を検討する。
+
+### 2026-07-11 Issue #237 テスト強化(異常系・境界値)
+
+- 担当: tester
+- ブランチ: issue-237-aria-busy-operate-button
+
+#### 追加したテスト（`InfraNodeCardOperationButton.test.tsx`）
+
+実装担当が追加した2件（undefined 渡しで `aria-busy="false"`、true で
+`aria-busy="true"`）を土台に、以下の観点を追加した。
+
+- 境界値: `data.operationPending` が明示的な `false` の場合も
+  `aria-busy="false"` になること（`?? false` フォールバックが明示 false を
+  誤って書き換え・欠落させないことの確認）。
+- タイミング依存の遷移（Issue #237 の核心の再現）: 同一 `InfraNodeCard` を
+  `rerender` で更新し、`operationPending` を undefined → true → undefined と
+  遷移させ、各段で `aria-busy` 属性が常に DOM 上に存在し（null にならず）
+  値だけが `"false"` → `"true"` → `"false"` と正しく切り替わることを確認。
+  これは App.tsx の `infraNodesWithHighlight` が、対象ワークベンチが保留を
+  経験するまで undefined を渡し、true 化後もブロック到達で `isSameInfraNode`
+  判定によりノードオブジェクトが作り直されて再び undefined に戻る、という
+  上流の再レンダー列を直接シミュレートしたもの。
+- 上記2件のうち遷移テストが、修正前のコード
+  （`aria-busy={operationPending}`）に対して実際に失敗すること（1回目と
+  3回目で属性が欠落）を、修正を一時的に戻して確認済み。明示 false の
+  テストは修正前でも通る（undefined のみが欠落を起こしたため）ことも
+  合わせて確認した。
+
+テストヘルパの `renderCard` に `rerenderWith`（extraData だけ差し替えて
+再レンダーする薄いラッパ）を追加した。既存の全テストは非破壊で通る。
+
+#### 同コンポーネント内の他 aria 属性の点検（観点3）
+
+`InfraNodeCard.tsx` の aria 属性を全て確認した。`aria-hidden="true"`
+（ステータスドット・スピナー）は静的な文字列リテラル、削除ボタンの
+`aria-label` / `title` は常に `t(...)` の文字列で、いずれも undefined 欠落の
+リスクは無い。動的な真偽値をそのまま渡している aria 属性は operate ボタンの
+`aria-busy`（修正済み）と、削除ボタンの `aria-busy={removalPending}` の2箇所
+のみ。後者が下記 Issue #263 の対象。
+
+#### Issue #263（削除ボタン removalPending）の事実確認
+
+削除ボタンの `aria-busy={removalPending}`（`InfraNodeCard.tsx`、`?? false` の
+フォールバック無し）に、operate ボタンと同一の欠落バグが実在することを
+実測で確認した。使い捨てテストで `data.removalPending` を `undefined` として
+`InfraNodeCard` をレンダーし、削除ボタンの `getAttribute("aria-busy")` が
+`null`（属性欠落）を返すことを確認（同条件で operate ボタンは修正済みのため
+`"false"` を返す）。
+
+App.tsx 側の経路も operate と同型で、`infraNodesWithHighlight` は
+`removalPending` も `operationPending` と同じ merge 条件で扱い（一度も保留を
+経験しない間・`isSameInfraNode` によるオブジェクト差し替え後は undefined の
+まま渡す）、`entitiesToFlowNodes` は `removalPending` を設定しないため常に
+undefined 起点になる。したがって「削除ボタンでも aria-busy がブロック到達
+タイミング次第で欠落する」という Issue #263 の申し送りは事実。
+
+本 Issue #237 のスコープ外のため修正はしていない（使い捨てテストも削除済み）。
+Issue #263 側で `aria-busy={removalPending ?? false}` への修正と回帰テスト
+追加を行うのが妥当。
