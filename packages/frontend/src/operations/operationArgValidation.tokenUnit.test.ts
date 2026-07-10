@@ -81,4 +81,59 @@ describe("convertOperationArgsToChainValues", () => {
   it("treats a missing value (values shorter than fields) as an empty string, not a crash", () => {
     expect(convertOperationArgsToChainValues([AMOUNT_FIELD], [], 18)).toEqual([""]);
   });
+
+  it("converts every token-unit field independently when several appear together", () => {
+    // 同じ decimals で複数のトークン単位引数が並ぶケース（各要素が個別に換算
+    // され、取り違えたり最初の1つだけ換算したりしないこと）。
+    const fields: OperationArgField[] = [AMOUNT_FIELD, TO_FIELD, AMOUNT_FIELD];
+    expect(
+      convertOperationArgsToChainValues(
+        fields,
+        ["1.5", "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "0.25"],
+        18,
+      ),
+    ).toEqual([
+      "1500000000000000000",
+      "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "250000000000000000",
+    ]);
+  });
+
+  it("ignores extra values beyond the fields (output length follows fields, not values)", () => {
+    // values が fields より長い防御的なケース。余分な値は出力に現れない。
+    const converted = convertOperationArgsToChainValues(
+      [AMOUNT_FIELD],
+      ["1.5", "0xdeadbeef-ignored"],
+      18,
+    );
+    expect(converted).toEqual(["1500000000000000000"]);
+  });
+
+  it("uses the field's own type, not positional heuristics, to decide what to convert (address before token)", () => {
+    // address 引数が先、token 引数が後、という並びでも、変換対象は unit で
+    // 判定される（位置ではない）ことを念のため固定する。
+    const fields = [TO_FIELD, AMOUNT_FIELD];
+    expect(
+      convertOperationArgsToChainValues(
+        fields,
+        ["0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "3"],
+        6,
+      ),
+    ).toEqual(["0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "3000000"]);
+  });
+});
+
+describe("validateOperationArgs with several token-unit fields", () => {
+  it("rejects the whole set if any one token-unit field is invalid", () => {
+    const fields: OperationArgField[] = [AMOUNT_FIELD, AMOUNT_FIELD];
+    // 1つ目は妥当、2つ目が decimals 超過。全体としては無効。
+    expect(
+      validateOperationArgs(fields, ["1.5", "1.0000000000000000001"], 18),
+    ).toBe(false);
+  });
+
+  it("accepts the set when every token-unit field is individually valid", () => {
+    const fields: OperationArgField[] = [AMOUNT_FIELD, AMOUNT_FIELD];
+    expect(validateOperationArgs(fields, ["1.5", "0.25"], 18)).toBe(true);
+  });
 });
