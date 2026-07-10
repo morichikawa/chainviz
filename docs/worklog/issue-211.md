@@ -1797,3 +1797,86 @@ shared は本ブランチでコミット済み。node-env と collector と fron
   直後を想定）などの見た目の細部
 - 操作先エッジのホバー時の強調幅・ポップオーバーの具体的なクラス名
   （既存の peer-popover 系に合わせる想定）
+
+### 2026-07-10 実装記録（単位A、node-env分）
+
+- 担当: node-env
+- ブランチ: issue-215-node-role-visibility
+- 内容: 上記「14. 設計メモ」の「実装引き継ぎ（依存順）」(1) node-env の
+  指示どおり、`profiles/ethereum/docker-compose.yml` の6つの静的ノード
+  サービスに Docker ラベル `com.chainviz.role`（既存のラベル。新設では
+  ない）を追加した。
+  - `reth1`/`reth2` → `"execution"`
+  - `beacon1`/`beacon2` → `"consensus"`
+  - `validator1`/`validator2` → `"validator"`
+  - `workbench` には付けない（消費者が無いため。設計メモどおり）
+  - `reth1`/`beacon1` は既存の `labels:` ブロック（`com.chainviz.p2p-role:
+    "bootnode"`）に並記し、`reth2`/`beacon2`/`validator1`/`validator2` は
+    `labels:` ブロック自体を新設した
+- 確認したこと: `packages/collector/src/adapters/ethereum/labels.ts` の
+  `ROLE_LABEL`（値は `"com.chainviz.role"`）を確認し、値の書式（生文字列
+  `execution`/`consensus`/`workbench`）と重複しないことを確認した上で
+  同じキー・同じ値の語彙を使った。`node-lifecycle.ts` が addNode/
+  addWorkbench 時に動的コンテナへ既に同じラベルを付与しているため、
+  collector側のコード変更は不要（設計メモの結論どおり）。
+
+**動作確認**
+
+- `docker compose config --quiet` で構文エラー無しを確認
+- 稼働中の chainviz-ethereum スタックに対し `docker compose up -d` を実行し、
+  ラベル差分により6つのノードサービス（reth1/reth2/beacon1/beacon2/
+  validator1/validator2）が Recreate されたことを確認した。`docker
+  inspect` で各コンテナの `com.chainviz.role` ラベルが設計どおりの値に
+  なっていること、`workbench` にはラベルが付与されていないことを確認した
+- 再作成後、しばらく `exec_hash: n/a` のまま empty ブロックが続き
+  `cast block-number` が 0 のまま進まない状態に遭遇した。原因を調査した
+  結果、既存の genesis 自動再生成の仕組み（Issue #148、
+  `scripts/generate-genesis.sh` の `should_regenerate`）が、
+  `docker compose up -d` で複数の静的ノードコンテナがほぼ同時に
+  Recreate される際、旧コンテナが停止する直前に書いたハートビートが
+  まだ新しい（60秒以内）と判定され、実際には全ノードが再作成された
+  にもかかわらず古い genesis（生成時刻が実時間から大きく離れている）を
+  再利用してしまうことによるものだった（各ノードスクリプトは起動の
+  たびに自分のデータディレクトリを初期化する仕様のため、"古い genesis +
+  空のノードデータ"という整合しない組み合わせになり、スロットが実時間
+  どおりに進む一方で実行ペイロードの提案・取り込みが安定しない状態に
+  陥っていた）。`docker compose down -v` は同じ Docker network 上に残って
+  いた本タスクと無関係な使い捨てコンテナ（`chainviz-ethereum-beacon3`/
+  `chainviz-ethereum-reth3`、他セッションの検証残骸と思われる）が
+  ボリューム・ネットワークを保持していたため完全には行えなかったが、
+  `GENESIS_DOWNTIME_RESET_SEC=0 docker compose up -d`
+  （`generate-genesis.sh` が公式にサポートする検証用の環境変数上書き）で
+  genesis を強制的に現在時刻で再生成させたところ、ブロックが実測で
+  数十秒の間に 0→44 まで安定して進み続けることを確認できた
+  （`beacon1` のログでも `exec_hash` が `verified` に変わり、
+  `Signed block published` が繰り返し出るようになった）
+- `docker compose exec workbench cast chain-id --rpc-url http://reth1:8545`
+  で `1337` を取得し、ワークベンチからの RPC 疎通も確認した
+- `pnpm build && pnpm lint && pnpm test`（ルートから全パッケージ対象）が
+  通ることを確認した（shared 62 / collector 1126 / e2e 77 / frontend 1606
+  件 pass。本タスクは TypeScript ロジックの変更を伴わないため既存挙動に
+  変化は無い）
+
+**起票した Issue**
+
+- 無し。上記の「genesis 再利用によるスタック不整合」は、複数の静的
+  コンテナをほぼ同時に Recreate する操作（本タスクのラベル付与に限らず、
+  他の compose 設定変更でも起こり得る）で再現し得る既存の Issue #148 の
+  仕組みの境界事例だが、`GENESIS_DOWNTIME_RESET_SEC=0` という正規の回避策
+  が既に用意されており、実運用（初回起動・genesisサービスは通常1回しか
+  介在しない）では起きにくい限定的な事象と判断し、新規Issueの起票は
+  見送った。次にこの現象に遭遇した担当者（特にQA）は、この記録と
+  `docs/worklog/issue-148.md` を参照して同じ回避策を使うか、再現性が
+  高いと判断した場合は改めてIssue化を検討してほしい
+
+**次の担当が知っておくべきこと**
+
+- collector（`packages/collector/src/adapters/ethereum/index.ts` の
+  `toEntity()`、`labels.ts` の docstring 更新）が次の担当。値は生文字列
+  のまま転記し、p2pRole のような値の検証・写像はしない方針（設計メモの
+  「実装引き継ぎ（依存順）」(2) を参照）
+- 稼働中のスタックに対して今回の変更を反映するには再作成
+  （`docker compose up -d`）が必要（ラベルはコンテナ作成時に固定される
+  ため）。QA検証時も同様の再作成が必要になる
+- `docs/PLAN.md` の #215 チェックボックスは、collector・frontend の実装
+  まで完了してから更新する（node-env分のみでは単位A全体が未完了のため）
