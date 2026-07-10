@@ -98,7 +98,7 @@ export const ETHEREUM_OPERATION_CATALOG: ContractCatalogEntry[] = [
         label: "transfer",
         description: {
           ja: "自分のトークン残高から to へ amount を送ります",
-          en: "Sends amount from your token balance to `to`.",
+          en: "Sends amount from your token balance to 'to'.",
         },
         args: [
           { name: "to", type: "address" },
@@ -111,7 +111,7 @@ export const ETHEREUM_OPERATION_CATALOG: ContractCatalogEntry[] = [
         label: "approve",
         description: {
           ja: "spender に、自分の残高から amount まで引き出す許可を与えます",
-          en: "Allows `spender` to withdraw up to amount from your balance.",
+          en: "Allows 'spender' to withdraw up to amount from your balance.",
         },
         args: [
           { name: "spender", type: "address" },
@@ -124,7 +124,7 @@ export const ETHEREUM_OPERATION_CATALOG: ContractCatalogEntry[] = [
         label: "transferFrom",
         description: {
           ja: "approve で許可された範囲で from から to へトークンを移します",
-          en: "Moves tokens from `from` to `to`, within an approved allowance.",
+          en: "Moves tokens from 'from' to 'to', within an approved allowance.",
         },
         args: [
           { name: "from", type: "address" },
@@ -138,7 +138,7 @@ export const ETHEREUM_OPERATION_CATALOG: ContractCatalogEntry[] = [
         label: "mint",
         description: {
           ja: "新しいトークンを amount 分発行して to に与えます（デプロイした人だけが実行できます）",
-          en: "Issues new tokens to `to` (only the deployer can call this).",
+          en: "Issues amount of new tokens to 'to' (only the deployer can call this).",
         },
         args: [
           { name: "to", type: "address" },
