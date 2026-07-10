@@ -2249,3 +2249,73 @@ shared は本ブランチでコミット済み。node-env と collector と fron
 **起票した Issue**
 
 - 無し。差し戻しへの対応のみで、本作業中に新規問題は見つからなかった。
+
+### 2026-07-11 Issue #215 レビュー記録（単位A: ノード役割可視化）
+
+- 担当: reviewer
+- ブランチ: issue-215-node-role-visibility
+- 結論: 合格（差し戻しなし）。`pnpm build` / `pnpm lint` / `pnpm test` は
+  リポジトリ全体で全て通過（shared 62 / collector 1142 / e2e 77 /
+  frontend 1686 件 pass）。
+
+**確認した内容**
+
+- 境界の遵守: `NodeEntity.nodeRole` は生文字列で、shared スキーマに
+  execution/consensus 等のチェーン固有語彙を union 型で焼き込んでいない
+  （`OperationEdge.operation` と同じパターン）。解釈は
+  `chain-profiles/ethereum/nodeRoles.ts` に閉じており、`InfraNodeCard` /
+  `InfraPopover` には `"validator"` 等のリテラルが一切現れない
+  （`showsSyncState` フラグ経由で判定）。collector は `ROLE_LABEL` の生値を
+  検証・解釈なしで転記するだけで、ChainAdapter 境界も保たれている
+- 3層のデータフロー: compose の `com.chainviz.role` ラベル（6サービス、
+  workbench には付けない）→ `ContainerObservation.labels` → `toEntity()` の
+  `...(roleLabel ? { nodeRole: roleLabel } : {})`（空文字列・欠落は省略 =
+  不明）→ フロント表現セット、が設計メモどおり一貫。省略時のフォールバック
+  （役割表示なし・同期表示は従来どおり）もテストで固定されている
+- `describeNodeRole` の `Object.hasOwn` ガード: 修正は妥当。回帰テストが
+  `toString`/`constructor`/`__proto__`/`valueOf`/`hasOwnProperty`/
+  `isPrototypeOf` の6値を固定しており、修正を影響範囲の狭い
+  `describeNodeRole` 内に閉じた判断（`NODE_ROLE_DESCRIPTORS` は
+  `Object.entries` での参照があるため `Object.create(null)` 化を避けた）も
+  worklog に理由つきで記録されている
+- テストの質: 逆引き（1対多・循環・自己駆動・workbench 越しの参照）、
+  データ/表示の分離（validator が実データを持っていても役割駆動で隠れる・
+  execution の空データは出る）、i18n 両言語、防御的デフォルトまで網羅されて
+  おり、実装の詳細をなぞるだけの無意味なテストは見当たらない
+- エラーの握りつぶし・環境依存の固定値: 該当なし（新規ロジックは純粋関数と
+  表示分岐のみで、タイムアウト・上限値の類を導入していない）
+- コミット粒度: 分岐点からの21コミットが shared → docs → node-env →
+  collector → frontend（部品ごと）→ テスト強化 → バグ修正の順に1関心事
+  1コミットで分かれており、Conventional Commits 準拠。i18n キー追加
+  （27591e6）が消費側コミット（fa50dd8 / a5103d6）より先にあり、単位Cで
+  指摘した「依存キーが後から来る」問題も起きていない
+- docs: ARCHITECTURE.md §2（nodeRole スキーマ）・§6.11（sent 段の
+  rpc-endpoint 差し替え）・§7.6.3（駆動元行の決定更新、更新経緯つき）が
+  実装と一致。`docs/PLAN.md` #215 チェック済み。glossary の新設アンカー
+  （validator / rpc-endpoint）と既存参照（el-client / cl-client /
+  engine-api / block / bootnode / workbench）は全て実在を確認した
+
+**記録のみ（本Issueの差し戻しにはしない）**
+
+1. `chain-profiles/ethereum/syncStageLabels.ts` の `describeSyncStage`
+   （44行目）に、今回修正した `describeNodeRole` と同種の穴が残っている
+   （オブジェクトリテラル由来の `Record<string, Localized>` を
+   `Object.hasOwn` ガードなしのブラケットアクセスで引くため、stage 名が
+   `"toString"` 等の継承メンバ名だと truthy な継承メンバを返す）。stage 名は
+   reth の RPC 実測値由来で到達性は nodeRole よりさらに低いが、同じ修正
+   パターンが確立した今、揃えておくべき。本ブランチで変更されていない
+   既存コードのため、別Issueとしての起票を統括に委ねる（なお
+   `nodeInternals.ts` の `ENGINE_API_METHOD_LABELS` は配列 + `find` +
+   `startsWith` のためこの穴は無い）
+2. 上記「テスト強化記録」の到達性の段落に「`nodeRole` は Docker ラベル
+   `com.chainviz.node-role` 由来」とあるが、正しくは `com.chainviz.role`
+   （designer 確定版で node-role 新設をやめ既存ラベルの再利用に変更済み）。
+   経緯記録のため原文は残すが、参照する際は本注記を優先すること
+3. 本ブランチは分岐点（26f4273）以降に main が先行しており（#216/#217/
+   #220/#222 のマージ）、`docs/PLAN.md`・`docs/worklog/issue-211.md`・
+   `App.tsx`・`Canvas.tsx`・`styles.css`・`InfraNodeCard.test.tsx` は両側で
+   変更がある。マージ時にコンフリクト解消が必要になる可能性が高く、統合後に
+   品質ゲート（build/lint/test）の再実行を推奨する
+4. 新設 glossary（validator / rpc-endpoint）と i18n 文言の英語版は
+   chainviz-i18n のレビューを通す前提（UX初稿5節）だが、本ブランチの
+   worklog には実施記録が無い。マージ前に通すかどうかは統括の判断に委ねる
