@@ -2361,3 +2361,68 @@ shared は本ブランチでコミット済み。node-env と collector と fron
 
 **結論**: 「記録のみ」4.の指摘は解消。上記1件の軽微な文言修正を除き、
 Issue #215のi18n対応は英語話者から見て自然でトーンも一貫している。
+
+### 2026-07-11 Issue #215 QA検証記録（単位A: ノード役割可視化）
+
+- 担当: qa
+- ブランチ: issue-215-node-role-visibility
+- 結論: 完了条件を満たしている（合格）。元Issue #215（reth と beacon
+  それぞれの役割・関連性が UI から見えてこない）が実機で解消されている
+  ことを確認した。差し戻しなし。
+
+**検証環境**
+
+- 稼働中の chainviz-ethereum スタック（compose 9コンテナ。reth1/reth2/
+  reth4 = execution、beacon1/beacon2/beacon4 = consensus、validator1/
+  validator2 = validator、workbench）を再利用。`docker ps` で各コンテナの
+  `com.chainviz.role` ラベルが設計どおりの値であることを確認。reth4/beacon4
+  は他タスクの addNode 残骸だが、動的追加コンテナにも同じラベルが正しく
+  付与されていることの傍証になった。
+- collector（ポート4000、`packages/collector/dist` 起動、adapter dist に
+  nodeRole 転記ロジックあり）+ vite dev server（ポート5173、
+  `VITE_COLLECTOR_URL=ws://127.0.0.1:4000` の実データ接続）を再利用。
+  vite プロセスの cwd が packages/frontend（本ブランチ）であることを確認。
+- チェーンは稼働中（reth1 ブロック高 8096、reth2 8097 と進行）。
+- 描画確認は Playwright（chromium headless）。共有ライブラリ不足は
+  scratchpad/pwlibs に展開済みの回避策（LD_LIBRARY_PATH 追加）で解決。
+
+**確認した項目と結果（完了条件と対応）**
+
+1. collector 実データ経路（ラベル → nodeRole）: WebSocket スナップショットを
+   直接受信し、reth1/reth2/reth4 → `nodeRole:"execution"`、beacon1/beacon2/
+   beacon4 → `"consensus"`、validator1/validator2 → `"validator"`、workbench
+   には `nodeRole` プロパティ自体が無いことを確認。ラベルからの生値転記が
+   実データで機能している。
+2. カードサブタイトル（#215 本丸）: reth カードが「実行クライアント · reth」、
+   beacon カードが「コンセンサスクライアント · lighthouse」、validator カードが
+   「バリデーター · lighthouse」と表示され、カードを見ただけで役割が分かる。
+   ポップオーバーの「役割」行にも同じラベルが出る。
+3. validator の同期表示抑制: validator1/2 のカードに同期状態ドットが無く
+   （reth/beacon/workbench には有る）、ポップオーバーにも「同期状態」
+   「ブロック高」行が出ない（「役割: バリデーター」行のみ）。値ゼロを
+   出し続けて「壊れている」と誤解させる旧状態が解消。
+4. reth ポップオーバーの「駆動元（合意ノード）」行: reth1 →
+   「chainviz-ethereum-beacon1-1」、reth2 →「…beacon2-1」、reth4 →
+   「…beacon4」と、drivesNodeId の逆引きで正しい beacon コンテナ名が表示。
+   beacon 側の順方向「駆動する実行ノード」行とも独立に共存。
+5. 役割軸の混同防止: bootnode（reth1/beacon1）のポップオーバーで、旧「役割」
+   ラベルが「P2Pでの役割 → ブートノード」に変更され、新設の「役割 →
+   実行/コンセンサスクライアント」行と別軸として並存していることを確認。
+6. 操作先エッジのホバーポップオーバー（新設）: workbench → reth1 の操作先
+   エッジにホバーすると、見出し「操作先（RPC 接続先）」、端点
+   「chainviz-ethereum-workbench-1 → chainviz-ethereum-reth1-1」、本文に
+   一般論（ウォレットは決まった1つの RPC エンドポイントに接続）・chainviz
+   都合（全操作の観測のため接続先を固定）・「ブートノード役とは無関係」の
+   3点を含むポップオーバーが表示される。
+7. コンソールエラー: 初期ロード〜操作を通じて 0 件。
+
+**補足**
+
+- `docs/PLAN.md` の #215 は単一チェックボックスで、frontend 実装完了時に
+  既にチェック済み（qa 専用の別チェックボックスは無い）。本検証で合格を
+  確認したが、`git push`/PR作成/マージ/Issueクローズは統括の判断・実行に
+  委ねる。
+- 検証のためのデプロイ等、チェーン状態を変える操作は行っていない
+  （ラベル・役割表示の確認のみ）。
+- 差し戻しなし。node-env・collector・frontend の3分割すべてが設計どおり
+  実データで動作している。
