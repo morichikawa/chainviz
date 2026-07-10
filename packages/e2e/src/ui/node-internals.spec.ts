@@ -103,6 +103,37 @@ const PULSE_DISAPPEAR_TIMEOUT_MS = PULSE_DURATION_MS * 5;
  */
 const SECOND_PULSE_TIMEOUT_MS = NODE_INTERNALS_POLL_INTERVAL_MS * 5;
 
+/**
+ * 周期性(「流れ続ける」)を確認するために観測する「出現→消滅」サイクルの回数。
+ * 1サイクルだけでは「たまたま1回出て消えた」可能性が残るため、複数回くり返し
+ * 観測して単発の出現と区別する。各サイクルはポーリング間隔(3秒)相当なので、
+ * 実測ではおおよそ `PULSE_CYCLES × 3秒` 程度で完了する(タイムアウトは worst
+ * case の上限であり通常はそこまで待たない)。
+ */
+const PULSE_CYCLES = 2;
+
+/**
+ * 対象エッジ上のパルスが「出現→消滅」を `cycles` 回くり返し、最後にもう一度
+ * 出現するところまで確認する。1観測=1パルスの設計(useNodeLinkActivityPulses)で
+ * 対象エッジにスコープしたカウントは常に0か1になるため、count 1 → 0 の交互
+ * 確認をくり返すことで「周期的に流れ続ける」ことを単発の出現と区別して検証
+ * できる。最後の出現まで見るのは「最終的に消えて終わり」の状態と区別するため。
+ */
+async function expectSustainedPulseCycles(
+  pulse: Locator,
+  cycles: number,
+): Promise<void> {
+  for (let cycle = 0; cycle < cycles; cycle += 1) {
+    // 初回の出現だけコールドスタート分の長い上限、以降は周期内で出るはずなので
+    // 短い上限を使う(タイムアウト根拠は各定数の doc コメント参照)。
+    const appearTimeout =
+      cycle === 0 ? FIRST_PULSE_TIMEOUT_MS : SECOND_PULSE_TIMEOUT_MS;
+    await expect(pulse).toHaveCount(1, { timeout: appearTimeout });
+    await expect(pulse).toHaveCount(0, { timeout: PULSE_DISAPPEAR_TIMEOUT_MS });
+  }
+  await expect(pulse).toHaveCount(1, { timeout: SECOND_PULSE_TIMEOUT_MS });
+}
+
 test("UI-D-01: beacon→reth の内部リンクエッジが常設表示される", async ({ page }) => {
   await page.goto("/");
 
@@ -134,11 +165,16 @@ test("UI-D-01: beacon→reth の内部リンクエッジが常設表示される
 });
 
 test("UI-D-02: Engine API の活動パルスが流れ続ける", async ({ page }) => {
-  // パルスの初回出現・消滅・再出現(周期性の確認)を1テスト内で待つため、
-  // 既定の60秒では足りない。個別に緩める(p2p-graph.spec.ts の UI-B-03 と
-  // 同じ考え方)。
+  // パルスの初回出現に加え、周期性の確認として「出現→消滅」を複数サイクル
+  // + 最終出現まで待つため、既定の60秒では足りない。個別に緩める
+  // (p2p-graph.spec.ts の UI-B-03 と同じ考え方)。worst case は
+  // 初回出現(FIRST) + 各サイクルの(出現SECOND + 消滅DISAPPEAR) + 最終出現
+  // (SECOND) の合計に、goto・ホバー内訳確認分の余裕(40秒)を足した値。
   test.setTimeout(
-    FIRST_PULSE_TIMEOUT_MS + PULSE_DISAPPEAR_TIMEOUT_MS + SECOND_PULSE_TIMEOUT_MS + 30_000,
+    FIRST_PULSE_TIMEOUT_MS +
+      PULSE_CYCLES * (SECOND_PULSE_TIMEOUT_MS + PULSE_DISAPPEAR_TIMEOUT_MS) +
+      SECOND_PULSE_TIMEOUT_MS +
+      40_000,
   );
 
   await test.step(
@@ -155,12 +191,9 @@ test("UI-D-02: Engine API の活動パルスが流れ続ける", async ({ page }
   const pulse = edge.locator(".internal-link-pulse");
 
   await test.step("内部リンクエッジ上に活動パルスが周期的に現れる", async () => {
-    // 「周期的」を1回きりの出現と区別するため、出現→消滅→再出現の3段階を
-    // 実際に確認する(1観測=1パルスの設計〈useNodeLinkActivityPulses.ts〉
-    // なので、対象エッジにスコープしたカウントは常に0か1)。
-    await expect(pulse).toHaveCount(1, { timeout: FIRST_PULSE_TIMEOUT_MS });
-    await expect(pulse).toHaveCount(0, { timeout: PULSE_DISAPPEAR_TIMEOUT_MS });
-    await expect(pulse).toHaveCount(1, { timeout: SECOND_PULSE_TIMEOUT_MS });
+    // 「周期的に流れ続ける」を1回きりの出現と区別するため、出現→消滅を
+    // 複数サイクルくり返し観測する(単発なら2サイクル目で detect できない)。
+    await expectSustainedPulseCycles(pulse, PULSE_CYCLES);
   });
 
   await test.step(
