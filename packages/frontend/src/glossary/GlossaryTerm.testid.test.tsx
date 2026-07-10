@@ -1,12 +1,20 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LanguageProvider } from "../i18n/LanguageProvider.js";
+import { HOVER_POPOVER_CLOSE_DELAY_MS } from "../interaction/useHoverPopover.js";
 import { GlossaryProvider } from "./GlossaryProvider.js";
 import { GlossaryTerm } from "./GlossaryTerm.js";
 import type { Glossary } from "./types.js";
 
-afterEach(cleanup);
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 // Issue #198 の data-testid 計装が「属性が付いているだけ」でなく、実際に
 // ホバー/フォーカスで開閉するタイミングに合わせて popover の testid が
@@ -48,16 +56,25 @@ describe("GlossaryTerm testid timing (Issue #198)", () => {
     expect(screen.queryByTestId("glossary-popover-container")).toBeNull();
   });
 
-  it("adds and removes the popover testid as the term is hovered and unhovered", () => {
-    wrap(<GlossaryTerm termKey="container">コンテナ</GlossaryTerm>);
-    const anchor = screen.getByTestId("glossary-term-container");
+  it(
+    "adds and removes the popover testid as the term is hovered and unhovered, " +
+      "with the removal delayed (Issue #221)",
+    () => {
+      wrap(<GlossaryTerm termKey="container">コンテナ</GlossaryTerm>);
+      const anchor = screen.getByTestId("glossary-term-container");
 
-    fireEvent.mouseEnter(anchor);
-    expect(screen.getByTestId("glossary-popover-container")).toBeTruthy();
+      fireEvent.mouseEnter(anchor);
+      expect(screen.getByTestId("glossary-popover-container")).toBeTruthy();
 
-    fireEvent.mouseLeave(anchor);
-    expect(screen.queryByTestId("glossary-popover-container")).toBeNull();
-  });
+      fireEvent.mouseLeave(anchor);
+      // 即座には消えない（隙間通過中の可能性があるため）。
+      expect(screen.getByTestId("glossary-popover-container")).toBeTruthy();
+      act(() => {
+        vi.advanceTimersByTime(HOVER_POPOVER_CLOSE_DELAY_MS);
+      });
+      expect(screen.queryByTestId("glossary-popover-container")).toBeNull();
+    },
+  );
 
   it("adds and removes the popover testid as the term is focused and blurred (keyboard path)", () => {
     wrap(<GlossaryTerm termKey="container">コンテナ</GlossaryTerm>);

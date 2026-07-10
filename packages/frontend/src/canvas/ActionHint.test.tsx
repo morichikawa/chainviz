@@ -1,8 +1,16 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { HOVER_POPOVER_CLOSE_DELAY_MS } from "../interaction/useHoverPopover.js";
 import { ActionHint } from "./ActionHint.js";
 
-afterEach(cleanup);
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe("ActionHint", () => {
   it("renders the children without a tooltip by default", () => {
@@ -15,18 +23,28 @@ describe("ActionHint", () => {
     expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
-  it("shows the hint text on mouse enter and hides it on mouse leave", () => {
-    render(
-      <ActionHint hint="hello world">
-        <button type="button">Click me</button>
-      </ActionHint>,
-    );
-    const wrapper = screen.getByRole("button").parentElement as HTMLElement;
-    fireEvent.mouseEnter(wrapper);
-    expect(screen.getByRole("tooltip").textContent).toBe("hello world");
-    fireEvent.mouseLeave(wrapper);
-    expect(screen.queryByRole("tooltip")).toBeNull();
-  });
+  it(
+    "shows the hint text on mouse enter and hides it on mouse leave " +
+      "after the close delay (Issue #221: not immediately, so the cursor can " +
+      "still reach the popover across the gap)",
+    () => {
+      render(
+        <ActionHint hint="hello world">
+          <button type="button">Click me</button>
+        </ActionHint>,
+      );
+      const wrapper = screen.getByRole("button").parentElement as HTMLElement;
+      fireEvent.mouseEnter(wrapper);
+      expect(screen.getByRole("tooltip").textContent).toBe("hello world");
+      fireEvent.mouseLeave(wrapper);
+      // 即座には消えない（隙間通過中の可能性があるため）。
+      expect(screen.getByRole("tooltip")).toBeTruthy();
+      act(() => {
+        vi.advanceTimersByTime(HOVER_POPOVER_CLOSE_DELAY_MS);
+      });
+      expect(screen.queryByRole("tooltip")).toBeNull();
+    },
+  );
 
   it("shows the hint text on focus and hides it on blur (keyboard accessibility)", () => {
     render(
