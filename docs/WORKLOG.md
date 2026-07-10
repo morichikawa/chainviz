@@ -119,3 +119,4 @@
 | #203 | Issue #203 D層UIシナリオ(UI-D-01〜03)のPlaywright実装。ステップ10の最終Issueで、これによりSCENARIOS.mdのUIシナリオが全件`済`になり完了条件を満たした | [2026-07-10](worklog/issue-203.md) |
 | #209 | Issue #209 デプロイ/呼び出しフォームの引数にABI型（uint/address）ベースのクライアント側バリデーションを追加(frontend)し、forge/castの失敗stderrを既知パターンの要約へ変換するsummarizeOperationErrorを追加(collector) | [2026-07-10](worklog/issue-209.md) |
 | #210 | Issue #210 ワークベンチに複数ウォレットが紐づいて見える件の原因調査。モックデータ(EOA+スマートアカウント)の意図した挙動と特定、コード修正不要 | [2026-07-10](worklog/issue-210.md) |
+| #214 | Issue #214 validator(VC)とブートノード間の「P2P接続を確立中...」固着の原因調査。VCはP2P非参加なのに接続確立中エッジの対象に含めている設計上のミスマッチと特定（コード修正なし） | [2026-07-10](worklog/issue-214.md) |
