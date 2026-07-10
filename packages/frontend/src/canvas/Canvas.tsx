@@ -12,17 +12,26 @@ import {
   applyEdgeChanges,
   applyNodeChanges,
   type NodeChange,
+  useReactFlow,
 } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ContractCallPulseEdge } from "../entities/ContractCallPulseEdge.js";
 import { CONTRACT_CALL_PULSE_EDGE_TYPE } from "../entities/contractCallPulseEdge.js";
 import { ContractCard } from "../entities/ContractCard.js";
-import { CONTRACT_NODE_TYPE } from "../entities/contractNode.js";
+import { CONTRACT_NODE_TYPE, type ContractFlowNode } from "../entities/contractNode.js";
+import {
+  buildContractListEntries,
+  resolveNodeCenter,
+  sortEntriesByAppearance,
+} from "../entities/contractList.js";
+import { ContractListPanel } from "../entities/ContractListPanel.js";
 import { DeployEdge } from "../entities/DeployEdge.js";
 import { DEPLOY_EDGE_TYPE, isDeployFlowEdge } from "../entities/deployEdge.js";
 import { GhostNodeCard } from "../entities/GhostNodeCard.js";
-import { GHOST_NODE_TYPE } from "../entities/ghostNode.js";
+import { GHOST_NODE_TYPE, type GhostFlowNode } from "../entities/ghostNode.js";
 import { InfraNodeCard } from "../entities/InfraNodeCard.js";
+import { NEW_ARRIVAL_HIGHLIGHT_DURATION_MS } from "../entities/useNewArrivalHighlight.js";
+import { useAppearanceOrder } from "../entities/useAppearanceOrder.js";
 import { InternalLinkEdge } from "../entities/InternalLinkEdge.js";
 import {
   INTERNAL_LINK_EDGE_TYPE,
@@ -98,6 +107,24 @@ function CanvasInner({ nodes, edges = [], onPersistPosition }: CanvasProps) {
   const [hoveredInternalLinkEdgeId, setHoveredInternalLinkEdgeId] = useState<
     string | null
   >(null);
+  // コントラクト一覧パネルの行クリックでパンした直後、一時的に新着発光と
+  // 同じ強調を当てる対象ノード id（Issue #218/#211「単位C」）。
+  // rfNodes 自体は書き換えず、表示直前（displayNodes）でだけ isNew=true を
+  // 注入する（peer/deploy エッジの hover 注入と同じパターン）。
+  const [jumpHighlightNodeId, setJumpHighlightNodeId] = useState<string | null>(
+    null,
+  );
+  const jumpHighlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  useEffect(
+    () => () => {
+      if (jumpHighlightTimerRef.current) {
+        clearTimeout(jumpHighlightTimerRef.current);
+      }
+    },
+    [],
+  );
 
   // ワールドステート更新で親が nodes を再計算したら反映する。React Flow は
   // 実測済み(measured)の情報を持たないノードオブジェクトを受け取ると再計測
@@ -187,9 +214,79 @@ function CanvasInner({ nodes, edges = [], onPersistPosition }: CanvasProps) {
   // ネットワーク凡例（Issue #124 A）に渡す、現在描画中のピア接続だけの一覧。
   const peerEdges = useMemo(() => rfEdges.filter(isPeerFlowEdge), [rfEdges]);
 
+  // コントラクト一覧パネル（Issue #218/#211「単位C」）に渡す行データ。
+  // rfNodes は既にコントラクトカード・デプロイ中のゴーストカードを含んで
+  // いるため、App.tsx を経由せずここで filter するだけで揃う
+  // （peerEdges と同じ流儀）。
+  const contractNodesForList = useMemo(
+    () =>
+      rfNodes.filter(
+        (node): node is ContractFlowNode => node.type === CONTRACT_NODE_TYPE,
+      ),
+    [rfNodes],
+  );
+  const deployingGhostsForList = useMemo(
+    () =>
+      rfNodes.filter(
+        (node): node is GhostFlowNode =>
+          node.type === GHOST_NODE_TYPE && node.data.kind === "contract",
+      ),
+    [rfNodes],
+  );
+  const contractListEntries = useMemo(
+    () => buildContractListEntries(contractNodesForList, deployingGhostsForList),
+    [contractNodesForList, deployingGhostsForList],
+  );
+  const contractListIds = useMemo(
+    () => contractListEntries.map((entry) => entry.nodeId),
+    [contractListEntries],
+  );
+  const contractListOrder = useAppearanceOrder(contractListIds);
+  const sortedContractListEntries = useMemo(
+    () => sortEntriesByAppearance(contractListEntries, contractListOrder),
+    [contractListEntries, contractListOrder],
+  );
+
+  const { getNode, setCenter, getZoom } = useReactFlow();
+
+  // コントラクト一覧パネルの行クリック。対象カードへパンし（ズーム倍率は
+  // 現状維持。Miro的な操作感を保つため、ユーザーのクリック以外でカメラを
+  // 動かさない）、実カード（コントラクトカード）が対象のときだけ一時的な
+  // 強調を当てる（ARCHITECTURE.md／docs/worklog/issue-211.md「単位C」）。
+  const handleJumpToContract = useCallback(
+    (nodeId: string) => {
+      const node = getNode(nodeId);
+      if (!node) return;
+      const center = resolveNodeCenter(node.position, node.measured);
+      setCenter(center.x, center.y, { zoom: getZoom(), duration: 400 });
+
+      if (node.type !== CONTRACT_NODE_TYPE) return; // ghost カードは spinner 演出で十分
+      if (jumpHighlightTimerRef.current) {
+        clearTimeout(jumpHighlightTimerRef.current);
+      }
+      setJumpHighlightNodeId(nodeId);
+      jumpHighlightTimerRef.current = setTimeout(() => {
+        setJumpHighlightNodeId(null);
+      }, NEW_ARRIVAL_HIGHLIGHT_DURATION_MS);
+    },
+    [getNode, setCenter, getZoom],
+  );
+
+  // 表示直前にジャンプ強調を注入する（displayEdges の hover 注入と同じ
+  // パターン）。rfNodes 自体・ContractNodeData の型は変えない。
+  const displayNodes = useMemo(() => {
+    if (jumpHighlightNodeId === null) return rfNodes;
+    return rfNodes.map((node) => {
+      if (node.id !== jumpHighlightNodeId || node.type !== CONTRACT_NODE_TYPE) {
+        return node;
+      }
+      return { ...node, data: { ...node.data, isNew: true } };
+    });
+  }, [rfNodes, jumpHighlightNodeId]);
+
   return (
     <ReactFlow
-      nodes={rfNodes}
+      nodes={displayNodes}
       edges={displayEdges}
       nodeTypes={nodeTypes}
       edgeTypes={edgeTypes}
@@ -215,6 +312,10 @@ function CanvasInner({ nodes, edges = [], onPersistPosition }: CanvasProps) {
       <Controls />
       <MiniMap pannable zoomable />
       <PeerNetworkLegend edges={peerEdges} />
+      <ContractListPanel
+        entries={sortedContractListEntries}
+        onSelect={handleJumpToContract}
+      />
     </ReactFlow>
   );
 }
