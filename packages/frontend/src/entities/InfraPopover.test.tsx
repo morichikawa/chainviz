@@ -214,6 +214,57 @@ describe("InfraPopover sync/blockHeight visibility by nodeRole (Issue #215)", ()
     expect(screen.getByText("役割")).toBeTruthy();
     expect(screen.getByText("バリデーター")).toBeTruthy();
   });
+
+  it("suppresses the sync/blockHeight rows for a validator carrying real synced data (display is role-driven, not data-driven)", () => {
+    // データと表示ロジックの分離: validator が synced・実ブロック高 777 を
+    // 持っていても、同期/ブロック高の行・値ともに一切漏らさない。
+    renderPopover({ ...node, nodeRole: "validator", syncStatus: "synced", blockHeight: 777 });
+    expect(screen.queryByText("同期状態")).toBeNull();
+    expect(screen.queryByText("ブロック高")).toBeNull();
+    expect(screen.queryByText("同期済み")).toBeNull();
+    expect(screen.queryByText("777")).toBeNull();
+  });
+
+  it("shows the sync/blockHeight rows for an execution node with empty progress (0/syncing still displayed)", () => {
+    // 逆向き: 役割 execution で blockHeight 0・syncing という「空データ」でも
+    // 行は出す（省略 = 未観測 とは区別する）。値 0 と「同期中」を表示する。
+    renderPopover({ ...node, nodeRole: "execution", syncStatus: "syncing", blockHeight: 0 });
+    expect(screen.getByText("同期状態")).toBeTruthy();
+    expect(screen.getByText("同期中")).toBeTruthy();
+    expect(screen.getByText("ブロック高")).toBeTruthy();
+    expect(screen.getByText("0")).toBeTruthy();
+  });
+
+  it("still renders the sync stages section for a validator that (unexpectedly) carries internals.syncStages", () => {
+    // 境界の明示: syncStages セクションは internals の有無で独立に判定され、
+    // showsSyncState には連動しない。Ethereum プロファイルでは validator は
+    // internals を持たないため実際には到達しないが、万一持った場合は
+    // 「同期状態/ブロック高」行は隠れるのにステージ節だけは出るという非対称に
+    // なる（現状挙動を固定。役割ゲートは基本の同期行にのみ効く）。
+    renderPopover(
+      {
+        ...node,
+        nodeRole: "validator",
+        internals: { syncStages: [{ stage: "Headers", checkpoint: 10 }] },
+      },
+      "ja",
+      undefined,
+      64,
+    );
+    expect(screen.queryByText("同期状態")).toBeNull();
+    expect(screen.getByText("同期ステージ")).toBeTruthy();
+  });
+
+  it("still renders the txpool row for a validator that (unexpectedly) carries internals.mempool", () => {
+    // 上と同じ非対称の txpool 版。行の有無は internals.mempool の有無で決まる。
+    renderPopover({
+      ...node,
+      nodeRole: "validator",
+      internals: { mempool: { pending: 1, queued: 2 } },
+    });
+    expect(screen.queryByText("同期状態")).toBeNull();
+    expect(screen.getByText("txpool")).toBeTruthy();
+  });
 });
 
 describe("InfraPopover drivenBy row (ARCHITECTURE.md §7.6.3 updated, Issue #215)", () => {
@@ -225,6 +276,14 @@ describe("InfraPopover drivenBy row (ARCHITECTURE.md §7.6.3 updated, Issue #215
 
   it("does not show the drivenBy row when it cannot be resolved", () => {
     renderPopover(node);
+    expect(screen.queryByText("駆動元（合意ノード）")).toBeNull();
+  });
+
+  it("does not show the drivenBy row when the resolved containerName is an empty string (欠落時の縮退)", () => {
+    // 駆動元ノードの containerName が空文字だと逆引き結果も空文字になり
+    // （infraNode.ts のテスト参照）、ポップオーバー側は falsy 判定で
+    // 「未解決」と同じく行を出さない。空の欄を描かない安全側。
+    renderPopover(node, "ja", undefined, undefined, "");
     expect(screen.queryByText("駆動元（合意ノード）")).toBeNull();
   });
 

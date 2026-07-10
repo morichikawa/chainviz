@@ -263,6 +263,91 @@ describe("entitiesToFlowNodes", () => {
     );
   });
 
+  it("does not give the losing duplicate driver a drivenBy of its own (nobody drives beacon-b)", () => {
+    // 1対多の異常系で、勝った側(beacon-a)・負けた側(beacon-b)いずれも自身は
+    // 誰にも駆動されていないので drivenBy を持たない（駆動先の reth-1 だけが
+    // drivenBy を得る）。
+    const beaconA: NodeEntity = {
+      ...node("beacon-a", "chainviz-lighthouse-a"),
+      drivesNodeId: "reth-1",
+    };
+    const beaconB: NodeEntity = {
+      ...node("beacon-b", "chainviz-lighthouse-b"),
+      drivesNodeId: "reth-1",
+    };
+    const reth = node("reth-1", "chainviz-reth-1");
+    const nodes = entitiesToFlowNodes([beaconA, beaconB, reth], {});
+    expect(
+      nodes.find((n) => n.id === "beacon-a")?.data.drivenByContainerName,
+    ).toBeUndefined();
+    expect(
+      nodes.find((n) => n.id === "beacon-b")?.data.drivenByContainerName,
+    ).toBeUndefined();
+  });
+
+  it("keeps the first match even when that first driver has an empty containerName (dedup is by target id, not by value quality)", () => {
+    // 逆引き索引は `drivesNodeId` の重複を「最初に見つけた駆動元」で確定する。
+    // 最初の駆動元の containerName が空文字でも後続の実名で上書きしないため、
+    // 逆引き結果は空文字になる（＝ポップオーバー側では falsy 判定で「未解決」
+    // 扱いになり、行が出ない。containerName 欠落時の縮退挙動）。
+    const beaconEmpty: NodeEntity = {
+      ...node("beacon-empty", ""),
+      drivesNodeId: "reth-1",
+    };
+    const beaconNamed: NodeEntity = {
+      ...node("beacon-named", "chainviz-lighthouse-named"),
+      drivesNodeId: "reth-1",
+    };
+    const reth = node("reth-1", "chainviz-reth-1");
+    const nodes = entitiesToFlowNodes([beaconEmpty, beaconNamed, reth], {});
+    expect(nodes.find((n) => n.id === "reth-1")?.data.drivenByContainerName).toBe(
+      "",
+    );
+  });
+
+  it("resolves both directions without hanging on a circular drives relationship (defensive)", () => {
+    // beacon→reth かつ reth→beacon という循環（本来あり得ない）でも、逆引きは
+    // 単一パスの走査なので無限ループにならず、双方が drivesNode/drivenBy を得る。
+    const beacon: NodeEntity = {
+      ...node("beacon-1", "chainviz-lighthouse-1"),
+      drivesNodeId: "reth-1",
+    };
+    const reth: NodeEntity = {
+      ...node("reth-1", "chainviz-reth-1"),
+      drivesNodeId: "beacon-1",
+    };
+    const nodes = entitiesToFlowNodes([beacon, reth], {});
+    const beaconNode = nodes.find((n) => n.id === "beacon-1");
+    const rethNode = nodes.find((n) => n.id === "reth-1");
+    expect(beaconNode?.data.drivesNodeContainerName).toBe("chainviz-reth-1");
+    expect(beaconNode?.data.drivenByContainerName).toBe("chainviz-reth-1");
+    expect(rethNode?.data.drivesNodeContainerName).toBe("chainviz-lighthouse-1");
+    expect(rethNode?.data.drivenByContainerName).toBe("chainviz-lighthouse-1");
+  });
+
+  it("resolves a self-drive to itself without hanging (defensive)", () => {
+    // drivesNodeId が自分自身を指す壊れたデータでも、順方向・逆方向ともに
+    // 自分の containerName に解決するだけで無限ループにはならない。
+    const selfDrive: NodeEntity = {
+      ...node("reth-1", "chainviz-reth-1"),
+      drivesNodeId: "reth-1",
+    };
+    const nodes = entitiesToFlowNodes([selfDrive], {});
+    const rethNode = nodes.find((n) => n.id === "reth-1");
+    expect(rethNode?.data.drivesNodeContainerName).toBe("chainviz-reth-1");
+    expect(rethNode?.data.drivenByContainerName).toBe("chainviz-reth-1");
+  });
+
+  it("omits drivesNodeContainerName when drivesNodeId points at a workbench id (node-only resolution)", () => {
+    // drivesNodeId の解決は nodesById（node のみ）を引くため、ワークベンチの id を
+    // 指していても解決できず行を出さない（宙ぶらりんの参照と同じ縮退）。
+    const beacon: NodeEntity = { ...node("beacon-1"), drivesNodeId: "wb-1" };
+    const nodes = entitiesToFlowNodes([beacon, workbench], {});
+    expect(
+      nodes.find((n) => n.id === "beacon-1")?.data.drivesNodeContainerName,
+    ).toBeUndefined();
+  });
+
   // --- D層: maxElBlockHeight（ARCHITECTURE.md §7.6.5。Issue #189） ---
 
   it("puts the max EL blockHeight (from syncStages-reporting nodes) on every card's data", () => {

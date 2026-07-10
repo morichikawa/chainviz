@@ -358,6 +358,39 @@ describe("InfraNodeCard sync status dot visibility (Issue #215)", () => {
         .querySelector(".infra-card__status"),
     ).not.toBeNull();
   });
+
+  it("hides the dot for a validator even when it carries real sync data (display is role-driven, not data-driven)", () => {
+    // データと表示ロジックの分離: validator が同期済み・実ブロック高を持って
+    // いても、ドット表示は nodeRole だけで決まる（同期データの有無で切り替え
+    // ない）。基底 node は synced/blockHeight 10 なので、その状態でも隠れる。
+    renderCard({ ...node, nodeRole: "validator", syncStatus: "synced", blockHeight: 999 });
+    expect(
+      screen
+        .getByTestId("infra-card-reth-follower-1")
+        .querySelector(".infra-card__status"),
+    ).toBeNull();
+  });
+
+  it("hides the dot for a syncing validator too (role gating ignores syncStatus)", () => {
+    renderCard({ ...node, nodeRole: "validator", syncStatus: "syncing" });
+    expect(
+      screen
+        .getByTestId("infra-card-reth-follower-1")
+        .querySelector(".infra-card__status"),
+    ).toBeNull();
+  });
+
+  it("shows a syncing dot for an execution node with no progress yet (empty data still displayed)", () => {
+    // 逆向きの不整合: 役割は execution だが blockHeight 0・syncing という
+    // 「データが空」な状態でも、ドットは出す（省略 = 未観測 とは区別し、
+    // is-syncing として表示する）。
+    renderCard({ ...node, nodeRole: "execution", syncStatus: "syncing", blockHeight: 0 });
+    const dot = screen
+      .getByTestId("infra-card-reth-follower-1")
+      .querySelector(".infra-card__status");
+    expect(dot).not.toBeNull();
+    expect(dot?.classList.contains("is-syncing")).toBe(true);
+  });
 });
 
 describe("InfraNodeCard RPC target popover field (Issue #123 §4-4)", () => {
