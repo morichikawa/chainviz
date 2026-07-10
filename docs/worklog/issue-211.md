@@ -545,3 +545,57 @@ mempool 投入時の検査として説明する）。
 
 作業中に見つけたバグ・改善提案: 無し（実装は設計どおりで、テストで
 検出すべき挙動のずれは見つからなかった）。
+
+### 2026-07-10 レビュー記録（単位D、chainviz-reviewer）
+
+ブランチ `issue-212-tx-lifecycle` の全12コミット（横断設計メモ e0237fc を
+含む）を静的レビューした。判定は**合格**。
+
+確認した内容:
+
+- `pnpm build` / `pnpm lint` / `pnpm test`（frontend 1453件を含む全パッケージ）
+  がリポジトリ全体で通ることを確認した
+- 「観測不能な状態を観測したかのように表示しない」という制約の遵守:
+  `deriveTxLifecycle` は署名(signed)・送信(sent)を全 status で常に `done`
+  とし、`active` は mempool 段階にのみ現れる。将来 status に値が追加された
+  場合も default 節で全段階「未到達」へフォールバックし、嘘の完了表示を
+  しない（never 型による網羅チェック付き）。テスト
+  （`txLifecycle.test.ts` の不変条件群）もこの制約を直接検証しており、
+  実装を壊すと落ちることがテスト強化記録で確認済み
+- `TxLifecyclePopover.tsx` は既存パターン（`role="tooltip"`、
+  `data-testid` の `<種別>-<hash>` 命名、glossary-popover 系の CSS、
+  マーク文字の `aria-hidden`）と一貫している。状態導出はコンポーネントに
+  持たず `txLifecycle.ts` に分離されている（1ファイル1責務）
+- `TxChip` / `WalletPopoverTxItem` のサブコンポーネント化は既存の
+  `data-testid` / `data-status` / `is-settling` クラス・残高・nonce・
+  トークンチップ表示を維持している。`title` 属性（hash のみ）の削除は
+  設計メモ・ARCHITECTURE.md §6.11 に明記された置き換えで、コメントにも
+  経緯が残っている
+- glossary 新設2語（signature / block）は既存の `{ja, en}` +
+  `layer` + `relatedTerms` 形式に沿い、relatedTerms が参照する用語キー
+  （transaction / eoa / workbench / mempool / gossip）は全て実在する。
+  `GlossaryTerm` のアンカー（signature / workbench / mempool / block）も
+  全キー実在を確認した
+- `docs/ARCHITECTURE.md` §6.11・`docs/PLAN.md` のチェック・
+  `docs/WORKLOG.md` 索引・本 worklog の実装/テスト強化記録は実装と
+  整合している
+- エラーの握りつぶし・環境状態依存の決め打ち定数は無い（新規コードに
+  try/catch・タイマー・閾値定数が無い）
+- コミット粒度は「導出ロジック / i18n / glossary / ポップオーバー本体 /
+  統合 / アンカー追加 / docs / テスト3種 / worklog」と関心事ごとに
+  分かれており適切
+
+非ブロッキングの申し送り（差し戻し不要、QA・統括向けメモ）:
+
+- pending の tx をホバーしたとき、未到達の4段階目（ブロック取り込み）の
+  一言説明が「〜確定しました」と過去形のまま表示される（○マークと
+  opacity 0.6 で「未到達」は視覚的に区別される）。UX設計メモの表を
+  そのまま実装した結果であり設計との齟齬ではないが、実機で誤読が
+  懸念されるようなら状態別文言の検討余地がある。QA での見え方確認を
+  推奨する
+- 新設 i18n 文言・glossary 英語版は chainviz-i18n のレビュー対象
+  （設計メモ5節の指示）。未実施であればマージ前後に手配が必要
+- 本ブランチは main + e0237fc（issue-211 ブランチと共有する横断設計メモ
+  コミット）を基点に積まれている。#211 側と #212 側のどちらの PR を
+  先にマージしても git 上は問題ないが、両 PR に同一コミットが表示される
+  点は把握しておくこと
