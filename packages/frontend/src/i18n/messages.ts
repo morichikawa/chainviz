@@ -189,6 +189,11 @@ export const messages = {
   "operation.tab.deploy": { ja: "デプロイ", en: "Deploy" },
   "operation.tab.call": { ja: "コントラクト呼び出し", en: "Call contract" },
   "operation.close": { ja: "閉じる", en: "Close" },
+  // Issue #213: 各タブの冒頭に「何をする操作か」を一言で説明する。
+  "operation.transfer.description": {
+    ja: "あなたのウォレットから別のアドレスへ ETH を送る操作です",
+    en: "Sends ETH from your wallet to another address.",
+  },
   "operation.transfer.to": { ja: "宛先", en: "To" },
   "operation.transfer.amount": { ja: "金額（ETH）", en: "Amount (ETH)" },
   "operation.transfer.submit": { ja: "送金する", en: "Send" },
@@ -200,11 +205,22 @@ export const messages = {
     ja: "0以上のETH数量を10進数で入力してください（例: 0.5）",
     en: "Enter a non-negative ETH amount in decimal (e.g. 0.5).",
   },
+  "operation.deploy.description": {
+    ja: "コントラクト（プログラム）をチェーン上に配置する操作です。配置されると誰でも呼び出せるようになります",
+    en: "Places a contract (program) on the chain. Once placed, anyone can call it.",
+  },
   "operation.deploy.contract": { ja: "コントラクト", en: "Contract" },
   "operation.deploy.submit": { ja: "デプロイする", en: "Deploy" },
   "operation.deploy.note": {
     ja: "ソースからコンパイルしたコントラクトを配置する tx が送られ、取り込まれるとコントラクトカードが現れます",
     en: "Sends a tx that places the compiled contract on chain; a contract card appears once it is included.",
+  },
+  // Issue #213 + #219: 呼び出しタブの冒頭説明。3文目後半（どのウォレット
+  // からでも呼び出せる）が #219「ウォレットはスマコンに何ができるのか」の
+  // 直接の回答になる。
+  "operation.call.description": {
+    ja: "デプロイ済みコントラクトの関数を tx として実行し、コントラクトの状態を変更する操作です。公開関数はどのウォレットからでも呼び出せます",
+    en: "Runs a function of a deployed contract as a tx, changing the contract's state. Public functions can be called from any wallet.",
   },
   "operation.call.target": { ja: "対象コントラクト", en: "Target contract" },
   "operation.call.function": { ja: "関数", en: "Function" },
@@ -223,6 +239,16 @@ export const messages = {
   "operation.arg.invalid.address": {
     ja: "0xで始まる40桁の16進数のアドレスを入力してください（例: 0x1234…）",
     en: "Enter an address starting with 0x followed by 40 hex characters.",
+  },
+  // Issue #219: トークン単位（unit: "token"）の引数用エラー文言・ラベル
+  // 添え字。
+  "operation.arg.invalid.token": {
+    ja: "0以上のトークン量を10進数で入力してください（例: 1.5）",
+    en: "Enter a non-negative token amount in decimal (e.g. 1.5).",
+  },
+  "operation.arg.tokenUnitSuffix": {
+    ja: "（{symbol}単位）",
+    en: " (in {symbol})",
   },
   "operation.pending": { ja: "実行中…", en: "Running…" },
   "ghost.contract.deploying": { ja: "デプロイ中… {name}", en: "Deploying… {name}" },
