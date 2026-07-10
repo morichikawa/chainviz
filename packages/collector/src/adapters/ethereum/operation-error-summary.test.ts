@@ -97,6 +97,59 @@ describe("summarizeOperationError / known patterns", () => {
   });
 });
 
+describe("summarizeOperationError / wording variations (forge/cast version drift)", () => {
+  it("handles a singular 'type' in the encode length mismatch (expected 1 type)", () => {
+    // 引数が1つだけ不足した場合、forge は複数形 "types" ではなく単数形
+    // "type" を出す。`types?` で両対応していることを確認する。
+    const detail = "Error: encode length mismatch: expected 1 type, got 0";
+    expect(summarizeOperationError(detail)).toBe(
+      "function argument count mismatch (expected 1, got 0)",
+    );
+  });
+
+  it("passes through an unknown parser-error reason instead of dropping the message", () => {
+    // 既知の理由（"expected at least one digit" 等）に一致しない理由文言が
+    // 将来のバージョンで出ても、パターン自体は検出できているので生の理由を
+    // そのまま載せる（握りつぶさない）。
+    const detail =
+      "Error: parser error:\nweird\n^\nunexpected token while parsing value";
+    expect(summarizeOperationError(detail)).toBe(
+      'invalid argument value "weird": unexpected token while parsing value',
+    );
+  });
+
+  it("passes through an unknown CLI-level invalid-value reason", () => {
+    const detail =
+      "error: invalid value 'xyz' for '--gas-limit <GAS_LIMIT>': some brand new reason\n\nFor more information, try '--help'.";
+    expect(summarizeOperationError(detail)).toBe(
+      'invalid value "xyz" for --gas-limit <GAS_LIMIT>: some brand new reason',
+    );
+  });
+
+  it("tolerates CRLF line endings in a parser error (Windows-style forge output)", () => {
+    const detail =
+      "Error: parser error:\r\ntest\r\n^\r\nexpected at least one digit";
+    expect(summarizeOperationError(detail)).toBe(
+      'invalid argument value "test": not a non-negative integer',
+    );
+  });
+
+  it("still summarizes a parser error when the caret column differs (deep indentation)", () => {
+    const detail =
+      "Error: parser error:\nverylongvalue\n            ^\ninvalid boolean";
+    expect(summarizeOperationError(detail)).toBe(
+      'invalid argument value "verylongvalue": not a boolean; expected true or false',
+    );
+  });
+
+  it("summarizes an encode length mismatch reporting zero provided args", () => {
+    const detail = "Error: encode length mismatch: expected 3 types, got 0";
+    expect(summarizeOperationError(detail)).toBe(
+      "function argument count mismatch (expected 3, got 0)",
+    );
+  });
+});
+
 describe("summarizeOperationError / unknown patterns (fallback)", () => {
   it("returns a short unrecognized message unchanged", () => {
     const detail = 'Error: "/contracts/nope.sol": No such file or directory (os error 2)';
