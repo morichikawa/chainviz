@@ -71,6 +71,7 @@ import {
   executionPeerTargets,
   executionStableIdForBeacon,
   executionTargets,
+  isValidatorService,
   type BeaconTarget,
   type ExecutionMetricsTarget,
   type ExecutionPeerTarget,
@@ -334,10 +335,23 @@ export class EthereumAdapter implements ChainAdapter {
       syncStatus: resolvedSync?.syncStatus ?? "syncing",
       blockHeight: resolvedSync?.blockHeight ?? 0,
       headBlockHash: "",
-      // P2P 上の役割（Issue #124）。ラベルが無い・想定外の値の場合は
-      // すべて通常ピア扱いにする（addNode で追加されるノードは常に peer
-      // 役であり、ラベルを付与しない設計 = node-lifecycle.ts 参照）。
-      p2pRole: obs.labels[P2P_ROLE_LABEL] === "bootnode" ? "bootnode" : "peer",
+      // P2P 上の役割（Issue #124、#214）。優先順位は以下のとおり:
+      // 1. ラベルが厳密に "bootnode" -> "bootnode"（デプロイ構成の選択。
+      //    ラベルが無い・想定外の値の場合はこの分岐に該当しない）
+      // 2. VC（validator client、compose サービス名が "validator" を含む） ->
+      //    "none"。VC は libp2p の P2P ネットワークに参加せず（beacon へ
+      //    HTTP の Beacon API で接続するのみ）、PeerEdge の端点になることが
+      //    決してないため、P2P 接続を前提にした表示（フロントの「接続確立
+      //    中」エッジ等）の対象から除外できるようにする（isValidatorService
+      //    のコメントに前提条件を明記。addNode は VC を作らないため動的
+      //    追加ノードはこの分岐に巻き込まれない）
+      // 3. それ以外 -> "peer"（addNode で追加されるノードを含む通常ピア）
+      p2pRole:
+        obs.labels[P2P_ROLE_LABEL] === "bootnode"
+          ? "bootnode"
+          : isValidatorService(obs)
+            ? "none"
+            : "peer",
     };
   }
 

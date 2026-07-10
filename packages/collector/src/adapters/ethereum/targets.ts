@@ -132,6 +132,29 @@ function isBeaconService(obs: ContainerObservation): boolean {
 }
 
 /**
+ * compose サービス名に "validator" を含むか（Issue #214）。
+ *
+ * lighthouse の validator client（VC）は libp2p の P2P ネットワークに参加
+ * しない（beacon へ HTTP の Beacon API で接続するだけ）ため、`toEntity` の
+ * `p2pRole` 導出で「P2P 非参加」（`"none"`）を判定するのに使う。
+ *
+ * 前提条件（この判定が成立するための構成上の制約。崩れた場合はこの関数を
+ * 見直す必要がある）:
+ * - `profiles/ethereum/docker-compose.yml` の VC サービス名
+ *   （`validator1`/`validator2`）が "validator" を含む命名になっていること
+ * - `node-lifecycle.ts`（addNode コマンド）は VC を持つノードを一切作らない
+ *   （フォロワー reth+beacon ペアのみを作成する）こと。したがって動的追加
+ *   ノードがこの判定に巻き込まれることはない
+ *
+ * `isBeaconService` と対になる同系のロジックであり、判定材料（compose
+ * サービス名）・除外対象（"beacon"/"validator" の混同防止）の考え方を揃える。
+ */
+export function isValidatorService(obs: ContainerObservation): boolean {
+  const service = obs.labels[COMPOSE_SERVICE_LABEL] ?? "";
+  return /validator/i.test(service);
+}
+
+/**
  * ピア接続の取得対象になるビーコンノードを観測値から抽出する。
  * consensus クライアントであり、かつ compose サービス名が "beacon" を含む
  * （同じ lighthouse でも validator コンテナは Beacon API を持たないため除外）

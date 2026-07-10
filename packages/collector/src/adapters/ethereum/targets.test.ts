@@ -11,6 +11,7 @@ import {
   executionRpcUrls,
   executionStableIdForBeacon,
   executionTargets,
+  isValidatorService,
 } from "./targets.js";
 
 function obs(overrides: Partial<ContainerObservation> = {}): ContainerObservation {
@@ -898,6 +899,28 @@ describe("executionRpcUrls", () => {
 
   it("skips execution containers without an IP", () => {
     expect(executionRpcUrls([obs({ ip: "" })])).toEqual([]);
+  });
+});
+
+describe("isValidatorService (Issue #214)", () => {
+  it("returns true for a compose service name containing 'validator'", () => {
+    expect(isValidatorService(validator1)).toBe(true);
+  });
+
+  it("matches case-insensitively", () => {
+    const upper = obs({
+      labels: { "com.docker.compose.service": "VALIDATOR2" },
+    });
+    expect(isValidatorService(upper)).toBe(true);
+  });
+
+  it("returns false for beacon and execution services", () => {
+    expect(isValidatorService(beacon1)).toBe(false);
+    expect(isValidatorService(obs())).toBe(false);
+  });
+
+  it("returns false when the compose service label is missing", () => {
+    expect(isValidatorService(obs({ labels: {} }))).toBe(false);
   });
 });
 
