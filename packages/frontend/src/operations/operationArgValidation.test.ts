@@ -43,6 +43,25 @@ describe("isValidOperationArgValue (Issue #209)", () => {
     it("trims surrounding whitespace before checking", () => {
       expect(isValidOperationArgValue("uint", "  42  ")).toBe(true);
     });
+
+    it("rejects an explicit plus sign", () => {
+      expect(isValidOperationArgValue("uint", "+42")).toBe(false);
+    });
+
+    it("rejects whitespace embedded between digits (only surrounding whitespace is trimmed)", () => {
+      expect(isValidOperationArgValue("uint", "1 000")).toBe(false);
+      expect(isValidOperationArgValue("uint", "1\t000")).toBe(false);
+    });
+
+    it("rejects full-width digits (only ASCII 0-9 count)", () => {
+      // 全角数字は forge のパーサーも受け付けないため送信前に弾く。
+      expect(isValidOperationArgValue("uint", "４２")).toBe(false);
+    });
+
+    it("accepts an extremely long digit string (no upper bound is enforced here)", () => {
+      // 上限は設けない設計（BigInt 範囲判定は collector 側のエンコードに委ねる）。
+      expect(isValidOperationArgValue("uint", "9".repeat(100))).toBe(true);
+    });
   });
 
   describe("address", () => {
@@ -96,6 +115,33 @@ describe("isValidOperationArgValue (Issue #209)", () => {
       expect(isValidOperationArgValue("address", "")).toBe(false);
       expect(isValidOperationArgValue("address", "   ")).toBe(false);
     });
+
+    it("rejects an uppercase 0X prefix (only lowercase 0x is accepted)", () => {
+      expect(
+        isValidOperationArgValue(
+          "address",
+          "0Xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        ),
+      ).toBe(false);
+    });
+
+    it("rejects whitespace embedded inside an otherwise valid address", () => {
+      expect(
+        isValidOperationArgValue(
+          "address",
+          "0xaaaaaaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaaaaaa",
+        ),
+      ).toBe(false);
+    });
+
+    it("trims surrounding whitespace before checking", () => {
+      expect(
+        isValidOperationArgValue(
+          "address",
+          "  0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  ",
+        ),
+      ).toBe(true);
+    });
   });
 
   describe("string / bool (out of scope for Issue #209, always valid)", () => {
@@ -145,5 +191,27 @@ describe("validateOperationArgs", () => {
   it("treats a missing value (values shorter than fields) as an empty string", () => {
     const fields: OperationArgField[] = [{ name: "amount", type: "uint" }];
     expect(validateOperationArgs(fields, [])).toBe(false);
+  });
+
+  it("detects an invalid value in a later field (not just the first)", () => {
+    const fields: OperationArgField[] = [
+      { name: "amount", type: "uint" },
+      { name: "to", type: "address" },
+    ];
+    expect(validateOperationArgs(fields, ["100", "0xbob"])).toBe(false);
+  });
+
+  it("ignores extra values beyond the field count (values longer than fields)", () => {
+    const fields: OperationArgField[] = [{ name: "amount", type: "uint" }];
+    expect(validateOperationArgs(fields, ["100", "leftover", "junk"])).toBe(true);
+  });
+
+  it("treats out-of-scope string/bool fields as always valid even when other fields are invalid gates the result", () => {
+    const fields: OperationArgField[] = [
+      { name: "label", type: "string" },
+      { name: "amount", type: "uint" },
+    ];
+    expect(validateOperationArgs(fields, ["anything", "100"])).toBe(true);
+    expect(validateOperationArgs(fields, ["anything", "nope"])).toBe(false);
   });
 });
