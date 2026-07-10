@@ -3,7 +3,10 @@ import { useState } from "react";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { shortHex, txChipLabel } from "./transaction.js";
-import { resolveWalletTokenBalances } from "./walletTokenBalances.js";
+import {
+  formatTokenContractLabel,
+  resolveWalletTokenBalances,
+} from "./walletTokenBalances.js";
 import { formatEther, type WalletFlowNode } from "./walletNode.js";
 import { WalletPopover } from "./WalletPopover.js";
 
@@ -98,7 +101,7 @@ export function WalletCard({ data }: NodeProps<WalletFlowNode>) {
               <span
                 key={tb.contractAddress}
                 className="wallet-token-chip"
-                title={tb.contractName ?? shortHex(tb.contractAddress)}
+                title={formatTokenContractLabel(tb, t("contract.unknown"))}
                 data-testid={`wallet-token-chip-${entity.address}-${tb.contractAddress}`}
               >
                 {tb.formatted} {tb.symbol}

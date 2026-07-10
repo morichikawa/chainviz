@@ -578,7 +578,7 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       （調査の結果、不具合ではなくモックデータの意図的な仕様と判明。
       コード変更なし）
       [#210](https://github.com/morichikawa/chainviz/issues/210)
-- [ ] コントラクトをデプロイしたらUI上でどう表現されるのか伝わりにくい
+- [x] コントラクトをデプロイしたらUI上でどう表現されるのか伝わりにくい
       [#211](https://github.com/morichikawa/chainviz/issues/211)
 - [ ] チェーンの繋がり方・署名中かどうか・状態の中身を可視化してほしい
       [#212](https://github.com/morichikawa/chainviz/issues/212)
@@ -592,7 +592,7 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       [#216](https://github.com/morichikawa/chainviz/issues/216)
 - [ ] エラー時のトースト通知が長文で右下のポップアップが崩れる
       [#217](https://github.com/morichikawa/chainviz/issues/217)
-- [ ] デプロイ済みのスマートコントラクト一覧を見れるようにしてほしい
+- [x] デプロイ済みのスマートコントラクト一覧を見れるようにしてほしい
       [#218](https://github.com/morichikawa/chainviz/issues/218)
 - [ ] ウォレットがスマートコントラクトに対して何ができるのか分かりにくい
       [#219](https://github.com/morichikawa/chainviz/issues/219)

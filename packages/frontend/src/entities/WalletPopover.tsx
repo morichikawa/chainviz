@@ -5,7 +5,10 @@ import type { MessageKey } from "../i18n/messages.js";
 import { formatEther } from "./walletNode.js";
 import { shortHex } from "./transaction.js";
 import { deriveTxCallPreview } from "./txCallPreview.js";
-import { resolveWalletTokenBalances } from "./walletTokenBalances.js";
+import {
+  formatTokenContractLabel,
+  resolveWalletTokenBalances,
+} from "./walletTokenBalances.js";
 
 const TX_STATUS_KEY: Record<TransactionEntity["status"], MessageKey> = {
   pending: "tx.status.pending",
@@ -55,8 +58,10 @@ function TxCallPreviewLine({
  * 追記する（ARCHITECTURE.md §6.6、Issue #166）。
  *
  * 追跡中のトークン残高があれば「トークン残高」行を追記し、コントラクト名
- * （未特定なら symbol）＋整形済み残高を1件ずつ列挙する（ARCHITECTURE.md
- * §6.7、Issue #168）。
+ * （未特定なら「未知のコントラクト」）＋短縮アドレス＋整形済み残高を1件ずつ
+ * 列挙する（ARCHITECTURE.md §6.7、Issue #168）。同名のトークンコントラクトが
+ * 複数デプロイされていても短縮アドレスで区別できる（Issue #218 派生。
+ * `formatTokenContractLabel` 参照）。
  */
 export function WalletPopover({
   entity,
@@ -112,7 +117,7 @@ export function WalletPopover({
                 data-testid={`wallet-token-${entity.address}-${tb.contractAddress}`}
               >
                 <span className="wallet-popover__token-name">
-                  {tb.contractName ?? tb.symbol}
+                  {formatTokenContractLabel(tb, t("contract.unknown"))}
                 </span>
                 <span className="wallet-popover__token-amount">
                   {tb.formatted} {tb.symbol}

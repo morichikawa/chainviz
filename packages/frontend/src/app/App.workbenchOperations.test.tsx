@@ -54,17 +54,21 @@ describe("App: workbench operation panel wiring (ARCHITECTURE.md §6.5)", () => 
     fireEvent.click(screen.getByText("デプロイする"));
 
     // 送信直後: パネルは閉じ、コントラクト行に仮カード（デプロイ中…）が出る。
+    // 同じ文言はコントラクト一覧パネル（Issue #218/#211「単位C」）の
+    // デプロイ中行にも出るため、複数マッチになる（getAllByText で確認）。
     expect(
       screen.queryByTestId("operation-panel-workbench-alice"),
     ).toBeNull();
-    expect(screen.getByText(/デプロイ中…\s*Counter/)).toBeTruthy();
+    expect(
+      screen.getAllByText(/デプロイ中…\s*Counter/).length,
+    ).toBeGreaterThan(0);
 
     // モックの commandResult(ok:true) + entityAdded(contract) はマイクロタスクで
     // 解決され、それを受けた state 更新の反映（再レンダー）は act() の外で
     // 非同期に走るため、固定回数の Promise.resolve() 待ちではなく waitFor で
     // ポーリングする。
     await waitFor(() => {
-      expect(screen.queryByText(/デプロイ中…\s*Counter/)).toBeNull();
+      expect(screen.queryAllByText(/デプロイ中…\s*Counter/)).toHaveLength(0);
     });
 
     // 仮カードが消え、実カード（コントラクトカード）に置き換わる。

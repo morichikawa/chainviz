@@ -187,7 +187,7 @@ describe("WalletPopover token balances (ARCHITECTURE.md §6.7)", () => {
     expect(screen.queryByText("トークン残高")).toBeNull();
   });
 
-  it("lists the contract name and formatted amount for a resolvable balance", () => {
+  it("lists the contract name (with shortened address) and formatted amount for a resolvable balance", () => {
     const tokenAddress = `0x${"a".repeat(40)}`;
     wrapWithEntity(
       [{ contractAddress: tokenAddress, amount: (5n * 10n ** 18n).toString() }],
@@ -203,7 +203,40 @@ describe("WalletPopover token balances (ARCHITECTURE.md §6.7)", () => {
       ]),
     );
     const item = screen.getByTestId(`wallet-token-${wallet().address}-${tokenAddress}`);
-    expect(item.textContent).toBe("ChainvizToken5.0000 CVZ");
+    // Issue #218 派生: 同名トークンを区別できるよう短縮アドレスが常に併記される。
+    expect(item.textContent).toBe("ChainvizToken (0xaaaaaa…aaaa)5.0000 CVZ");
+  });
+
+  it("distinguishes two same-named token contracts by address (Issue #218 派生)", () => {
+    const addressA = `0x${"a".repeat(40)}`;
+    const addressB = `0x${"b".repeat(40)}`;
+    wrapWithEntity(
+      [
+        { contractAddress: addressA, amount: "0" },
+        { contractAddress: addressB, amount: "0" },
+      ],
+      new Map([
+        [
+          addressA,
+          contract({
+            address: addressA,
+            name: "ChainvizToken",
+            token: { symbol: "CVZ", decimals: 18 },
+          }),
+        ],
+        [
+          addressB,
+          contract({
+            address: addressB,
+            name: "ChainvizToken",
+            token: { symbol: "CVZ", decimals: 18 },
+          }),
+        ],
+      ]),
+    );
+    const itemA = screen.getByTestId(`wallet-token-${wallet().address}-${addressA}`);
+    const itemB = screen.getByTestId(`wallet-token-${wallet().address}-${addressB}`);
+    expect(itemA.textContent).not.toBe(itemB.textContent);
   });
 
   it("omits a balance whose ContractEntity is unresolved (dangling guard)", () => {
