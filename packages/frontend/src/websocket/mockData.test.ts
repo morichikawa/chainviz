@@ -68,6 +68,28 @@ describe("createMockSnapshot connection targets (Issue #123)", () => {
   });
 });
 
+describe("createMockSnapshot P2P非参加ノード (Issue #214)", () => {
+  it("includes validator-1/validator-2 as p2pRole 'none' (VC相当。P2Pに参加しない)", () => {
+    const snapshot = createMockSnapshot();
+    const byId = new Map(
+      snapshot.entities
+        .filter((e): e is NodeEntity => e.kind === "node")
+        .map((e) => [e.id, e]),
+    );
+    expect(byId.get("validator-1")?.p2pRole).toBe("none");
+    expect(byId.get("validator-2")?.p2pRole).toBe("none");
+  });
+
+  it("does not include validator-1/validator-2 as an endpoint of any PeerEdge", () => {
+    const snapshot = createMockSnapshot();
+    const peerEndpoints = new Set(
+      snapshot.edges.flatMap((e) => [e.fromNodeId, e.toNodeId]),
+    );
+    expect(peerEndpoints.has("validator-1")).toBe(false);
+    expect(peerEndpoints.has("validator-2")).toBe(false);
+  });
+});
+
 describe("createMockSnapshot D-layer content (internal link, Issue #188)", () => {
   it("gives lighthouse-1 a drivesNodeId pointing at reth-node-1", () => {
     const snapshot = createMockSnapshot();

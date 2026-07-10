@@ -407,6 +407,30 @@ function unknownContract(): ContractEntity {
 }
 
 /**
+ * validator client(VC)相当のノード。beacon へ Beacon API で接続するだけで
+ * libp2p の P2P には参加しないため `p2pRole: "none"` を持つ（Issue #214）。
+ * PeerEdge を1本も持たない状態が正しい定常状態であり、除外条件を目視で
+ * 確認できるように既定スナップショットへ含める。
+ */
+function validatorNode(n: number): NodeEntity {
+  return {
+    kind: "node",
+    id: `validator-${n}`,
+    containerName: `chainviz-validator-${n}`,
+    ip: `172.20.0.${40 + n}`,
+    ports: [],
+    resources: { cpuPercent: 0.8, memMB: 96 },
+    process: { name: "lighthouse vc", version: "5.3.0" },
+    chainType: "ethereum",
+    clientType: "lighthouse",
+    syncStatus: "synced",
+    blockHeight: 128,
+    headBlockHash: "0x00000080",
+    p2pRole: "none",
+  };
+}
+
+/**
  * 実環境（Ethereum プロファイル1つ）の P2P ネットワーク ID。
  * profiles/ethereum の CHAIN_ID と揃える。networkId は今のところ1種類。
  */
@@ -463,6 +487,10 @@ export function createMockSnapshot(): WorldStateSnapshot {
       { ...rethNode(1, 128), p2pRole: "bootnode" },
       { ...rethNode(2, 128), p2pRole: "peer" },
       { ...lighthouseNode, p2pRole: "bootnode" },
+      // P2P非参加のvalidator client(VC)相当。Issue #214: 「接続確立中」
+      // エッジの除外を目視確認できるようにする。
+      validatorNode(1),
+      validatorNode(2),
       workbench,
       aliceWallet(),
       bobWallet(),
@@ -538,6 +566,8 @@ const NON_REMOVABLE_NODE_IDS = new Set([
   "reth-node-1",
   "reth-node-2",
   "lighthouse-1",
+  "validator-1",
+  "validator-2",
 ]);
 
 /**
@@ -685,7 +715,13 @@ export function createMockClient(
   let entitySeq = 0;
 
   // 追加・削除の判定に使う、現在存在するエンティティ id の集合。
-  const nodeIds = new Set(["reth-node-1", "reth-node-2", "lighthouse-1"]);
+  const nodeIds = new Set([
+    "reth-node-1",
+    "reth-node-2",
+    "lighthouse-1",
+    "validator-1",
+    "validator-2",
+  ]);
   const workbenchIds = new Set(["workbench-alice"]);
 
   // runWorkbenchOperation(callContract) の対象照合に使う、デプロイ済み・
