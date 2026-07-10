@@ -66,29 +66,93 @@ describe("DeployForm (ARCHITECTURE.md §6.5-2)", () => {
     });
   });
 
-  it("submits raw constructor arg strings without client-side type validation (type interpretation is the collector's job, §6.10-2)", () => {
-    // フォームは引数の型を検証しない（ABI 型情報を持たない設計）。数値が
-    // 期待される initialSupply に非数値を入れても、そのまま文字列で collector
-    // へ渡す（型不一致の判定・エラーは collector 側 ChainAdapter が行う）。
+  it("disables submit and shows an error, without calling onSubmit, for a non-numeric uint constructor arg (Issue #209 bug reproduction)", () => {
+    // 実際の不具合報告（"test"/"sss" のような非数値文字列）を再現する。
+    // 型解釈（エンコード）自体は引き続き collector 側の ChainAdapter が
+    // 行うが（§6.10-2）、明らかに型と矛盾する入力は送信前に弾く。
     const onSubmit = renderForm();
     fireEvent.change(screen.getByTestId("operation-deploy-arg-initialSupply"), {
-      target: { value: "not-a-number" },
+      target: { value: "test" },
     });
-    fireEvent.click(screen.getByText("デプロイする"));
+    expect(
+      screen.getByTestId("operation-deploy-arg-initialSupply-error"),
+    ).toBeTruthy();
+    const button = screen.getByText("デプロイする") as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("disables submit for a required constructor arg left blank", () => {
+    // 必須引数（uint）を空のまま送信しようとしても、ボタンが無効化され
+    // 送信されない。空欄そのものにはエラー文言は出さない（未入力の状態を
+    // 「明らかな型違反」として赤字扱いしない、既存の amount 欄と同じ挙動）。
+    const onSubmit = renderForm();
+    expect(
+      screen.queryByTestId("operation-deploy-arg-initialSupply-error"),
+    ).toBeNull();
+    const button = screen.getByText("デプロイする") as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("enables submit once a valid uint value is entered", () => {
+    const onSubmit = renderForm();
+    fireEvent.change(screen.getByTestId("operation-deploy-arg-initialSupply"), {
+      target: { value: "1000000000000000000000000" },
+    });
+    const button = screen.getByText("デプロイする") as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    fireEvent.click(button);
     expect(onSubmit).toHaveBeenCalledWith({
       contractKey: "ChainvizToken",
-      constructorArgs: ["not-a-number"],
+      constructorArgs: ["1000000000000000000000000"],
     });
   });
 
-  it("submits an empty string for a required constructor arg left blank (no required-arg guard on the client)", () => {
-    // 必須引数を空のまま送信しても、フロントは阻止しない（空文字のまま渡し、
-    // 欠落・不正は collector が弾く設計）。ボタンは selected があれば有効。
-    const onSubmit = renderForm();
-    fireEvent.click(screen.getByText("デプロイする"));
+  it("gates submit on every arg when a contract has multiple constructor args", () => {
+    // カタログ上は現状 address 型のコンストラクタ引数を持つエントリは無いが、
+    // 将来増えたときに「1つでも無効なら送信不可・全て有効なら送信可」が
+    // 崩れないことを合成カタログで確認しておく。
+    const multiArg: ContractCatalogEntry = {
+      catalogKey: "MultiArg",
+      displayName: { ja: "MultiArg", en: "MultiArg" },
+      description: { ja: "複数引数", en: "multiple args" },
+      constructorArgs: [
+        { name: "owner", type: "address" },
+        { name: "supply", type: "uint" },
+      ],
+      functions: [],
+    };
+    const onSubmit = vi.fn();
+    render(
+      <LanguageProvider initialLanguage="ja">
+        <DeployForm catalog={[multiArg]} onSubmit={onSubmit} />
+      </LanguageProvider>,
+    );
+    const button = screen.getByText("デプロイする") as HTMLButtonElement;
+
+    // owner を有効なアドレスに、supply を不正な値にすると送信不可のまま。
+    fireEvent.change(screen.getByTestId("operation-deploy-arg-owner"), {
+      target: { value: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+    });
+    fireEvent.change(screen.getByTestId("operation-deploy-arg-supply"), {
+      target: { value: "not-a-number" },
+    });
+    expect(screen.getByTestId("operation-deploy-arg-supply-error")).toBeTruthy();
+    expect(screen.queryByTestId("operation-deploy-arg-owner-error")).toBeNull();
+    expect(button.disabled).toBe(true);
+
+    // supply も有効にすると送信できるようになり、両引数が順序どおり渡る。
+    fireEvent.change(screen.getByTestId("operation-deploy-arg-supply"), {
+      target: { value: "1000" },
+    });
+    expect(button.disabled).toBe(false);
+    fireEvent.click(button);
     expect(onSubmit).toHaveBeenCalledWith({
-      contractKey: "ChainvizToken",
-      constructorArgs: [""],
+      contractKey: "MultiArg",
+      constructorArgs: ["0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "1000"],
     });
   });
 

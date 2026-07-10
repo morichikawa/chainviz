@@ -214,6 +214,16 @@ export const messages = {
     ja: "呼び出せるコントラクトがまだありません。先に「デプロイ」タブからデプロイしてください",
     en: "No callable contracts yet. Deploy one from the Deploy tab first.",
   },
+  // Issue #209: ABI型（uint/address）と明らかに矛盾する引数入力を送信前に
+  // 弾くためのエラー文言。
+  "operation.arg.invalid.uint": {
+    ja: "0以上の整数を入力してください（例: 1000）",
+    en: "Enter a non-negative integer (e.g. 1000).",
+  },
+  "operation.arg.invalid.address": {
+    ja: "0xで始まる40桁の16進数のアドレスを入力してください（例: 0x1234…）",
+    en: "Enter an address starting with 0x followed by 40 hex characters.",
+  },
   "operation.pending": { ja: "実行中…", en: "Running…" },
   "ghost.contract.deploying": { ja: "デプロイ中… {name}", en: "Deploying… {name}" },
   // --- D層: 内部リンクエッジ・活動パルス（ARCHITECTURE.md §7.6.3/§7.6.4。

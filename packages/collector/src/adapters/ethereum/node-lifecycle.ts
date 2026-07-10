@@ -38,6 +38,7 @@ import {
   ROLE_LABEL,
 } from "./labels.js";
 import { readProfileMnemonic } from "./mnemonic.js";
+import { summarizeOperationError } from "./operation-error-summary.js";
 import {
   WALLET_INDEX_LABEL,
   workbenchWalletIndex,
@@ -504,14 +505,21 @@ export class EthereumNodeLifecycle implements NodeLifecycle {
         result.stderr.trim() ||
         result.stdout.trim() ||
         `exit code ${result.exitCode}`;
-      // 握りつぶさず、具体的な失敗内容（cast/forge の stderr 等）をログへ
-      // 残したうえで、同じ内容を呼び出し元（CommandHandler → commandResult）
-      // にも伝える（CLAUDE.md「エラーを握りつぶすコードを見逃さない」）。
+      // 握りつぶさず、具体的な失敗内容（cast/forge の stderr 等）を必ず
+      // console.error のログへ残す（CLAUDE.md「エラーを握りつぶすコードを
+      // 見逃さない」）。ただし呼び出し元（CommandHandler → commandResult →
+      // フロントのトースト）に伝える文言は、forge/cast の生の技術的
+      // エラー（複数行・カラム位置指摘付きの英語パーサーエラー等）を
+      // そのまま流さず、既知パターンを要約した簡潔な文言に変換する
+      // （Issue #209。frontend 側の入力バリデーションをすり抜けるケースへの
+      // 保険）。パターンに一致しない未知のエラーも、生メッセージを完全に
+      // 隠さず最初の行を返す（summarizeOperationError 参照）。詳細な生の
+      // 内容はこの console.error からいつでも追える。
       console.error(
         `[ethereum] workbench operation failed (${describeOperation(operation)}) on ${workbenchId}: ${detail}`,
       );
       throw new Error(
-        `${describeOperation(operation)} failed on workbench ${workbenchId}: ${detail}`,
+        `${describeOperation(operation)} failed on workbench ${workbenchId}: ${summarizeOperationError(detail)}`,
       );
     }
     const outcome = parseOperationOutcome(operation, result.stdout);

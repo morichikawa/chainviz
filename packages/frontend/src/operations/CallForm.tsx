@@ -1,8 +1,9 @@
 import { type FormEvent, useState } from "react";
 import { useLanguage } from "../i18n/LanguageProvider.js";
-import { AddressField } from "./AddressField.js";
 import type { DeployedContractCandidate } from "./deployedContracts.js";
 import { parseEtherToWei } from "./etherAmount.js";
+import { OperationArgInput } from "./OperationArgInput.js";
+import { validateOperationArgs } from "./operationArgValidation.js";
 import type { WalletCandidate } from "./walletCandidates.js";
 
 export interface CallFormProps {
@@ -91,12 +92,16 @@ export function CallForm({
 
   const amountWei = amount.trim() === "" ? undefined : parseEtherToWei(amount);
   const amountInvalid = amount.trim() !== "" && amountWei === undefined;
-  const canSubmit = selectedFunction !== undefined && !amountInvalid;
+  const argsValid = selectedFunction
+    ? validateOperationArgs(selectedFunction.args, args)
+    : false;
+  const canSubmit =
+    selectedFunction !== undefined && !amountInvalid && argsValid;
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
     if (!selectedFunction || !selectedContract) return;
-    if (amountInvalid) return;
+    if (amountInvalid || !argsValid) return;
     onSubmit({
       contractAddress: selectedContract.address,
       functionName: selectedFunction.signature,
@@ -139,29 +144,16 @@ export function CallForm({
           ))}
         </select>
       </label>
-      {selectedFunction?.args.map((arg, index) =>
-        arg.type === "address" ? (
-          <AddressField
-            key={arg.name}
-            label={arg.name}
-            value={args[index] ?? ""}
-            onChange={(value) => setArgAt(index, value)}
-            candidates={walletCandidates}
-            testId={`operation-call-arg-${arg.name}`}
-          />
-        ) : (
-          <label className="operation-field" key={arg.name}>
-            <span className="operation-field__label">{arg.name}</span>
-            <input
-              type="text"
-              className="operation-field__input nodrag"
-              value={args[index] ?? ""}
-              onChange={(event) => setArgAt(index, event.target.value)}
-              data-testid={`operation-call-arg-${arg.name}`}
-            />
-          </label>
-        ),
-      )}
+      {selectedFunction?.args.map((arg, index) => (
+        <OperationArgInput
+          key={arg.name}
+          field={arg}
+          value={args[index] ?? ""}
+          onChange={(value) => setArgAt(index, value)}
+          walletCandidates={walletCandidates}
+          testId={`operation-call-arg-${arg.name}`}
+        />
+      ))}
       {selectedFunction?.payable && (
         <>
           <label className="operation-field">

@@ -571,7 +571,7 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
 - [ ] collectorのcomposeProjectが"chainviz-ethereum"にハードコードされ
       環境変数での上書き口が無く、QA検証時に独立した合成環境で
       ワークベンチ経由の操作(runWorkbenchOperation等)を検証できない
-- [ ] デプロイのコンストラクタ引数にABI型と不一致な値を入力するとforgeの
+- [x] デプロイのコンストラクタ引数にABI型と不一致な値を入力するとforgeの
       生エラーがそのままトーストに表示される
       [#209](https://github.com/morichikawa/chainviz/issues/209)
 - [ ] ワークベンチに複数ウォレットが紐づいているように見える
