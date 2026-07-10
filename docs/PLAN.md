@@ -623,6 +623,9 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
 - [x] collector停止中に送信したaddNode/addWorkbenchはゴースト消滅のみで
       エラートーストが出ない
       [#235](https://github.com/morichikawa/chainviz/issues/235)
+- [x] operationPendingのoperateボタンでaria-busy属性がブロック到達
+      タイミング次第で欠落する
+      [#237](https://github.com/morichikawa/chainviz/issues/237)
 
 ## 運用ルール（全ステップ共通）
 
