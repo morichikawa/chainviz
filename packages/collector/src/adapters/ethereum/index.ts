@@ -343,16 +343,17 @@ export class EthereumAdapter implements ChainAdapter {
       // 正規化はしない）。ラベルが無い・空文字列の場合は省略する
       // （省略 = 不明。旧スナップショット・ラベル未付与コンテナとの互換）。
       ...(roleLabel ? { nodeRole: roleLabel } : {}),
-      // P2P 上の役割（Issue #124、#214）。優先順位は以下のとおり:
+      // P2P 上の役割（Issue #124、#214、#246）。優先順位は以下のとおり:
       // 1. ラベルが厳密に "bootnode" -> "bootnode"（デプロイ構成の選択。
       //    ラベルが無い・想定外の値の場合はこの分岐に該当しない）
-      // 2. VC（validator client、compose サービス名が "validator" を含む） ->
-      //    "none"。VC は libp2p の P2P ネットワークに参加せず（beacon へ
-      //    HTTP の Beacon API で接続するのみ）、PeerEdge の端点になることが
-      //    決してないため、P2P 接続を前提にした表示（フロントの「接続確立
-      //    中」エッジ等）の対象から除外できるようにする（isValidatorService
-      //    のコメントに前提条件を明記。addNode は VC を作らないため動的
-      //    追加ノードはこの分岐に巻き込まれない）
+      // 2. VC（validator client、com.chainviz.role ラベルが厳密に
+      //    "validator"） -> "none"。VC は libp2p の P2P ネットワークに参加
+      //    せず（beacon へ HTTP の Beacon API で接続するのみ）、PeerEdge の
+      //    端点になることが決してないため、P2P 接続を前提にした表示
+      //    （フロントの「接続確立中」エッジ等）の対象から除外できるように
+      //    する（判定は compose サービス名ではなくロールラベルに基づく。
+      //    isValidatorService のコメント参照。Issue #246 でサービス名
+      //    ベースの判定から変更した）
       // 3. それ以外 -> "peer"（addNode で追加されるノードを含む通常ピア）
       p2pRole:
         obs.labels[P2P_ROLE_LABEL] === "bootnode"
