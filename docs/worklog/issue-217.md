@@ -161,3 +161,43 @@
   `docs/PLAN.md` / `docs/WORKLOG.md` はマージ時にコンフリクトする
   可能性がある。マージ担当（統括）はリベースまたはコンフリクト解消を
   想定しておくとよい。
+
+### 2026-07-10 Issue #217 QA検証記録（合格）
+
+- 担当: qa
+- 対象: ブランチ `issue-217-toast-layout-fix`（コミット 5e7f5d8、CSS のみの変更）
+- 結果: **合格**。完了条件（右下のポップアップが長文で崩れる不具合の解消）を満たしている。
+
+検証方法:
+
+- `pnpm --filter @chainviz/frontend build:web` で実際のバンドル（`dist-web`）を生成し、
+  同梱された CSS（`overflow-wrap:anywhere` / `white-space:pre-wrap` / `min-width:0` /
+  `max-height:220px` + `overflow-y:auto` が含まれることを確認）を静的サーバーで配信。
+- Playwright（chrome-headless-shell、viewport 1280x800）で実アプリを開き、
+  `Toast.tsx` と同一のマークアップ（`.toast-stack` > `.toast.toast--error` >
+  `.toast__message` + `.toast__dismiss`）を実 CSS 適用下で描画。
+  `getBoundingClientRect()` の実測とスクリーンショットで確認した。
+
+確認結果:
+
+- 短いメッセージ（"Deploy failed: insufficient funds"）: トーストは小さくまとまり、
+  ×ボタンも表示。回帰なし（`.toast__message` 幅 205.9px、枠内）。
+- 長文（複数行・82桁の16進トークン・スペースなしの長いパスを含む、Issue #209 の
+  forge/cast 生エラー相当）: `.toast__message` は幅 311px・右端 1228px で
+  `.toast`（右端 1264px）と viewport（1280px）の内側に収まり、長い16進トークンも
+  枠内で折り返された。×ボタンも右上に表示。崩れなし。
+- 極端に長い（40行超のスタックトレース）: `.toast__message` の高さは `max-height`
+  の 220px で頭打ちになり、`scrollHeight 2219 > clientHeight 220` かつ
+  `overflow-y: auto` によりスクロールで全文を読める状態。トースト全体は画面内に収まる。
+- 修正前の再現確認: 同一の長文で該当4プロパティを修正前の既定値
+  （`min-width:auto` / `overflow-wrap:normal` / `white-space:normal` / `max-height:none`）
+  に戻して描画したところ、`.toast__message` は幅 736.3px・右端 1653.3px となり、
+  `.toast`（右端 1264px）を 389.3px はみ出し画面外（viewport 1280px）まで溢れ、
+  ×ボタンも画面外に押し出された。修正前は不具合が再現し、修正後に解消することを
+  両方確認した。
+
+スクリーンショット（scratchpad）: `qa217-short.png` / `qa217-longhash.png` /
+`qa217-extreme.png` / `qa217-before-longhash.png`。
+
+`docs/PLAN.md` の #217 チェックボックスは実装コミットで既にチェック済み
+（#217 専用の qa 用チェックボックスは別立てされていない）。
