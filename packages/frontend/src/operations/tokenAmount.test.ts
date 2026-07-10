@@ -100,4 +100,41 @@ describe("parseUnits", () => {
       );
     });
   });
+
+  describe("decimals greater than 18 (high-precision token)", () => {
+    it("scales a whole number by the full high-precision factor", () => {
+      expect(parseUnits("1", 24)).toBe("1000000000000000000000000");
+    });
+
+    it("accepts a fractional value up to the exact high-decimals boundary", () => {
+      // 24桁ちょうどの最小単位（1）を表現できる。
+      expect(parseUnits("0.000000000000000000000001", 24)).toBe("1");
+    });
+
+    it("rejects one digit beyond the high-decimals boundary", () => {
+      expect(parseUnits("0.0000000000000000000000001", 24)).toBeUndefined();
+    });
+  });
+
+  describe("boundary shapes of otherwise-valid decimal input", () => {
+    it("accepts a bare zero fractional part sized to decimals (1.000000 at 6 decimals)", () => {
+      expect(parseUnits("1.000000", 6)).toBe("1000000");
+    });
+
+    it("treats a fractional zero as zero at the boundary (0.000000 == 0 at 6 decimals)", () => {
+      expect(parseUnits("0.000000", 6)).toBe("0");
+    });
+
+    it("rejects a trailing decimal point with no fractional digits", () => {
+      expect(parseUnits("1.", 6)).toBeUndefined();
+    });
+
+    it("rejects a leading decimal point with no whole part", () => {
+      expect(parseUnits(".5", 6)).toBeUndefined();
+    });
+
+    it("rejects an explicit plus sign", () => {
+      expect(parseUnits("+1", 18)).toBeUndefined();
+    });
+  });
 });
