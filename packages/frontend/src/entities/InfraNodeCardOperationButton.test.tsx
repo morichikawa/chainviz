@@ -139,6 +139,28 @@ describe("InfraNodeCard operate button (ARCHITECTURE.md §6.5)", () => {
     expect(button.className).not.toContain("infra-card__operate--pending");
   });
 
+  // Issue #237: App.tsx の infraNodesWithHighlight は、対象ワークベンチが
+  // 一度も保留(true)を経験していない間、operationPending フィールドを
+  // 明示的に merge しないため data.operationPending が undefined のまま
+  // 渡ってくることがある（ブロック到達のたびに isSameInfraNode の判定で
+  // ノードオブジェクトが差し替わり、一度 true/false を経験していても
+  // 再び undefined に戻り得る）。React は aria-* 属性に undefined/null を
+  // 渡すと属性自体を DOM から省略するため、`aria-busy={operationPending}`
+  // のままだと属性の有無がタイミング依存でフレーキーになる。ここでは
+  // その undefined 渡しを直接シミュレートし、DOM 上に常に明示的な
+  // aria-busy="false" が出ることを確認する。
+  it("always renders an explicit aria-busy attribute even when data.operationPending is undefined (Issue #237)", () => {
+    renderCard(workbench, { operationPending: undefined });
+    const button = screen.getByTestId(`infra-card-operate-${workbench.id}`);
+    expect(button.getAttribute("aria-busy")).toBe("false");
+  });
+
+  it("renders aria-busy=true while data.operationPending is true", () => {
+    renderCard(workbench, { operationPending: true });
+    const button = screen.getByTestId(`infra-card-operate-${workbench.id}`);
+    expect(button.getAttribute("aria-busy")).toBe("true");
+  });
+
   it("still allows opening the panel while pending (no double-submit guard, ARCHITECTURE.md §6.5)", () => {
     renderCard(workbench, { operationPending: true });
     fireEvent.click(screen.getByTestId(`infra-card-operate-${workbench.id}`));
