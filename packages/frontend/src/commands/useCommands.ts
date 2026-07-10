@@ -77,6 +77,14 @@ export interface UseCommandsResult {
    * なった時点で id を集合から外す）。
    */
   pendingOperationWorkbenchIds: Set<string>;
+  /**
+   * removeNode / removeWorkbench を送信してから commandResult が返るまでの
+   * 間、その対象（node/workbench 共通の entity id）を含む集合(Issue #222)。
+   * `pendingOperationWorkbenchIds` と同じ「id ごとのカウンタ→Set化」方式で、
+   * 成否によらず commandResult 到着時に解除する。node/workbench は id空間を
+   * 共有し1entity=1カードなので、種別を問わず単一の Set で表現する。
+   */
+  pendingRemovalIds: Set<string>;
 }
 
 /**
@@ -143,6 +151,16 @@ export function useCommands(
     [pendingOperationCounts],
   );
 
+  // removeNode / removeWorkbench の保留数を対象 id ごとに数える
+  // （UseCommandsResult.pendingRemovalIds の docstring参照。Issue #222）。
+  const [pendingRemovalCounts, setPendingRemovalCounts] = useState<
+    Map<string, number>
+  >(new Map());
+  const pendingRemovalIds = useMemo(
+    () => new Set(pendingRemovalCounts.keys()),
+    [pendingRemovalCounts],
+  );
+
   const handleCommandResult = useCallback<CommandResultHandler>(
     (commandId, ok, error) => {
       const command = pendingRef.current.get(commandId);
@@ -159,6 +177,25 @@ export function useCommands(
           const next = new Map(prev);
           if (current <= 1) next.delete(workbenchId);
           else next.set(workbenchId, current - 1);
+          return next;
+        });
+      }
+
+      // removeNode / removeWorkbench も同じく成否によらず解除する（Issue
+      // #222）。ok:true なら entityRemoved diff で当のカードごと消える
+      // ため実害は無いが、ok:false（削除拒否等）の場合はカードが残ったまま
+      // 保留フラグだけが残り続けないよう、ここで確実に外す。
+      if (
+        command?.action === "removeNode" ||
+        command?.action === "removeWorkbench"
+      ) {
+        const targetId =
+          command.action === "removeNode" ? command.nodeId : command.workbenchId;
+        setPendingRemovalCounts((prev) => {
+          const current = prev.get(targetId) ?? 0;
+          const next = new Map(prev);
+          if (current <= 1) next.delete(targetId);
+          else next.set(targetId, current - 1);
           return next;
         });
       }
@@ -301,6 +338,17 @@ export function useCommands(
         return;
       }
 
+      if (command.action === "removeNode" || command.action === "removeWorkbench") {
+        const targetId =
+          command.action === "removeNode" ? command.nodeId : command.workbenchId;
+        setPendingRemovalCounts((prev) => {
+          const next = new Map(prev);
+          next.set(targetId, (next.get(targetId) ?? 0) + 1);
+          return next;
+        });
+        return;
+      }
+
       if (command.action !== "addNode" && command.action !== "addWorkbench") {
         return;
       }
@@ -392,5 +440,6 @@ export function useCommands(
     actions,
     ghosts,
     pendingOperationWorkbenchIds,
+    pendingRemovalIds,
   };
 }

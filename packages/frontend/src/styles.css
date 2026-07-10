@@ -266,6 +266,24 @@ body {
   border-color: #7a5cff;
 }
 
+/* 削除コマンド送信からcommandResultが返るまでの間だけ付く見た目（Issue
+   #222）。追加時の仮カード（.ghost-card、下記）と同じ opacity/pointer-events
+   の値を使い、「進行中で操作を受け付けない」ことの表現を一貫させる。 */
+.infra-card--removing {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.infra-card__remove-spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  animation: chainviz-spin 0.7s linear infinite;
+}
+
 /* --- 仮カード（ゴーストノード。Issue #102） --- */
 /* addNode/addWorkbench 送信直後、実カードが届くまでの間だけ表示する半透明の
    仮カード。実カード（infra-card）と骨格は共有しつつ、半透明 + 点線で

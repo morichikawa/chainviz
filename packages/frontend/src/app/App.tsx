@@ -130,6 +130,7 @@ function AppShell({
     actions,
     ghosts,
     pendingOperationWorkbenchIds,
+    pendingRemovalIds,
   } = useCommands(clientFactory, notify, t);
 
   // ボタン押下直後のローディング表示（Issue #102）に使う。仮カードが
@@ -228,10 +229,11 @@ function AppShell({
     return next;
   }, [entities, layout]);
 
-  // 新着強調フラグ（isNew）・操作パネルの保留フラグ（operationPending）は
-  // どちらも「時間経過/保留状態」に依存し isSameInfraNode の比較対象ではない
-  // ため、stabilizeNodes の後段で後付けする（entities/infraNode.ts の
-  // InfraNodeData docstring参照）。実際にどちらかが変化したノードだけ新しい
+  // 新着強調フラグ（isNew）・操作パネルの保留フラグ（operationPending）・
+  // 削除の保留フラグ（removalPending、Issue #222）は、いずれも「時間経過/
+  // 保留状態」に依存し isSameInfraNode の比較対象ではないため、
+  // stabilizeNodes の後段で後付けする（entities/infraNode.ts の
+  // InfraNodeData docstring参照）。実際にどれかが変化したノードだけ新しい
   // オブジェクトにする（変化の無いノードの参照は保つ。Issue #119対策の効果を
   // 損なわないため）。
   const infraNodesWithHighlight = useMemo(
@@ -239,15 +241,20 @@ function AppShell({
       infraNodes.map((node) => {
         const isNew = newArrivals.has(node.id);
         const operationPending = pendingOperationWorkbenchIds.has(node.id);
+        const removalPending = pendingRemovalIds.has(node.id);
         if (
           isNew === (node.data.isNew ?? false) &&
-          operationPending === (node.data.operationPending ?? false)
+          operationPending === (node.data.operationPending ?? false) &&
+          removalPending === (node.data.removalPending ?? false)
         ) {
           return node;
         }
-        return { ...node, data: { ...node.data, isNew, operationPending } };
+        return {
+          ...node,
+          data: { ...node.data, isNew, operationPending, removalPending },
+        };
       }),
-    [infraNodes, newArrivals, pendingOperationWorkbenchIds],
+    [infraNodes, newArrivals, pendingOperationWorkbenchIds, pendingRemovalIds],
   );
 
   // 現存するインフラノードの id 集合（ピア接続・所有エッジの端点存在判定に使う）。
