@@ -1046,6 +1046,39 @@ body {
   stroke-opacity: 0.4;
 }
 
+/* ホバー中の操作先エッジ（Issue #215）。低彩度な常設点線を、ホバー中だけ
+   ピア接続・デプロイエッジと同じ流儀で目立たせる（不透明度も上げる）。 */
+.operation-target-edge--hovered {
+  stroke-opacity: 0.9 !important;
+}
+
+.operation-target-popover {
+  min-width: 220px;
+  max-width: 300px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #0c1119;
+  border: 1px solid var(--op-edge);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  font-size: 11px;
+}
+
+.operation-target-popover__heading {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.operation-target-popover__endpoints {
+  color: var(--muted);
+  margin-bottom: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.operation-target-popover__hint {
+  line-height: 1.4;
+  color: var(--muted);
+}
+
 /* --- 実カード到着直後の新着強調（Issue #123） --- */
 /* 追加操作から生まれたカードだと一目で分かるよう、約5秒間アウトラインを
    発光させる。ブロック受光の発光（同期状態インジケータの緑）と紛れない

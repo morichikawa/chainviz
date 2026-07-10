@@ -434,9 +434,11 @@ function AppShell({
     [nodeEntities, state, bootNodes, infraNodeIds],
   );
   // ワークベンチ → RPC 接続先ノードの常設「操作先」エッジ（§4-4）。
+  // Issue #215: ホバーポップオーバー用に対象ノードの containerName 解決が
+  // 要るため nodeEntities も渡す。
   const operationTargetEdges = useMemo(
-    () => operationTargetEdgesToFlowEdges(workbenchEntities, infraNodeIds),
-    [workbenchEntities, infraNodeIds],
+    () => operationTargetEdgesToFlowEdges(workbenchEntities, nodeEntities, infraNodeIds),
+    [workbenchEntities, nodeEntities, infraNodeIds],
   );
 
   // D層: 内部リンクエッジ（beacon(CL) → reth(EL)、常設。ARCHITECTURE.md
