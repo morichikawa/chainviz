@@ -30,6 +30,8 @@ import type { ConnectionStatus } from "../websocket/client.js";
 import {
   DEFAULT_CHAIN_PROFILE,
   describeCommandError,
+  describeCommandNotConnectedError,
+  describeCommandTimeoutError,
   resolveWorkbenchLabel,
 } from "./commandMessages.js";
 
@@ -285,7 +287,29 @@ export function useCommands(
       const { commandId } = ghost.data;
       const timer = setTimeout(() => {
         timers.delete(commandId);
+        // pendingRef にまだ command が残っている＝commandResult 自体が一度も
+        // 届いていない（未接続で送信できなかった以外にも、途中で collector
+        // が落ちた・メッセージが失われた等の異常系。Issue #235）ケースだけ、
+        // 実質的な失敗確定としてエラートーストで知らせる。pendingRef はこの
+        // 経路以外では commandResult 到着時にしか消えないため、ここで
+        // 消しておかないと残り続けてしまう。
+        //
+        // 一方 commandResult(ok:true) が既に届いていて pendingRef からも
+        // 消えている場合は、単に実エンティティの到着（diff）がまだ間に
+        // 合っていないだけ（コンテナ起動が遅い等）で、コマンド自体は成功
+        // している。この場合は `GHOST_TIMEOUT_MS` の本来の役割（ghostNode.ts
+        // のコメント参照）どおり、通知はせず黙ってゴーストを消すだけに
+        // とどめる（誤って「失敗した」と伝えてしまう false positive を防ぐ）。
+        const command = pendingRef.current.get(commandId);
+        const resultNeverArrived = pendingRef.current.has(commandId);
+        pendingRef.current.delete(commandId);
         setGhosts((current) => removeGhostByCommandId(current, commandId));
+        if (resultNeverArrived) {
+          notifyRef.current({
+            kind: "error",
+            message: describeCommandTimeoutError(command, tRef.current),
+          });
+        }
       }, GHOST_TIMEOUT_MS);
       timers.set(commandId, timer);
     }
@@ -303,7 +327,15 @@ export function useCommands(
   const dispatch = useCallback(
     (command: Command) => {
       const commandId = sendCommand(command);
-      if (commandId === undefined) return;
+      if (commandId === undefined) {
+        // WebSocket 未接続でコマンドがそもそも送れなかった場合（Issue #235）。
+        // ゴーストを作らず、待たせずに理由付きのエラートーストを出す。
+        notifyRef.current({
+          kind: "error",
+          message: describeCommandNotConnectedError(command, tRef.current),
+        });
+        return;
+      }
       pendingRef.current.set(commandId, command);
 
       if (command.action === "runWorkbenchOperation") {

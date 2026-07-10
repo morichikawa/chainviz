@@ -587,6 +587,62 @@ describe("EthereumAdapter.pollInfra", () => {
     expect(node.p2pRole).toBe("peer");
   });
 
+  it.each(["execution", "consensus", "validator"])(
+    "transcribes the com.chainviz.role label value %j as-is into NodeEntity.nodeRole (Issue #215)",
+    async (roleValue) => {
+      // collector は値の妥当性検証・解釈をせず、ROLE_LABEL の生値をそのまま
+      // 転記する（execution/consensus/validator の意味づけはフロントの
+      // チェーンプロファイル表現セットの責務）。
+      const fixture: Fixture = {
+        ...rethFixture,
+        summary: {
+          ...rethFixture.summary,
+          Labels: {
+            ...rethFixture.summary.Labels,
+            "com.chainviz.role": roleValue,
+          },
+        },
+      };
+      const adapter = new EthereumAdapter(
+        new DockerPoller(clientFrom([fixture])),
+      );
+      const partial = await adapter.pollInfra();
+      const node = partial.entities?.[0] as NodeEntity;
+      expect(node.nodeRole).toBe(roleValue);
+    },
+  );
+
+  it("omits nodeRole when the container carries no com.chainviz.role label (Issue #215)", async () => {
+    // rethFixture は com.chainviz.role ラベルを持たない（省略 = 不明の流儀）。
+    const adapter = new EthereumAdapter(
+      new DockerPoller(clientFrom([rethFixture])),
+    );
+    const partial = await adapter.pollInfra();
+    const node = partial.entities?.[0] as NodeEntity;
+    expect(node.nodeRole).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty.call(node, "nodeRole")).toBe(false);
+  });
+
+  it("omits nodeRole when the com.chainviz.role label is an empty string (Issue #215)", async () => {
+    const fixture: Fixture = {
+      ...rethFixture,
+      summary: {
+        ...rethFixture.summary,
+        Labels: {
+          ...rethFixture.summary.Labels,
+          "com.chainviz.role": "",
+        },
+      },
+    };
+    const adapter = new EthereumAdapter(
+      new DockerPoller(clientFrom([fixture])),
+    );
+    const partial = await adapter.pollInfra();
+    const node = partial.entities?.[0] as NodeEntity;
+    expect(node.nodeRole).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty.call(node, "nodeRole")).toBe(false);
+  });
+
   it("rejects when the underlying poller fails to list containers", async () => {
     const failing: DockerClient = {
       listContainers: async () => {

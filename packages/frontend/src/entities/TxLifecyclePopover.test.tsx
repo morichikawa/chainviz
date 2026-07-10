@@ -200,3 +200,27 @@ describe("TxLifecyclePopover hash rendering boundaries", () => {
     expect(screen.getByTestId(`tx-lifecycle-popover-${b.hash}`)).toBeTruthy();
   });
 });
+
+describe("TxLifecyclePopover 'sent' stage glossary anchor (Issue #215)", () => {
+  it("anchors the 'sent' stage label to the rpc-endpoint term (now that it exists)", () => {
+    const t = tx({ status: "included" });
+    render(
+      <LanguageProvider initialLanguage="ja">
+        <GlossaryProvider
+          glossary={{
+            "rpc-endpoint": {
+              key: "rpc-endpoint",
+              name: { ja: "RPCエンドポイント", en: "RPC endpoint" },
+              definition: { ja: "窓口となるノードのAPI", en: "gateway node API" },
+              layer: "a-infra",
+              relatedTerms: [],
+            },
+          }}
+        >
+          <TxLifecyclePopover tx={t} />
+        </GlossaryProvider>
+      </LanguageProvider>,
+    );
+    expect(screen.getByTestId("glossary-term-rpc-endpoint")).toBeTruthy();
+  });
+});

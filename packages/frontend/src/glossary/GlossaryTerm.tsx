@@ -1,6 +1,7 @@
-import { type ReactNode, useId, useState } from "react";
+import { type ReactNode, useId } from "react";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { pickLocale } from "../i18n/i18n.js";
+import { useHoverPopover } from "../interaction/useHoverPopover.js";
 import { useGlossary } from "./GlossaryProvider.js";
 
 export interface GlossaryTermProps {
@@ -18,7 +19,9 @@ export interface GlossaryTermProps {
 export function GlossaryTerm({ termKey, children }: GlossaryTermProps) {
   const { lookup } = useGlossary();
   const { lang } = useLanguage();
-  const [open, setOpen] = useState(false);
+  // Issue #221: 隙間を通過する一瞬の mouseleave で消えないよう遅延クローズ。
+  const { isOpen: open, onMouseEnter, onMouseLeave, onFocus, onBlur } =
+    useHoverPopover();
   const popoverId = useId();
 
   const term = lookup(termKey);
@@ -34,10 +37,10 @@ export function GlossaryTerm({ termKey, children }: GlossaryTermProps) {
       tabIndex={0}
       role="button"
       aria-describedby={open ? popoverId : undefined}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-      onFocus={() => setOpen(true)}
-      onBlur={() => setOpen(false)}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      onFocus={onFocus}
+      onBlur={onBlur}
       data-testid={`glossary-term-${termKey}`}
     >
       <span className="glossary-term__label">{label}</span>

@@ -26,6 +26,17 @@ export interface InfraNodeData extends Record<string, unknown> {
    */
   drivesNodeContainerName?: string;
   /**
+   * entity が node で、自分の id を `drivesNodeId` に持つ別ノード（駆動元）が
+   * 解決できた場合の、その駆動元ノードの containerName（カード詳細ポップ
+   * オーバーの「駆動元（合意ノード）」欄用。ARCHITECTURE.md §7.6.3の更新版、
+   * Issue #215）。`drivesNodeContainerName` が「自分の `drivesNodeId` を
+   * 順方向に解決した値」なのに対し、こちらは全ノードを走査して「自分を
+   * 指している側」を逆引きする点が異なる。Ethereum プロファイルでは
+   * beacon→reth が1対1のため最初に見つかった一致で確定する。解決できない
+   * 場合は省略する（フォールバック: 欄自体を出さない）。
+   */
+  drivenByContainerName?: string;
+  /**
    * D層: キャンバス上の全 EL ノード（`internals.syncStages` を持つ node）の
    * blockHeight 最大値（ARCHITECTURE.md §7.6.5「同期ステージのミニバーの
    * 分母」）。全カードに同じ値が入る（entity 単位ではなくスナップショット
@@ -192,6 +203,20 @@ export function entitiesToFlowNodes(
   // 計算しない（ARCHITECTURE.md §7.6.5）。
   const maxElBlockHeight = computeMaxSyncTargetHeight(nodesById.values());
 
+  // 「駆動元（合意ノード）」逆引き用の索引（Issue #215）。node 全体を一度
+  // 走査し、`drivesNodeId` の指す先ごとに最初に見つかった駆動元の
+  // containerName を記録する。Ethereum プロファイルは beacon→reth が1対1
+  // なので、複数の駆動元が同じ相手を指す状況は想定しない（最初の一致を採用）。
+  const drivenByContainerNameByTargetId = new Map<string, string>();
+  for (const candidate of nodesById.values()) {
+    if (!candidate.drivesNodeId) continue;
+    if (drivenByContainerNameByTargetId.has(candidate.drivesNodeId)) continue;
+    drivenByContainerNameByTargetId.set(
+      candidate.drivesNodeId,
+      candidate.containerName,
+    );
+  }
+
   return infra.map((entity) => {
     let position: Position | undefined = layout[entity.containerName];
     if (!position) position = fallbackPositions.get(entity.containerName);
@@ -209,6 +234,10 @@ export function entitiesToFlowNodes(
       entity.kind === "node" && entity.drivesNodeId
         ? nodesById.get(entity.drivesNodeId)?.containerName
         : undefined;
+    const drivenByContainerName =
+      entity.kind === "node"
+        ? drivenByContainerNameByTargetId.get(entity.id)
+        : undefined;
 
     return {
       id: entity.id,
@@ -218,6 +247,7 @@ export function entitiesToFlowNodes(
         entity,
         rpcTargetContainerName,
         drivesNodeContainerName,
+        drivenByContainerName,
         maxElBlockHeight,
       },
     };
@@ -233,8 +263,9 @@ export function entitiesToFlowNodes(
  * 「実データが変わっていないか」を安価に判定できる。
  *
  * `maxElBlockHeight` は例外的に明示比較が必要（Issue #189）。
- * `rpcTargetContainerName`/`drivesNodeContainerName` は解決先ノードの
- * containerName（実質不変）から導かれるため、この関数が entity 参照のみで
+ * `rpcTargetContainerName`/`drivesNodeContainerName`/`drivenByContainerName`
+ * は解決先ノードの containerName（実質不変）から導かれるため、この関数が
+ * entity 参照のみで
  * 判定しても古い値を使い回す実害がほぼ無い。一方 `maxElBlockHeight` は
  * チェーン進行のたびに変わり続ける値であり、当のノード自身の entity が
  * 変化しない間（例: バックフィル中で blockHeight がまだ動いていない

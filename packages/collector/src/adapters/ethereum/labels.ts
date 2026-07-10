@@ -22,7 +22,18 @@ export const COMPOSE_SERVICE_LABEL = "com.docker.compose.service";
  */
 export const MANAGED_LABEL = "com.chainviz.managed";
 
-/** com.chainviz.managed=true のコンテナが持つ役割（execution/consensus/workbench）。 */
+/**
+ * 全ノードコンテナが持つ役割宣言。静的コンテナ（compose テンプレート）・
+ * 動的コンテナ（addNode/addWorkbench 時に node-lifecycle.ts が付与）の
+ * 両方に付く。値は execution / consensus / validator / workbench。
+ *
+ * 用途は2つある:
+ * - `removable` 等と同じ「managed=true のコンテナの役割」（従来からの用途）
+ * - `NodeEntity.nodeRole` の出所（Issue #215）。execution/consensus/
+ *   validator の値をそのまま toEntity() が転記する。値の検証・解釈は
+ *   フロントのチェーンプロファイル表現セットの責務で、collector 側は
+ *   加工しない
+ */
 export const ROLE_LABEL = "com.chainviz.role";
 
 /**

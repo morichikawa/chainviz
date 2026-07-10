@@ -279,6 +279,124 @@ describe("InfraNodeCard new-arrival highlight (Issue #123 §4-4)", () => {
   });
 });
 
+describe("InfraNodeCard node role subtitle (Issue #215)", () => {
+  it("shows '{role label} · {clientType}' when nodeRole resolves to a known descriptor", () => {
+    renderCard({ ...node, nodeRole: "execution" });
+    expect(
+      screen.getByTestId("infra-card-reth-follower-1").textContent,
+    ).toContain("実行クライアント · reth");
+  });
+
+  it("shows the consensus role label for lighthouse when nodeRole is consensus", () => {
+    renderCard({ ...node, clientType: "lighthouse", nodeRole: "consensus" });
+    expect(
+      screen.getByTestId("infra-card-reth-follower-1").textContent,
+    ).toContain("コンセンサスクライアント · lighthouse");
+  });
+
+  it("shows the validator role label", () => {
+    renderCard({ ...node, clientType: "lighthouse", nodeRole: "validator" });
+    expect(
+      screen.getByTestId("infra-card-reth-follower-1").textContent,
+    ).toContain("バリデーター · lighthouse");
+  });
+
+  it("falls back to clientType only when nodeRole is undefined (legacy snapshot)", () => {
+    renderCard(node);
+    const subtitle = screen
+      .getByTestId("infra-card-reth-follower-1")
+      .querySelector(".infra-card__subtitle");
+    expect(subtitle?.textContent).toBe("reth");
+  });
+
+  it("falls back to clientType only when nodeRole is an unmapped value", () => {
+    renderCard({ ...node, nodeRole: "sequencer" });
+    const subtitle = screen
+      .getByTestId("infra-card-reth-follower-1")
+      .querySelector(".infra-card__subtitle");
+    expect(subtitle?.textContent).toBe("reth");
+  });
+
+  it("does not affect the workbench subtitle (label, node-only concept)", () => {
+    renderCard(workbench);
+    const subtitle = screen
+      .getByTestId("infra-card-workbench-1")
+      .querySelector(".infra-card__subtitle");
+    expect(subtitle?.textContent).toBe("Carol");
+  });
+});
+
+describe("InfraNodeCard sync status dot visibility (Issue #215)", () => {
+  it("shows the sync status dot for an execution node", () => {
+    renderCard({ ...node, nodeRole: "execution" });
+    expect(
+      screen
+        .getByTestId("infra-card-reth-follower-1")
+        .querySelector(".infra-card__status"),
+    ).not.toBeNull();
+  });
+
+  it("shows the sync status dot when nodeRole is undefined (legacy snapshot fallback)", () => {
+    renderCard(node);
+    expect(
+      screen
+        .getByTestId("infra-card-reth-follower-1")
+        .querySelector(".infra-card__status"),
+    ).not.toBeNull();
+  });
+
+  it("hides the sync status dot for a validator node", () => {
+    renderCard({ ...node, nodeRole: "validator" });
+    expect(
+      screen
+        .getByTestId("infra-card-reth-follower-1")
+        .querySelector(".infra-card__status"),
+    ).toBeNull();
+  });
+
+  it("still shows the sync status dot for a workbench (kind is never node)", () => {
+    renderCard(workbench);
+    expect(
+      screen
+        .getByTestId("infra-card-workbench-1")
+        .querySelector(".infra-card__status"),
+    ).not.toBeNull();
+  });
+
+  it("hides the dot for a validator even when it carries real sync data (display is role-driven, not data-driven)", () => {
+    // データと表示ロジックの分離: validator が同期済み・実ブロック高を持って
+    // いても、ドット表示は nodeRole だけで決まる（同期データの有無で切り替え
+    // ない）。基底 node は synced/blockHeight 10 なので、その状態でも隠れる。
+    renderCard({ ...node, nodeRole: "validator", syncStatus: "synced", blockHeight: 999 });
+    expect(
+      screen
+        .getByTestId("infra-card-reth-follower-1")
+        .querySelector(".infra-card__status"),
+    ).toBeNull();
+  });
+
+  it("hides the dot for a syncing validator too (role gating ignores syncStatus)", () => {
+    renderCard({ ...node, nodeRole: "validator", syncStatus: "syncing" });
+    expect(
+      screen
+        .getByTestId("infra-card-reth-follower-1")
+        .querySelector(".infra-card__status"),
+    ).toBeNull();
+  });
+
+  it("shows a syncing dot for an execution node with no progress yet (empty data still displayed)", () => {
+    // 逆向きの不整合: 役割は execution だが blockHeight 0・syncing という
+    // 「データが空」な状態でも、ドットは出す（省略 = 未観測 とは区別し、
+    // is-syncing として表示する）。
+    renderCard({ ...node, nodeRole: "execution", syncStatus: "syncing", blockHeight: 0 });
+    const dot = screen
+      .getByTestId("infra-card-reth-follower-1")
+      .querySelector(".infra-card__status");
+    expect(dot).not.toBeNull();
+    expect(dot?.classList.contains("is-syncing")).toBe(true);
+  });
+});
+
 describe("InfraNodeCard removal-pending feedback (Issue #222)", () => {
   it("does not add the removing class by default", () => {
     renderCard(node);

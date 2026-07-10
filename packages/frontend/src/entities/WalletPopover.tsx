@@ -1,7 +1,7 @@
 import type { ContractEntity, TransactionEntity, WalletEntity } from "@chainviz/shared";
-import { useState } from "react";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
+import { useHoverPopover } from "../interaction/useHoverPopover.js";
 import { shortHex, TX_STATUS_MESSAGE_KEY } from "./transaction.js";
 import { deriveTxCallPreview } from "./txCallPreview.js";
 import { TxLifecyclePopover } from "./TxLifecyclePopover.js";
@@ -60,16 +60,18 @@ function WalletPopoverTxItem({
   contractsByAddress: ReadonlyMap<string, ContractEntity>;
 }) {
   const { t } = useLanguage();
-  const [hovered, setHovered] = useState(false);
+  // Issue #221: 隙間を通過する一瞬の mouseleave で消えないよう遅延クローズ。
+  const { isOpen: hovered, onMouseEnter, onMouseLeave, onFocus, onBlur } =
+    useHoverPopover();
 
   return (
     <li
       className="wallet-popover__tx-item"
       tabIndex={0}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      onFocus={() => setHovered(true)}
-      onBlur={() => setHovered(false)}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      onFocus={onFocus}
+      onBlur={onBlur}
     >
       <span className="wallet-popover__tx-hash">{shortHex(tx.hash)}</span>
       <span className={`wallet-tx-chip wallet-tx-chip--${tx.status}`}>

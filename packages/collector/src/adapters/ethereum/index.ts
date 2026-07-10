@@ -33,7 +33,7 @@ import type { ContractCatalog } from "./catalog.js";
 import { classifyContainer } from "./classify.js";
 import { ContractTracker } from "./contracts.js";
 import { decodeContractCall, decodeContractEvent } from "./decode.js";
-import { MANAGED_LABEL, P2P_ROLE_LABEL } from "./labels.js";
+import { MANAGED_LABEL, P2P_ROLE_LABEL, ROLE_LABEL } from "./labels.js";
 import {
   fetchConnectedExecutionPeerIdentities,
   fetchExecutionPeerIdentity,
@@ -327,6 +327,7 @@ export class EthereumAdapter implements ChainAdapter {
     // のまま（headBlockHash は本Issueのスコープ外で常に空文字列。
     // docs/ARCHITECTURE.md §7.3、docs/worklog/issue-187.md 参照）。
     const resolvedSync = this.syncStatusCache.resolve(obs.stableId);
+    const roleLabel = obs.labels[ROLE_LABEL];
     return {
       ...infra,
       kind: "node",
@@ -335,6 +336,13 @@ export class EthereumAdapter implements ChainAdapter {
       syncStatus: resolvedSync?.syncStatus ?? "syncing",
       blockHeight: resolvedSync?.blockHeight ?? 0,
       headBlockHash: "",
+      // ノードの役割（Issue #215）。ROLE_LABEL（com.chainviz.role）の生値を
+      // そのまま転記する。値の妥当性検証・解釈（execution/consensus/
+      // validator の意味づけ）はフロントのチェーンプロファイル表現セットの
+      // 責務であり、collector 側では加工しない（p2pRole のような値の
+      // 正規化はしない）。ラベルが無い・空文字列の場合は省略する
+      // （省略 = 不明。旧スナップショット・ラベル未付与コンテナとの互換）。
+      ...(roleLabel ? { nodeRole: roleLabel } : {}),
       // P2P 上の役割（Issue #124、#214）。優先順位は以下のとおり:
       // 1. ラベルが厳密に "bootnode" -> "bootnode"（デプロイ構成の選択。
       //    ラベルが無い・想定外の値の場合はこの分岐に該当しない）

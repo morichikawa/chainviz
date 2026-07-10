@@ -75,6 +75,7 @@ services:
       HEARTBEAT_INTERVAL_SEC: ${HEARTBEAT_INTERVAL_SEC:-10}
       GENESIS_SUSPEND_DETECT_SEC: ${GENESIS_SUSPEND_DETECT_SEC:-600}
     labels:
+      com.chainviz.role: "execution"
       com.chainviz.p2p-role: "bootnode"
     volumes:
       - genesis:/genesis:ro
@@ -102,6 +103,7 @@ services:
       HEARTBEAT_INTERVAL_SEC: ${HEARTBEAT_INTERVAL_SEC:-10}
       GENESIS_SUSPEND_DETECT_SEC: ${GENESIS_SUSPEND_DETECT_SEC:-600}
     labels:
+      com.chainviz.role: "consensus"
       com.chainviz.p2p-role: "bootnode"
     volumes:
       - genesis:/genesis:ro
@@ -126,6 +128,8 @@ services:
       FEE_RECIPIENT: "0x8943545177806ED17B9F23F0a21ee5948eCaa776"
       HEARTBEAT_INTERVAL_SEC: ${HEARTBEAT_INTERVAL_SEC:-10}
       GENESIS_SUSPEND_DETECT_SEC: ${GENESIS_SUSPEND_DETECT_SEC:-600}
+    labels:
+      com.chainviz.role: "validator"
     volumes:
       - genesis:/genesis:ro
       - vc1data:/data
@@ -148,6 +152,8 @@ services:
       HEARTBEAT_NODE_NAME: reth2 # ハートビートファイル名(Issue #148)
       HEARTBEAT_INTERVAL_SEC: ${HEARTBEAT_INTERVAL_SEC:-10}
       GENESIS_SUSPEND_DETECT_SEC: ${GENESIS_SUSPEND_DETECT_SEC:-600}
+    labels:
+      com.chainviz.role: "execution"
     volumes:
       - genesis:/genesis:ro
       - reth2data:/data
@@ -173,6 +179,8 @@ services:
       HEARTBEAT_NODE_NAME: beacon2 # ハートビートファイル名(Issue #148)
       HEARTBEAT_INTERVAL_SEC: ${HEARTBEAT_INTERVAL_SEC:-10}
       GENESIS_SUSPEND_DETECT_SEC: ${GENESIS_SUSPEND_DETECT_SEC:-600}
+    labels:
+      com.chainviz.role: "consensus"
     volumes:
       - genesis:/genesis:ro
       - beacon2data:/data
@@ -194,6 +202,8 @@ services:
       FEE_RECIPIENT: "0x8943545177806ED17B9F23F0a21ee5948eCaa776"
       HEARTBEAT_INTERVAL_SEC: ${HEARTBEAT_INTERVAL_SEC:-10}
       GENESIS_SUSPEND_DETECT_SEC: ${GENESIS_SUSPEND_DETECT_SEC:-600}
+    labels:
+      com.chainviz.role: "validator"
     volumes:
       - genesis:/genesis:ro
       - vc2data:/data

@@ -51,6 +51,10 @@ export const messages = {
   "field.memory": { ja: "メモリ", en: "Memory" },
   "field.client": { ja: "クライアント", en: "Client" },
   "field.role": { ja: "役割", en: "Role" },
+  // node の P2P 上の役割（ブートノード等）。上記 field.role（チェーン動作
+  // 上の役割。execution/consensus/validator）とは別軸のため文言を分ける
+  // （Issue #215）。
+  "field.p2pRole": { ja: "P2Pでの役割", en: "P2P role" },
   "field.sync": { ja: "同期状態", en: "Sync status" },
   "field.blockHeight": { ja: "ブロック高", en: "Block height" },
   "sync.synced": { ja: "同期済み", en: "Synced" },
@@ -95,6 +99,14 @@ export const messages = {
   "command.error.unknown": {
     ja: "コマンドの実行に失敗しました",
     en: "Command failed",
+  },
+  "command.error.notConnected": {
+    ja: "collector に接続されていません",
+    en: "Not connected to the collector",
+  },
+  "command.error.timeout": {
+    ja: "応答がありませんでした（タイムアウト）",
+    en: "No response (timed out)",
   },
   "role.bootnode": { ja: "ブートノード", en: "Bootnode" },
   "network.execution": { ja: "実行ネットワーク", en: "Execution network" },
@@ -146,6 +158,13 @@ export const messages = {
     en: "Establishing P2P connection…",
   },
   "field.rpcTarget": { ja: "操作先ノード", en: "RPC target" },
+  // --- 操作先エッジのホバーポップオーバー（Issue #215。designer 確定版
+  // docs/worklog/issue-211.md「14. 設計メモ」） ---
+  "edge.operationTarget": { ja: "操作先（RPC 接続先）", en: "RPC target" },
+  "edge.operationTarget.hint": {
+    ja: "このワークベンチの操作（RPC 呼び出し）が届くノードです。実際の Ethereum でもウォレットは決まった1つの RPC エンドポイントに接続します。chainviz ではさらに、全操作を観測して表示するため接続先をこの1本に固定しています（ブートノード役とは無関係です）",
+    en: "The node this workbench's operations (RPC calls) go to. Real Ethereum wallets also connect to one fixed RPC endpoint. chainviz additionally pins the target to observe and display every operation (unrelated to the bootnode role).",
+  },
   // --- C層拡張: コントラクトカード（ARCHITECTURE.md §6.3/§6.4/§6.8） ---
   "card.contract": { ja: "コントラクト", en: "Contract" },
   "contract.unknown": { ja: "未知のコントラクト", en: "Unknown contract" },
@@ -316,6 +335,12 @@ export const messages = {
   },
   "internalEdge.latency": { ja: "平均 {ms} ms", en: "avg {ms} ms" },
   "field.drivesNode": { ja: "駆動する実行ノード", en: "Drives execution node" },
+  // 上記の逆方向。EL 側（reth）ポップオーバーに出す「どの合意ノードに
+  // 駆動されているか」欄（Issue #215。ARCHITECTURE.md §7.6.3更新版）。
+  "field.drivenBy": {
+    ja: "駆動元（合意ノード）",
+    en: "Driven by (consensus node)",
+  },
   // --- D層: 同期ステージ・txpool内訳（ARCHITECTURE.md §7.6.5/§7.6.6。
   // Issue #189） ---
   "field.syncStages": { ja: "同期ステージ", en: "Sync stages" },

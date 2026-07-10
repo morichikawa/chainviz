@@ -51,7 +51,10 @@ import { PENDING_CONNECTION_EDGE_TYPE } from "../entities/pendingConnectionEdge.
 import { ConnectingEdge } from "../entities/ConnectingEdge.js";
 import { CONNECTING_EDGE_TYPE } from "../entities/connectingEdge.js";
 import { OperationTargetEdge } from "../entities/OperationTargetEdge.js";
-import { OPERATION_TARGET_EDGE_TYPE } from "../entities/operationTargetEdge.js";
+import {
+  OPERATION_TARGET_EDGE_TYPE,
+  isOperationTargetFlowEdge,
+} from "../entities/operationTargetEdge.js";
 import {
   type CanvasFlowEdge,
   type CanvasFlowNode,
@@ -107,6 +110,10 @@ function CanvasInner({ nodes, edges = [], onPersistPosition }: CanvasProps) {
   const [hoveredInternalLinkEdgeId, setHoveredInternalLinkEdgeId] = useState<
     string | null
   >(null);
+  // ホバー中の操作先エッジの id。同じ仕組みでホバー強調・ポップオーバー
+  // 表示を行う（Issue #215）。操作先エッジ以外では常に null のまま。
+  const [hoveredOperationTargetEdgeId, setHoveredOperationTargetEdgeId] =
+    useState<string | null>(null);
   // コントラクト一覧パネルの行クリックでパンした直後、一時的に新着発光と
   // 同じ強調を当てる対象ノード id（Issue #218/#211「単位C」）。
   // rfNodes 自体は書き換えず、表示直前（displayNodes）でだけ isNew=true を
@@ -159,13 +166,17 @@ function CanvasInner({ nodes, edges = [], onPersistPosition }: CanvasProps) {
   );
 
   // ピア接続・デプロイエッジだけホバー状態を追う（所有エッジ・操作エッジは
-  // ホバー説明の対象外。Issue #124 B、デプロイエッジは ARCHITECTURE.md §6.3）。
+  // ホバー説明の対象外。Issue #124 B、デプロイエッジは ARCHITECTURE.md §6.3、
+  // 操作先エッジは Issue #215）。
   const onEdgeMouseEnter = useCallback(
     (_event: unknown, edge: Edge) => {
       if (edge.type === PEER_EDGE_TYPE) setHoveredPeerEdgeId(edge.id);
       if (edge.type === DEPLOY_EDGE_TYPE) setHoveredDeployEdgeId(edge.id);
       if (edge.type === INTERNAL_LINK_EDGE_TYPE) {
         setHoveredInternalLinkEdgeId(edge.id);
+      }
+      if (edge.type === OPERATION_TARGET_EDGE_TYPE) {
+        setHoveredOperationTargetEdgeId(edge.id);
       }
     },
     [],
@@ -181,6 +192,11 @@ function CanvasInner({ nodes, edges = [], onPersistPosition }: CanvasProps) {
     }
     if (edge.type === INTERNAL_LINK_EDGE_TYPE) {
       setHoveredInternalLinkEdgeId((current) =>
+        current === edge.id ? null : current,
+      );
+    }
+    if (edge.type === OPERATION_TARGET_EDGE_TYPE) {
+      setHoveredOperationTargetEdgeId((current) =>
         current === edge.id ? null : current,
       );
     }
@@ -206,9 +222,20 @@ function CanvasInner({ nodes, edges = [], onPersistPosition }: CanvasProps) {
           if ((edge.data?.hovered ?? false) === hovered) return edge;
           return { ...edge, data: { ...edge.data, hovered } };
         }
+        if (isOperationTargetFlowEdge(edge)) {
+          const hovered = edge.id === hoveredOperationTargetEdgeId;
+          if ((edge.data?.hovered ?? false) === hovered) return edge;
+          return { ...edge, data: { ...edge.data, hovered } };
+        }
         return edge;
       }),
-    [rfEdges, hoveredPeerEdgeId, hoveredDeployEdgeId, hoveredInternalLinkEdgeId],
+    [
+      rfEdges,
+      hoveredPeerEdgeId,
+      hoveredDeployEdgeId,
+      hoveredInternalLinkEdgeId,
+      hoveredOperationTargetEdgeId,
+    ],
   );
 
   // ネットワーク凡例（Issue #124 A）に渡す、現在描画中のピア接続だけの一覧。

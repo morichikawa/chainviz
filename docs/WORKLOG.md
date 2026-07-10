@@ -121,8 +121,12 @@
 | #210 | Issue #210 ワークベンチに複数ウォレットが紐づいて見える件の原因調査。モックデータ(EOA+スマートアカウント)の意図した挙動と特定、コード修正不要 | [2026-07-10](worklog/issue-210.md) |
 | #214 | Issue #214 validator(VC)とブートノード間の「P2P接続を確立中...」固着の原因調査・設計・実装。VCはP2P非参加なのに接続確立中エッジの対象に含めている設計上のミスマッチと特定し、`p2pRole`への`"none"`追加+collector/frontendの除外ロジックで解消 | [2026-07-10](worklog/issue-214.md) |
 | #211ほか | Issue #211/#212/#213/#215/#218/#219 UX上の6課題を実環境で評価し、4つの実装単位(A:#215 役割可視化、B:#213+#219 操作説明、C:#211+#218 一覧と導線、D:#212 txライフサイクル)へ切り分けたUX設計。単位C(コントラクト一覧パネル・pendingデプロイラベル)を実装完了 | [2026-07-10](worklog/issue-211.md) |
+| #229 | Issue #229 PROTO-CMD-01が長時間稼働スタックで失敗する件の原因調査・修正。EL間P2Pバックフィルの回帰ではなく、追いつき所要時間(稼働時間÷20)がテストの固定上限540秒を超えることが根本原因と特定し、合格条件を「headへの完全追従」から「最低進行量(300ブロック)の停滞なき進行」に変更 | [2026-07-10](worklog/issue-229.md) |
+| #221 | Issue #221 ホバーポップオーバーがカードとの隙間を通過中に消える不具合の修正。開閉状態を共通フックuseHoverPopoverに切り出し、mouseleaveのみ短い遅延を挟むことで8箇所の対象コンポーネント全てに適用 | [2026-07-10](worklog/issue-221.md) |
 | #216 | Issue #216 beacon/rethのペア追加制約についての設計判断。EL:CL=1:1がThe Merge以降の標準構成でありペア追加は意図的な設計と確認、現状維持と結論(コード変更なし。UX改善のみ#251として起票) | [2026-07-10](worklog/issue-216.md) |
 | #217 | Issue #217 長文エラーでトースト通知のレイアウトが崩れる不具合を修正(flex itemのmin-width:auto問題が原因。.toast/.toast__messageにmin-width:0・overflow-wrap:anywhere・white-space:pre-wrap・max-height+overflow-yを追加) | [2026-07-10](worklog/issue-217.md) |
 | #220 | Issue #220 ノード追加・ワークベンチ追加ボタンの連打防止。既存のゴースト(仮カード)有無から算出するpendingAddNode/pendingAddWorkbenchをボタンのdisabled属性に反映し、直前の追加が解決するまで再クリックできないようにした | [2026-07-10](worklog/issue-220.md) |
 | #222 | Issue #222 ノード/ワークベンチ削除中の進行中フィードバック(半透明化+削除ボタン無効化+スピナー)を追加。既存のワークベンチ操作保留追跡(pendingOperationWorkbenchIds)と同じ設計で`pendingRemovalIds`を実装 | [2026-07-10](worklog/issue-222.md) |
 | #254 | Issue #254 dev collector稼働中はpnpm test:e2eが起動不能な不具合を修正。startCollectorがCHAINVIZ_PROXY_PORTを子プロセスへ渡すようにし、detectLaunchStatusをWebSocket・ロギングプロキシ両方のlisteningログが揃うまで判定確定しないよう拡張 | [2026-07-11](worklog/issue-254.md) |
+| #238 | Issue #238 長時間のUI層E2Eフルスイート実行中にcollectorがuncaughtExceptionでexitしカスケード失敗する不具合の原因調査・修正。eth-ws-client.tsのsubscribe()内でonResult(onHeader/onTxHash)の呼び出しがtry/catchで囲われておらず、例外が発生するとws内部の同期呼び出しスタックを経てプロセス全体を落としていた。onResult呼び出しをtry/catchで囲みonErrorへ転送するよう修正 | [2026-07-11](worklog/issue-238.md) |
+| #235 | Issue #235 collector停止中のaddNode/addWorkbenchがゴースト消滅のみでエラートーストが出ない不具合を修正。`ChainvizClient.sendCommand`が未接続でも常にcommandIdを返していたのが根本原因で、未接続時は`undefined`を返すよう変更。あわせてゴーストの安全網タイムアウトでもcommandResult自体が届かなかった場合はエラートーストを出すようにした | [2026-07-11](worklog/issue-235.md) |

@@ -1,9 +1,10 @@
 import type { NodeEntity } from "@chainviz/shared";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CommandActionsProvider } from "../commands/CommandActionsContext.js";
 import type { CommandActions } from "../commands/useCommands.js";
 import { LanguageProvider } from "../i18n/LanguageProvider.js";
+import { HOVER_POPOVER_CLOSE_DELAY_MS } from "../interaction/useHoverPopover.js";
 import { CanvasToolbar, type CanvasToolbarProps } from "./CanvasToolbar.js";
 
 function node(overrides: Partial<NodeEntity> = {}): NodeEntity {
@@ -247,15 +248,30 @@ describe("CanvasToolbar", () => {
       );
     });
 
-    it("hides the tooltip again on mouse leave / blur", () => {
-      renderToolbar();
-      const addNodeButton = screen.getByRole("button", { name: /ノードを追加/ });
-      const wrapper = addNodeButton.parentElement as HTMLElement;
-      fireEvent.mouseEnter(wrapper);
-      expect(screen.getByRole("tooltip")).toBeTruthy();
-      fireEvent.mouseLeave(wrapper);
-      expect(screen.queryByRole("tooltip")).toBeNull();
-    });
+    it(
+      "hides the tooltip again on mouse leave / blur, after the close delay " +
+        "(Issue #221: not immediately, so the cursor can still reach the popover " +
+        "across the gap)",
+      () => {
+        vi.useFakeTimers();
+        try {
+          renderToolbar();
+          const addNodeButton = screen.getByRole("button", { name: /ノードを追加/ });
+          const wrapper = addNodeButton.parentElement as HTMLElement;
+          fireEvent.mouseEnter(wrapper);
+          expect(screen.getByRole("tooltip")).toBeTruthy();
+          fireEvent.mouseLeave(wrapper);
+          // 即座には消えない（隙間通過中の可能性があるため）。
+          expect(screen.getByRole("tooltip")).toBeTruthy();
+          act(() => {
+            vi.advanceTimersByTime(HOVER_POPOVER_CLOSE_DELAY_MS);
+          });
+          expect(screen.queryByRole("tooltip")).toBeNull();
+        } finally {
+          vi.useRealTimers();
+        }
+      },
+    );
 
     it("defaults to an empty entity list (generic hints) when entities is omitted", () => {
       renderToolbar();

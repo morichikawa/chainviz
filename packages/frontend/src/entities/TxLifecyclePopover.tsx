@@ -27,13 +27,14 @@ const STAGE_DESCRIPTION_KEY: Record<TxLifecycleStageKey, MessageKey> = {
 };
 
 /**
- * 段階ごとの用語解説キー。「送信」は Issue #212 時点で `rpc-endpoint`
- * 用語が未新設（単位A）のため、既存の `workbench` にフォールバックする
- * （docs/worklog/issue-211.md 8節の設計メモを参照）。
+ * 段階ごとの用語解説キー。「送信」は Issue #212 実装時点で `rpc-endpoint`
+ * 用語が未新設（単位A）だったため一時的に `workbench` にフォールバック
+ * していたが、Issue #215（単位A）で `rpc-endpoint` が新設されたため
+ * 差し替えた（docs/worklog/issue-211.md 8節・14節の設計メモを参照）。
  */
 const STAGE_TERM_KEY: Record<TxLifecycleStageKey, string> = {
   signed: "signature",
-  sent: "workbench",
+  sent: "rpc-endpoint",
   mempool: "mempool",
   included: "block",
 };
