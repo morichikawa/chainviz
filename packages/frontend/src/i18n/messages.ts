@@ -196,6 +196,10 @@ export const messages = {
     ja: "ブロックに取り込まれ、全ノードに複製されて確定しました",
     en: "Included in a block, replicated to every node, and final.",
   },
+  "tx.lifecycle.desc.includedPending": {
+    ja: "ブロックに取り込まれると、全ノードに複製されて確定します（まだ起きていません）",
+    en: "Once included in a block, it will be replicated to every node and become final. This has not happened yet.",
+  },
   "tx.lifecycle.desc.includedFailed": {
     ja: "実行が失敗として記録されました（ブロックには取り込まれています）",
     en: "Recorded as failed (still included in a block).",

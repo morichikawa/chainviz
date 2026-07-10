@@ -98,6 +98,23 @@ describe("TxLifecyclePopover (ARCHITECTURE.md §6.11, Issue #212 単位D)", () =
     expect(signedStage.getAttribute("data-stage-state")).not.toBe("active");
     expect(signedStage.getAttribute("data-stage-state")).toBe("done");
   });
+
+  it("does not describe the not-yet-reached inclusion stage of a pending tx as already completed (Issue #212 QA差し戻し)", () => {
+    const t = tx({ status: "pending" });
+    wrap(t);
+    const includedStage = screen.getByTestId(
+      `tx-lifecycle-stage-${t.hash}-included`,
+    );
+    expect(includedStage.getAttribute("data-stage-state")).toBe("pending");
+    // ○マーク(未到達)と矛盾する完了断定の過去形説明文を出さない。
+    expect(includedStage.textContent).not.toContain(
+      "ブロックに取り込まれ、全ノードに複製されて確定しました",
+    );
+    // 未到達専用の、完了を断定しない説明文を出す。
+    expect(includedStage.textContent).toContain(
+      "ブロックに取り込まれると、全ノードに複製されて確定します",
+    );
+  });
 });
 
 /** stage li の中のマーク文字を取り出す。 */

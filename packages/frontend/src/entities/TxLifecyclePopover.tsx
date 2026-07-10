@@ -51,6 +51,12 @@ function stageDescriptionKey(stage: TxLifecycleStage): MessageKey {
   if (stage.key === "included" && stage.state === "failed") {
     return "tx.lifecycle.desc.includedFailed";
   }
+  // pending(未到達)の場合、完了を断定する説明文（過去形）を出すと
+  // ○マーク（未到達）と矛盾する（Issue #212 QA差し戻し）。未到達専用の
+  // 完了断定しない文言に分岐する。
+  if (stage.key === "included" && stage.state === "pending") {
+    return "tx.lifecycle.desc.includedPending";
+  }
   return STAGE_DESCRIPTION_KEY[stage.key];
 }
 
