@@ -134,7 +134,8 @@ function AppShell({
 
   // ボタン押下直後のローディング表示（Issue #102）に使う。仮カードが
   // 1枚でも残っている間は「まだ実体化していない addNode/addWorkbench がある」
-  // とみなす。
+  // とみなす。CanvasToolbar側ではこの値をスピナー表示だけでなく、ボタンの
+  // disabled 判定（連打防止。Issue #220）にも使う。
   const pendingAddNode = useMemo(
     () => ghosts.some((ghost) => ghost.data.kind === "node"),
     [ghosts],

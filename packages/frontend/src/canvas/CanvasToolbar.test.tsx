@@ -99,8 +99,9 @@ describe("CanvasToolbar", () => {
     expect(input.value).toBe("");
   });
 
-  it("dispatches addNode once per click with no built-in double-submit guard", () => {
-    // 追加ボタン連打の二重送信防止は UI 側では行わない（各クリックが1発行）。
+  it("dispatches addNode once per click while not pending", () => {
+    // pending でない間は、押した回数だけそのまま addNode を発行する
+    // （多重送信の抑止は pendingAddNode による disabled 化で行う。Issue #220）。
     const actions = renderToolbar();
     const button = screen.getByRole("button", { name: /ノードを追加/ });
     fireEvent.click(button);
@@ -168,16 +169,39 @@ describe("CanvasToolbar", () => {
       expect(addWorkbenchButton.className).not.toContain("--pending");
     });
 
-    it("still dispatches addNode when clicked while pending (no disabled attribute)", () => {
+    it("disables the add-node button while pending, blocking double-clicks (Issue #220)", () => {
       const actions = renderToolbar({}, { pendingAddNode: true });
+      const addNodeButton = screen.getByRole(
+        "button",
+        { name: /ノードを追加/ },
+      ) as HTMLButtonElement;
+      expect(addNodeButton.disabled).toBe(true);
+      fireEvent.click(addNodeButton);
+      fireEvent.click(addNodeButton);
+      // disabled なボタンはブラウザがそもそも click イベントを発火させない。
+      expect(actions.addNode).not.toHaveBeenCalled();
+    });
+
+    it("disables the add-workbench button while pending, blocking double-submits (Issue #220)", () => {
+      const actions = renderToolbar({}, { pendingAddWorkbench: true });
+      const addWorkbenchButton = screen.getByRole("button", {
+        name: /ワークベンチを追加/,
+      }) as HTMLButtonElement;
+      expect(addWorkbenchButton.disabled).toBe(true);
+      fireEvent.click(addWorkbenchButton);
+      fireEvent.click(addWorkbenchButton);
+      expect(actions.addWorkbench).not.toHaveBeenCalled();
+    });
+
+    it("re-enables the add-node button once pending resolves (ghost cleared)", () => {
+      const actions = renderToolbar({}, { pendingAddNode: false });
       const addNodeButton = screen.getByRole(
         "button",
         { name: /ノードを追加/ },
       ) as HTMLButtonElement;
       expect(addNodeButton.disabled).toBe(false);
       fireEvent.click(addNodeButton);
-      fireEvent.click(addNodeButton);
-      expect(actions.addNode).toHaveBeenCalledTimes(2);
+      expect(actions.addNode).toHaveBeenCalledTimes(1);
     });
   });
 

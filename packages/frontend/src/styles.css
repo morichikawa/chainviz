@@ -189,12 +189,18 @@ body {
 }
 
 /* --- 追加コマンド送信直後のローディング表示（Issue #102） --- */
-/* ボタン自体は disabled にしない（連打を禁止する仕様ではないため）。
-   スピナー + 補足文言だけで「受け付けた」ことを示す。chainviz-spin
-   キーフレームはゴーストカード（.ghost-card__spinner）と共有する。 */
+/* スピナー + 補足文言で「受け付けた」ことを示す。ボタン自体も disabled に
+   なる（Issue #220。連打による多重送信を防ぐ。CanvasToolbar.tsx 側で
+   `disabled` 属性を制御する）。chainviz-spin キーフレームはゴーストカード
+   （.ghost-card__spinner）と共有する。 */
 .canvas-toolbar__button--pending {
   border-color: var(--accent);
   color: var(--muted);
+}
+
+.canvas-toolbar__button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
 }
 
 .canvas-toolbar__spinner {

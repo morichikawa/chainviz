@@ -12,9 +12,11 @@ export interface CanvasToolbarProps {
   /**
    * addNode コマンドを送ってから、実エンティティ到着 or 失敗で解決されるまでの
    * 間 true になる（Issue #102）。押した瞬間に反応があることを示すため、
-   * ボタンへスピナー + 補足文言を足す。二重送信防止のためではないので、
-   * このフラグが true でもボタンは押せるままにする（連打時は連打した分だけ
-   * ゴーストカードが並ぶ）。
+   * ボタンへスピナー + 補足文言を足す。また、直前の追加がまだ解決していない
+   * 間はボタンを `disabled` にし、連打による多重の追加コマンド送信を防ぐ
+   * （Issue #220）。ゴースト（仮カード）は entityAdded / commandResult(失敗) /
+   * 安全網タイムアウト（`ghostNode.ts` の `GHOST_TIMEOUT_MS`）のいずれかで
+   * 必ず消えるため、ボタンが恒久的に押せなくなることはない。
    */
   pendingAddNode?: boolean;
   /** addWorkbench 版。意味は pendingAddNode と同じ。 */
@@ -64,6 +66,7 @@ export function CanvasToolbar({
               : "canvas-toolbar__button"
           }
           aria-busy={pendingAddNode}
+          disabled={pendingAddNode}
           onClick={() => actions.addNode()}
           data-testid="canvas-toolbar-add-node"
         >
@@ -93,6 +96,7 @@ export function CanvasToolbar({
                 : "canvas-toolbar__button"
             }
             aria-busy={pendingAddWorkbench}
+            disabled={pendingAddWorkbench}
             data-testid="canvas-toolbar-add-workbench"
           >
             {pendingAddWorkbench && (
