@@ -399,3 +399,191 @@ mempool 投入時の検査として説明する）。
 - [#245](https://github.com/morichikawa/chainviz/issues/245)
   カードのホバーポップオーバーが隣接カードの下に描画され読めない
   （z-order。#221 とは別の問題）
+
+### 2026-07-10 Issue #211/#218 実装記録（単位C）着手前の設計メモ
+
+- 担当: frontend
+- ブランチ: issue-211-deploy-feedback-ux
+- 対象: 単位C（#218 コントラクト一覧パネルの新設 + #211 デプロイ中txの
+  「デプロイ」ラベル化・導線）。上記「4. 単位Cの設計」をベースに、実際の
+  コンポーネント構成・データ取得元を以下のとおり具体化してから着手する。
+
+**コントラクト一覧パネル（新設）**
+
+- パネル自体は `Canvas.tsx`（`CanvasInner`、`ReactFlowProvider` の内側）に
+  置く。App.tsx 側の変更は不要にする。`CanvasInner` は既に `rfNodes`
+  （contract カード・ghost カードを含む全ノード）を持っているため、そこから
+  `type === CONTRACT_NODE_TYPE` のノードと `type === GHOST_NODE_TYPE &&
+  data.kind === "contract"` のノードを filter するだけでパネルの元データが
+  揃う（peerEdges を rfEdges から filter して PeerNetworkLegend に渡している
+  既存パターンと同じ流儀）
+- 新規の純粋関数群 `entities/contractList.ts`:
+  - `ContractListEntry`（`nodeId` / `status: "deployed" | "deploying"` /
+    `name?` / `address?` / `tokenSymbol?`）
+  - `buildContractListEntries(contracts, deployingGhosts)`: 実カード配列と
+    ghost 配列を1本の `ContractListEntry[]` に合成する
+  - `sortEntriesByAppearance(entries, order)`: 出現順（新しいものが上）に
+    並べ替える。order は下記フックが返す `Map<id, seq>`
+  - `resolveNodeCenter(position, measured)`: パン先の中心座標を
+    `position + measured/2` から求める（`measured` 未確定時のフォールバック
+    幅高さも持つ）。setCenter に渡す値の算出をテスト可能にするため Canvas.tsx
+    から切り出す
+- 出現順トラッキング用に新規フック `entities/useAppearanceOrder.ts`:
+  `useAppearanceOrder(ids: string[]): ReadonlyMap<string, number>`。
+  `useNewArrivalHighlight` と同じ「id 集合の差分から新規現れた id を検知する」
+  骨格を流用するが、ハイライト用のタイマー・ready ゲートは持たず、初めて
+  見た id に単調増加のシーケンス番号を振るだけ（並び替えに使うだけで演出は
+  伴わないため）。ghost → 実カードの置換時は実カードの address が新しい id
+  として扱われ、置換直後に一覧の最上段へ来る（「デプロイが今しがた実体化
+  した」という事実と一致するため許容する）
+- 新規コンポーネント `entities/ContractListPanel.tsx`: entries が空なら
+  null。ヘッダ「{GlossaryTerm contract}{件数}」。行は
+  `deployed`→`{name ?? 未知のコントラクト} {shortHex(address)}{· symbol}`、
+  `deploying`→ スピナー + 「デプロイ中… {name}」（`ghost.contract.deploying`
+  とは別キー `contractList.deploying` を使う。表示先コンポーネントが違う
+  ため既存の命名慣習どおり分ける）。行クリックで `onSelect(nodeId)` を呼ぶ
+  だけの薄いプレゼンテーション層にする（パン処理自体は持たない）
+- Canvas.tsx 側でクリック時のパン+一時ハイライトを実装する:
+  `useReactFlow()` の `getNode` / `setCenter` / `getZoom` を使い、
+  `resolveNodeCenter` で求めた中心へ `setCenter(cx, cy, { zoom: getZoom(),
+  duration: 400 })`（ズーム倍率は変えない）。あわせて `jumpHighlightNodeId`
+  という Canvas 内部 state を立て、対象が contract カードのときだけ
+  表示直前に `data.isNew = true` を注入する（peer/deploy エッジの hover 注入
+  と同じ「表示直前に合成し、rfNodes 自体は書き換えない」パターン）。これは
+  既存の新着発光 CSS（`.infra-card--new`）をそのまま再利用するだけで、
+  shared 型・ContractNodeData に新規フィールドを増やさない。一定時間後
+  `setTimeout` で `jumpHighlightNodeId` を null に戻す（ghost 行クリック時は
+  ghost カード自体に既存のスピナー演出があるためハイライト注入はしない）
+- 0件（実コントラクトもデプロイ中もない）ならパネル自体を出さない
+  （`ContractListPanel` が null を返す時点で満たされる）
+- 配置は画面左下、`Controls`（既定 bottom-left、4ボタン）の上。
+  `PeerNetworkLegend` の右下配置と対称に、`.contract-list-panel { position:
+  absolute; left: 15px; bottom: 150px; }` を追加する（Controls の実測高さ
+  ~110px+マージン15pxに収まる余白を確保）
+
+**デプロイ tx の pending 表示（#211）**
+
+- `entities/transaction.ts` の `txChipLabel` に `tx.to === null` の判定を
+  追加する（`createdContractAddress` は確定後のみ入るため、pending 中は
+  これだけでは「デプロイ」と判定できていなかった）。優先順位は
+  「functionName → (createdContractAddress あり or to===null) → デプロイ
+  → rawFunctionId → hash」に変える。副次効果として、確定に失敗した
+  デプロイ tx（`createdContractAddress` が入らない failed）も「デプロイ」
+  ラベルになる（従来は素の tx ハッシュ短縮に落ちていた不整合が解消される）
+- 副作用の確認: `entities/txCallPreview.ts`（`deriveTxCallPreview`、
+  WalletPopover の「呼び出し内容」プレビュー行が使う）は
+  `createdContractAddress` 前提のままにする。pending 中のデプロイ tx は
+  作成先アドレスがまだ存在しないため、この行は従来どおり「呼び出し内容
+  なし」（プレビュー行自体が出ない）のままにする。設計メモの「WalletPopover
+  の tx 一覧も同じ導出を使っているため同時に直る」という記述は実際には
+  `WalletPopover.tsx` が `txChipLabel` を呼んでおらず（`TX_STATUS_KEY` の
+  ステータスバッジのみ）不正確だったため、ここで訂正する。ステータス
+  バッジ自体は元々 pending/included/failed を正しく出しているため実害は
+  ない
+- `operation.deploy.note` の文言を設計どおり更新する（出現場所を予告）
+
+**トークン残高チップの区別（#218 派生）**
+
+- `entities/walletTokenBalances.ts` に純粋関数
+  `formatTokenContractLabel(balance, unknownLabel)` を追加し、
+  `"${contractName ?? unknownLabel} (${shortHex(contractAddress)})"` を返す。
+  `WalletCard.tsx` の token chip title 属性と `WalletPopover.tsx` の
+  トークン残高行の名前表示の両方をこの関数に置き換える（同名トークンが
+  複数あるとき短縮アドレスで区別できるようにする）
+
+**変更しないこと**
+
+- `deriveDeployedContracts`（操作パネルの呼び出しタブ用、catalogKey が
+  カタログに存在するものだけに絞る）はそのまま。コントラクト一覧パネルは
+  「一覧性」が目的のため catalogKey 不明な未知コントラクトも含めるが、
+  呼び出し操作の対象候補とは要件が異なるため共通化しない
+- shared（`packages/shared`）の型変更は無し
+
+### 2026-07-10 Issue #211/#218 実装記録（単位C）完了報告
+
+- 担当: frontend
+- ブランチ: issue-211-deploy-feedback-ux
+- 内容: 上記の設計メモどおり実装した。新規ファイル・主な変更点は以下。
+
+**新規ファイル**
+
+- `packages/frontend/src/entities/contractList.ts` /
+  `contractList.test.ts`: `buildContractListEntries`（実カード + デプロイ中
+  ghost を1本の行データへ合成）、`sortEntriesByAppearance`（出現順ソート）、
+  `resolveNodeCenter`（パン先中心座標の算出）
+- `packages/frontend/src/entities/useAppearanceOrder.ts` /
+  `useAppearanceOrder.test.ts`: id の出現順に単調増加のシーケンス番号を
+  振るフック（`useNewArrivalHighlight` と同じ骨格だが演出・ready ゲート
+  無し）
+- `packages/frontend/src/entities/ContractListPanel.tsx` /
+  `ContractListPanel.test.tsx`: コントラクト一覧パネル本体
+- `packages/frontend/src/canvas/Canvas.tsx`: `CanvasInner` 内で上記を
+  組み合わせ、パネルの配置・行クリックによる `setCenter` パン・一時ハイ
+  ライト注入（`ContractNodeData.isNew` を表示直前にだけ true にする、
+  hover 注入と同じパターン）を実装。shared・ContractNodeData 自体の型は
+  変更していない
+- `packages/frontend/src/styles.css`: `.contract-list-panel*` を追加
+  （キャンバス左下、React Flow 標準 Controls の上）
+
+**既存ファイルの変更**
+
+- `entities/transaction.ts` の `txChipLabel`: `tx.to === null` を deploy
+  判定に追加し、pending 中のデプロイ tx も「デプロイ」ラベルになるように
+  した（#211 本体）。副次効果として、確定失敗（failed）でも
+  `createdContractAddress` が入らなかったデプロイ tx が「デプロイ」表示に
+  なる（従来は tx hash 短縮表示に落ちていた）
+- `entities/walletTokenBalances.ts` に `formatTokenContractLabel` を追加し、
+  `WalletCard.tsx`（トークンチップの title 属性）・`WalletPopover.tsx`
+  （トークン残高行の名前表示）を置き換えた。同名トークンが複数デプロイ
+  されていてもアドレスの短縮表記で区別できるようにした（#218 派生）
+- `i18n/messages.ts`: `operation.deploy.note` を「キャンバス下段（ウォレット
+  の下の段）に現れます」に更新し、`contractList.title` /
+  `contractList.deploying` / `contractList.jumpHint` を追加した
+
+**設計メモからの訂正点**
+
+- 設計メモは「WalletPopover の tx 一覧も txChipLabel と同じ導出を使って
+  いるため同時に直る」としていたが、実際には `WalletPopover.tsx` は
+  `txChipLabel` を呼んでおらず（ステータスバッジは `TX_STATUS_KEY` を
+  直接使う別経路）、この記述は不正確だった。ステータスバッジ自体は元々
+  pending/included/failed を正しく表示できているため実害はなく、
+  `txCallPreview.ts`（呼び出し内容プレビュー行）も意図的に変更していない
+  （pending 中のデプロイ tx は作成先アドレスがまだ存在しないため、
+  プレビュー行が出ないのはこれまでどおりで正しい挙動）
+
+**動作確認**
+
+- `pnpm build && pnpm test`（ルートから全パッケージ対象）が通ることを
+  確認した（frontend 96 ファイル 1456 件含め全て pass）。`npx eslint .`
+  も警告無しで通過
+- 変更に伴い2件の既存テストを更新した:
+  `App.workbenchOperations.test.tsx`（「デプロイ中… Counter」がゴースト
+  カードとコントラクト一覧パネルの両方に出るようになり複数マッチに
+  なったため `getAllByText` に変更）、`WalletPopover.test.tsx`（トークン
+  残高行のテキストにアドレス短縮表記が追加されたぶんの期待値更新、および
+  同名2トークンの区別を確認する新規テストを追加）
+- Playwright（chromium、モックデータの `pnpm dev`）で実際に操作して確認:
+  左下にコントラクト一覧パネルが出る（0件なら非表示）、行クリックで
+  該当カードへパン + 一時ハイライトが当たる、ウォレットカードの tx
+  チップに「デプロイ」ラベルが出る、トークン残高チップの title に
+  アドレス短縮表記が併記される、実際に Deploy タブから Counter を
+  デプロイして一覧の最上段に新しい行として現れる（出現順ソートが機能）
+  ことを確認した。この環境では Playwright の Chromium 実行に
+  `libnspr4`/`libnss3` 等の共有ライブラリが不足していたが、`sudo` 無しで
+  `.deb` を展開して `LD_LIBRARY_PATH` に加える回避策が既に
+  `scratchpad/pwlibs/` に用意されていたため、それを再利用して起動した
+- pending 中のデプロイ tx が実際に「デプロイ」ラベルで表示される瞬間は
+  モックのコマンド解決が速すぎて Playwright 上で目視するタイミングを
+  掴めなかった（`txChipLabel` のユニットテストで pending/failed 両方の
+  `to === null` ケースを直接検証済みのため、これで代替した）
+
+**次の担当が知っておくべきこと**
+
+- collector 側の追加対応は無し（単位Cは frontend のみの設計どおり実装
+  できた）。`docs/PLAN.md` の #211・#218 のチェックは付けてよい
+- コントラクト一覧パネルの並び順は `useAppearanceOrder` の内部 Map に
+  依存し、id ごとの出現シーケンス番号は無期限に保持される（削除しない）。
+  実運用でデプロイされるコントラクト数の規模ではメモリ上問題にならない
+  想定（`useAppearanceOrder.ts` の docstring 参照）
+- 作業中に本 Issue の範囲外の問題は見つからなかった（新規 Issue の起票は
+  無し）
