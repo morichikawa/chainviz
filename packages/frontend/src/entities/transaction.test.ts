@@ -143,6 +143,28 @@ describe("txChipLabel (ARCHITECTURE.md §6.6 「意味」優先の tx チップ�
     expect(txChipLabel(t)).toEqual({ kind: "deploy", text: "" });
   });
 
+  it("labels a pending contract-creation tx as deploy before createdContractAddress is known (Issue #211)", () => {
+    const t: TransactionEntity = {
+      kind: "transaction",
+      hash: "0xhash",
+      from: "0xa",
+      to: null,
+      status: "pending",
+    };
+    expect(txChipLabel(t)).toEqual({ kind: "deploy", text: "" });
+  });
+
+  it("labels a failed contract-creation tx as deploy even when createdContractAddress never arrived (Issue #211)", () => {
+    const t: TransactionEntity = {
+      kind: "transaction",
+      hash: "0xhash",
+      from: "0xa",
+      to: null,
+      status: "failed",
+    };
+    expect(txChipLabel(t)).toEqual({ kind: "deploy", text: "" });
+  });
+
   it("falls back to a shortened rawFunctionId when the call cannot be decoded and it is not a deploy", () => {
     const t: TransactionEntity = {
       kind: "transaction",

@@ -32,14 +32,24 @@ export interface TxChipLabel {
 /**
  * ウォレットの tx チップに出すラベルを「意味」優先で導出する（ARCHITECTURE.md
  * §6.6）。優先順位: `contractCall.functionName` → デプロイ
- * （`createdContractAddress` あり）→ `contractCall.rawFunctionId` の短縮表示
- * → 素の送金・情報なしの場合は従来どおり tx hash の短縮表示。
+ * （`createdContractAddress` があるか、`to === null`＝コントラクト作成 tx）
+ * → `contractCall.rawFunctionId` の短縮表示 → 素の送金・情報なしの場合は
+ * 従来どおり tx hash の短縮表示。
+ *
+ * `to === null` の判定は Issue #211 で追加した。`createdContractAddress` は
+ * ブロック取り込み後（receipt 相当の観測）にしか入らないため、これだけでは
+ * pending 中のデプロイ tx が「デプロイ」と分からず、確定するまで tx hash の
+ * 短縮表示のまま明滅していた（「デプロイが進行中」だと伝わらない）。
+ * `to === null` は tx 自体が届いた時点（pending 含む）で分かる情報のため、
+ * pending 中から「デプロイ」ラベルを出せる。副次効果として、確定に失敗し
+ * `createdContractAddress` が入らなかったデプロイ tx（failed）も「デプロイ」
+ * ラベルになる（従来はここだけ tx hash 短縮表示に落ちる不整合があった）。
  */
 export function txChipLabel(tx: TransactionEntity): TxChipLabel {
   if (tx.contractCall?.functionName !== undefined) {
     return { kind: "function", text: tx.contractCall.functionName };
   }
-  if (tx.createdContractAddress !== undefined) {
+  if (tx.createdContractAddress !== undefined || tx.to === null) {
     return { kind: "deploy", text: "" };
   }
   if (tx.contractCall?.rawFunctionId !== undefined) {
