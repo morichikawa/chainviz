@@ -753,3 +753,371 @@ mempool 投入時の検査として説明する）。
 - 検証のため使い捨て環境に Counter を複数回デプロイした（ユーザー許可の
   範囲内。実害なし）。
 - 差し戻しなし。frontend 実装は設計どおり動作している。
+
+## 8. 実装記録（単位B: #213 + #219）
+
+- 担当: frontend
+- ブランチ: `issue-213-219-operation-panel-clarity`
+- 実施内容: 上記「単位B」の設計をベースに、操作パネルの各タブ・関数の
+  説明文言追加と、トークン量のトークン単位入力＋decimals換算を実装した。
+  トークン量の入力方式は「トークン単位入力＋decimals換算」（設計メモ
+  6.判断1の推奨案）で進めることをユーザーから承認済み
+- 補足: 本セクションは着手時点で設計判断（下記1〜7）まで書いた状態で
+  一度セッションが中断し、`tokenAmount.ts`/`tokenAmount.test.ts` のみが
+  実装済みの状態で引き継いだ。他のファイルは本文中の記述に反して
+  未着手だったため、このセッションで実装・テスト・ビルド・実機確認まで
+  完了させた（下記「変更ファイル」「9. 検証」が実際の実施内容）
+
+### 実装時に具体化した設計判断
+
+1. **decimals換算ロジックの置き場所**: `operations/etherAmount.ts` の
+   `parseEtherToWei`（decimals=18固定）を、新設する
+   `operations/tokenAmount.ts` の `parseUnits(input, decimals)`（decimals
+   可変の一般化版）を呼ぶ薄いラッパーに書き換えた。表示方向の
+   `entities/tokenAmount.ts`（`formatUnits`/`formatEther`）と対称な構成
+   にしている
+2. **カタログの型拡張**（`chain-profiles/ethereum/operationCatalog.ts`）:
+   - `OperationArgField.unit?: "token"` — トークン量を表す引数に付与
+   - `OperationFunctionForm.description: Localized` — 関数の一言説明
+     （必須化。既存テストフィクスチャに `description` を追加する必要が
+     あった）
+   - `ContractCatalogEntry.token?: { symbol: string; decimals: number }`
+     — ERC20系コントラクトの静的トークン情報。`ContractEntity.token` と
+     同じ形にして対称にした
+3. **decimalsの解決**（`operations/deployedContracts.ts`）:
+   `DeployedContractCandidate.token` を、デプロイ済み実体の
+   `ContractEntity.token`（実測値）優先・カタログの静的値
+   （`entry.token`）へフォールバックして導出する。デプロイタブ
+   （`DeployForm`）はまだ実体が無いため、カタログの静的値をそのまま使う
+4. **バリデーション・変換の分離**（`operations/operationArgValidation.ts`）:
+   既存 `isValidOperationArgValue(type, value)` のシグネチャは変更せず
+   （既存呼び出し元・既存テストへの影響を避けるため）、
+   `validateOperationArgs` に第3引数 `tokenDecimals?: number` を追加し、
+   `field.unit === "token"` のときだけ `parseUnits` で検証する分岐を
+   足した。送信直前の値変換は新設の `convertOperationArgsToChainValues`
+   （同ファイル）が担い、`unit === "token"` の引数だけ最小単位の10進
+   文字列へ変換する（他の引数は従来どおりそのまま渡す。§6.10決定事項2）
+5. **UI**: `OperationArgInput` に `tokenInfo?: { symbol; decimals }` prop
+   を追加し、`unit === "token"` のときラベルに
+   「（{symbol}単位）」を付与、入力値の検証も `parseUnits` ベースに
+   切り替えた。`CallForm`/`DeployForm` は選択中コントラクト（または
+   カタログ）の `token` を取り出して `OperationArgInput` と
+   `validateOperationArgs`/`convertOperationArgsToChainValues` に渡す
+6. **タブ・関数の説明文言**: `TransferForm`/`DeployForm`/`CallForm` の
+   先頭に `operation.{tab}.description` を表示する（既存 note と同じ
+   `operation-form__note` スタイルを流用。専用クラスは新設しない）。
+   `CallForm` は選択中関数の直下に `fn.description` を追加表示する
+   （同じく `operation-form__note` スタイル。「コントラクト選択の一言
+   説明と同じ見た目」という設計意図を、実装上は既存の muted note
+   スタイルの再利用として解釈した）
+7. 新設した i18n キーは `i18n.test.ts` の
+   `describe("operation panel message keys")` の対象リストに追加し、
+   ja/en 両方が空でないこと・訳し忘れ（ja===en）が無いことを回帰
+   ガードした
+
+### 変更ファイル
+
+- `operations/tokenAmount.ts`（新設）/ `tokenAmount.test.ts`（新設）
+- `operations/etherAmount.ts`（`parseUnits` の薄いラッパーへ変更。
+  既存テスト・既存の外部からの見え方は変えていない）
+- `chain-profiles/ethereum/operationCatalog.ts` /
+  `operationCatalog.test.ts`（既存テストに `description`/`token`/`unit`
+  絡みのケースを追加）
+- `operations/deployedContracts.ts` / `deployedContracts.test.ts`
+- `operations/operationArgValidation.ts`（既存テストは変更なし。
+  `unit: "token"` を使わない既存フィクスチャは無変更で通る後方互換の
+  拡張にした）
+- `operations/OperationArgInput.tsx`（既存テストは変更なし。同上）
+- `operations/TransferForm.tsx` / `TransferForm.test.tsx`（説明文言の
+  表示テストを1件追加）
+- `operations/DeployForm.tsx` / `DeployForm.test.tsx`（同上）
+- `operations/CallForm.tsx` / `CallForm.test.tsx`（説明文言の表示テストを
+  追加。既存 `functions` フィクスチャは `description` が必須化された
+  ため追記が必要だった）
+- `i18n/messages.ts` / `i18n/i18n.test.ts`
+- 新設したトークン単位（#219）関連のテストは、既存ファイルを肥大化
+  させないため関心事ごとに専用ファイルへ分けた（1ファイル1責務の
+  原則をテストにも適用）:
+  - `operations/operationArgValidation.tokenUnit.test.ts`
+  - `operations/OperationArgInput.tokenUnit.test.tsx`
+  - `operations/DeployForm.tokenUnit.test.tsx`
+  - `operations/CallForm.tokenUnit.test.tsx`
+
+### 次の担当者への注意点
+
+- トークン単位入力の対象は現状 ChainvizToken の amount/initialSupply の
+  みで、Counter の `incrementBy(amount)` は従来どおり生の整数入力
+  （`unit` 未設定）のまま。将来トークンを持つコントラクトを catalog に
+  追加する場合は `token` フィールドと該当引数の `unit: "token"` を
+  忘れず設定すること
+- ラベルのトークン単位サフィックスは symbol ベースの汎用文言
+  （「（{symbol}単位）」）にした。設計メモの例示（「（CVZ単位）」）は
+  ChainvizToken 固有の例であり、実装は symbol を差し替え可能な形に
+  一般化した
+- `validateOperationArgs`/`convertOperationArgsToChainValues` は
+  `tokenDecimals` が未解決（対象コントラクトの `token` 情報が取れない）
+  場合、`unit: "token"` な引数を安全側に倒して常に無効（送信不可）にする。
+  単位換算ができない状態で最小単位の生の値をそのまま送ってしまうと
+  #219 と同じ混乱を再発させるため
+
+## 9. 検証（単位B: #213 + #219）
+
+- `pnpm build`・`pnpm lint`・`pnpm test`（いずれもリポジトリルートで
+  全パッケージ対象）が通ることを確認した
+- モックデータで実際に frontend の dev サーバーを起動し（`vite --port
+  <空きポート>`。既存の別 worktree の dev サーバーとポートが衝突した
+  ため空きポートを都度確認した）、Playwright（システムにインストール
+  権限が無かったため、事前に用意されていた `.deb` 展開済みライブラリ
+  （`libnspr4.so` 等）を `LD_LIBRARY_PATH` に足して headless chromium を
+  起動）で実際の画面を操作して確認した:
+  - 送金/デプロイ/呼び出しタブそれぞれの冒頭に説明文言が表示される
+  - デプロイタブで ChainvizToken を選ぶと `initialSupply（CVZ単位）` の
+    ラベルが出る
+  - 呼び出しタブで ChainvizToken の `transfer` を選ぶと、関数の一言説明
+    （「自分のトークン残高から to へ amount を送ります」）と
+    `amount（CVZ単位）` のラベルが出る
+  - 呼び出しタブで `to` に有効なアドレス、`amount` に `1000`（トークン
+    単位）を入力すると送信ボタンが有効になる（#219 が実際に再現していた
+    「1000 と入れたのに 0.0000 CVZ」の原因だった、最小単位の生入力
+    としての誤入力扱いが解消されたことを確認）
+- 確認スクリプトは使い捨てで実行後に削除し、起動していた dev サーバーも
+  終了させた（作業ディレクトリに残していない）
+
+## 10. テスト強化記録（単位B: #213 + #219）
+
+実装担当が書いた基本テスト（ハッピーパス＋主要な異常系）を土台に、
+トークン量の単位換算まわりのエッジケース・境界値・状態遷移のテストを
+追加した。実装ロジックは変更していない（テストの追加のみ）。既存の
+関心事分割（`*.tokenUnit.test.ts(x)`）と 1 ファイル 1 責務の方針を
+踏襲し、既存ファイルへ追記する形にした。追加は 19 ケース
+（frontend のテスト総数 1485 → 1504）。
+
+### 追加したテストの観点
+
+- トークン量変換の境界値（`operations/tokenAmount.ts` /
+  `entities/tokenAmount.ts`）:
+  - `parseUnits`: decimals>18 の高精度トークン（スケール・境界ちょうど・
+    境界超過）、小数点の各種形（`1.000000`・`0.000000`・末尾のみの `.`・
+    先頭のみの `.5`・明示的な `+` 符号）
+  - `formatUnits`: decimals=0 の早期リターン枝での負値の符号保持
+    （`-42`）、整数部 0 の小さな負の小数（`-0.5000`）、表示精度で 0 に
+    潰れる微小負値の符号（`-0.0000`。現挙動の固定）
+- トークン単位引数の変換対象の区別（`operationArgValidation.tokenUnit`）:
+  - `convertOperationArgsToChainValues` が複数のトークン単位引数を
+    それぞれ独立に換算すること、`values` が `fields` より長い場合に
+    余分な値を出力しないこと、変換対象を位置ではなく `unit` で判定する
+    こと
+  - `validateOperationArgs` が複数トークン引数のうち 1 つでも無効なら
+    全体を無効にすること
+- 呼び出しフォームの関数切り替え時の挙動（`CallForm.tokenUnit`）:
+  - トークン単位の関数（`transfer.amount` = `unit:"token"`）から生の
+    整数引数を持つ関数（`incrementBy.amount` = `unit` なし）へ切り替えた
+    際、ラベルの単位サフィックス（「（CVZ単位）」）と入力バリデーション
+    （小数許容 → 整数のみ）が正しく入れ替わること
+  - トークンを持つコントラクトでも `unit` なしの引数は最小単位へ換算
+    されず生の整数のまま送信されること
+- デプロイ済みコントラクトの token 情報フォールバック
+  （`deployedContracts`）:
+  - 実測値（`ContractEntity.token`）が壊れている（decimals が非負整数で
+    ない）場合、`deriveDeployedContracts` は中身を検証せずそのまま採用し、
+    カタログ値へフォールバックしない現挙動を明示的に固定
+
+### 調査したが起票しなかった点
+
+- 「壊れた実測 token 値がカタログ値へフォールバックしない」件は、
+  実測値が collector の `decimals()`（uint8）由来で現実には壊れ得ず、
+  かつ下流の `parseUnits`/`formatUnits` が不正な decimals を防御的に
+  弾いてトークン単位入力を無効化する（クラッシュしない）ため、
+  実害が無いと判断して Issue 化は見送った。挙動自体はテストで固定した
+- ETH 送金（`TransferForm`、decimals=18 固定）の回帰は、ETH 専用の
+  `parseEtherToWei` を直接叩く `etherAmount.test.ts`（18 桁ちょうどの
+  精度・整数部との合わせ技を含む）で既に厚くカバーされており、
+  `tokenAmount.ts` への一般化後も全て通ることを確認した（追加不要と判断）
+
+### 検証
+
+- `pnpm build`・`pnpm lint`・`pnpm test`（リポジトリルートで全パッケージ
+  対象）が通ることを確認した（frontend 1504 / collector 1126 /
+  shared 58、いずれも pass）
+
+## 11. レビュー記録（単位B: #213 + #219）
+
+### 2026-07-10 Issue #213/#219 静的レビュー
+
+- 担当: reviewer
+- ブランチ: issue-213-219-operation-panel-clarity
+- 内容: 単位B（操作パネルの説明文言＋トークン単位入力・decimals換算）の
+  実装・テスト強化を静的レビューした。判定は合格
+- 確認した点:
+  - `tokenAmount.ts` の `parseUnits`（decimals可変）への一般化が
+    `etherAmount.ts`（decimals=18固定ラッパー）の既存挙動を変えて
+    いないこと。BigIntベースの変換ロジック（小数部のゼロ埋め・桁数超過の
+    拒否・符号/指数/カンマ表記の拒否）を読み、正しいことを確認した
+  - `convertOperationArgsToChainValues` が送る値の形式（最小単位の
+    10進整数文字列）が、collector 側
+    `adapters/ethereum/workbench-operations.ts`（引数を無加工で
+    cast/forge に渡す）の期待と一致すること。collector 側は無変更
+  - `OperationFunctionForm.description` 必須化に対し、カタログ全関数
+    （ChainvizToken 4件・Counter 3件）に ja/en の説明が付与されており、
+    空でないことを固定するテストもあること
+  - ARCHITECTURE.md §6.10 決定事項2（値の型解釈・エンコードは collector
+    側）との整合。フロントの変換は「表示・入力単位 → 最小単位」の文字列
+    変換のみで、エンコードは従来どおり collector 側のまま。決定事項3
+    （ETH単位入力＋フロントでwei変換）のトークンへの自然な拡張になっている
+  - エラーの握りつぶしなし。防御的フォールバック
+    （`convertOperationArgsToChainValues` の生値通過、`formatUnits` の
+    入力そのまま返し）はいずれも理由がコメントで明記され、テストで
+    挙動が固定されている
+  - `pnpm build` / `pnpm lint` / `pnpm test` 全パッケージ通過
+    （frontend 1504 / collector 1126 / shared 58）
+  - コミット粒度: 変換ロジック・カタログ拡張・フォールバック・
+    バリデーション・各フォーム・i18n・テスト強化・docs が関心事ごとに
+    分割されており適切
+- 決定事項・注意点（いずれも非ブロッキングの申し送り）:
+  - `unit: "token"` の引数で token 情報が解決できない場合、
+    `OperationArgInput` は生の整数として妥当と表示する一方、
+    `validateOperationArgs` は安全側で常に無効にするため、「エラー表示は
+    無いのに送信ボタンが無効」という状態になり得る。現行カタログでは
+    ChainvizToken に静的 token が必ずあるため実際には到達しないが、
+    将来 token 未設定のカタログエントリに `unit: "token"` を付けると
+    顕在化する。テスト（CallForm.tokenUnit「no resolvable token
+    metadata」）で挙動自体は固定済み
+  - ARCHITECTURE.md §6.5 にはトークン単位入力・関数説明の記述を追記して
+    いない。過去の同種の細部（#209 の送信前バリデーション）も §6.5 には
+    反映せず worklog に留める運用だったため踏襲した。§6.10 決定事項3の
+    トークン一般化として一言追記する価値はある（任意）
+  - 本ブランチはコミット e0237fc（UX設計メモ、`issue-211-deploy-feedback-ux`
+    の先頭と同一）を含む形で fork されている。両ブランチをマージする際は
+    docs コミットの重複に留意（同一SHAなので通常は問題にならない）
+
+## 12. 英語訳レビュー記録（単位B: #213 + #219）
+
+### 2026-07-10 Issue #213/#219 英語訳レビュー
+
+- 担当: i18n
+- ブランチ: issue-213-219-operation-panel-clarity
+- 対象: `chain-profiles/ethereum/operationCatalog.ts` の
+  `OperationFunctionForm.description`（ChainvizToken 4関数・Counter 3関数）
+  と `i18n/messages.ts` の操作パネル説明文言・トークン単位関連の新規キー
+  （`operation.{transfer,deploy,call}.description` /
+  `operation.arg.invalid.token` / `operation.arg.tokenUnitSuffix`）。
+  日本語の内容自体はレビュー対象外とし、英訳の質・自然さのみを確認した
+- 確認した点（問題なし）:
+  - `operation.{transfer,deploy,call}.description` は直訳ではなく自然な
+    英語の宣言文になっており、既存メッセージ（`contract.popover.description`
+    等）のトーン・語彙（tx / mempool / wallet などの標準語彙）と一貫している
+  - `operation.arg.invalid.token` は既存の `operation.arg.invalid.uint` /
+    `operation.transfer.amount.invalid` と同じ "Enter a non-negative ... in
+    decimal (e.g. ...)." のパターンを踏襲しており一貫性がある
+  - `operation.arg.tokenUnitSuffix`（`" (in {symbol})"`）はラベルへの
+    後置サフィックスとして自然
+  - Counter 3関数（increment/incrementBy/reset）の英訳は日本語と1対1で
+    対応し、既存の "Increases the counter by 1." のような文体で統一されて
+    いる
+- 修正した点（2件、いずれも `operationCatalog.ts` の
+  `ChainvizToken.functions[].description.en` のみ）:
+  1. **バッククォートによる引数名の強調がUIでは無意味な生文字として
+     表示される**: `transfer`/`approve`/`transferFrom`/`mint` の英訳は
+     引数名（`to`/`spender`/`from`）をMarkdownのインラインコード記法
+     （`` `to` `` 等）で囲んでいたが、`CallForm.tsx`/`DeployForm.tsx` の
+     `description` 表示箇所はプレーンテキストの `<p>` にそのまま流し込む
+     だけで、Markdownパーサーは存在しない（`dangerouslySetInnerHTML` 等の
+     使用箇所なし。grepで確認済み）。そのままではエンドユーザーの画面に
+     `` ` `` の文字がそのまま表示されてしまう。加えて日本語側は
+     `to`/`spender`/`from` をコード記法なしの地の文で参照しており、
+     英語側だけがこの記法を持つのは既存メッセージ群のトーン（他の
+     エントリはプレースホルダ `{target}` はあるがインラインコードは
+     使わない）とも整合しない。バッククォートを引用符（`'to'` のように
+     シングルクォート）へ置き換え、前置詞の "to" と引数名の "to" が
+     並ぶ曖昧さは残したまま維持しつつ（"to 'to'" 等）、表示上の破損を
+     解消した
+  2. **`mint` の英訳が `amount` への言及を欠落していた**: 日本語
+     「新しいトークンを **amount** 分発行して to に与えます」に対し、
+     旧英訳 "Issues new tokens to `to` (only the deployer can call this)."
+     は発行量（`amount`）への言及が抜けており、同じ配列内の
+     `transfer`/`approve` の英訳（いずれも `amount` を明示的に参照する
+     文体）と一貫していなかった。"Issues amount of new tokens to 'to'
+     (only the deployer can call this)." に修正し、`amount` への言及を
+     復元した
+- `transferFrom` の英訳（"Moves tokens from `from` to `to`, within an
+  approved allowance."）は `amount` への直接言及が無いが、日本語側も
+  同様に amount へ言及しておらず ERC20 の標準語彙である "allowance" で
+  意味を汲んでいるため、こちらは修正不要と判断した
+- ロジック変更を伴わない文言修正のみのため、テストコードの変更・
+  ユニットテストの追加は不要と判断した（`operationCatalog.test.ts` を
+  確認し、ja/en が空でないことを固定しているだけで具体的な文言までは
+  検証していないことを確認済み。修正後の文字列も型・空文字チェックの
+  対象からは外れない）
+- 本セッションはシェル実行環境を持たないため `pnpm build`/`lint`/`test`
+  は自分では実行していない。変更は既存の `description: Localized`
+  フィールド内の文字列リテラル4件のみで型・ロジックへの影響は無いため
+  ビルドを壊すリスクは低いと判断したが、`chainviz-reviewer`/pre-push
+  フックでの実行確認は次工程に委ねる
+
+## 13. QA検証記録（単位B: #213 + #219）
+
+### 2026-07-10 Issue #213/#219 実機検証
+
+- 担当: qa
+- ブランチ: issue-213-219-operation-panel-clarity
+- 判定: 合格（#213・#219の完了条件をいずれも満たしている）
+- 検証環境: 稼働中の chainviz-ethereum スタック（7コンテナ、reth1/reth2
+  同期済み・ブロック進行中）を再利用。同スタックに接続済みの collector
+  （:4000）をそのまま使い、本ブランチの frontend を別ポート（:5180）で
+  `VITE_COLLECTOR_URL=ws://localhost:4000` を指定して dev 起動した。
+  ブラウザは事前展開済みの共有ライブラリを LD_LIBRARY_PATH に通した
+  headless chromium を CDP で駆動し、実際のフォーム操作・デプロイ・
+  呼び出しを行った（メインの :5173 dev サーバー・collector は共有資源の
+  ため停止・変更していない）。
+
+### 実施内容と結果
+
+1. 実データ接続（接続バッジ「接続済み」）を確認したうえで、操作パネルの
+   3タブに説明文言が表示されることを確認した:
+   - 送金タブ「あなたのウォレットから別のアドレスへ ETH を送る操作です」
+   - デプロイタブ「コントラクト（プログラム）をチェーン上に配置する
+     操作です。配置されると誰でも呼び出せるようになります」
+   - 呼び出しタブ「デプロイ済みコントラクトの関数を tx として実行し、
+     コントラクトの状態を変更する操作です。公開関数はどのウォレットからでも
+     呼び出せます」
+2. 呼び出しタブで ChainvizToken の transfer/approve/transferFrom/mint を
+   それぞれ選択し、関数ごとの一言説明が正しく表示されることを日本語・英語
+   両方で確認した。英語表示で:
+   - バッククォートが生表示されず、引数名がシングルクォート（'to' /
+     'spender' / 'from'）で表示されること
+   - mint の英語説明が amount に言及していること
+     （"Issues amount of new tokens to 'to' (only the deployer can call
+     this)."）
+   をいずれも確認した。amount 引数のラベルは「amount（CVZ単位）」/
+   「amount (in CVZ)」と単位付きで表示された。
+3. #219の実際の再現手順の解消確認: デプロイタブで ChainvizToken を選び
+   initialSupply に「1000」（トークン単位のつもり）を入力してデプロイした。
+   新規デプロイされた ChainvizToken（0xe3fc…0de1）について、デプロイヤー
+   ウォレット（0x2BB7…d4c0）のトークン残高が collector 実測で
+   1000000000000000000000（= 1000 × 10^18 最小単位）となり、UI の
+   ウォレットカードにも「1000.0000 CVZ」と表示された。旧不具合の
+   「1000 と入れたのに 0.0000 CVZ」は解消されている。
+   （同ウォレットが過去の手動誤入力で保有する既存2トークンは 0.0000 CVZ
+   のまま並ぶが、これは今回の対象外の過去データ。）
+4. 呼び出しタブで上記の新トークンを対象に transfer の amount に「100」
+   （トークン単位）を入力して実行し、デプロイヤーのトークン残高が
+   1000.0000 CVZ → 900.0000 CVZ へ、ちょうど 100 CVZ 分減ったことを
+   確認した（100 wei 相当の誤送金にならない）。
+5. 回帰確認: Counter の increment()（引数なし。説明「カウンタを 1
+   増やします」/ "Increases the counter by 1."）と incrementBy(5)
+   （生の整数入力。ラベルは単位サフィックスの付かない「amount」のまま、
+   トークン単位換算の対象外）をそれぞれ実行し、いずれも tx が included と
+   なりデプロイヤーの nonce が進んだ（トークン単位でない引数の入力・実行が
+   引き続き正しく動作する）。
+6. 日本語・英語の言語切り替えで、タブ説明・関数説明・単位サフィックスの
+   表示がいずれも正しく切り替わることを確認した。
+
+### 補足
+
+- 実データ検証のため、ライブチェーン上に新規 ChainvizToken 1件のデプロイ・
+  100 CVZ の transfer・Counter への increment/incrementBy を実行した
+  （使い捨て可のスタックへの操作。既存のユーザー許可の範囲内）。
+- transfer の受け取り先に指定した既存ウォレットは、新トークンを collector が
+  そのウォレットの追跡対象に含めていないため受け取り側残高は未追跡表示に
+  なるが、送り元（デプロイヤー）の残高が正確に 100 CVZ 減ったことで
+  移動量がトークン単位で扱われていることを確認できている。

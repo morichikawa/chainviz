@@ -31,6 +31,7 @@ export function TransferForm({ walletCandidates, onSubmit }: TransferFormProps) 
 
   return (
     <form className="operation-form" onSubmit={handleSubmit}>
+      <p className="operation-form__note">{t("operation.transfer.description")}</p>
       <AddressField
         label={t("operation.transfer.to")}
         value={to}

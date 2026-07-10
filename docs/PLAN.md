@@ -582,7 +582,7 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       [#211](https://github.com/morichikawa/chainviz/issues/211)
 - [ ] チェーンの繋がり方・署名中かどうか・状態の中身を可視化してほしい
       [#212](https://github.com/morichikawa/chainviz/issues/212)
-- [ ] ワークベンチからの操作でなにができるのかの説明がほしい
+- [x] ワークベンチからの操作でなにができるのかの説明がほしい
       [#213](https://github.com/morichikawa/chainviz/issues/213)
 - [x] ブートノードとvalidator(2-1/1-1)がP2P接続確立中の表示のまま変化しない
       [#214](https://github.com/morichikawa/chainviz/issues/214)
@@ -594,7 +594,7 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       [#217](https://github.com/morichikawa/chainviz/issues/217)
 - [x] デプロイ済みのスマートコントラクト一覧を見れるようにしてほしい
       [#218](https://github.com/morichikawa/chainviz/issues/218)
-- [ ] ウォレットがスマートコントラクトに対して何ができるのか分かりにくい
+- [x] ウォレットがスマートコントラクトに対して何ができるのか分かりにくい
       [#219](https://github.com/morichikawa/chainviz/issues/219)
 - [ ] ノード追加・ワークベンチ追加のボタンが作成中でも連打できてしまう
       [#220](https://github.com/morichikawa/chainviz/issues/220)

@@ -110,4 +110,20 @@ describe("formatUnits", () => {
     // "1.5" is not a valid BigInt literal, so the fallback returns it verbatim.
     expect(formatUnits("1.5", 18)).toBe("1.5");
   });
+
+  it("keeps the sign for a negative amount with decimals 0 (integer display path)", () => {
+    // decimals=0 の早期リターン枝でも符号が落ちないこと（"-42"、"-0" にしない）。
+    expect(formatUnits("-42", 0)).toBe("-42");
+  });
+
+  it("formats a small negative fractional amount without dropping the sign", () => {
+    // -0.5 * 10^18。整数部が 0 でも先頭のマイナスが残る。
+    expect(formatUnits((-(5n * 10n ** 17n)).toString(), 18)).toBe("-0.5000");
+  });
+
+  it("does not render negative zero when a tiny negative amount rounds to zero at the shown precision", () => {
+    // -1 wei は表示精度（4桁）では 0 に潰れるが、符号は残る現在の挙動を固定する
+    // （"-0.0000"。呼び出し側がこの表記に依存/対処できるよう明示的に記録する）。
+    expect(formatUnits("-1", 18)).toBe("-0.0000");
+  });
 });

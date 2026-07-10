@@ -34,10 +34,10 @@ describe("ETHEREUM_OPERATION_CATALOG", () => {
     }
   });
 
-  it("gives ChainvizToken a single uint constructor arg (initialSupply)", () => {
+  it("gives ChainvizToken a single uint constructor arg (initialSupply, in token units per Issue #219)", () => {
     const entry = getOperationCatalogEntry("ChainvizToken");
     expect(entry?.constructorArgs).toEqual([
-      { name: "initialSupply", type: "uint" },
+      { name: "initialSupply", type: "uint", unit: "token" },
     ]);
   });
 
@@ -52,6 +52,43 @@ describe("ETHEREUM_OPERATION_CATALOG", () => {
         expect(fn.payable).toBe(false);
       }
     }
+  });
+
+  it("gives every function a non-empty ja/en description (Issue #213)", () => {
+    for (const entry of ETHEREUM_OPERATION_CATALOG) {
+      for (const fn of entry.functions) {
+        expect(fn.description.ja.length).toBeGreaterThan(0);
+        expect(fn.description.en.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("gives ChainvizToken token metadata matching the deployed source's symbol/decimals (Issue #219)", () => {
+    const entry = getOperationCatalogEntry("ChainvizToken");
+    // profiles/ethereum/contracts/src/ChainvizToken.sol: symbol="CVZ", decimals=18.
+    expect(entry?.token).toEqual({ symbol: "CVZ", decimals: 18 });
+  });
+
+  it("gives Counter no token metadata (it is not a token contract)", () => {
+    const entry = getOperationCatalogEntry("Counter");
+    expect(entry?.token).toBeUndefined();
+  });
+
+  it("marks every ChainvizToken amount-like arg (constructor and function args named amount/initialSupply) with unit: token", () => {
+    const entry = getOperationCatalogEntry("ChainvizToken");
+    expect(entry?.constructorArgs.find((arg) => arg.name === "initialSupply")?.unit).toBe(
+      "token",
+    );
+    for (const fn of entry?.functions ?? []) {
+      const amountArg = fn.args.find((arg) => arg.name === "amount");
+      if (amountArg) expect(amountArg.unit).toBe("token");
+    }
+  });
+
+  it("does not mark Counter's incrementBy amount as a token unit (it is a plain counter, not a token)", () => {
+    const entry = getOperationCatalogEntry("Counter");
+    const incrementBy = entry?.functions.find((fn) => fn.label === "incrementBy");
+    expect(incrementBy?.args.find((arg) => arg.name === "amount")?.unit).toBeUndefined();
   });
 });
 

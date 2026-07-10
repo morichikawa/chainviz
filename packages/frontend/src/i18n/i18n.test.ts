@@ -139,19 +139,24 @@ describe("operation panel message keys (Issue #167)", () => {
     "operation.tab.transfer",
     "operation.tab.deploy",
     "operation.tab.call",
+    "operation.transfer.description",
     "operation.transfer.to",
     "operation.transfer.amount",
     "operation.transfer.amount.invalid",
     "operation.transfer.note",
     "operation.transfer.submit",
+    "operation.deploy.description",
     "operation.deploy.contract",
     "operation.deploy.submit",
     "operation.deploy.note",
+    "operation.call.description",
     "operation.call.target",
     "operation.call.function",
     "operation.call.amount",
     "operation.call.submit",
     "operation.call.empty",
+    "operation.arg.invalid.token",
+    "operation.arg.tokenUnitSuffix",
     "operation.pending",
     "operation.close",
     "ghost.contract.deploying",
@@ -170,6 +175,11 @@ describe("operation panel message keys (Issue #167)", () => {
   it("keeps the {name} placeholder in both languages of ghost.contract.deploying", () => {
     expect(messages["ghost.contract.deploying"].ja).toContain("{name}");
     expect(messages["ghost.contract.deploying"].en).toContain("{name}");
+  });
+
+  it("keeps the {symbol} placeholder in both languages of operation.arg.tokenUnitSuffix (Issue #219)", () => {
+    expect(messages["operation.arg.tokenUnitSuffix"].ja).toContain("{symbol}");
+    expect(messages["operation.arg.tokenUnitSuffix"].en).toContain("{symbol}");
   });
 });
 

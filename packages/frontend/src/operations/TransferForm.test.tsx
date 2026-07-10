@@ -20,6 +20,13 @@ function renderForm(onSubmit = vi.fn()) {
 }
 
 describe("TransferForm (ARCHITECTURE.md §6.5-1)", () => {
+  it("shows a one-line description of what the transfer tab does (Issue #213)", () => {
+    renderForm();
+    expect(
+      screen.getByText("あなたのウォレットから別のアドレスへ ETH を送る操作です"),
+    ).toBeTruthy();
+  });
+
   it("submits the destination address as-is and converts the ETH amount to wei", () => {
     const onSubmit = renderForm();
     fireEvent.change(screen.getByTestId("operation-transfer-to"), {

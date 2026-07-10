@@ -17,6 +17,7 @@ const TOKEN_CATALOG: ContractCatalogEntry = {
     {
       signature: "transfer(address,uint256)",
       label: "transfer",
+      description: { ja: "amountをtoへ送ります", en: "Sends amount to `to`." },
       args: [
         { name: "to", type: "address" },
         { name: "amount", type: "uint" },
@@ -26,6 +27,7 @@ const TOKEN_CATALOG: ContractCatalogEntry = {
     {
       signature: "donate()",
       label: "donate",
+      description: { ja: "任意の額を寄付します", en: "Donates an arbitrary amount." },
       args: [],
       payable: true,
     },
@@ -63,6 +65,24 @@ function renderForm(
 }
 
 describe("CallForm (ARCHITECTURE.md §6.5-3)", () => {
+  it("shows a one-line description of what the call tab does (Issue #213)", () => {
+    renderForm();
+    expect(
+      screen.getByText(
+        "デプロイ済みコントラクトの関数を tx として実行し、コントラクトの状態を変更する操作です。公開関数はどのウォレットからでも呼び出せます",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("shows the selected function's one-line description (Issue #213)", () => {
+    renderForm();
+    expect(screen.getByText("amountをtoへ送ります")).toBeTruthy();
+    fireEvent.change(screen.getByTestId("operation-call-function"), {
+      target: { value: "donate()" },
+    });
+    expect(screen.getByText("任意の額を寄付します")).toBeTruthy();
+  });
+
   it("shows an empty-state message with a deploy shortcut when there are no callable contracts", () => {
     const { onSwitchToDeploy } = renderForm(vi.fn(), vi.fn(), []);
     expect(
@@ -279,7 +299,13 @@ describe("CallForm (ARCHITECTURE.md §6.5-3)", () => {
         description: { ja: "カウンタ", en: "counter" },
         constructorArgs: [],
         functions: [
-          { signature: "increment()", label: "increment", args: [], payable: false },
+          {
+            signature: "increment()",
+            label: "increment",
+            description: { ja: "カウンタを1増やします", en: "Increases the counter by 1." },
+            args: [],
+            payable: false,
+          },
         ],
       },
     };
