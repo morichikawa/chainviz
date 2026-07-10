@@ -66,29 +66,48 @@ describe("DeployForm (ARCHITECTURE.md §6.5-2)", () => {
     });
   });
 
-  it("submits raw constructor arg strings without client-side type validation (type interpretation is the collector's job, §6.10-2)", () => {
-    // フォームは引数の型を検証しない（ABI 型情報を持たない設計）。数値が
-    // 期待される initialSupply に非数値を入れても、そのまま文字列で collector
-    // へ渡す（型不一致の判定・エラーは collector 側 ChainAdapter が行う）。
+  it("disables submit and shows an error, without calling onSubmit, for a non-numeric uint constructor arg (Issue #209 bug reproduction)", () => {
+    // 実際の不具合報告（"test"/"sss" のような非数値文字列）を再現する。
+    // 型解釈（エンコード）自体は引き続き collector 側の ChainAdapter が
+    // 行うが（§6.10-2）、明らかに型と矛盾する入力は送信前に弾く。
     const onSubmit = renderForm();
     fireEvent.change(screen.getByTestId("operation-deploy-arg-initialSupply"), {
-      target: { value: "not-a-number" },
+      target: { value: "test" },
     });
-    fireEvent.click(screen.getByText("デプロイする"));
-    expect(onSubmit).toHaveBeenCalledWith({
-      contractKey: "ChainvizToken",
-      constructorArgs: ["not-a-number"],
-    });
+    expect(
+      screen.getByTestId("operation-deploy-arg-initialSupply-error"),
+    ).toBeTruthy();
+    const button = screen.getByText("デプロイする") as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("submits an empty string for a required constructor arg left blank (no required-arg guard on the client)", () => {
-    // 必須引数を空のまま送信しても、フロントは阻止しない（空文字のまま渡し、
-    // 欠落・不正は collector が弾く設計）。ボタンは selected があれば有効。
+  it("disables submit for a required constructor arg left blank", () => {
+    // 必須引数（uint）を空のまま送信しようとしても、ボタンが無効化され
+    // 送信されない。空欄そのものにはエラー文言は出さない（未入力の状態を
+    // 「明らかな型違反」として赤字扱いしない、既存の amount 欄と同じ挙動）。
     const onSubmit = renderForm();
-    fireEvent.click(screen.getByText("デプロイする"));
+    expect(
+      screen.queryByTestId("operation-deploy-arg-initialSupply-error"),
+    ).toBeNull();
+    const button = screen.getByText("デプロイする") as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("enables submit once a valid uint value is entered", () => {
+    const onSubmit = renderForm();
+    fireEvent.change(screen.getByTestId("operation-deploy-arg-initialSupply"), {
+      target: { value: "1000000000000000000000000" },
+    });
+    const button = screen.getByText("デプロイする") as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    fireEvent.click(button);
     expect(onSubmit).toHaveBeenCalledWith({
       contractKey: "ChainvizToken",
-      constructorArgs: [""],
+      constructorArgs: ["1000000000000000000000000"],
     });
   });
 

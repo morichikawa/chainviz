@@ -83,7 +83,7 @@ describe("CallForm (ARCHITECTURE.md §6.5-3)", () => {
   it("submits the contract address, function signature, and args in order", () => {
     const { onSubmit } = renderForm();
     fireEvent.change(screen.getByTestId("operation-call-arg-to"), {
-      target: { value: "0xbob" },
+      target: { value: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
     });
     fireEvent.change(screen.getByTestId("operation-call-arg-amount"), {
       target: { value: "42" },
@@ -92,9 +92,50 @@ describe("CallForm (ARCHITECTURE.md §6.5-3)", () => {
     expect(onSubmit).toHaveBeenCalledWith({
       contractAddress: "0xcccccccccccccccccccccccccccccccccccccc",
       functionName: "transfer(address,uint256)",
-      args: ["0xbob", "42"],
+      args: ["0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "42"],
       amountWei: undefined,
     });
+  });
+
+  it("disables submit and shows an error, without calling onSubmit, for a malformed address arg (Issue #209)", () => {
+    // アドレス型に "0x" + 40桁hex以外の値（例: 短すぎる自由入力）を入れると
+    // 送信できない。値の実際のエンコードは引き続き collector が行うが
+    // （§6.10-2）、明らかに型と矛盾する入力は送信前に弾く。
+    const { onSubmit } = renderForm();
+    fireEvent.change(screen.getByTestId("operation-call-arg-to"), {
+      target: { value: "0xbob" },
+    });
+    fireEvent.change(screen.getByTestId("operation-call-arg-amount"), {
+      target: { value: "42" },
+    });
+    expect(screen.getByTestId("operation-call-arg-to-error")).toBeTruthy();
+    const button = screen.getByText("実行する") as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("disables submit and shows an error, without calling onSubmit, for a non-numeric uint arg (Issue #209)", () => {
+    const { onSubmit } = renderForm();
+    fireEvent.change(screen.getByTestId("operation-call-arg-to"), {
+      target: { value: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+    });
+    fireEvent.change(screen.getByTestId("operation-call-arg-amount"), {
+      target: { value: "not-a-number" },
+    });
+    expect(screen.getByTestId("operation-call-arg-amount-error")).toBeTruthy();
+    const button = screen.getByText("実行する") as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("disables submit while a required arg is left blank", () => {
+    const { onSubmit } = renderForm();
+    const button = screen.getByText("実行する") as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 
   it("shows an amount field only for a payable function, and converts it to wei on submit", () => {
