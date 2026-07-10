@@ -108,3 +108,56 @@
   自体の高さには上限がない。現状は1操作につき1トーストが基本のため
   同時に大量のトーストが積み上がって画面からあふれる状況は考えにくいが、
   将来同時多発的にエラーが出るケースが増えるなら別途検討の余地がある。
+
+### 2026-07-10 Issue #217 レビュー（合格）
+
+- 担当: reviewer
+- 対象: ブランチ `issue-217-toast-layout-fix`（コミット 5e7f5d8、CSS のみの変更）
+- 結果: **合格**。
+
+確認した内容:
+
+- 原因分析の妥当性: `.toast-stack`（column flex・`max-width: 360px`）→
+  `.toast`（row flex）→ `.toast__message`（`flex: 1`）という構造を確認。
+  row flex item の `min-width` 初期値 `auto` が「折り返せない最長の連続
+  文字列の min-content 幅」を下回って縮まないという分析は CSS Flexbox
+  仕様（automatic minimum size）と一致し、worklog の実測値
+  （`.toast` は 360px のまま・`.toast__message` だけが 512.67px）とも
+  整合する。妥当。
+- 短いメッセージへの副作用: `min-width: 0` / `overflow-wrap: anywhere` は
+  通常の折り返し可能な短文には影響しない。`max-height: 220px` +
+  `overflow-y: auto` も短文では発動しない。副作用なし。
+- `white-space: pre-wrap` の影響範囲: トースト文言の生成元は
+  `describeCommandError()`（`commandMessages.ts`）のみで、i18n の定型文
+  （`messages.ts` に `\n` リテラルなし）＋ collector の error 文字列
+  （`error?.trim()` で前後の空白・改行は除去済み）の連結。pre-wrap で
+  挙動が変わるのは「error 内部の改行・連続スペースが保持される」点のみで、
+  これは複数行エラーを読みやすくする意図どおりの変更。先頭・末尾の
+  余分な空行が出る経路は無い。
+- 再現用の一時コード（`App.tsx` の `?repro217=1`）が削除済みであることを
+  grep で確認（`repro217` の残存なし）。
+- ユニットテスト未追加の判断: `Toast.tsx` を含む TS/TSX のロジック変更が
+  一切無い純粋な CSS 修正のため、CLAUDE.md の「純粋な UI の見た目調整は
+  テスト対象外」に該当し妥当。
+- `max-height: 220px` の固定値: 実行時の観測値に依存しない表示上の設計値
+  であり、前提がコード内コメントと本 worklog の両方に明記されている。
+  「観測状態依存の固定値の禁止」ルールに抵触しない。
+- `pnpm build` / `pnpm lint` / `pnpm test`（リポジトリ全体）すべて通過
+  （frontend: 105 ファイル 1606 テスト成功）。
+- `docs/PLAN.md` の #217 チェック・`docs/WORKLOG.md` 索引 1 行・本 worklog
+  の内容が実装と整合。`docs/ARCHITECTURE.md` にトーストの CSS 詳細の記述は
+  無く、docs との齟齬なし。
+- コミットは 1 件（`fix(frontend): ...`、Conventional Commits 形式）で
+  粒度も適切。
+
+補足（指摘ではなく情報として）:
+
+- `.toast` 自体への `min-width: 0` は、`.toast-stack` が column flex で
+  ある現状では cross 軸の指定となり、仕様上 `min-width: auto` は cross 軸
+  では 0 相当に解決されるため実質的な効果は無い（worklog の実測でも
+  `.toast` は 360px に収まっていた）。将来 flex-direction が変わった場合の
+  防御として無害なので、そのままで問題ない。
+- ブランチの分岐点が main の #216 マージ前（26f4273）のため、
+  `docs/PLAN.md` / `docs/WORKLOG.md` はマージ時にコンフリクトする
+  可能性がある。マージ担当（統括）はリベースまたはコンフリクト解消を
+  想定しておくとよい。
