@@ -59,6 +59,39 @@ test("UI-B-01: ノードカード間に P2P エッジが描画される", async 
   );
 });
 
+test("UI-B-04: P2P 非参加ノード（validator）に接続確立中エッジが固着しない", async ({
+  page,
+}) => {
+  // Issue #214 の回帰防止。validator client(VC) は libp2p の P2P に参加せず
+  // PeerEdge を持たないため、修正前は VC から consensus ブートノードへの
+  // 「接続確立中」エッジ（.connecting-edge）が永久に解消されず固着していた。
+  await page.goto("/");
+
+  await test.step(
+    "P2P グラフが確立するまで（既存ノード間のピアエッジが描画されるまで）待つ",
+    async () => {
+      // これが出れば導出パイプラインが一巡し、未接続でないノードの
+      // 接続確立中エッジは既に消えている状態になる。以降に残る
+      // .connecting-edge があれば VC 由来の固着を意味する。
+      await expect(
+        peerEdgeBetween(
+          page,
+          serviceEntityId("beacon1"),
+          serviceEntityId("beacon2"),
+        ),
+      ).toHaveCount(1, { timeout: PEER_EDGE_TIMEOUT_MS });
+    },
+  );
+
+  await test.step(
+    "キャンバス上に接続確立中エッジ（.connecting-edge）が 1 本も存在しない",
+    async () => {
+      // validator を含め、どのノードにも接続確立中エッジが固着していないこと。
+      await expect(page.locator(".connecting-edge")).toHaveCount(0);
+    },
+  );
+});
+
 test("UI-B-02: ネットワーク凡例にネットワークごとの接続数が出る", async ({ page }) => {
   await page.goto("/");
   // 凡例はピアエッジが1本以上あるときだけ表示される(PeerNetworkLegend.tsx)。
