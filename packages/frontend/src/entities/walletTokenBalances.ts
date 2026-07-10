@@ -1,5 +1,6 @@
 import type { ContractEntity, TokenBalance } from "@chainviz/shared";
 import { formatUnits } from "./tokenAmount.js";
+import { shortHex } from "./transaction.js";
 
 /**
  * `WalletCard`/`WalletPopover` に出す、1件のトークン残高（対応する
@@ -47,4 +48,22 @@ export function resolveWalletTokenBalances(
     });
   }
   return resolved;
+}
+
+/**
+ * トークン残高チップ（`WalletCard`）／ポップオーバーのトークン残高行
+ * （`WalletPopover`）に出す「コントラクト名（アドレス短縮表記）」ラベル
+ * （Issue #218 派生）。
+ *
+ * 同名のトークンコントラクトが複数デプロイされている場合（例:
+ * ChainvizToken を2回デプロイした環境）、名前だけでは区別できない。常に
+ * アドレスの短縮表記を併記することで、名前が同じでも別コントラクトだと
+ * 分かるようにする。`contractName` が未特定（カタログ外コントラクト）の
+ * 場合は呼び出し側が用意した `unknownLabel`（i18n 訳語）で置き換える。
+ */
+export function formatTokenContractLabel(
+  balance: Pick<ResolvedTokenBalance, "contractName" | "contractAddress">,
+  unknownLabel: string,
+): string {
+  return `${balance.contractName ?? unknownLabel} (${shortHex(balance.contractAddress)})`;
 }

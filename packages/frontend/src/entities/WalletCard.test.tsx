@@ -155,6 +155,47 @@ describe("WalletCard token balances (ARCHITECTURE.md §6.7)", () => {
     expect(chip.textContent).toBe("5.0000 CVZ");
   });
 
+  it("distinguishes two same-named token contracts by address in the chip title (Issue #218 派生)", () => {
+    const addressA = `0x${"d".repeat(40)}`;
+    const addressB = `0x${"e".repeat(40)}`;
+    renderCard(
+      data({
+        entity: wallet({
+          tokenBalances: [
+            { contractAddress: addressA, amount: "0" },
+            { contractAddress: addressB, amount: "0" },
+          ],
+        }),
+        contractsByAddress: new Map([
+          [
+            addressA,
+            contract({
+              address: addressA,
+              name: "ChainvizToken",
+              token: { symbol: "CVZ", decimals: 18 },
+            }),
+          ],
+          [
+            addressB,
+            contract({
+              address: addressB,
+              name: "ChainvizToken",
+              token: { symbol: "CVZ", decimals: 18 },
+            }),
+          ],
+        ]),
+      }),
+    );
+    const chipA = screen.getByTestId(
+      `wallet-token-chip-${wallet().address}-${addressA}`,
+    );
+    const chipB = screen.getByTestId(
+      `wallet-token-chip-${wallet().address}-${addressB}`,
+    );
+    expect(chipA.title).not.toBe(chipB.title);
+    expect(chipA.title).toContain("ChainvizToken");
+  });
+
   it("does not render a chip for a tokenBalance whose ContractEntity is unresolved (dangling guard)", () => {
     const tokenAddress = `0x${"d".repeat(40)}`;
     renderCard(

@@ -1,6 +1,9 @@
 import type { ContractEntity, TokenBalance } from "@chainviz/shared";
 import { describe, expect, it } from "vitest";
-import { resolveWalletTokenBalances } from "./walletTokenBalances.js";
+import {
+  formatTokenContractLabel,
+  resolveWalletTokenBalances,
+} from "./walletTokenBalances.js";
 
 function contract(overrides: Partial<ContractEntity> = {}): ContractEntity {
   return {
@@ -171,5 +174,40 @@ describe("resolveWalletTokenBalances (ARCHITECTURE.md §6.7)", () => {
     ];
     const result = resolveWalletTokenBalances(balances, byAddress);
     expect(result[0]?.contractName).toBeUndefined();
+  });
+});
+
+describe("formatTokenContractLabel (Issue #218 派生: 同名トークンの区別)", () => {
+  const address = `0x${"a".repeat(40)}`;
+
+  it("combines the contract name with the shortened address", () => {
+    expect(
+      formatTokenContractLabel(
+        { contractName: "ChainvizToken", contractAddress: address },
+        "Unknown contract",
+      ),
+    ).toBe(`ChainvizToken (${address.slice(0, 8)}…${address.slice(-4)})`);
+  });
+
+  it("falls back to the given unknown label when contractName is absent", () => {
+    expect(
+      formatTokenContractLabel(
+        { contractName: undefined, contractAddress: address },
+        "Unknown contract",
+      ),
+    ).toBe(`Unknown contract (${address.slice(0, 8)}…${address.slice(-4)})`);
+  });
+
+  it("distinguishes two same-named tokens by their address", () => {
+    const other = `0x${"b".repeat(40)}`;
+    const first = formatTokenContractLabel(
+      { contractName: "ChainvizToken", contractAddress: address },
+      "Unknown contract",
+    );
+    const second = formatTokenContractLabel(
+      { contractName: "ChainvizToken", contractAddress: other },
+      "Unknown contract",
+    );
+    expect(first).not.toBe(second);
   });
 });
