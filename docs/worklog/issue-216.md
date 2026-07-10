@@ -108,3 +108,35 @@ VC:BN 層の柔軟性（あるいは The Merge 以前の「EL 単体でフルノ
   こと自体がその証左。ノード追加ボタン付近に「reth + beacon のペアで
   追加されます」という一言を添える小さな改善は検討の余地があるため、
   別 Issue #251 として起票した（本 Issue の範囲では実装しない）。
+
+### 2026-07-10 Issue #216 レビュー（合格）
+
+- 担当: reviewer
+- 対象: ブランチ `issue-216-independent-el-cl-add`（コミット 429144c、docs のみの変更）
+- 結果: **合格**。「(a) 現状維持」の結論とその根拠に疑義なし。
+
+確認した内容:
+
+- 引用元の裏取り（すべて記載どおり存在・一致することを確認）:
+  - `packages/collector/src/adapters/ethereum/node-lifecycle.ts` 冒頭コメント
+    （「バリデーターなしのフォロワー reth + beacon ペア」「同じ n を共有する
+    ことで両者が同じ論理ノードとして対応付く」）
+  - `docs/ARCHITECTURE.md` §7.6.1 の設計動機 1 番目（CL/EL が 1 つの論理
+    ノードであることが見えない）、§7.6.2 の「本数は reth+beacon のペア数」
+  - `glossary/ethereum/terms/d-internal.yaml` の `el-cl-separation`
+    （ペア追加の挙動を定義文に織り込んでいる。ja/en 両方）。
+    `InternalLinkEdgePopover.tsx` から `GlossaryTerm termKey="el-cl-separation"`
+    で参照されていることも確認
+  - 実装のペア前提: `ManagedNode`（execution+consensus の組）、
+    172.28.1.n / 172.28.2.n の共有採番、`parseNodeIndex` による reth<n>/
+    beacon<n> のペア対応付け、removeNode が片割れ状態も含めて後始末する設計
+- 実世界の技術的前提（The Merge 以降 EL+CL 必須、EL:CL は実質 1:1、
+  lighthouse v3.0 での複数 execution endpoint サポート削除、多重化の柔軟性は
+  VC:BN 層の話）はレビュー担当の知識と照合して矛盾なし
+- 参照している過去記録（`docs/worklog/issue-34-36.md`、`issue-43.md`）と
+  compose の validator1/validator2 分離も実在を確認
+- フォローアップの Issue #251（ノード追加ボタン付近の説明文言）が実際に
+  起票済み（OPEN、frontend ラベル）であることを確認
+- `docs/WORKLOG.md` 索引への 1 行追加あり。コミットは 1 件（docs のみ）で
+  粒度も適切。`pnpm lint` 通過（コード変更が無いため build/test はスキップ、
+  QA は CLAUDE.md の docs-only 例外により省略）
