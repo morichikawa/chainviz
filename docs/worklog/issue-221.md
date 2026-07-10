@@ -170,3 +170,47 @@ WalletCard / ContractCard いずれも「カードからポップオーバーへ
   （数px〜十数px）に対して余裕を持たせた慣習的な値であり、隙間の
   ピクセル数から動的に導出しているわけではない。将来 CSS 側で隙間の
   サイズを大きく変える場合はこの値の妥当性も見直すこと
+
+#### レビュー記録（chainviz-reviewer、2026-07-10）
+
+静的レビューの結果、**合格**。確認した内容:
+
+- `useHoverPopover.ts` の遅延クローズロジック: `onMouseLeave` のみ
+  200ms の遅延タイマーを積み、`onMouseEnter`/`onFocus` で保留中の
+  タイマーを破棄して開いたままにする実装が正しい。アンマウント時は
+  `useEffect` のクリーンアップでタイマーを掃除しており、unmount 後の
+  setState は起きない。重複した `onMouseLeave` でもタイマーは常に
+  1本に保たれる（張り直し）
+- 適用箇所の全数確認: `styles.css` の `calc(100% + Npx)` パターンを
+  grep した結果は6箇所で、worklog の表と一致。うち `.operation-panel`
+  はクリックトグルのため対象外という判断も実装（`InfraNodeCard.tsx` の
+  `operationPanelOpen`）と一致。コンポーネント単位では8箇所すべてに
+  フックが適用されている。エッジ用ポップオーバー
+  （deploy/peer/internal-link）は Canvas 側がホバー状態を注入する
+  別機構であり、本 Issue の隙間問題（自要素の mouseleave で自分の
+  ポップオーバー DOM が消える）の構造に該当しないため対象外で妥当
+- `onFocus`/`onBlur` は元々持っていた4箇所（TxChip、
+  WalletPopoverTxItem、GlossaryTerm、ActionHint）にのみ渡し、カード
+  本体3箇所には追加していないことを diff で確認。バブルによる誤開閉を
+  避ける設計メモどおり
+- 固定値 200ms: 前提条件（隙間は数px〜十数px で通過時間は遅延より
+  十分短い）がコード内コメントと worklog の両方に明記されており、
+  CLAUDE.md の運用ルールを満たす
+- テストの質: 更新された既存テスト9件はいずれも「mouseleave 直後は
+  開いたまま」を先にアサートしてから遅延経過後のクローズを確認して
+  おり、即時クローズに退行した場合に検知できる。新規の
+  `useHoverPopover.test.ts`（11件）は遅延中の再エントリでのキャンセル、
+  blur とタイマーの競合、アンマウント時の掃除、カスタム遅延、重複
+  mouseleave といった異常系・境界値を押さえている。mouseLeave を使う
+  テストファイルにフェイクタイマー未使用のものが残っていないことも
+  grep で確認した
+- `pnpm build` / `pnpm lint` / `pnpm test`（frontend 106ファイル/
+  1617件を含む全パッケージ）がすべて通ることを確認
+- docs: `docs/PLAN.md` のチェック、`docs/WORKLOG.md` の索引行、
+  `docs/ARCHITECTURE.md` §1 への `interaction/` 追記がいずれも実装と
+  整合
+- コミット粒度: feat（フック新設+ARCHITECTURE追記）/ fix（8箇所への
+  適用+既存テスト更新）/ docs（worklog）の3コミットで関心事が
+  分離されている
+- ブランチは main より古い 26f4273 起点だが、`git merge-tree` で
+  main との合流に衝突が無いことを確認済み（マージ時の追加作業は不要）
