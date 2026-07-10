@@ -49,3 +49,30 @@
   (`nodeInternals.ts` の `ENGINE_API_METHOD_LABELS` など)についても同種の
   懸念が無いか、将来的に横断確認する余地がある(本Issueのスコープ外の
   ため対応はしていない)
+
+#### レビュー記録(chainviz-reviewer、2026-07-11)
+
+- 判定: **合格**
+- 確認内容:
+  - 修正方針は `describeNodeRole`(Issue #215)と一貫している
+    (`Object.hasOwn` ガード。`stage: string` は `undefined` を受け付けない
+    シグネチャのため早期リターン省略も妥当)
+  - 回帰テストの実効性をミューテーション確認で検証した。ガード行を
+    一時的に削除した状態で `syncStageLabels.test.ts` を実行すると
+    追加テストが失敗し、復元すると通ることを確認(テストが実際に元の
+    不具合を検出できる)
+  - `pnpm lint` / `pnpm build` / `pnpm test` 全パッケージ合格
+    (shared 62 / collector 1154 / frontend 1733 / e2e 97)
+  - コミット粒度(fix+テストで1コミット、docsで1コミット)・
+    Conventional Commits 準拠を確認
+  - docs(worklog/PLAN.md/WORKLOG.md 索引)が実装を正しく反映している
+- 申し送り(別途Issue化を推奨):
+  - `chain-profiles/ethereum` 配下の他ファイルに同種の穴は無い
+    (`nodeInternals.ts` は配列+前方一致、`operationCatalog.ts` は配列)
+  - ただし `packages/frontend/src/glossary/` に類似パターンが2箇所ある:
+    (1) `GlossaryProvider.tsx` の `lookup: (key) => glossary[key]` が
+    ガード無しブラケットアクセス(キーが `"toString"` 等のとき継承メンバを
+    返しうる)、(2) `parse.ts` の `glossary[key] = term` は YAML のキーが
+    `"__proto__"` の場合にプロトタイプ汚染書き込みになりうる。いずれも
+    キーの供給源はコード内定数・プロジェクト管理下の YAML であり実害の
+    リスクは低いが、#215/#258 と同じクラスの穴のため別Issueでの対応を推奨
