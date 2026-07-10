@@ -215,6 +215,54 @@ describe("entitiesToFlowNodes", () => {
     expect(nodes[0].data.drivesNodeContainerName).toBeUndefined();
   });
 
+  // --- drivenByContainerName（逆方向。ARCHITECTURE.md §7.6.3更新版。Issue #215） ---
+
+  it("resolves drivenByContainerName for a node that another present node drives", () => {
+    const beacon: NodeEntity = {
+      ...node("beacon-1", "chainviz-lighthouse-1"),
+      drivesNodeId: "reth-1",
+    };
+    const reth = node("reth-1", "chainviz-reth-1");
+    const nodes = entitiesToFlowNodes([beacon, reth], {});
+    const rethNode = nodes.find((n) => n.id === "reth-1");
+    expect(rethNode?.data.drivenByContainerName).toBe("chainviz-lighthouse-1");
+  });
+
+  it("omits drivenByContainerName when no other node drives this one", () => {
+    const nodes = entitiesToFlowNodes([node("reth-1")], {});
+    expect(nodes[0].data.drivenByContainerName).toBeUndefined();
+  });
+
+  it("omits drivenByContainerName on the driving side itself (beacon has no drivenBy)", () => {
+    const beacon: NodeEntity = { ...node("beacon-1"), drivesNodeId: "reth-1" };
+    const reth = node("reth-1");
+    const nodes = entitiesToFlowNodes([beacon, reth], {});
+    expect(nodes.find((n) => n.id === "beacon-1")?.data.drivenByContainerName).toBeUndefined();
+  });
+
+  it("does not set drivenByContainerName on a workbench", () => {
+    const nodes = entitiesToFlowNodes([workbench], {});
+    expect(nodes[0].data.drivenByContainerName).toBeUndefined();
+  });
+
+  it("keeps the first match when two nodes claim to drive the same target (defensive, not expected in Ethereum profile)", () => {
+    const beaconA: NodeEntity = {
+      ...node("beacon-a", "chainviz-lighthouse-a"),
+      drivesNodeId: "reth-1",
+    };
+    const beaconB: NodeEntity = {
+      ...node("beacon-b", "chainviz-lighthouse-b"),
+      drivesNodeId: "reth-1",
+    };
+    const reth = node("reth-1", "chainviz-reth-1");
+    // 逆引き索引は entities 引数の並び順（呼び出し時の配列順）で走査するため、
+    // 先に渡した beacon-a が最初の一致として採用される。
+    const nodes = entitiesToFlowNodes([beaconA, beaconB, reth], {});
+    expect(nodes.find((n) => n.id === "reth-1")?.data.drivenByContainerName).toBe(
+      "chainviz-lighthouse-a",
+    );
+  });
+
   // --- D層: maxElBlockHeight（ARCHITECTURE.md §7.6.5。Issue #189） ---
 
   it("puts the max EL blockHeight (from syncStages-reporting nodes) on every card's data", () => {
