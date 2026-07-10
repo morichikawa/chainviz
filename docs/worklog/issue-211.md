@@ -585,3 +585,53 @@ mempool 投入時の検査として説明する）。
 - `pnpm build`・`pnpm lint`・`pnpm test`（リポジトリルートで全パッケージ
   対象）が通ることを確認した（frontend 1504 / collector 1126 /
   shared 58、いずれも pass）
+
+## 11. レビュー記録（単位B: #213 + #219）
+
+### 2026-07-10 Issue #213/#219 静的レビュー
+
+- 担当: reviewer
+- ブランチ: issue-213-219-operation-panel-clarity
+- 内容: 単位B（操作パネルの説明文言＋トークン単位入力・decimals換算）の
+  実装・テスト強化を静的レビューした。判定は合格
+- 確認した点:
+  - `tokenAmount.ts` の `parseUnits`（decimals可変）への一般化が
+    `etherAmount.ts`（decimals=18固定ラッパー）の既存挙動を変えて
+    いないこと。BigIntベースの変換ロジック（小数部のゼロ埋め・桁数超過の
+    拒否・符号/指数/カンマ表記の拒否）を読み、正しいことを確認した
+  - `convertOperationArgsToChainValues` が送る値の形式（最小単位の
+    10進整数文字列）が、collector 側
+    `adapters/ethereum/workbench-operations.ts`（引数を無加工で
+    cast/forge に渡す）の期待と一致すること。collector 側は無変更
+  - `OperationFunctionForm.description` 必須化に対し、カタログ全関数
+    （ChainvizToken 4件・Counter 3件）に ja/en の説明が付与されており、
+    空でないことを固定するテストもあること
+  - ARCHITECTURE.md §6.10 決定事項2（値の型解釈・エンコードは collector
+    側）との整合。フロントの変換は「表示・入力単位 → 最小単位」の文字列
+    変換のみで、エンコードは従来どおり collector 側のまま。決定事項3
+    （ETH単位入力＋フロントでwei変換）のトークンへの自然な拡張になっている
+  - エラーの握りつぶしなし。防御的フォールバック
+    （`convertOperationArgsToChainValues` の生値通過、`formatUnits` の
+    入力そのまま返し）はいずれも理由がコメントで明記され、テストで
+    挙動が固定されている
+  - `pnpm build` / `pnpm lint` / `pnpm test` 全パッケージ通過
+    （frontend 1504 / collector 1126 / shared 58）
+  - コミット粒度: 変換ロジック・カタログ拡張・フォールバック・
+    バリデーション・各フォーム・i18n・テスト強化・docs が関心事ごとに
+    分割されており適切
+- 決定事項・注意点（いずれも非ブロッキングの申し送り）:
+  - `unit: "token"` の引数で token 情報が解決できない場合、
+    `OperationArgInput` は生の整数として妥当と表示する一方、
+    `validateOperationArgs` は安全側で常に無効にするため、「エラー表示は
+    無いのに送信ボタンが無効」という状態になり得る。現行カタログでは
+    ChainvizToken に静的 token が必ずあるため実際には到達しないが、
+    将来 token 未設定のカタログエントリに `unit: "token"` を付けると
+    顕在化する。テスト（CallForm.tokenUnit「no resolvable token
+    metadata」）で挙動自体は固定済み
+  - ARCHITECTURE.md §6.5 にはトークン単位入力・関数説明の記述を追記して
+    いない。過去の同種の細部（#209 の送信前バリデーション）も §6.5 には
+    反映せず worklog に留める運用だったため踏襲した。§6.10 決定事項3の
+    トークン一般化として一言追記する価値はある（任意）
+  - 本ブランチはコミット e0237fc（UX設計メモ、`issue-211-deploy-feedback-ux`
+    の先頭と同一）を含む形で fork されている。両ブランチをマージする際は
+    docs コミットの重複に留意（同一SHAなので通常は問題にならない）
