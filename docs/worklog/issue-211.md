@@ -599,3 +599,60 @@ mempool 投入時の検査として説明する）。
   コミット）を基点に積まれている。#211 側と #212 側のどちらの PR を
   先にマージしても git 上は問題ないが、両 PR に同一コミットが表示される
   点は把握しておくこと
+
+### 2026-07-10 英語訳レビュー記録（単位D、chainviz-i18n）
+
+レビュー対象は以下2点。日本語の定義文の内容自体は対象外とし、英訳の質
+（自然さ・既存エントリとのトーン/語彙の一貫性）のみを確認した。
+
+- `packages/frontend/src/i18n/messages.ts` の `tx.lifecycle.*`（段階ラベル
+  4つ・一言説明4つ・failed時の代替説明1つ）
+- `glossary/ethereum/terms/c-transaction.yaml` の新設エントリ `signature`
+  （署名）・`block`（ブロック）の `en` フィールド
+
+**総評**: 全体として直訳ではなく自然な英語話者の言い回しになっており、
+既存エントリの語調ともよく合っている。具体的には:
+
+- `signature`/`block` とも、冒頭が名詞句フラグメントで始まる既存の
+  house style（`nonce`/`eoa`/`wei` 等と同じ）を踏襲している
+- `signature` の "the private key never leaves it" や `block` の
+  "once it lands"（`mempool` エントリの "A submitted tx lands here" と
+  同じ語彙）など、既存語彙との一貫性が意図的に保たれている
+- `tx.lifecycle.desc.signed` の "Nothing has touched the chain yet." と
+  `signature` glossary 本文の "nothing has touched the chain yet" が
+  同一の言い回しで揃えてあり、2箇所にまたがる説明として一貫している
+- mempool/gas/nonce 等の技術用語は標準的な訳語のまま使われており、
+  独自の意訳は見られない
+
+**指摘・修正した点（1件）**:
+
+- `tx.lifecycle.desc.mempool` の英訳 "The node checks the signature,
+  nonce and balance, then queues it for inclusion." で、3項目の列挙
+  なのに Oxford comma が抜けていた。同じファイル内の既存エントリ
+  （`wei`: "Balances, transfer amounts, and gas costs are all handled…"）
+  および同一追加内の `tx.lifecycle.desc.included`（"Included in a block,
+  replicated to every node, and final."）はいずれも Oxford comma 付きで
+  一貫しているため、内部一貫性の観点から "the signature, nonce, and
+  balance" に修正した（意味の変更なし）
+
+**検討したが見送った点**:
+
+- `tx.lifecycle.stage.included` の英訳が "Included in block" で、他の
+  3段階ラベル（Signed / Sent / Mempool、いずれも1語）に対して唯一の
+  フレーズになっている点は一見不揃いに見えるが、対応する日本語ラベルも
+  「ブロック取り込み」（他の3つより長い）で意図的に「mempool」の
+  「取り込み待ち」と区別するための表記になっている。日本語側の内容
+  決定に対応した訳であり、翻訳の質の問題ではないため修正しなかった
+  （英語側だけ既存の `tx.status.included`「Included」に合わせて短縮する
+  という案は検討したが、日本語の意図的な書き分けを踏まえると独断で
+  変えるべきではないと判断した。気になる場合は chainviz-frontend に
+  ラベルの長さについて再検討を提案する）
+- `signature` glossary の en 本文が「tx チップの」を明示的に訳出せず
+  「the tx lifecycle popover」としている点も、意味は変わらず自然な
+  圧縮と判断し修正しなかった
+
+**修正コミット**: `fix(frontend): tx lifecycle英語訳のOxfordコンマを既存エントリに合わせて統一` 相当の1コミットとして
+`packages/frontend/src/i18n/messages.ts` のみを変更（Conventional
+Commits形式での実際のコミット作成は、このレビューを実行した
+chainviz-i18n セッションに shell/git 実行ツールが無いため未実施。
+ファイル差分のみ適用済み。統括側でのコミット作成を依頼する）
