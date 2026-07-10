@@ -1244,8 +1244,15 @@ Phase 4 までの画面を実際に操作して確認した課題:
 - **CL 側ポップオーバー（InfraPopover）に「駆動する実行ノード」行を追加**。
   `drivesNodeId` が解決できた場合のみ、相手の containerName を表示する
   （ワークベンチの「操作先ノード」行と同じ流儀。ラベルに GlossaryTerm:
-  `engine-api`）。EL 側への逆方向の行は追加しない（対応関係はエッジ自体と
-  CL 側の行で足りる。逆引きのための走査を増やさない）
+  `engine-api`）。
+  **（Issue #215 で更新）** 当初は「EL 側への逆方向の行は追加しない（対応
+  関係はエッジ自体と CL 側の行で足りる。逆引きのための走査を増やさない）」
+  としていたが、Issue #215 の評価で reth カードのポップオーバーだけを見ても
+  「どの beacon に駆動されているか」が分からないという指摘があったため、
+  EL 側にも「駆動元（合意ノード）」行を追加する決定に更新した
+  （`drivesNodeId` を全ノードから逆引きする。ラベルに GlossaryTerm:
+  `engine-api`。フロント側の実装は `entities/infraNode.ts` の
+  `drivenByContainerName` 導出を参照）
 
 #### 7.6.4 活動パルス（nodeLinkActivity）
 
