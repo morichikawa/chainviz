@@ -107,3 +107,46 @@
   - `runWorkbenchOperation` 側のボタン（送金/デプロイ/呼び出し）は
     本Issueの対象外のため変更していない。連打時の挙動について
     ユーザーから追加の指摘があれば別Issueとして起票する
+
+#### レビュー記録（chainviz-reviewer）
+
+- 判定: 合格
+- 確認したこと:
+  - `pendingAddNode` / `pendingAddWorkbench` の算出元（`App.tsx` の
+    `ghosts.some(...)`）と、ゴーストが消える3経路を実コードで確認した。
+    (1) 実エンティティ到着: `useCommands.ts` の `state.entities` 監視
+    effect が `removeGhostForArrivedEntity` を呼ぶ（EL/CL層一致優先＋
+    FIFOフォールバック）。(2) 失敗: `handleCommandResult` の
+    `ok:false` 分岐で `removeGhostByCommandId`。(3) 安全網: ゴースト
+    ごとに `GHOST_TIMEOUT_MS`（60秒）のタイマーを張り直す effect。
+    タイマーは ghosts state と同期して張り直され、アンマウント時にも
+    まとめて破棄される。3経路のいずれかで必ず解除されるため、
+    「ボタンが押せなくなったまま」にはならない
+  - `GHOST_TIMEOUT_MS` は環境の状態（稼働時間・ブロック数）に依存しない
+    固定UX値であり、その前提条件が `ghostNode.ts` のコメントに明記
+    されている（「固定値をロジックに埋め込まない」ルールに適合）
+  - `sendCommand` が `undefined` を返す（未接続）場合はゴースト自体が
+    作られないため、この経路でも disabled 固着は起きない
+  - テスト: 旧仕様（pending中も連打可）を固定していた2テストが、
+    「pending中は `disabled` になりクリックが発火しない」（両ボタン）
+    「pending解除後は再度押せる」「非pending中はクリック回数分発行」
+    に置き換えられており、`disabled` 属性を外せば失敗する実質的な
+    テストになっている
+  - `type="submit"` ボタンが disabled の間、input内Enterの暗黙送信を
+    ブラウザがブロックすることは HTML 仕様どおり（worklog の設計メモに
+    記載あり）。`onAddWorkbench` 自体には pending ガードが無いが、
+    プログラム的な `form.requestSubmit()` 等の呼び出し経路は存在しない
+    ため実害なし（将来フォーム送信経路を増やす場合はガード追加を検討）
+  - スタイル: `.canvas-toolbar__button:disabled` はツールバーの2ボタン
+    にのみ適用され、他のUI要素（`.operation-form__submit:disabled` 等）
+    への副作用なし
+  - `pnpm build` / `pnpm lint` / `pnpm test` がリポジトリ全体で通過
+    （shared 59 / e2e 77 / collector 1137 / frontend 1608 件すべて合格）
+  - `docs/PLAN.md` のチェック・`docs/WORKLOG.md` 索引・本ファイルの
+    記録が実装と整合。コミット粒度は実装1＋docs1の2コミットで適切
+- 統括への申し送り:
+  - 本ブランチは main より2コミット遅れており（merge-base `26f4273`、
+    main 先端は Issue #216 のdocsコミット）、`docs/WORKLOG.md` の索引
+    末尾行が main 側の #216 行と競合する（`git merge-tree` で確認済み）。
+    マージ前に main への rebase（または競合解消）が必要。競合は索引
+    表の行追加同士なので両方残せばよい
