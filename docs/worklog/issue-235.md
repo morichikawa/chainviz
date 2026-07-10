@@ -284,3 +284,59 @@
   commandMessages.ts / messages.ts）の変更がまだコミットされていなかった。
   テスト強化のコミットはテストファイルのみを対象にしており、実装本体の
   コミットは統括に委ねる。
+
+#### レビュー記録
+
+- 担当: reviewer
+- ブランチ: issue-235-error-toast-on-ghost
+- 判定: **合格**
+- 確認した内容:
+  - 根本原因への対処: `client.ts` の `sendCommand` が未接続（`!socket`）時に
+    commandId を発行せず `undefined` を返すようになり、「偽りの成功」が
+    解消されていることをコードで確認。判定条件を `status === "connected"`
+    ではなく `!socket` にした理由（connecting 状態は別の潜在課題で本Issueの
+    スコープ外）もコメント・worklogの両方に記録されており妥当。
+  - 2経路の区別: 「未接続で即失敗」経路はゴーストを作らないため安全網
+    タイマー自体が張られず、タイムアウト経路と二重発火しない。タイムアウト
+    経路は `pendingRef` の有無（commandResult 未着）で判定しており、
+    ok:false 到着後にタイマーが競合発火しても `pendingRef` は既に消えている
+    ため二重通知は起きない（二重の防御）。addNode の2枚のゴーストは同一
+    commandId を共有し、タイマーは commandId 単位で1本しか張られないため
+    通知も1件。いずれもテストで検証されていることを確認。
+  - ok:true 済み（実体到着待ち）のゴーストがタイムアウトしても通知しない
+    false positive 防止の設計判断はコメント・worklogに明記されており、
+    テスターが「発火条件を `if (true)` に改変するとテストが失敗する」ことを
+    確認済み（空振りテストでないことの検証）と記録されている。
+  - addNode / addWorkbench の対称性: 未接続経路・タイムアウト経路の両方で
+    両コマンドのテストがあり、削除系・runWorkbenchOperation も未接続時に
+    pending系Setを汚染せず即時通知されることをテストで確認。
+  - ビルド・lint・テスト: リポジトリ全体で `pnpm build` / `pnpm lint` /
+    `pnpm test` がすべて通ることを実行して確認（shared 59 / e2e 77 /
+    collector 1137 / frontend 1641、全件成功）。
+  - 境界の遵守: 変更は frontend 内部に閉じており、shared の型変更・
+    チェーン固有語彙の漏出は無い。i18n は ja/en 両方追加済み。
+  - docs: `docs/PLAN.md` のチェック・Issueリンク、`docs/WORKLOG.md` 索引、
+    本worklogの記述がコミット内容と一致していることを確認。
+    `docs/ARCHITECTURE.md` と矛盾する記述は無い（安全網タイムアウトの
+    詳細はARCHITECTUREに記載が無く、今回の拡張は既存記述と矛盾しない）。
+  - コミット粒度: `39f5764`（fix）→ `9f4285`（docs）→ `51ee957`（test）の
+    3コミットで、いずれも Conventional Commits 準拠。申し送りのあった
+    「未コミットのまま完了報告」の手戻りについては、最終的な履歴が
+    worklogの記述と一致していることを確認した。
+- 注意点（合格に影響しない指摘・次の担当への申し送り）:
+  - コミット帰属の乱れ: 実装担当が書いた基本テスト
+    （`useCommandsDisconnected.test.tsx` の初版）が、中断からの復旧の経緯で
+    fix コミットではなくテスト強化コミット `51ee957`（ファイル新規追加）に
+    含まれている。fix コミット単体にも `client.test.ts` の更新は含まれて
+    おり「テスト無しのロジック変更」ではないため許容するが、`51ee957` の
+    コミットメッセージが「既存ファイルへの追加」と読める点は履歴を追う際に
+    注意（本worklogのテスト強化記録末尾に経緯の記録あり）。
+  - `useCommandsDisconnected.test.tsx` の `setup()` が返す `resolve`
+    ヘルパーは同ファイル内で未使用（`useCommandsGhostTimeout.test.tsx` への
+    分割時の名残とみられる）。lint では検出されない位置のため、次に
+    このファイルへ手を入れる際に削除を検討するとよい。
+  - worklogに記録済みのスコープ外の潜在課題2件は別Issue起票を検討する価値が
+    ある: (1) WebSocket が connecting 状態のときの `send()` は実ブラウザでは
+    `InvalidStateError` を投げる、(2) ゴーストを作らない操作（送金・呼び出し
+    等）は接続中に commandResult が失われるとスピナーが解除されないまま残る
+    （安全網が無い）。
