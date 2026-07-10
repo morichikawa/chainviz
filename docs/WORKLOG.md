@@ -121,3 +121,4 @@
 | #210 | Issue #210 ワークベンチに複数ウォレットが紐づいて見える件の原因調査。モックデータ(EOA+スマートアカウント)の意図した挙動と特定、コード修正不要 | [2026-07-10](worklog/issue-210.md) |
 | #214 | Issue #214 validator(VC)とブートノード間の「P2P接続を確立中...」固着の原因調査・設計・実装。VCはP2P非参加なのに接続確立中エッジの対象に含めている設計上のミスマッチと特定し、`p2pRole`への`"none"`追加+collector/frontendの除外ロジックで解消 | [2026-07-10](worklog/issue-214.md) |
 | #211ほか | Issue #211/#212/#213/#215/#218/#219 UX上の6課題を実環境で評価し、4つの実装単位(A:#215 役割可視化、B:#213+#219 操作説明、C:#211+#218 一覧と導線、D:#212 txライフサイクル)へ切り分けたUX設計。単位C(コントラクト一覧パネル・pendingデプロイラベル)を実装完了 | [2026-07-10](worklog/issue-211.md) |
+| #217 | Issue #217 長文エラーでトースト通知のレイアウトが崩れる不具合を修正(flex itemのmin-width:auto問題が原因。.toast/.toast__messageにmin-width:0・overflow-wrap:anywhere・white-space:pre-wrap・max-height+overflow-yを追加) | [2026-07-10](worklog/issue-217.md) |
