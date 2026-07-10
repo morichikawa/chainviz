@@ -330,4 +330,37 @@ describe("useContractSettlementEffects", () => {
     unmount();
     expect(() => advance(CONTRACT_CALL_PULSE_DURATION_MS + TX_SETTLE_FLASH_MS)).not.toThrow();
   });
+
+  it("streams a wallet->contract pulse even when tx.from differs in case from the tracked wallet id (Issue #232)", () => {
+    // tx.from はチェーン側の生の表記(小文字)、presentWalletIds(WalletEntity.address)
+    // はEIP-55チェックサム表記になりうる想定の再現。
+    const CHECKSUMMED_ALICE = "0xAlIcE";
+    const callFrom = (status: TransactionEntity["status"]) =>
+      tx({
+        status,
+        from: ALICE, // 生の表記(小文字)
+        blockHash: status === "pending" ? undefined : "0xb1",
+        contractCall: { contractAddress: TOKEN, functionName: "transfer" },
+      });
+    const { result, rerender } = renderHook(
+      ({ txs }) =>
+        useContractSettlementEffects(
+          txs,
+          [contract()],
+          new Set([CHECKSUMMED_ALICE]), // 表記の異なるウォレットid
+        ),
+      { initialProps: { txs: [callFrom("pending")] } },
+    );
+    advance(0);
+    rerender({ txs: [callFrom("included")] });
+    advance(0);
+
+    // ウォレットは(表記違いだが)実際には存在するため、フラッシュのみへ
+    // フォールバックせずパルスエッジが描かれるべき。
+    expect(result.current.pulseEdges).toHaveLength(1);
+    expect(result.current.pulseEdges[0]).toMatchObject({
+      source: CHECKSUMMED_ALICE,
+      target: TOKEN,
+    });
+  });
 });

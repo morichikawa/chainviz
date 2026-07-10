@@ -1,4 +1,5 @@
 import type { Edge } from "@xyflow/react";
+import { resolvePresentId } from "./addressCasing.js";
 import { OPERATION_PULSE_DURATION_MS } from "./operationEdge.js";
 
 /**
@@ -47,6 +48,18 @@ export function contractCallPulseEdgeId(
  * ウォレット → コントラクトのパルスエッジ（パルスなしの土台）を作る。
  * 端点（ウォレット・コントラクト）の両方がキャンバス上に存在しないと null
  * を返す（宙ぶらりんのエッジを描かない。ダングリング参照ガード）。
+ *
+ * 端点の一致判定は大文字小文字を無視する。`fromWalletAddress`
+ * （`TransactionEntity.from`由来）はチェーン側の生の表記（Ethereumアダプタ
+ * では全小文字）になる一方、`presentWalletIds`（`WalletEntity.address`）は
+ * mnemonicからviemで導出したEIP-55チェックサム表記になりうる
+ * （`wallet-derivation.ts`参照）。単純な文字列一致では常に不一致となり、
+ * 実際にはウォレットが存在するのにパルスエッジが一切描画されない不具合を
+ * 実機で確認したため（Issue #232。deployEdge.tsのIssue #201修正と同型）、
+ * `resolvePresentId`で大文字小文字を無視して照合したうえで、実際に
+ * キャンバス上に存在する側（present側）の表記をエッジの端点として使う
+ * （表記がずれたままだとReact Flowがノードを解決できずエッジを描画
+ * できないため）。
  */
 export function buildContractCallPulseEdge(
   fromWalletAddress: string,
@@ -54,15 +67,17 @@ export function buildContractCallPulseEdge(
   presentWalletIds: ReadonlySet<string>,
   presentContractIds: ReadonlySet<string>,
 ): ContractCallPulseFlowEdge | null {
-  if (fromWalletAddress === contractAddress) return null;
-  if (!presentWalletIds.has(fromWalletAddress)) return null;
-  if (!presentContractIds.has(contractAddress)) return null;
+  const resolvedWalletId = resolvePresentId(fromWalletAddress, presentWalletIds);
+  if (!resolvedWalletId) return null;
+  const resolvedContractId = resolvePresentId(contractAddress, presentContractIds);
+  if (!resolvedContractId) return null;
+  if (resolvedWalletId.toLowerCase() === resolvedContractId.toLowerCase()) return null;
 
   return {
-    id: contractCallPulseEdgeId(fromWalletAddress, contractAddress),
+    id: contractCallPulseEdgeId(resolvedWalletId, resolvedContractId),
     type: CONTRACT_CALL_PULSE_EDGE_TYPE,
-    source: fromWalletAddress,
-    target: contractAddress,
+    source: resolvedWalletId,
+    target: resolvedContractId,
     data: { pulses: [] },
     className: "contract-call-pulse-edge",
     style: { stroke: CONTRACT_CALL_EDGE_COLOR, strokeWidth: 1.6 },

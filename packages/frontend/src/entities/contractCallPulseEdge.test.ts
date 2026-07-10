@@ -222,3 +222,46 @@ describe("removeContractCallPulse", () => {
     expect(next[0].data?.pulses).toEqual([pulse("p2")]);
   });
 });
+
+describe("buildContractCallPulseEdge address casing (Issue #232)", () => {
+  it("matches a wallet address that differs in case from the tracked wallet id", () => {
+    // fromWalletAddress はチェーン側の生の表記(小文字)、presentWalletIds は
+    // EIP-55 チェックサム表記になりうる想定の再現(deployEdge.ts の
+    // Issue #201 修正と同型)。
+    const edge = buildContractCallPulseEdge(
+      "0xabcdef",
+      TOKEN,
+      new Set(["0xABCDEF"]),
+      new Set([TOKEN]),
+    );
+    expect(edge).not.toBeNull();
+    // React Flow がノードを解決できるよう、source にはキャンバス上に実在
+    // するウォレットの表記(presentWalletIds側)を使う。
+    expect(edge).toMatchObject({
+      id: contractCallPulseEdgeId("0xABCDEF", TOKEN),
+      source: "0xABCDEF",
+      target: TOKEN,
+    });
+  });
+
+  it("matches a contract address that differs in case from the tracked contract id", () => {
+    const edge = buildContractCallPulseEdge(
+      ALICE,
+      "0xtoken",
+      new Set([ALICE]),
+      new Set(["0xTOKEN"]),
+    );
+    expect(edge).not.toBeNull();
+    expect(edge).toMatchObject({ source: ALICE, target: "0xTOKEN" });
+  });
+
+  it("still returns null when the wallet is not present even case-insensitively", () => {
+    const edge = buildContractCallPulseEdge(
+      "0xabcdef",
+      TOKEN,
+      new Set(["0xdifferent"]),
+      new Set([TOKEN]),
+    );
+    expect(edge).toBeNull();
+  });
+});
