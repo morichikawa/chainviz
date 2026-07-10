@@ -587,3 +587,56 @@ mempool 投入時の検査として説明する）。
   想定（`useAppearanceOrder.ts` の docstring 参照）
 - 作業中に本 Issue の範囲外の問題は見つからなかった（新規 Issue の起票は
   無し）
+
+### 2026-07-10 Issue #211/#218 テスト強化記録（単位C）
+
+- 担当: tester
+- ブランチ: issue-211-deploy-feedback-ux
+- 内容: 実装担当が書いた基本テスト（ハッピーパス中心）に対し、異常系・
+  境界値・出現順の特殊遷移を中心にテストを追加した。実装コードは変更して
+  いない。全 26 件を追加し、frontend の総テスト数は 1456 → 1482 になった。
+  `pnpm build && pnpm lint && pnpm test` が通ることを確認済み。
+
+**追加した観点**
+
+- `contractList.test.ts`（+13件）: 複数デプロイ済み・複数デプロイ中の
+  入力順保持、両者が複数混在するケースの並び、空 label のゴースト行を
+  落とさないこと。`sortEntriesByAppearance` の空入力・同一 order 値での
+  安定性（入力順維持）・空 order マップで全件を最古扱いにする防御、
+  「今しがた現れたデプロイ中の行が古いデプロイ済みより上に来る」実利用
+  シナリオ。`resolveNodeCenter` の部分 measured（width のみ / height のみ）・
+  負座標・ゼロサイズ（`0 ?? fallback` で 0 が採用され position のままに
+  なる境界）。
+- `useAppearanceOrder.test.ts`（+2件）: 同一配列内の重複 id が1つの番号
+  しか消費しないこと、ghost → 実カード置換時に実カードへより新しい番号が
+  振られ最上段へ来ること（worklog「単位C」の想定挙動）。
+- `ContractListPanel.test.tsx`（+5件）: デプロイ済み・デプロイ中の混在
+  レンダーと件数バッジ、name が undefined のデプロイ中行・address 欠落の
+  デプロイ済み行でも落ちないこと、多件数（12件）で件数バッジと行数が
+  一致すること、行クリックが id を渡す責務のみを持つこと（対象ノードが
+  React Flow 上に無い場合の防御 `if (!node) return` は Canvas 側の責務で
+  あることをコメントで明示）。
+- `transaction.test.ts`（+4件）: `txChipLabel` の境界値。`to === null`
+  でも関数名が復号済みなら関数名が最優先になること、`to === ""`（空文字は
+  null ではない）を deploy 扱いしないこと（hash へフォールバック）、空文字
+  `to` + rawFunctionId が raw 呼び出しになること、`to === null` 単独
+  （createdContractAddress 未着）でも deploy になること。
+- `walletTokenBalances.test.ts`（+3件）: `formatTokenContractLabel` が
+  単一トークンでもアドレスを併記すること、短すぎるアドレスは shortHex が
+  そのまま返すこと、contractName が空文字（falsy だが undefined ではない）
+  のとき ?? が空文字を採用する現仕様。
+
+**確認した挙動（実装のバグではないもの）**
+
+- 行クリック時のパン処理で対象ノードが React Flow 上に存在しない場合、
+  Canvas.tsx の `handleJumpToContract` が `if (!node) return` で早期リターン
+  するためエラーにならない。この分岐は `useReactFlow` を要する統合レベルの
+  ため単体テストは追加しなかった（`ContractListPanel` 側は id を渡す責務
+  のみで、そこはテスト済み）。
+- `to === null` は現状すべて「デプロイ」扱いになる（コントラクト作成 tx を
+  他の to=null ケースと区別する情報が tx に無いため。理論上の別ケースは
+  存在しない前提で設計されており、実装の穴ではない）。
+
+**起票した Issue**
+
+- 無し（テスト強化のみで完結。新規のバグ・改善提案は見つからなかった）
