@@ -169,13 +169,52 @@ describe("createChainvizClient", () => {
     expect(factory).toHaveBeenCalledTimes(2);
   });
 
-  it("sendCommand before connect does not throw and still returns an id", () => {
-    const { client } = setup();
-    let id = "";
+  it("sendCommand before connect does not throw and returns undefined without sending (Issue #235)", () => {
+    const { socket, client } = setup();
+    let id: string | undefined = "unset";
     expect(() => {
       id = client.sendCommand({ action: "addNode", chainProfile: "ethereum" });
     }).not.toThrow();
+    expect(id).toBeUndefined();
+    expect(socket.sent).toHaveLength(0);
+  });
+
+  it("sendCommand after the socket closes (collector stopped) returns undefined without sending (Issue #235)", () => {
+    const { socket, client } = setup();
+    client.connect();
+    socket.emit("open", {});
+    socket.emit("close", {}); // collector 停止相当。close ハンドラが socket を null にする。
+    expect(client.getStatus()).toBe("disconnected");
+
+    const id = client.sendCommand({ action: "addNode", chainProfile: "ethereum" });
+    expect(id).toBeUndefined();
+    expect(socket.sent).toHaveLength(0);
+  });
+
+  it("sendCommand returns undefined after an explicit disconnect, then works again after reconnect (Issue #235)", () => {
+    const sockets: FakeSocket[] = [];
+    const client = createChainvizClient({
+      url: "ws://x",
+      createSocket: () => {
+        const s = new FakeSocket();
+        sockets.push(s);
+        return s;
+      },
+    });
+    client.connect();
+    sockets[0].emit("open", {});
+    client.disconnect(); // ユーザー操作等での明示的な切断でも socket は手放される。
+    expect(
+      client.sendCommand({ action: "addNode", chainProfile: "ethereum" }),
+    ).toBeUndefined();
+    expect(sockets[0].sent).toHaveLength(0);
+
+    // 再接続すれば新しい socket で通常どおり送信でき、id が返る。
+    client.connect();
+    sockets[1].emit("open", {});
+    const id = client.sendCommand({ action: "addNode", chainProfile: "ethereum" });
     expect(id).toBe("cmd-1");
+    expect(sockets[1].sent).toHaveLength(1);
   });
 
   it("disconnect is a no-op when never connected", () => {
