@@ -546,8 +546,11 @@ body {
 }
 
 /* tx チップ。status ごとに色分けする。pending は mempool で待機中を表し、
-   明滅（blink）で「まだ確定していない」ことを示す。included/failed は確定。 */
+   明滅（blink）で「まだ確定していない」ことを示す。included/failed は確定。
+   position: relative は、ホバー時に子として出す `.tx-lifecycle-popover`
+   （ARCHITECTURE.md §6.11、Issue #212）の位置決めの基準にするため。 */
 .wallet-tx-chip {
+  position: relative;
   font-size: 10px;
   font-variant-numeric: tabular-nums;
   padding: 1px 6px;
@@ -1134,6 +1137,101 @@ body {
   margin-top: 6px;
   font-size: 11px;
   color: var(--accent);
+}
+
+/* --- tx ライフサイクルのホバーポップオーバー（ARCHITECTURE.md §6.11。
+   Issue #212 単位D）。tx チップ（`.wallet-tx-chip`）・tx 一覧行
+   （`.wallet-popover__tx-item`）の直下に出る。見た目は glossary-popover /
+   infra-popover と同系にする。 --- */
+.wallet-popover__tx-item {
+  position: relative;
+}
+
+.tx-lifecycle-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  width: 260px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #0c1119;
+  border: 1px solid var(--border);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  text-align: left;
+  white-space: normal;
+  font-size: 12px;
+}
+
+.tx-lifecycle-popover__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tx-lifecycle-popover__hash {
+  font-weight: 600;
+}
+
+.tx-lifecycle-popover__stages {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tx-lifecycle-popover__stage {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.tx-lifecycle-popover__stage-mark {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  font-size: 12px;
+}
+
+.tx-lifecycle-popover__stage--done .tx-lifecycle-popover__stage-mark {
+  color: var(--synced);
+}
+
+.tx-lifecycle-popover__stage--active .tx-lifecycle-popover__stage-mark {
+  color: var(--syncing);
+}
+
+.tx-lifecycle-popover__stage--pending .tx-lifecycle-popover__stage-mark {
+  color: var(--muted);
+}
+
+.tx-lifecycle-popover__stage--failed .tx-lifecycle-popover__stage-mark {
+  color: #ff6b6b;
+}
+
+.tx-lifecycle-popover__stage-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tx-lifecycle-popover__stage-label {
+  font-weight: 600;
+}
+
+.tx-lifecycle-popover__stage-desc {
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.tx-lifecycle-popover__stage--pending .tx-lifecycle-popover__stage-label,
+.tx-lifecycle-popover__stage--pending .tx-lifecycle-popover__stage-desc {
+  opacity: 0.6;
 }
 
 /* --- トースト通知（コマンド失敗のエラー表示など） --- */
