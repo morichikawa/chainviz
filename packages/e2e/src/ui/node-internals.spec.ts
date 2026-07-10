@@ -245,9 +245,23 @@ test("UI-D-03: ノード詳細に同期ステージと txpool 内訳が表示さ
     expect(rowCount).toBeGreaterThan(0);
 
     // 各ステージ行にチェックポイント(進行状況の数値)が載っていることを
-    // 確認する(数値であること自体が「進行状況」の最小限の証跡)。
-    const checkpointText = await rows.first().locator(".infra-field__value").textContent();
-    expect(Number(checkpointText)).toBeGreaterThanOrEqual(0);
+    // 全行について確認する(InfraPopoverSyncStages.tsx は stage.checkpoint を
+    // 数値としてそのまま描く。先頭行だけの確認では、途中のステージが
+    // 空文字/非数値で描かれる不具合を見逃すため、全行を走査する。
+    // 非負整数(ブロック高)の文字列であることを正規表現で確認する。
+    // Number("") が 0 を返す性質上、Number 変換だけでは空文字を素通しして
+    // しまうため、パターン一致で「数字が実際に描かれている」ことを担保する。
+    // 境界値: 未進行のステージは checkpoint=0 になりうるため 0 も許容する)。
+    for (let index = 0; index < rowCount; index += 1) {
+      const checkpointText = await rows
+        .nth(index)
+        .locator(".infra-field__value")
+        .textContent();
+      expect(
+        (checkpointText ?? "").trim(),
+        `sync stage row #${index} checkpoint should be a non-negative integer`,
+      ).toMatch(/^\d+$/);
+    }
   });
 
   await test.step("txpool の pending / queued 件数が表示される", async () => {
