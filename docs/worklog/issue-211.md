@@ -492,3 +492,56 @@ mempool 投入時の検査として説明する）。
   ユーザー確認待ちのため新規Issueは起票していない
 - 作業中に見つけた範囲外の問題: 無し（既存の #244 / #245 は設計メモ
   7節で起票済みのものを参照したのみで、新規には至っていない）
+
+### 2026-07-10 テスト強化記録（単位D）
+
+実装担当が書いた基本テスト（ハッピーパス中心）に対し、異常系・境界値・
+不変条件・UI操作の独立性の観点を追加した。実装コードは変更していない。
+
+追加した観点は以下のとおり。
+
+- `txLifecycle.test.ts`（導出ロジックの不変条件）
+  - 全 status（pending/included/failed）で常に4段階を固定順
+    `signed → sent → mempool → included` で返すこと
+  - Issue #212 の中心的な設計判断「観測不能な状態を誇張しない」の担保:
+    `signed`/`sent` はどの status でも決して `active` にならず常に `done`
+    であること、`active` は `mempool` 段階にのみ現れること、`failed` は
+    `included` 段階にのみ現れること
+  - pending は `active` がちょうど1件、included/failed は0件であること
+  - 呼び出しごとに新しい配列・オブジェクトを返し、返り値を変更しても
+    後続の呼び出しに汚染が漏れないこと
+  - `deriveTxLifecycleFromTx` が全 status で `deriveTxLifecycle` と同一の
+    出力を返す（tx エンティティの status に委譲している）こと
+- `TxLifecyclePopover.test.tsx`（マーク文字とヘッダの整合）
+  - 4段階のマーク（✓=done / ●=active / ○=未到達 / ✕=failed）が
+    `deriveTxLifecycle` の各状態と一致して描画されること（pending/
+    included/failed それぞれ）
+  - マーク span が `aria-hidden="true"` で、スクリーンリーダーはテキスト
+    ラベル側を読むこと
+  - ヘッダのステータスバッジが pending/failed でも正しい文言・
+    className（`wallet-tx-chip--<status>`）で出ること（従来は included
+    のみ検証）
+  - hash 短縮の境界: 短縮閾値未満の hash（例 `0x1`）はそのまま表示され、
+    testid は完全 hash を使うので取得できること／短縮後に同じ接頭辞に
+    見える2件でも testid が衝突しないこと
+- `txLifecyclePopoverHover.test.tsx`（新規。ホバー開閉の独立性）
+  - `TxChip`（WalletCard）・`WalletPopoverTxItem`（WalletPopover）の
+    ライフサイクルポップオーバーが、ホバー/フォーカス前は描画されず、
+    mouseEnter/focus で開き mouseLeave/blur で閉じること
+  - 複数チップが並んでも各 tx ごとに独立して開閉し、1件のホバー状態が
+    別のチップへ漏れないこと。`DEFAULT_RECENT_TX_LIMIT`（6件）を同時に
+    並べても各 tx のポップオーバーが独立していること
+
+回帰検出力の確認: 導出ロジックを意図的に壊す（`signed` を `active` に
+する／`TxChip` のホバーガードを外す）と上記テストが実際に失敗すること
+を確認してから元に戻した。
+
+テストファイルは関心事ごとに分けた（導出ロジック＝`txLifecycle.test.ts`、
+ポップオーバーの描画＝`TxLifecyclePopover.test.tsx`、ホバー開閉の操作＝
+新規 `txLifecyclePopoverHover.test.tsx`）。
+
+動作確認: `pnpm build` / `pnpm lint` / `pnpm test`（frontend 全体、
+1453件に増加）が通ることを確認した。
+
+作業中に見つけたバグ・改善提案: 無し（実装は設計どおりで、テストで
+検出すべき挙動のずれは見つからなかった）。
