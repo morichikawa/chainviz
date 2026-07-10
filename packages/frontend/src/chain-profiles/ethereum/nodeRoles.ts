@@ -46,11 +46,19 @@ export const NODE_ROLE_DESCRIPTORS: Readonly<Record<string, NodeRoleDescriptor>>
  * 未対応の値・将来の追加値）や `undefined`（ラベル未付与・旧スナップショット）
  * では `undefined` を返し、呼び出し側は「役割不明」のフォールバック（サブ
  * タイトルは clientType のみ、役割行自体を出さない）に倒す。
+ *
+ * `NODE_ROLE_DESCRIPTORS` はオブジェクトリテラルで `Object.prototype` を
+ * 継承しているため、ブラケットアクセスだけだと `nodeRole` が `"toString"` /
+ * `"constructor"` / `"__proto__"` のような継承メンバ名のとき、その継承
+ * メンバ（関数など）を誤って真値として返してしまう（Issue #215 テスト強化
+ * 時に発見。docs/worklog/issue-211.md 参照）。`Object.hasOwn` で自身の
+ * 列挙可能プロパティかどうかを確認してから引くことでこれを防ぐ。
  */
 export function describeNodeRole(
   nodeRole: string | undefined,
 ): NodeRoleDescriptor | undefined {
   if (nodeRole === undefined) return undefined;
+  if (!Object.hasOwn(NODE_ROLE_DESCRIPTORS, nodeRole)) return undefined;
   return NODE_ROLE_DESCRIPTORS[nodeRole];
 }
 

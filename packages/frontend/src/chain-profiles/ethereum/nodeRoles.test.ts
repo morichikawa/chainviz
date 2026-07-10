@@ -53,6 +53,20 @@ describe("describeNodeRole", () => {
     expect(describeNodeRole("execution ")).toBeUndefined();
     expect(describeNodeRole("exec ution")).toBeUndefined();
   });
+
+  it("does not leak inherited Object.prototype members for prototype-pollution-like values", () => {
+    // 回帰テスト（Issue #215 テスト強化時に発見、docs/worklog/issue-211.md
+    // 参照）: NODE_ROLE_DESCRIPTORS はオブジェクトリテラルで Object.prototype
+    // を継承しているため、ブラケットアクセスだけだと "toString" 等の継承
+    // メンバ名を誤って真値として返してしまっていた。Object.hasOwn ガードで
+    // 未知値の undefined フォールバックが崩れないことを固定する。
+    expect(describeNodeRole("toString")).toBeUndefined();
+    expect(describeNodeRole("constructor")).toBeUndefined();
+    expect(describeNodeRole("__proto__")).toBeUndefined();
+    expect(describeNodeRole("valueOf")).toBeUndefined();
+    expect(describeNodeRole("hasOwnProperty")).toBeUndefined();
+    expect(describeNodeRole("isPrototypeOf")).toBeUndefined();
+  });
 });
 
 describe("NODE_ROLE_DESCRIPTORS shape invariants", () => {
