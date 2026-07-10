@@ -215,6 +215,81 @@ describe("connectingEdgesToFlowEdges", () => {
     ]);
   });
 
+  it("excludes only the p2pRole 'none' node and still draws for a normal peer-less node in the same layer (Issue #214)", () => {
+    // VC（none）と、まだ未接続の通常フォロワー beacon が同じ consensus 層に
+    // 共存する状況。除外はノード単位であり、`p2pRole === "none"` の continue が
+    // ループを打ち切って後続の正常ノードのエッジまで取りこぼさないことを固定する
+    // （node の並び順に依存しないよう、VC を先頭に置く）。
+    const vc = node({
+      id: "lighthouse-vc-1",
+      clientType: "lighthouse",
+      p2pRole: "none",
+    });
+    const follower = node({
+      id: "lighthouse-2",
+      clientType: "lighthouse",
+      p2pRole: "peer",
+    });
+    const edges = connectingEdgesToFlowEdges(
+      [vc, follower],
+      [],
+      { consensus: bootConsensus },
+      ["lighthouse-vc-1", "lighthouse-2", "lighthouse-1"],
+    );
+    expect(edges).toEqual([
+      {
+        id: "connecting-lighthouse-2",
+        type: "connecting",
+        source: "lighthouse-2",
+        target: "lighthouse-1",
+        className: "connecting-edge",
+      },
+    ]);
+  });
+
+  it("does not draw for a bootnode that itself has p2pRole 'none' (none check precedes the self-loop check, Issue #214)", () => {
+    // 実 collector では起こり得ない（ブートノードラベルが VC 判定より優先される）
+    // 組み合わせだが、関数単体としては「none のノードはブートノード自身であっても
+    // 描かない」ことを固定する。none の除外が自己ループ判定より前段にあることの
+    // 確認も兼ねる（どちらの分岐でも結果は「描かない」で一致する）。
+    const bootNone = node({
+      id: "lighthouse-1",
+      clientType: "lighthouse",
+      p2pRole: "none",
+    });
+    const edges = connectingEdgesToFlowEdges(
+      [bootNone],
+      [],
+      { consensus: bootNone },
+      ["lighthouse-1"],
+    );
+    expect(edges).toEqual([]);
+  });
+
+  it("still excludes a p2pRole 'none' node even if it somehow already has a real PeerEdge (connected check first, Issue #214)", () => {
+    // 通常 VC は PeerEdge を持たないが、万一 none のノードに実エッジが付いても
+    // （connected 判定が先に効くため）接続確立中エッジは出ない。none 判定と
+    // connected 判定のどちらが先でも「描かない」で一致することを固定する。
+    const vc = node({
+      id: "lighthouse-vc-1",
+      clientType: "lighthouse",
+      p2pRole: "none",
+    });
+    const realEdge: PeerEdge = {
+      kind: "peer",
+      fromNodeId: "lighthouse-vc-1",
+      toNodeId: "lighthouse-1",
+      networkId: "1337",
+    };
+    const edges = connectingEdgesToFlowEdges(
+      [vc],
+      [realEdge],
+      { consensus: bootConsensus },
+      ["lighthouse-vc-1", "lighthouse-1"],
+    );
+    expect(edges).toEqual([]);
+  });
+
   it("returns an empty array for no nodes", () => {
     expect(connectingEdgesToFlowEdges([], [], {}, [])).toEqual([]);
   });
