@@ -617,6 +617,9 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
 - [ ] UI-CMD系PlaywrightテストのafterAllクリーンアップが競合状態で
       無効化されうる
       [#233](https://github.com/morichikawa/chainviz/issues/233)
+- [x] dev collector稼働中はpnpm test:e2eが起動不能(proxyポート衝突が
+      listen判定をすり抜ける)
+      [#254](https://github.com/morichikawa/chainviz/issues/254)
 - [x] 長時間のUI層E2Eフルスイート実行中にcollectorがuncaughtExceptionで
       exitし、以降の全テストがカスケード失敗する
       [#238](https://github.com/morichikawa/chainviz/issues/238)

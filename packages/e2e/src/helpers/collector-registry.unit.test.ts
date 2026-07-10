@@ -23,6 +23,7 @@ let handoffPath: string;
 function makeCollector(pid: number, port: number): RunningCollector {
   return {
     port,
+    proxyPort: port + 1,
     process: { pid } as RunningCollector["process"],
     readLogs: () => "",
     stop: async () => {},
@@ -80,6 +81,7 @@ describe("registerCollector / readRegisteredCollector", () => {
   it("pid が undefined の collector は登録できない", () => {
     const collector: RunningCollector = {
       port: 4125,
+      proxyPort: 4126,
       process: { pid: undefined } as RunningCollector["process"],
       readLogs: () => "",
       stop: async () => {},
