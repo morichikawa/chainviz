@@ -10,6 +10,7 @@
 
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { dispatchHover, descendantContainingTestId } from "./support/interactions.js";
 import { serviceEntityId } from "./support/serviceIds.js";
 
 /**
@@ -158,14 +159,12 @@ test("UI-D-02: Engine API の活動パルスが流れ続ける", async ({ page }
   await test.step(
     "エッジへのホバーで直近の呼び出し回数の内訳が見える",
     async () => {
-      // beacon1/reth1 のカード配置によっては内部リンクエッジの経路が
-      // 隣接する他ノードカード(HTML要素。React Flow ではノードがエッジより
-      // 上のレイヤーに描画される)の当たり判定と重なり、実マウス座標での
-      // `hover()` がそちらへ吸われて実行不能(intercepts pointer events)に
-      // なることを実機実行で確認した。React Flow の onEdgeMouseEnter は
-      // React の合成 mouseover イベントで発火するため、対象要素へ直接
-      // dispatch すれば座標ベースの当たり判定を経由せず確実に発火できる。
-      await edge.dispatchEvent("mouseover");
+      // beacon1/reth1 のカード配置によっては内部リンクエッジの経路が隣接する
+      // 他ノードカードの当たり判定と重なり、実マウス座標での `hover()` が
+      // そちらへ吸われて実行不能(intercepts pointer events)になることを実機で
+      // 確認した(理由の詳細は dispatchHover の doc コメント)。座標ベースの
+      // 当たり判定を経由しない dispatchHover で確実にホバーを発火させる。
+      await dispatchHover(edge);
       const popover = page.locator(".internal-link-popover");
       await expect(popover).toBeVisible();
 
@@ -213,12 +212,14 @@ test("UI-D-03: ノード詳細に同期ステージと txpool 内訳が表示さ
 
   await test.step("txpool の pending / queued 件数が表示される", async () => {
     // txpool 行も data-testid が無いため、内包する GlossaryTerm の
-    // testid(glossary-term-txpool)を子孫に持つ行(.infra-field)をネイティブ
-    // CSS の :has() で絞り込む(Locator.filter({has: ...}) は別インスタンスの
-    // Locator を組み合わせると解決に失敗することを実機実行で確認したため、
-    // ブラウザ組み込みの :has() セレクタ文字列で直接指定する)。
-    const txpoolField = popover.locator(
-      '.infra-field:has([data-testid="glossary-term-txpool"])',
+    // testid(glossary-term-txpool)を子孫に持つ行(.infra-field)を絞り込む。
+    // Locator.filter({has: ...}) は別インスタンスの Locator を組み合わせると
+    // 解決に失敗するため、ネイティブ CSS の :has() を使う共有ヘルパーで指定する
+    // (理由の詳細は descendantContainingTestId の doc コメント)。
+    const txpoolField = descendantContainingTestId(
+      popover,
+      ".infra-field",
+      "glossary-term-txpool",
     );
     await expect(txpoolField).toBeVisible({ timeout: INTERNALS_TIMEOUT_MS });
 
