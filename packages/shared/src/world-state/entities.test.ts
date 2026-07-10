@@ -226,6 +226,85 @@ describe("world-state entities", () => {
     expect(serialized).not.toContain("p2pRole");
   });
 
+  it("preserves nodeRole as a raw profile-defined string across JSON serialization", () => {
+    // Issue #215: nodeRole はチェーンプロファイル依存の生文字列（Ethereum では
+    // "execution" / "consensus" / "validator"）で、解釈はフロントの表現セットの
+    // 責務。collector → frontend の JSON 往復で値が崩れないことを確認する。
+    const base: NodeEntity = {
+      kind: "node",
+      id: "node-1",
+      containerName: "chainviz-ethereum-reth1",
+      ip: "172.28.1.1",
+      ports: [8545],
+      resources: { cpuPercent: 0, memMB: 0 },
+      process: { name: "reth" },
+      chainType: "ethereum",
+      clientType: "reth",
+      syncStatus: "synced",
+      blockHeight: 100,
+      headBlockHash: "0xabc",
+      nodeRole: "execution",
+    };
+    for (const role of ["execution", "consensus", "validator"]) {
+      const roundTripped = JSON.parse(
+        JSON.stringify({ ...base, nodeRole: role }),
+      ) as NodeEntity;
+      expect(roundTripped.nodeRole).toBe(role);
+    }
+  });
+
+  it("keeps nodeRole and p2pRole as independent axes (validator client case)", () => {
+    // nodeRole（チェーン動作上の役割）と p2pRole（P2P 上の役割）は別軸で
+    // 統合しない。Ethereum の validator client は nodeRole = "validator" かつ
+    // p2pRole = "none"（P2P 不参加）の組み合わせになる（Issue #214 / #215）。
+    const validatorClient: NodeEntity = {
+      kind: "node",
+      id: "node-vc",
+      containerName: "chainviz-ethereum-validator1",
+      ip: "172.28.3.1",
+      ports: [],
+      resources: { cpuPercent: 0, memMB: 0 },
+      process: { name: "lighthouse" },
+      chainType: "ethereum",
+      clientType: "lighthouse",
+      syncStatus: "syncing",
+      blockHeight: 0,
+      headBlockHash: "",
+      p2pRole: "none",
+      nodeRole: "validator",
+    };
+    const roundTripped = JSON.parse(
+      JSON.stringify(validatorClient),
+    ) as NodeEntity;
+    expect(roundTripped.nodeRole).toBe("validator");
+    expect(roundTripped.p2pRole).toBe("none");
+  });
+
+  it("drops an omitted nodeRole through JSON, keeping omitted = unknown semantics", () => {
+    // ラベル未付与のコンテナ・旧スナップショットでは nodeRole を省略する
+    // （省略 = 不明）。JSON.stringify が undefined を落とすため、受信側では
+    // キー自体が現れず、フロントは役割表示を出さない側に倒せる。
+    const legacy: NodeEntity = {
+      kind: "node",
+      id: "node-2",
+      containerName: "chainviz-ethereum-reth2",
+      ip: "172.28.1.2",
+      ports: [8545],
+      resources: { cpuPercent: 0, memMB: 0 },
+      process: { name: "reth" },
+      chainType: "ethereum",
+      clientType: "reth",
+      syncStatus: "synced",
+      blockHeight: 100,
+      headBlockHash: "0xabc",
+      nodeRole: undefined,
+    };
+    const serialized = JSON.stringify(legacy);
+    expect(serialized).not.toContain("nodeRole");
+    const parsed = JSON.parse(serialized) as NodeEntity;
+    expect(parsed.nodeRole).toBeUndefined();
+  });
+
   it("carries the workbench RPC target as rpcTargetNodeId, omitted when unresolved", () => {
     const resolved: WorkbenchEntity = {
       kind: "workbench",

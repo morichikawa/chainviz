@@ -86,6 +86,28 @@ export interface NodeEntity extends InfraEntity {
    */
   p2pRole?: "bootnode" | "peer" | "none";
   /**
+   * ノードの役割（そのノードがチェーンの動作の中で何をする係か。Issue #215）。
+   * 値はチェーンプロファイル依存の生の文字列（例: Ethereum プロファイルでは
+   * "execution" / "consensus" / "validator"）をそのまま入れ、解釈・表示
+   * （和訳・用語解説への対応づけ）は OperationEdge.operation /
+   * SyncStageProgress.stage と同じくフロントのチェーンプロファイル表現セット
+   * の責務とする（execution/consensus はチェーン固有の概念なので、union 型で
+   * このスキーマに焼き込まない）。
+   *
+   * collector（ChainAdapter）が Docker ラベル `com.chainviz.role` から導出する
+   * （Issue #65 の「ラベルを単一の真実の情報源とする」方針。compose 起動の
+   * 静的コンテナはノード環境テンプレートが、addNode の動的コンテナは
+   * collector の lifecycle が、同じラベルを付与する）。
+   *
+   * p2pRole（P2P ネットワーク上の役割）とは別軸で、統合しない。例: Ethereum の
+   * validator client は nodeRole = "validator" かつ p2pRole = "none"。
+   *
+   * optional なのはラベル未付与のコンテナ・旧スナップショットとの互換のため。
+   * 省略 = 不明を意味し、フロントは役割表示を出さない側に倒す（p2pRole と
+   * 同じ流儀）。フロント表現セットに無い未知の値も「不明」と同様に扱う。
+   */
+  nodeRole?: string;
+  /**
    * D層: このノードが内部 API で駆動する相手ノード（同じ論理ノードを構成する
    * 相方クライアント）のエンティティ id。Ethereum プロファイルでは
    * beacon（CL）ノードに入り、対になる Execution（EL）ノードを Engine API で
