@@ -152,3 +152,54 @@ Issue #238 の再現条件（`commands-node`/`multi-client`/`contract-lifecycle`
   `commands-workbench.spec.ts` の `afterAll` の即時 `count()` チェックに
   よる後片付け漏れも同様に e2e パッケージ側の課題であり、本Issueの
   スコープ外
+
+#### テスト強化（テスト強化担当）
+
+実装担当が追加した `eth-ws-client-callback-safety.test.ts` の基本テスト
+（onHeader が例外を投げる／例外後も継続する／onTxHash が例外を投げる）を
+土台に、異常系・境界値の観点で以下のケースを追加した（同ファイルは
+「onResult 呼び出し境界の例外分離」という単一の関心事にまとまっているため、
+分割せず同ファイルに describe を追加する形で拡充した）。
+
+- **両コールバック境界の対称性**: `onTxHash`（newPendingTransactions）でも、
+  1 回例外が起きた後に次の通知が正しく処理される（購読が壊れない）ことを
+  追加。`onHeader` 側と同じ `subscribe()` の try/catch で対称に守られている
+  ことを裏付ける。
+- **連続例外での継続**: 3 連続で例外を起こしても、そのたびに onError へ
+  転送され（途中で握りつぶさない）、その後の正常な通知も処理できることを
+  確認。「1 回だけ耐えて 2 回目でクラッシュする」見落としが無いことの回帰。
+- **投げられる値の種類**: Error インスタンス以外（文字列・null・undefined・
+  数値・プレーンオブジェクト）を throw しても、その値がラップ・変換されず
+  そのまま onError に転送され、プロセスも落ちないことをパラメタライズド
+  テストで確認。
+- **非同期に reject するコールバックの境界**: onHeader/onTxHash の型は
+  同期 `(result) => void` であり、subscribe() の try/catch は同期的な throw
+  のみを捕捉する。async コールバックが reject した場合はマイクロタスクで
+  拒否されるため try/catch では捕まらず onError には転送されないが、
+  collector の安全網（installProcessSafetyNet）では unhandledRejection は
+  「ログして生かし続ける」扱いのため uncaughtException（process.exit する側）
+  には至らない、という非同期境界の挙動を回帰として固定した（vitest 本体の
+  unhandledRejection リスナーに拾われてテストが失敗しないよう、当該試験の
+  間だけ自前リスナーへ差し替えて拒否理由を捕捉し、終了時に元へ復元する）。
+- **onError 未指定時のフォールバック**: subscribe() は onError を省略可能に
+  しているため、`onError?.(err)` は onError が undefined のとき何もしない
+  （例外が握りつぶされる）。この場合でも uncaughtException でプロセスを
+  巻き込まず、握りつぶし後も購読が継続することを確認した。
+
+いずれも `pnpm --filter @chainviz/collector test`（1149 テスト、全件 green）・
+`pnpm --filter @chainviz/collector build`・`pnpm lint` が通ることを確認済み。
+
+**実装担当への申し送り（バグではないが検討候補）**
+
+- `subscribe()` の onError 未指定時（`onError?.(err)`）は、例外がログにも
+  残らず静かに消える。全ての実運用呼び出し元（`EthereumAdapter.subscribeBlocks`
+  / `subscribeTransactions`）は onError（console.error へのログ）を必ず
+  渡しているため実害は無いが、CLAUDE.md の「エラーを握りつぶさない」方針
+  からは、onError 未指定時にフォールバックのログを出す（または onError を
+  必須にする）改善の余地がある。今回はテスト強化のスコープを越えるため
+  実装は変更せず、現状挙動の固定に留めた。
+- 同期の try/catch は async コールバックの reject を捕捉しない点も同様に、
+  現状は unhandledRejection の安全網でクラッシュは防げているものの、
+  onError へ揃えたい場合は `Promise.resolve(onResult(...)).catch(onError)`
+  のような対応が別途必要になる。現行の呼び出し元は同期処理（または内部で
+  try/catch 済みの async を `void` で捨てる）ため今は不要と判断した。
