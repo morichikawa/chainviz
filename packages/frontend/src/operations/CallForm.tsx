@@ -1,9 +1,13 @@
 import { type FormEvent, useState } from "react";
+import { pickLocale } from "../i18n/i18n.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import type { DeployedContractCandidate } from "./deployedContracts.js";
 import { parseEtherToWei } from "./etherAmount.js";
 import { OperationArgInput } from "./OperationArgInput.js";
-import { validateOperationArgs } from "./operationArgValidation.js";
+import {
+  convertOperationArgsToChainValues,
+  validateOperationArgs,
+} from "./operationArgValidation.js";
 import type { WalletCandidate } from "./walletCandidates.js";
 
 export interface CallFormProps {
@@ -32,7 +36,7 @@ export function CallForm({
   onSubmit,
   onSwitchToDeploy,
 }: CallFormProps) {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [contractAddress, setContractAddress] = useState(
     deployedContracts[0]?.address ?? "",
   );
@@ -92,8 +96,9 @@ export function CallForm({
 
   const amountWei = amount.trim() === "" ? undefined : parseEtherToWei(amount);
   const amountInvalid = amount.trim() !== "" && amountWei === undefined;
+  const tokenDecimals = selectedContract?.token?.decimals;
   const argsValid = selectedFunction
-    ? validateOperationArgs(selectedFunction.args, args)
+    ? validateOperationArgs(selectedFunction.args, args, tokenDecimals)
     : false;
   const canSubmit =
     selectedFunction !== undefined && !amountInvalid && argsValid;
@@ -105,13 +110,14 @@ export function CallForm({
     onSubmit({
       contractAddress: selectedContract.address,
       functionName: selectedFunction.signature,
-      args,
+      args: convertOperationArgsToChainValues(selectedFunction.args, args, tokenDecimals),
       amountWei,
     });
   };
 
   return (
     <form className="operation-form" onSubmit={handleSubmit}>
+      <p className="operation-form__note">{t("operation.call.description")}</p>
       <label className="operation-field">
         <span className="operation-field__label">{t("operation.call.target")}</span>
         <select
@@ -144,6 +150,11 @@ export function CallForm({
           ))}
         </select>
       </label>
+      {selectedFunction && (
+        <p className="operation-form__note">
+          {pickLocale(selectedFunction.description, lang)}
+        </p>
+      )}
       {selectedFunction?.args.map((arg, index) => (
         <OperationArgInput
           key={arg.name}
@@ -151,6 +162,7 @@ export function CallForm({
           value={args[index] ?? ""}
           onChange={(value) => setArgAt(index, value)}
           walletCandidates={walletCandidates}
+          tokenInfo={selectedContract?.token}
           testId={`operation-call-arg-${arg.name}`}
         />
       ))}
