@@ -109,3 +109,26 @@
   （frontend 1421件を含む全パッケージ成功）。
 - 注意点: docs-only 変更のため、CLAUDE.md の例外規定により chainviz-qa は
   省略可（reviewer 合格のみで足りる）。
+
+### 2026-07-10 レビュー（ブランチ issue-210-plan-checkbox / c7caf8c）
+
+- 担当: reviewer（静的レビュー）
+- 対象: `docs/PLAN.md` のみの変更。バックログの Issue #210 の行を
+  `- [ ]` から `- [x]` に変更し、「調査の結果、不具合ではなくモック
+  データの意図的な仕様と判明。コード変更なし」という補足を追記。
+- 結果: **合格**
+- 確認した内容:
+  - `git diff main..HEAD`: 変更は `docs/PLAN.md` の該当4行のみ。
+    意図しない差分なし。
+  - 書式: 他の完了済みバックログ項目と同じ `- [x]` + 6スペース
+    インデントの継続行 + Issue リンクの形式。補足の全角括弧も
+    PLAN.md 内の既存表記（見出し・注記で全角括弧を多用）と一貫。
+  - Issue #210 は CLOSED、PR #242 は MERGED であることを gh で確認。
+    チェックを付ける前提条件（Issue 完了）を満たしている。
+  - コミット粒度: `main..HEAD` はコミット1件（`docs: PLAN.mdバックログの
+    Issue #210を完了済みに更新`）。Conventional Commits 形式で、
+    1変更1コミットの規約どおり。
+  - `pnpm lint` / `pnpm build` / `pnpm test` 全通過（shared 58件、
+    frontend 1421件を含む全パッケージ成功）。
+- 注意点: docs-only 変更のため、CLAUDE.md の例外規定により
+  chainviz-qa は省略可。
