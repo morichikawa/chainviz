@@ -1,13 +1,21 @@
 import type { ContractEntity } from "@chainviz/shared";
 import { ReactFlowProvider } from "@xyflow/react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GlossaryProvider } from "../glossary/GlossaryProvider.js";
 import { LanguageProvider } from "../i18n/LanguageProvider.js";
+import { HOVER_POPOVER_CLOSE_DELAY_MS } from "../interaction/useHoverPopover.js";
 import { ContractCard } from "./ContractCard.js";
 import type { ContractFlowNode } from "./contractNode.js";
 
-afterEach(cleanup);
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 function contract(overrides: Partial<ContractEntity> = {}): ContractEntity {
   return {
@@ -160,15 +168,24 @@ describe("ContractCard", () => {
     expect(screen.getByText("Not in catalog")).toBeTruthy();
   });
 
-  it("shows the popover on hover", () => {
-    renderCard(data({ entity: contract({ name: "ChainvizToken" }) }));
-    expect(screen.queryByRole("tooltip")).toBeNull();
-    const card = screen.getByTestId(`contract-card-${contract().address}`);
-    fireEvent.mouseEnter(card);
-    expect(screen.getByRole("tooltip")).toBeTruthy();
-    fireEvent.mouseLeave(card);
-    expect(screen.queryByRole("tooltip")).toBeNull();
-  });
+  it(
+    "shows the popover on hover, hiding it only after the close delay " +
+      "(Issue #221: not immediately, so the cursor can still reach the popover " +
+      "across the gap)",
+    () => {
+      renderCard(data({ entity: contract({ name: "ChainvizToken" }) }));
+      expect(screen.queryByRole("tooltip")).toBeNull();
+      const card = screen.getByTestId(`contract-card-${contract().address}`);
+      fireEvent.mouseEnter(card);
+      expect(screen.getByRole("tooltip")).toBeTruthy();
+      fireEvent.mouseLeave(card);
+      expect(screen.getByRole("tooltip")).toBeTruthy();
+      act(() => {
+        vi.advanceTimersByTime(HOVER_POPOVER_CLOSE_DELAY_MS);
+      });
+      expect(screen.queryByRole("tooltip")).toBeNull();
+    },
+  );
 
   // --- 「直近の呼び出し・イベント」チップ列（ARCHITECTURE.md §6.6, Issue #166） ---
 
@@ -238,28 +255,36 @@ describe("ContractCard", () => {
     expect(chip.className).toContain("contract-activity-chip--undecoded");
   });
 
-  it("shows each arg's name/value on hover for a decoded chip", () => {
-    renderCard(
-      data({
-        activity: [
-          {
-            key: "0xabc-call",
-            kind: "call",
-            label: "transfer",
-            decoded: true,
-            args: [{ name: "to", value: "0xbob" }],
-            txHash: "0xabc",
-          },
-        ],
-      }),
-    );
-    const chip = screen.getByTestId("contract-activity-chip-0xabc-call");
-    expect(screen.queryByText("to: 0xbob")).toBeNull();
-    fireEvent.mouseEnter(chip);
-    expect(screen.getByText("to: 0xbob")).toBeTruthy();
-    fireEvent.mouseLeave(chip);
-    expect(screen.queryByText("to: 0xbob")).toBeNull();
-  });
+  it(
+    "shows each arg's name/value on hover for a decoded chip, hiding only after " +
+      "the close delay (Issue #221)",
+    () => {
+      renderCard(
+        data({
+          activity: [
+            {
+              key: "0xabc-call",
+              kind: "call",
+              label: "transfer",
+              decoded: true,
+              args: [{ name: "to", value: "0xbob" }],
+              txHash: "0xabc",
+            },
+          ],
+        }),
+      );
+      const chip = screen.getByTestId("contract-activity-chip-0xabc-call");
+      expect(screen.queryByText("to: 0xbob")).toBeNull();
+      fireEvent.mouseEnter(chip);
+      expect(screen.getByText("to: 0xbob")).toBeTruthy();
+      fireEvent.mouseLeave(chip);
+      expect(screen.getByText("to: 0xbob")).toBeTruthy();
+      act(() => {
+        vi.advanceTimersByTime(HOVER_POPOVER_CLOSE_DELAY_MS);
+      });
+      expect(screen.queryByText("to: 0xbob")).toBeNull();
+    },
+  );
 
   it("shows the 'cannot decode' message on hover for an undecoded chip", () => {
     renderCard(

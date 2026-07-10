@@ -1,15 +1,30 @@
 import type { TransactionEntity, WalletEntity } from "@chainviz/shared";
 import { ReactFlowProvider } from "@xyflow/react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GlossaryProvider } from "../glossary/GlossaryProvider.js";
 import { LanguageProvider } from "../i18n/LanguageProvider.js";
+import { HOVER_POPOVER_CLOSE_DELAY_MS } from "../interaction/useHoverPopover.js";
 import { DEFAULT_RECENT_TX_LIMIT } from "./transaction.js";
 import { WalletCard } from "./WalletCard.js";
 import { WalletPopover } from "./WalletPopover.js";
 import type { WalletFlowNode } from "./walletNode.js";
 
-afterEach(cleanup);
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
+
+/** mouseleave 後の遅延クローズ（Issue #221）を経過させるヘルパー。 */
+function advancePastCloseDelay(): void {
+  act(() => {
+    vi.advanceTimersByTime(HOVER_POPOVER_CLOSE_DELAY_MS);
+  });
+}
 
 /**
  * TxChip(WalletCard) / WalletPopoverTxItem(WalletPopover) の hover ポップオーバー
@@ -76,17 +91,24 @@ describe("WalletCard TxChip lifecycle popover open/close (Issue #212 単位D)", 
     expect(popover(t.hash)).toBeNull();
   });
 
-  it("opens only the hovered chip's popover, then closes it on mouse leave", () => {
-    const t = tx("0xdeadbeef00000000");
-    renderCard(cardData([t]));
-    const chip = screen.getByTestId(`wallet-tx-chip-${t.hash}`);
+  it(
+    "opens only the hovered chip's popover, then closes it on mouse leave " +
+      "after the close delay (Issue #221)",
+    () => {
+      const t = tx("0xdeadbeef00000000");
+      renderCard(cardData([t]));
+      const chip = screen.getByTestId(`wallet-tx-chip-${t.hash}`);
 
-    fireEvent.mouseEnter(chip);
-    expect(popover(t.hash)).toBeTruthy();
+      fireEvent.mouseEnter(chip);
+      expect(popover(t.hash)).toBeTruthy();
 
-    fireEvent.mouseLeave(chip);
-    expect(popover(t.hash)).toBeNull();
-  });
+      fireEvent.mouseLeave(chip);
+      // 即座には消えない（隙間通過中の可能性があるため）。
+      expect(popover(t.hash)).toBeTruthy();
+      advancePastCloseDelay();
+      expect(popover(t.hash)).toBeNull();
+    },
+  );
 
   it("opens/closes on keyboard focus and blur too", () => {
     const t = tx("0xdeadbeef00000000");
@@ -109,9 +131,11 @@ describe("WalletCard TxChip lifecycle popover open/close (Issue #212 単位D)", 
     expect(popover(b.hash)).toBeNull();
     expect(popover(c.hash)).toBeNull();
 
-    // 別チップに移ると前のは閉じ、新しいのだけ開く。
+    // 別チップに移ると前のは閉じ、新しいのだけ開く（前のクローズは遅延して
+    // 効くため、閉じたと判定するには猶予時間を経過させる。Issue #221）。
     fireEvent.mouseLeave(screen.getByTestId(`wallet-tx-chip-${a.hash}`));
     fireEvent.mouseEnter(screen.getByTestId(`wallet-tx-chip-${b.hash}`));
+    advancePastCloseDelay();
     expect(popover(a.hash)).toBeNull();
     expect(popover(b.hash)).toBeTruthy();
     expect(popover(c.hash)).toBeNull();
@@ -152,17 +176,24 @@ describe("WalletPopover tx item lifecycle popover open/close (Issue #212 単位D
     expect(popover(t.hash)).toBeNull();
   });
 
-  it("opens the lifecycle popover for the hovered row only, and closes on leave", () => {
-    const [a, b] = makeTxs(2);
-    renderPopover([a, b]);
-    const rowA = screen.getByText("0x000000…0000").closest("li");
-    expect(rowA).not.toBeNull();
+  it(
+    "opens the lifecycle popover for the hovered row only, and closes on leave " +
+      "after the close delay (Issue #221)",
+    () => {
+      const [a, b] = makeTxs(2);
+      renderPopover([a, b]);
+      const rowA = screen.getByText("0x000000…0000").closest("li");
+      expect(rowA).not.toBeNull();
 
-    fireEvent.mouseEnter(rowA as HTMLElement);
-    expect(popover(a.hash)).toBeTruthy();
-    expect(popover(b.hash)).toBeNull();
+      fireEvent.mouseEnter(rowA as HTMLElement);
+      expect(popover(a.hash)).toBeTruthy();
+      expect(popover(b.hash)).toBeNull();
 
-    fireEvent.mouseLeave(rowA as HTMLElement);
-    expect(popover(a.hash)).toBeNull();
-  });
+      fireEvent.mouseLeave(rowA as HTMLElement);
+      // 即座には消えない。
+      expect(popover(a.hash)).toBeTruthy();
+      advancePastCloseDelay();
+      expect(popover(a.hash)).toBeNull();
+    },
+  );
 });

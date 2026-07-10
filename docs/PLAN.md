@@ -480,9 +480,11 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
 全件 `済`)を実装し、`pnpm test:e2e:ui` で全32テストが green (実測
 3.7分)。移行対象だった WS テストは各 Issue の実装時に削除済み。
 プロトコル層(`pnpm test:e2e`)は PROTO-CMD-01 が長時間稼働スタック
-特有の環境要因(既知。[Issue #229](https://github.com/morichikawa/chainviz/issues/229)
-参照、#203 に起因する回帰ではない)で不安定な場合があるが、それ以外の
-プロトコル層テストは green。`pnpm lint && pnpm build && pnpm test`
+特有の環境要因(#203 に起因する回帰ではない)で不安定な場合があったが、
+[Issue #229](https://github.com/morichikawa/chainviz/issues/229) で
+合格条件を「head への完全追従」から「開始高さから一定ブロック数以上、
+停滞なく進行すること」に見直して解消した(詳細は
+`docs/worklog/issue-229.md`)。`pnpm lint && pnpm build && pnpm test`
 にはUI層テストは含まれない(想定どおり)。
 
 ## ステップ 11 以降（概要のみ。詳細は着手時にこのドキュメントへ追記）
@@ -598,7 +600,7 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       [#219](https://github.com/morichikawa/chainviz/issues/219)
 - [x] ノード追加・ワークベンチ追加のボタンが作成中でも連打できてしまう
       [#220](https://github.com/morichikawa/chainviz/issues/220)
-- [ ] ノード等のホバーポップオーバーが、カードから離れる途中で消えて
+- [x] ノード等のホバーポップオーバーが、カードから離れる途中で消えて
       中の用語にホバーできない
       [#221](https://github.com/morichikawa/chainviz/issues/221)
 - [x] ノード/ワークベンチ削除中に進行中であることを示すフィードバックが無い
@@ -618,6 +620,9 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
 - [x] 長時間のUI層E2Eフルスイート実行中にcollectorがuncaughtExceptionで
       exitし、以降の全テストがカスケード失敗する
       [#238](https://github.com/morichikawa/chainviz/issues/238)
+- [x] collector停止中に送信したaddNode/addWorkbenchはゴースト消滅のみで
+      エラートーストが出ない
+      [#235](https://github.com/morichikawa/chainviz/issues/235)
 
 ## 運用ルール（全ステップ共通）
 

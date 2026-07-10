@@ -1,8 +1,8 @@
 import type { TransactionEntity } from "@chainviz/shared";
 import { Handle, type NodeProps, Position } from "@xyflow/react";
-import { useState } from "react";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
+import { useHoverPopover } from "../interaction/useHoverPopover.js";
 import { shortHex, txChipLabel } from "./transaction.js";
 import { TxLifecyclePopover } from "./TxLifecyclePopover.js";
 import {
@@ -20,7 +20,9 @@ import { WalletPopover } from "./WalletPopover.js";
  */
 function TxChip({ tx, isSettling }: { tx: TransactionEntity; isSettling: boolean }) {
   const { t } = useLanguage();
-  const [hovered, setHovered] = useState(false);
+  // Issue #221: 隙間を通過する一瞬の mouseleave で消えないよう遅延クローズ。
+  const { isOpen: hovered, onMouseEnter, onMouseLeave, onFocus, onBlur } =
+    useHoverPopover();
   const label = txChipLabel(tx);
   const text = label.kind === "deploy" ? t("tx.chip.deploy") : label.text;
 
@@ -33,10 +35,10 @@ function TxChip({ tx, isSettling }: { tx: TransactionEntity; isSettling: boolean
       data-testid={`wallet-tx-chip-${tx.hash}`}
       data-status={tx.status}
       data-label-kind={label.kind}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      onFocus={() => setHovered(true)}
-      onBlur={() => setHovered(false)}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      onFocus={onFocus}
+      onBlur={onBlur}
     >
       {text}
       {hovered && <TxLifecyclePopover tx={tx} />}
@@ -65,7 +67,8 @@ export function WalletCard({ data }: NodeProps<WalletFlowNode>) {
   const { entity, transactions, settlingHashes, ownerPresent, contractsByAddress } =
     data;
   const { t } = useLanguage();
-  const [hovered, setHovered] = useState(false);
+  // Issue #221: 隙間を通過する一瞬の mouseleave で消えないよう遅延クローズ。
+  const { isOpen: hovered, onMouseEnter, onMouseLeave } = useHoverPopover();
 
   const kindTermKey = entity.isSmartAccount ? "smart-account" : "eoa";
   const kindLabel = entity.isSmartAccount
@@ -85,8 +88,8 @@ export function WalletCard({ data }: NodeProps<WalletFlowNode>) {
   return (
     <div
       className="infra-card infra-card--wallet"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
       data-testid={`wallet-card-${entity.address}`}
     >
       {/* 所有エッジ（ワークベンチ → ウォレット）の受け口。ウォレットは
