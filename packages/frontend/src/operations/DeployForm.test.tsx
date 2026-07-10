@@ -34,6 +34,15 @@ function renderForm(onSubmit = vi.fn()) {
 }
 
 describe("DeployForm (ARCHITECTURE.md §6.5-2)", () => {
+  it("shows a one-line description of what the deploy tab does (Issue #213)", () => {
+    renderForm();
+    expect(
+      screen.getByText(
+        "コントラクト（プログラム）をチェーン上に配置する操作です。配置されると誰でも呼び出せるようになります",
+      ),
+    ).toBeTruthy();
+  });
+
   it("defaults to the first catalog entry and shows its constructor arg field", () => {
     renderForm();
     expect(screen.getByTestId("operation-deploy-arg-initialSupply")).toBeTruthy();

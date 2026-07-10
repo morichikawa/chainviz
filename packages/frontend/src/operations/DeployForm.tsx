@@ -3,7 +3,10 @@ import type { ContractCatalogEntry } from "../chain-profiles/ethereum/operationC
 import { pickLocale } from "../i18n/i18n.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { OperationArgInput } from "./OperationArgInput.js";
-import { validateOperationArgs } from "./operationArgValidation.js";
+import {
+  convertOperationArgsToChainValues,
+  validateOperationArgs,
+} from "./operationArgValidation.js";
 
 export interface DeployFormProps {
   catalog: ContractCatalogEntry[];
@@ -44,16 +47,25 @@ export function DeployForm({ catalog, onSubmit }: DeployFormProps) {
   };
 
   const canSubmit =
-    selected !== undefined && validateOperationArgs(selected.constructorArgs, args);
+    selected !== undefined &&
+    validateOperationArgs(selected.constructorArgs, args, selected.token?.decimals);
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
     if (!canSubmit || !selected) return;
-    onSubmit({ contractKey: selected.catalogKey, constructorArgs: args });
+    onSubmit({
+      contractKey: selected.catalogKey,
+      constructorArgs: convertOperationArgsToChainValues(
+        selected.constructorArgs,
+        args,
+        selected.token?.decimals,
+      ),
+    });
   };
 
   return (
     <form className="operation-form" onSubmit={handleSubmit}>
+      <p className="operation-form__note">{t("operation.deploy.description")}</p>
       <label className="operation-field">
         <span className="operation-field__label">
           {t("operation.deploy.contract")}
@@ -78,6 +90,7 @@ export function DeployForm({ catalog, onSubmit }: DeployFormProps) {
           field={arg}
           value={args[index] ?? ""}
           onChange={(value) => setArgAt(index, value)}
+          tokenInfo={selected.token}
           testId={`operation-deploy-arg-${arg.name}`}
         />
       ))}
