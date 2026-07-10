@@ -150,3 +150,41 @@
     末尾行が main 側の #216 行と競合する（`git merge-tree` で確認済み）。
     マージ前に main への rebase（または競合解消）が必要。競合は索引
     表の行追加同士なので両方残せばよい
+
+#### QA検証記録（chainviz-qa）
+
+- 判定: 合格（Issue #220 の連打による多重送信は解消されている）
+- 検証環境: frontend を vite dev server（モッククライアント、collector
+  未接続）で起動し、Playwright（chromium）で実ブラウザ操作を自動化して
+  確認した。モッククライアントは既定でコマンド結果をマイクロタスクで
+  即時に返し pending ウィンドウが実際の連打間隔より短くなるため、
+  実装記録と同様に `defaultClient.ts` へ一時的に
+  `createMockClient(handlers, { commandLatencyMs: 2500 })` を注入して
+  現実的なコマンド往復遅延を再現した（検証専用の変更。確認後に
+  `git checkout` で戻し、作業ツリーはクリーンな状態に復帰済み。コミット
+  していない）。
+- 実施内容と結果:
+  1. 「+ ノードを追加」ボタンを 30ms 間隔で 5 連打した。押下直後に
+     ボタンが `disabled` になり（`disabled=true`）、ゴーストは 2 枚
+     （reth/beacon の EL/CL 各 1 枚 = addNode 1 コマンド分）のみ生成された。
+     2.5 秒後のコマンド解決後、実カード（infra-card）の増分は 2 枚
+     （reth+beacon 1 組）のみだった。5 連打しても addNode コマンドは
+     1 回しか反映されておらず、多重送信が防止されていることを確認した。
+  2. 「+ ワークベンチを追加」ボタンでも同様に 5 連打した。押下直後に
+     ボタンが `disabled` になり、ゴーストは 1 枚のみ生成され、解決後の
+     実カード増分も 1 枚のみだった。多重送信が防止されていることを
+     確認した。
+  3. どちらのボタンも、コマンド解決（実カード到着・ゴースト消滅）後に
+     `disabled=false` へ戻り再度押下できる状態になることを確認した
+     （ノード側・ワークベンチ側とも解決後 `disabled=false`、ghosts=0）。
+  4. disabled 中の見た目を確認した。`aria-busy=true`、`--pending`
+     クラス付与、スピナー要素あり、`opacity: 0.7`、`cursor: not-allowed`
+     が適用されており、作成中であることが視覚的に伝わる状態だった。
+- 補足: addNode 1 コマンドがゴースト 2 枚・実カード 2 枚を生む点は
+  `useCommands.ts`（reth/beacon の2枚のゴースト）・mockData.ts の
+  addNode ハンドラ（entityAdded ×2）で裏取り済み。したがって「実カード
+  増分 2 枚」は addNode コマンドがちょうど 1 回だけ処理されたことを
+  過不足なく表す。
+- 静的確認: `CanvasToolbar.test.tsx`（22 件）が合格。pending 中に
+  `disabled` になりクリックが発火しないこと、pending 解除後に再度
+  押せることを検証するテストが含まれることを確認した。
