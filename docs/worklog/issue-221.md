@@ -214,3 +214,61 @@ WalletCard / ContractCard いずれも「カードからポップオーバーへ
   分離されている
 - ブランチは main より古い 26f4273 起点だが、`git merge-tree` で
   main との合流に衝突が無いことを確認済み（マージ時の追加作業は不要）
+
+#### QA検証記録（chainviz-qa、2026-07-11）
+
+実ブラウザ（Playwright + Chromium headless）で、実コンポーネント・実CSS
+（`styles.css`）・実フック（`useHoverPopover`）を使ってカードからポップ
+オーバーへカーソルを移動させる元Issueの再現手順を実行し、**完了条件を
+満たしていることを確認した（合格）**。
+
+**検証環境の準備**: このサンドボックスには Chromium 実行に必要な共有
+ライブラリ（libnspr4/libnss3/libnssutil3/libasound）が無いため、worklog
+記載のワークアラウンドどおり `apt-get download`（root不要）で `.deb` を
+取得し `dpkg -x` でユーザーディレクトリへ展開、`LD_LIBRARY_PATH` に加えて
+headless Chromium を起動した。
+
+**検証方法**: 一時的な検証ハーネス（vite dev で配信、検証後に削除）に、
+実コンポーネントを実フックで結線して配置した。
+- InfraNodeCard 相当: `div.infra-card`（実フック）＋実 `InfraPopover`
+  （内部に実 `GlossaryTerm`「ポートマッピング」）
+- ContractCard の ActivityChip 相当: `span.contract-activity-chip`
+  ＋ `.contract-activity-chip__popover`（内部に実 `GlossaryTerm`「ABI」）
+- WalletCard の TxChip 相当: `span.wallet-tx-chip`（実フック）＋実
+  `TxLifecyclePopover`（内部に実 `GlossaryTerm`「署名」）
+
+各トリガの中心から、その直下のポップオーバー中心へ 24 ステップでマウス
+座標を移動させ（トリガ下端とポップオーバー上端の間＝隙間帯を必ず通過
+する経路）、移動中・移動後のポップオーバー DOM 数を計測した。
+
+**結果（全12項目パス）**:
+1. InfraNodeCard: ホバーでポップオーバーが開く／隙間帯を通過中も消えず
+   （隙間通過中の最小 DOM 数 = 1）／移動後も存在する。さらに内部の
+   `GlossaryTerm`「ポートマッピング」へカーソルを合わせるとネストした
+   glossary-popover が開き、かつ外側の infra-popover も開いたまま
+   （＝元Issue「ポップオーバー内の用語にカーソルを合わせられない」の
+   解消を確認）。
+2. ContractCard の ActivityChip: 同様に隙間を跨いでも消えず、内部の
+   `GlossaryTerm`「ABI」に到達できる。
+3. WalletCard の TxChip: 同様に隙間を跨いでも消えず、内部の
+   `GlossaryTerm`「署名」に到達できる。
+4. 回帰確認: カードから完全に離れた直後はポップオーバーが残っており
+   （遅延クローズ）、約200ms 後に消える（`InfraNodeCard` で確認）。
+   通常操作を阻害する違和感は無い。
+
+**ネガティブコントロール（この検証が元不具合を検出できることの確認）**:
+同じハーネスで遅延を 0ms（＝修正前の即時クローズ相当）にして同一の
+隙間跨ぎを実行すると、InfraNodeCard・ContractChip いずれも移動後に
+ポップオーバー DOM 数が 0 になり、元の不具合が再現した。修正
+（200ms 遅延）を入れた状態ではこれが起きないことを対比で確認した。
+
+**あわせて確認**: `useHoverPopover.test.ts`（11件）がパスすること、実行中の
+ページに JavaScript エラーが出ないこと。
+
+**判定**: 完了条件「元Issue（ポップオーバー内の用語にカーソルを合わせ
+られない）が実際に解消されていること」を満たす。差し戻しなし。
+
+**注記**: 検証に使った一時ハーネス（`packages/frontend/qa-hover-harness.html`
+・`src/qa-hover-harness.tsx`）と Playwright スクリプト
+（`packages/e2e/qa-hover-*.mjs`）は検証後に削除済み。次回同様の UI 検証を
+行う際は上記のライブラリ・ワークアラウンドを再利用すればよい。
