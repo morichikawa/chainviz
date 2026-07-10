@@ -640,3 +640,116 @@ mempool 投入時の検査として説明する）。
 **起票した Issue**
 
 - 無し（テスト強化のみで完結。新規のバグ・改善提案は見つからなかった）
+
+### 2026-07-10 Issue #211/#218 レビュー記録（単位C）
+
+- 担当: reviewer
+- ブランチ: issue-211-deploy-feedback-ux
+- 内容: 単位C（コントラクト一覧パネル・デプロイtxラベル・同名トークン
+  区別）の静的レビュー。`pnpm build` / `pnpm lint` / `pnpm test` は
+  リポジトリ全体で全て通過（shared 58 / collector 1126 / e2e 77 /
+  frontend 1482 件 pass）。実装ロジック・テストの質・境界の遵守
+  （frontend のみの変更で shared 型変更なし、チェーン固有語彙の漏れなし。
+  `TransactionEntity.to: string | null` の「null = コントラクト作成」は
+  shared スキーマに元からある意味論）に問題なし。以下の確認を実施した:
+  - 出現順管理: `useAppearanceOrder` は `useNewArrivalHighlight` と別
+    モジュールだが、ready ゲート・タイマーを持たない理由が docstring に
+    明記されており独自実装の妥当性を確認した
+  - `handleJumpToContract`（Canvas.tsx）: 対象ノード不在時は
+    `if (!node) return` で早期リターンし安全（tester の報告どおり）
+  - `txChipLabel`: functionName 最優先 → deploy 判定
+    （createdContractAddress または to === null）の順で既存ロジックと
+    正しく共存。両立ケース・`to === ""` 境界もテスト済み
+  - `formatTokenContractLabel`: WalletCard/WalletPopover の既存
+    data-testid・CSS クラスは変更なしで一貫
+  - パネル配置: `.contract-list-panel`（左下 bottom:150px, z-index:6）は
+    `.p2p-legend`（右下 bottom:175px, z-index:6）と対称・同スタイルで、
+    React Flow 標準 Controls（左下、実測高さ約110px+マージン15px）と
+    重ならない。固定値の前提条件は CSS コメントと本 worklog の両方に
+    記載済みで運用ルールを満たす
+  - エラー握りつぶし: 該当なし（タイマーのアンマウント時 cleanup も有り）
+  - `docs/PLAN.md` の #211/#218 チェック・worklog 記録・WORKLOG.md 索引は
+    実装と整合
+- 指摘（差し戻し。いずれも軽微で docs/コメントのみ、ロジック修正は不要）:
+  1. `docs/ARCHITECTURE.md` §6.8（879行目）の `operation.deploy.note` が
+     旧文言のままで、更新後の `messages.ts` と食い違う。§6.8 は「初稿」
+     表記だが、ARCHITECTURE.md は「実装の正確な記述」を置く場所なので
+     この1行を実装に合わせて更新すること（sync-docs 観点）
+  2. `messages.ts` のコントラクト一覧パネル用キーのコメントが
+     「ARCHITECTURE.md §6.2」を参照しているが、§6.2 はコントラクト行の
+     帯構造の節でパネルの記述は無い。設計の実体である
+     `docs/worklog/issue-211.md`「単位C」への参照に修正すること
+- 記録のみ（修正不要の観察）:
+  - コミット cc6587a（パネル新設）が i18n キー追加（7f4610b）より前に
+    あり、単体ではビルドが通らない（`t("contractList.title")` が当時の
+    MessageKey に存在しない）。ブランチ先端は健全で「1変更1コミット」の
+    関心事分離自体は適切だが、bisect 可能性のため今後は依存するキーを
+    先行または同一コミットに入れること
+  - `useAppearanceOrder` は `setOrder` のアップデータ関数内で
+    `nextSeqRef` を増分しており、StrictMode（開発時）の二重呼び出しで
+    連番に飛びが生じ得る。相対順序は保たれるため表示上の実害はない
+
+### 2026-07-10 Issue #211/#218 QA検証記録（単位C）
+
+- 担当: qa
+- ブランチ: issue-211-deploy-feedback-ux
+- 結論: 完了条件を満たしている（合格）。#211（デプロイ後の表現の
+  分かりにくさ）・#218（コントラクト一覧の欠如）はいずれも実機で解消を
+  確認した。
+
+**検証環境**
+
+- 稼働中の chainviz-ethereum スタック（compose 7コンテナ）+ collector
+  （ポート4000）+ vite dev server（ポート5173、`VITE_COLLECTOR_URL=
+  ws://127.0.0.1:4000` で実データ接続）を再利用。ブランチ
+  issue-211-deploy-feedback-ux のフロントが 5173 から配信されていることを
+  確認済み（`/proc/<pid>/cwd` = packages/frontend）。
+- WebSocket スナップショットを直接受信して実データを確認: contract 5→
+  検証中に増加、wallet 4、うち ChainvizToken が同名2件（0x47d8b3…8634 /
+  0x2fba97…d592）、Counter 1件、名前なしコントラクト複数。
+- 描画確認は Playwright（chromium headless）で 5173 を実操作。chromium の
+  共有ライブラリ（libnspr4 等）不足はセッションの scratchpad/pwlibs に
+  展開済みの回避策（LD_LIBRARY_PATH 追加）で解決した。
+
+**確認した項目と結果**
+
+1. コントラクト一覧パネルがキャンバス左下に表示される（#218）: 表示を確認。
+   `.contract-list-panel` は左下（x=15, y=685〜850。ビューポート
+   1600×1000）に配置。ヘッダ「コントラクト {件数}」+ 各行に名前・短縮
+   アドレス・トークンは「· CVZ」を表示。名前なしは「未知のコントラクト」。
+2. デプロイの表現（#211）: 実際に workbench の操作パネル →「デプロイ」
+   タブから Counter をデプロイして観測。
+   - pending 中に「デプロイ」ラベル: クリック後 t≈207ms で
+     `.wallet-tx-chip--pending` の1つがテキスト「デプロイ」、ホバー
+     「保留中（mempool）」で表示されることを実機で捕捉（従来は確定後に
+     しか「デプロイ」にならなかった問題が解消）。
+   - デプロイ中のコントラクト一覧行: 送信直後（t=0ms）にパネル最上段へ
+     「デプロイ中… Counter」ゴースト行（スピナー付き）が出現し、件数
+     バッジも増加。あわせてキャンバス下段に「デプロイ中… Counter」の
+     ゴーストカード、workbench に「実行中…」スピナー、操作パルスを確認。
+   - 出現場所の予告文言: デプロイフォームの note が「取り込まれると
+     コントラクトカードがキャンバス下段（ウォレットの下の段）に現れます」
+     に更新済みであることを確認。
+3. 行クリックでのパン+一時ハイライト（#211/#218）: 一覧の Counter 行を
+   クリックすると React Flow の viewport transform が変化（translate が
+   移動、scale=0.6165 は維持=ズーム不変）し、対象の Counter カードに
+   `.infra-card--new` の一時ハイライトが当たることを確認。ハイライトは
+   5秒（NEW_ARRIVAL_HIGHLIGHT_DURATION_MS）で消える仕様どおり。
+4. 他UI要素との重なり（#218）: パネル（左下 y=685〜850）と React Flow
+   標準 Controls（左下 y=881〜985）の間に約31pxの余白があり重ならない。
+   `.p2p-legend`・ミニマップは右下、上部ツールバー（ノード/ワークベンチ
+   追加）は上部で、いずれもパネルと重なったり隠したりしていない。
+5. 同名トークンの区別（#218派生）: ウォレットカードのトークン残高チップ
+   と WalletPopover のトークン残高行が「ChainvizToken (0x47d8b3…8634)」
+   「ChainvizToken (0x2fba97…d592)」のように短縮アドレス併記で区別されて
+   いることを確認。一覧パネル・呼び出しタブのドロップダウンでも同名2件が
+   短縮アドレスで区別できる。検証中に Counter を追加デプロイした結果、
+   同名 Counter 2件（0xc5577d…a37e / 0xb9b73c…73e5）も短縮アドレスで
+   区別できることを確認した。
+
+**補足**
+
+- コンソールエラーは初期ロード時に検出なし。
+- 検証のため使い捨て環境に Counter を複数回デプロイした（ユーザー許可の
+  範囲内。実害なし）。
+- 差し戻しなし。frontend 実装は設計どおり動作している。
