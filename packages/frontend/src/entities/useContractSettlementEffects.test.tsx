@@ -331,6 +331,40 @@ describe("useContractSettlementEffects", () => {
     expect(() => advance(CONTRACT_CALL_PULSE_DURATION_MS + TX_SETTLE_FLASH_MS)).not.toThrow();
   });
 
+  it("falls back to flash-only when a present wallet does not match even case-insensitively (Issue #232)", () => {
+    // 重複事前チェック削除後の回帰: present 集合が空でなくても、tx.from と
+    // case を無視しても一致しないウォレットしか無ければパルスは省かれ、
+    // フラッシュのみになる（buildContractCallPulseEdge が null を返す経路）。
+    const { result, rerender } = renderHook(
+      ({ txs }) =>
+        useContractSettlementEffects(txs, [contract()], new Set(["0xunrelated"])),
+      { initialProps: { txs: [callTx("pending")] } },
+    );
+    advance(0);
+    rerender({ txs: [callTx("included")] });
+    advance(0);
+
+    expect(result.current.pulseEdges).toEqual([]);
+    // フォールバックのフラッシュはパルス完了を待たず即座に当たる。
+    expect(result.current.flashing.get(TOKEN)).toBe("success");
+  });
+
+  it("applies the fallback flash immediately (not after the pulse duration) when the wallet is absent", () => {
+    // 事前チェック削除後も、ウォレット不在時のフラッシュは pulse duration を
+    // 待たず advance(0) の時点で当たる（build が null を返してすぐ applyFlash
+    // に落ちる経路が保たれていることの確認）。
+    const { result, rerender } = renderHook(
+      ({ txs }) => useContractSettlementEffects(txs, [contract()], new Set()),
+      { initialProps: { txs: [callTx("pending")] } },
+    );
+    advance(0);
+    rerender({ txs: [callTx("included")] });
+    advance(0);
+    // pulse duration を進める前の時点で既にフラッシュ済み。
+    expect(result.current.flashing.get(TOKEN)).toBe("success");
+    expect(result.current.pulseEdges).toEqual([]);
+  });
+
   it("streams a wallet->contract pulse even when tx.from differs in case from the tracked wallet id (Issue #232)", () => {
     // tx.from はチェーン側の生の表記(小文字)、presentWalletIds(WalletEntity.address)
     // はEIP-55チェックサム表記になりうる想定の再現。

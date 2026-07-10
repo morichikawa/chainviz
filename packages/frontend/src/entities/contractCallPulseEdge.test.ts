@@ -264,4 +264,48 @@ describe("buildContractCallPulseEdge address casing (Issue #232)", () => {
     );
     expect(edge).toBeNull();
   });
+
+  it("still returns null when the contract is not present even case-insensitively", () => {
+    // ウォレット側は表記違いで一致するが、コントラクト側は case を無視しても
+    // 一致しない場合は null（casing 修正が「存在しない端点」ガードを弱めて
+    // いないことの回帰）。
+    const edge = buildContractCallPulseEdge(
+      "0xabcdef",
+      "0xtoken",
+      new Set(["0xABCDEF"]),
+      new Set(["0xother"]),
+    );
+    expect(edge).toBeNull();
+  });
+
+  it("returns null when both endpoints are missing", () => {
+    expect(
+      buildContractCallPulseEdge("0xabcdef", "0xtoken", new Set(), new Set()),
+    ).toBeNull();
+  });
+
+  it("detects a self-loop even when wallet/contract differ only by case", () => {
+    // wallet と contract が大文字小文字だけ違う同一アドレスの場合、両方が
+    // それぞれ present 側の表記へ解決されたあと lowercase 同士で比較されるので
+    // 自己ループとして null になる（表記揺れが自己ループ判定をすり抜けない）。
+    const edge = buildContractCallPulseEdge(
+      "0xabc",
+      "0xABC",
+      new Set(["0xAbc"]),
+      new Set(["0xaBC"]),
+    );
+    expect(edge).toBeNull();
+  });
+
+  it("does not treat trailing whitespace as a case difference (no match)", () => {
+    // addressCasing は case のみ吸収し空白は正規化しない。前後空白がずれた
+    // アドレスは端点として一致しない（buildContractCallPulseEdge 経由での確認）。
+    const edge = buildContractCallPulseEdge(
+      "0xalice ",
+      TOKEN,
+      new Set([ALICE]),
+      new Set([TOKEN]),
+    );
+    expect(edge).toBeNull();
+  });
 });

@@ -183,6 +183,51 @@ describe("deployEdgesToFlowEdges address casing (Issue #201)", () => {
   });
 });
 
+describe("deployEdgesToFlowEdges refactoring equivalence (Issue #232)", () => {
+  // buildLowerCaseIndex への切り出しで動作が変わっていないことの確認。
+  // 索引を1度だけ作って複数コントラクトを回す経路（リファクタで導入）を
+  // 通しても、従来と同じ端点解決になることを保証する。
+  it("reuses one case-insensitive index across multiple contracts in a single call", () => {
+    const edges = deployEdgesToFlowEdges(
+      [
+        contract({ address: "0xc1", deployerAddress: "0xABCDEF" }),
+        contract({ address: "0xc2", deployerAddress: "0xabcdef" }),
+      ],
+      ["0xAbCdEf"],
+    );
+    // どちらのコントラクトも同じ present 表記へ解決される。
+    expect(edges.map((e) => e.source)).toEqual(["0xAbCdEf", "0xAbCdEf"]);
+    expect(edges.map((e) => e.target)).toEqual(["0xc1", "0xc2"]);
+  });
+
+  it("preserves input contract order in the output edges", () => {
+    const edges = deployEdgesToFlowEdges(
+      [
+        contract({ address: "0xc3", deployerAddress: "0xw1" }),
+        contract({ address: "0xc1", deployerAddress: "0xw1" }),
+        contract({ address: "0xc2", deployerAddress: "0xw1" }),
+      ],
+      ["0xw1"],
+    );
+    expect(edges.map((e) => e.target)).toEqual(["0xc3", "0xc1", "0xc2"]);
+  });
+
+  it("normalizes only the deployer (source); the contract target keeps its raw casing", () => {
+    // present はウォレットの集合であり、コントラクト address はそこと照合
+    // しない。target は入力の contract.address をそのまま使う（source だけが
+    // present 側の表記へ解決される非対称性の回帰）。
+    const edges = deployEdgesToFlowEdges(
+      [contract({ address: "0xMixedCaseContract", deployerAddress: "0xabcdef" })],
+      ["0xABCDEF"],
+    );
+    expect(edges[0]).toMatchObject({
+      source: "0xABCDEF",
+      target: "0xMixedCaseContract",
+      id: "deploy-0xABCDEF-0xMixedCaseContract",
+    });
+  });
+});
+
 describe("isDeployFlowEdge", () => {
   it("narrows deploy edges", () => {
     const [edge] = deployEdgesToFlowEdges(
