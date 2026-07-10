@@ -461,7 +461,7 @@ UI で同等以上に検証できるシナリオは Playwright（実ブラウザ
 - [x] C層シナリオ(UI-C: 送金・デプロイ・コントラクト呼び出し・トークン
       残高・未知コントラクト)の Playwright 実装
       [#201](https://github.com/morichikawa/chainviz/issues/201)
-- [ ] 異常系・複数クライアントシナリオ(UI-ERR・UI-MULTI)の Playwright
+- [x] 異常系・複数クライアントシナリオ(UI-ERR・UI-MULTI)の Playwright
       実装と、移行済み WS テストの整理
       [#202](https://github.com/morichikawa/chainviz/issues/202)
 - [ ] D層 UI シナリオ(UI-D)の Playwright 実装(ステップ9の #188/#189 の
