@@ -167,6 +167,38 @@ describe("world-state entities", () => {
     expect(peer.p2pRole).toBe("peer");
   });
 
+  it("accepts p2pRole 'none' for a P2P non-participant and keeps it out of bootnode/peer checks", () => {
+    // Issue #214: P2P に参加しないノード（例: Ethereum の validator client）は
+    // "none" を持つ。フロントの既存判定（=== "bootnode"）にも、「接続確立中」
+    // 表示の対象（peer 扱い）にも該当しないことを型と値の両面で確認する。
+    const nonParticipant: NodeEntity = {
+      kind: "node",
+      id: "node-vc",
+      containerName: "chainviz-ethereum-validator1",
+      ip: "172.28.3.1",
+      ports: [],
+      resources: { cpuPercent: 0, memMB: 0 },
+      process: { name: "lighthouse" },
+      chainType: "ethereum",
+      clientType: "lighthouse",
+      syncStatus: "syncing",
+      blockHeight: 0,
+      headBlockHash: "",
+      p2pRole: "none",
+    };
+
+    expect(nonParticipant.p2pRole).toBe("none");
+    expect(nonParticipant.p2pRole === "bootnode").toBe(false);
+    expect(nonParticipant.p2pRole === "peer").toBe(false);
+
+    // collector → frontend は JSON シリアライズで渡るため、往復で "none" が
+    // 崩れない（省略 = 不明とも区別できる）ことを確認する。
+    const roundTripped = JSON.parse(
+      JSON.stringify(nonParticipant),
+    ) as NodeEntity;
+    expect(roundTripped.p2pRole).toBe("none");
+  });
+
   it("treats an omitted p2pRole as unknown (not a bootnode)", () => {
     // フィールド未付与の旧スナップショット（旧 collector）。省略は「不明」で
     // あり、フロントの判定は p2pRole === "bootnode" のみなので、省略時は
