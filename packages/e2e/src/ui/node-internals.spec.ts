@@ -119,6 +119,13 @@ test("UI-D-01: beacon→reth の内部リンクエッジが常設表示される
       await expect(edge).toHaveClass(/react-flow__edge-internalLink/);
       await expect(edge).toHaveClass(/internal-link-edge\b/);
 
+      // 「別系統の見た目」を正の確認だけで済ませると、たとえば内部リンク
+      // エッジが誤ってピアエッジとして描かれても検出できない。ピアエッジが
+      // 付与するクラス(react-flow__edge-peer / peer-edge。peerEdge.ts)を
+      // 持たないことを否定側でも固定し、両系統が確実に別物であることを担保する。
+      await expect(edge).not.toHaveClass(/react-flow__edge-peer\b/);
+      await expect(edge).not.toHaveClass(/\bpeer-edge\b/);
+
       // 二重線(鞘+芯)は BaseEdge(鞘)に加えて専用の <path>(芯)を重ねて
       // 描く(InternalLinkEdge.tsx)。芯の要素が実在することで確認する。
       await expect(edge.locator(".internal-link-edge__core")).toHaveCount(1);
