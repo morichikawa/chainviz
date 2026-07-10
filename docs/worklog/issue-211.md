@@ -635,3 +635,67 @@ mempool 投入時の検査として説明する）。
   - 本ブランチはコミット e0237fc（UX設計メモ、`issue-211-deploy-feedback-ux`
     の先頭と同一）を含む形で fork されている。両ブランチをマージする際は
     docs コミットの重複に留意（同一SHAなので通常は問題にならない）
+
+## 12. 英語訳レビュー記録（単位B: #213 + #219）
+
+### 2026-07-10 Issue #213/#219 英語訳レビュー
+
+- 担当: i18n
+- ブランチ: issue-213-219-operation-panel-clarity
+- 対象: `chain-profiles/ethereum/operationCatalog.ts` の
+  `OperationFunctionForm.description`（ChainvizToken 4関数・Counter 3関数）
+  と `i18n/messages.ts` の操作パネル説明文言・トークン単位関連の新規キー
+  （`operation.{transfer,deploy,call}.description` /
+  `operation.arg.invalid.token` / `operation.arg.tokenUnitSuffix`）。
+  日本語の内容自体はレビュー対象外とし、英訳の質・自然さのみを確認した
+- 確認した点（問題なし）:
+  - `operation.{transfer,deploy,call}.description` は直訳ではなく自然な
+    英語の宣言文になっており、既存メッセージ（`contract.popover.description`
+    等）のトーン・語彙（tx / mempool / wallet などの標準語彙）と一貫している
+  - `operation.arg.invalid.token` は既存の `operation.arg.invalid.uint` /
+    `operation.transfer.amount.invalid` と同じ "Enter a non-negative ... in
+    decimal (e.g. ...)." のパターンを踏襲しており一貫性がある
+  - `operation.arg.tokenUnitSuffix`（`" (in {symbol})"`）はラベルへの
+    後置サフィックスとして自然
+  - Counter 3関数（increment/incrementBy/reset）の英訳は日本語と1対1で
+    対応し、既存の "Increases the counter by 1." のような文体で統一されて
+    いる
+- 修正した点（2件、いずれも `operationCatalog.ts` の
+  `ChainvizToken.functions[].description.en` のみ）:
+  1. **バッククォートによる引数名の強調がUIでは無意味な生文字として
+     表示される**: `transfer`/`approve`/`transferFrom`/`mint` の英訳は
+     引数名（`to`/`spender`/`from`）をMarkdownのインラインコード記法
+     （`` `to` `` 等）で囲んでいたが、`CallForm.tsx`/`DeployForm.tsx` の
+     `description` 表示箇所はプレーンテキストの `<p>` にそのまま流し込む
+     だけで、Markdownパーサーは存在しない（`dangerouslySetInnerHTML` 等の
+     使用箇所なし。grepで確認済み）。そのままではエンドユーザーの画面に
+     `` ` `` の文字がそのまま表示されてしまう。加えて日本語側は
+     `to`/`spender`/`from` をコード記法なしの地の文で参照しており、
+     英語側だけがこの記法を持つのは既存メッセージ群のトーン（他の
+     エントリはプレースホルダ `{target}` はあるがインラインコードは
+     使わない）とも整合しない。バッククォートを引用符（`'to'` のように
+     シングルクォート）へ置き換え、前置詞の "to" と引数名の "to" が
+     並ぶ曖昧さは残したまま維持しつつ（"to 'to'" 等）、表示上の破損を
+     解消した
+  2. **`mint` の英訳が `amount` への言及を欠落していた**: 日本語
+     「新しいトークンを **amount** 分発行して to に与えます」に対し、
+     旧英訳 "Issues new tokens to `to` (only the deployer can call this)."
+     は発行量（`amount`）への言及が抜けており、同じ配列内の
+     `transfer`/`approve` の英訳（いずれも `amount` を明示的に参照する
+     文体）と一貫していなかった。"Issues amount of new tokens to 'to'
+     (only the deployer can call this)." に修正し、`amount` への言及を
+     復元した
+- `transferFrom` の英訳（"Moves tokens from `from` to `to`, within an
+  approved allowance."）は `amount` への直接言及が無いが、日本語側も
+  同様に amount へ言及しておらず ERC20 の標準語彙である "allowance" で
+  意味を汲んでいるため、こちらは修正不要と判断した
+- ロジック変更を伴わない文言修正のみのため、テストコードの変更・
+  ユニットテストの追加は不要と判断した（`operationCatalog.test.ts` を
+  確認し、ja/en が空でないことを固定しているだけで具体的な文言までは
+  検証していないことを確認済み。修正後の文字列も型・空文字チェックの
+  対象からは外れない）
+- 本セッションはシェル実行環境を持たないため `pnpm build`/`lint`/`test`
+  は自分では実行していない。変更は既存の `description: Localized`
+  フィールド内の文字列リテラル4件のみで型・ロジックへの影響は無いため
+  ビルドを壊すリスクは低いと判断したが、`chainviz-reviewer`/pre-push
+  フックでの実行確認は次工程に委ねる
