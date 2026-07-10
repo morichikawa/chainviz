@@ -399,3 +399,132 @@ mempool 投入時の検査として説明する）。
 - [#245](https://github.com/morichikawa/chainviz/issues/245)
   カードのホバーポップオーバーが隣接カードの下に描画され読めない
   （z-order。#221 とは別の問題）
+
+## 8. 実装記録（単位B: #213 + #219）
+
+- 担当: frontend
+- ブランチ: `issue-213-219-operation-panel-clarity`
+- 実施内容: 上記「単位B」の設計をベースに、操作パネルの各タブ・関数の
+  説明文言追加と、トークン量のトークン単位入力＋decimals換算を実装した。
+  トークン量の入力方式は「トークン単位入力＋decimals換算」（設計メモ
+  6.判断1の推奨案）で進めることをユーザーから承認済み
+- 補足: 本セクションは着手時点で設計判断（下記1〜7）まで書いた状態で
+  一度セッションが中断し、`tokenAmount.ts`/`tokenAmount.test.ts` のみが
+  実装済みの状態で引き継いだ。他のファイルは本文中の記述に反して
+  未着手だったため、このセッションで実装・テスト・ビルド・実機確認まで
+  完了させた（下記「変更ファイル」「9. 検証」が実際の実施内容）
+
+### 実装時に具体化した設計判断
+
+1. **decimals換算ロジックの置き場所**: `operations/etherAmount.ts` の
+   `parseEtherToWei`（decimals=18固定）を、新設する
+   `operations/tokenAmount.ts` の `parseUnits(input, decimals)`（decimals
+   可変の一般化版）を呼ぶ薄いラッパーに書き換えた。表示方向の
+   `entities/tokenAmount.ts`（`formatUnits`/`formatEther`）と対称な構成
+   にしている
+2. **カタログの型拡張**（`chain-profiles/ethereum/operationCatalog.ts`）:
+   - `OperationArgField.unit?: "token"` — トークン量を表す引数に付与
+   - `OperationFunctionForm.description: Localized` — 関数の一言説明
+     （必須化。既存テストフィクスチャに `description` を追加する必要が
+     あった）
+   - `ContractCatalogEntry.token?: { symbol: string; decimals: number }`
+     — ERC20系コントラクトの静的トークン情報。`ContractEntity.token` と
+     同じ形にして対称にした
+3. **decimalsの解決**（`operations/deployedContracts.ts`）:
+   `DeployedContractCandidate.token` を、デプロイ済み実体の
+   `ContractEntity.token`（実測値）優先・カタログの静的値
+   （`entry.token`）へフォールバックして導出する。デプロイタブ
+   （`DeployForm`）はまだ実体が無いため、カタログの静的値をそのまま使う
+4. **バリデーション・変換の分離**（`operations/operationArgValidation.ts`）:
+   既存 `isValidOperationArgValue(type, value)` のシグネチャは変更せず
+   （既存呼び出し元・既存テストへの影響を避けるため）、
+   `validateOperationArgs` に第3引数 `tokenDecimals?: number` を追加し、
+   `field.unit === "token"` のときだけ `parseUnits` で検証する分岐を
+   足した。送信直前の値変換は新設の `convertOperationArgsToChainValues`
+   （同ファイル）が担い、`unit === "token"` の引数だけ最小単位の10進
+   文字列へ変換する（他の引数は従来どおりそのまま渡す。§6.10決定事項2）
+5. **UI**: `OperationArgInput` に `tokenInfo?: { symbol; decimals }` prop
+   を追加し、`unit === "token"` のときラベルに
+   「（{symbol}単位）」を付与、入力値の検証も `parseUnits` ベースに
+   切り替えた。`CallForm`/`DeployForm` は選択中コントラクト（または
+   カタログ）の `token` を取り出して `OperationArgInput` と
+   `validateOperationArgs`/`convertOperationArgsToChainValues` に渡す
+6. **タブ・関数の説明文言**: `TransferForm`/`DeployForm`/`CallForm` の
+   先頭に `operation.{tab}.description` を表示する（既存 note と同じ
+   `operation-form__note` スタイルを流用。専用クラスは新設しない）。
+   `CallForm` は選択中関数の直下に `fn.description` を追加表示する
+   （同じく `operation-form__note` スタイル。「コントラクト選択の一言
+   説明と同じ見た目」という設計意図を、実装上は既存の muted note
+   スタイルの再利用として解釈した）
+7. 新設した i18n キーは `i18n.test.ts` の
+   `describe("operation panel message keys")` の対象リストに追加し、
+   ja/en 両方が空でないこと・訳し忘れ（ja===en）が無いことを回帰
+   ガードした
+
+### 変更ファイル
+
+- `operations/tokenAmount.ts`（新設）/ `tokenAmount.test.ts`（新設）
+- `operations/etherAmount.ts`（`parseUnits` の薄いラッパーへ変更。
+  既存テスト・既存の外部からの見え方は変えていない）
+- `chain-profiles/ethereum/operationCatalog.ts` /
+  `operationCatalog.test.ts`（既存テストに `description`/`token`/`unit`
+  絡みのケースを追加）
+- `operations/deployedContracts.ts` / `deployedContracts.test.ts`
+- `operations/operationArgValidation.ts`（既存テストは変更なし。
+  `unit: "token"` を使わない既存フィクスチャは無変更で通る後方互換の
+  拡張にした）
+- `operations/OperationArgInput.tsx`（既存テストは変更なし。同上）
+- `operations/TransferForm.tsx` / `TransferForm.test.tsx`（説明文言の
+  表示テストを1件追加）
+- `operations/DeployForm.tsx` / `DeployForm.test.tsx`（同上）
+- `operations/CallForm.tsx` / `CallForm.test.tsx`（説明文言の表示テストを
+  追加。既存 `functions` フィクスチャは `description` が必須化された
+  ため追記が必要だった）
+- `i18n/messages.ts` / `i18n/i18n.test.ts`
+- 新設したトークン単位（#219）関連のテストは、既存ファイルを肥大化
+  させないため関心事ごとに専用ファイルへ分けた（1ファイル1責務の
+  原則をテストにも適用）:
+  - `operations/operationArgValidation.tokenUnit.test.ts`
+  - `operations/OperationArgInput.tokenUnit.test.tsx`
+  - `operations/DeployForm.tokenUnit.test.tsx`
+  - `operations/CallForm.tokenUnit.test.tsx`
+
+### 次の担当者への注意点
+
+- トークン単位入力の対象は現状 ChainvizToken の amount/initialSupply の
+  みで、Counter の `incrementBy(amount)` は従来どおり生の整数入力
+  （`unit` 未設定）のまま。将来トークンを持つコントラクトを catalog に
+  追加する場合は `token` フィールドと該当引数の `unit: "token"` を
+  忘れず設定すること
+- ラベルのトークン単位サフィックスは symbol ベースの汎用文言
+  （「（{symbol}単位）」）にした。設計メモの例示（「（CVZ単位）」）は
+  ChainvizToken 固有の例であり、実装は symbol を差し替え可能な形に
+  一般化した
+- `validateOperationArgs`/`convertOperationArgsToChainValues` は
+  `tokenDecimals` が未解決（対象コントラクトの `token` 情報が取れない）
+  場合、`unit: "token"` な引数を安全側に倒して常に無効（送信不可）にする。
+  単位換算ができない状態で最小単位の生の値をそのまま送ってしまうと
+  #219 と同じ混乱を再発させるため
+
+## 9. 検証（単位B: #213 + #219）
+
+- `pnpm build`・`pnpm lint`・`pnpm test`（いずれもリポジトリルートで
+  全パッケージ対象）が通ることを確認した
+- モックデータで実際に frontend の dev サーバーを起動し（`vite --port
+  <空きポート>`。既存の別 worktree の dev サーバーとポートが衝突した
+  ため空きポートを都度確認した）、Playwright（システムにインストール
+  権限が無かったため、事前に用意されていた `.deb` 展開済みライブラリ
+  （`libnspr4.so` 等）を `LD_LIBRARY_PATH` に足して headless chromium を
+  起動）で実際の画面を操作して確認した:
+  - 送金/デプロイ/呼び出しタブそれぞれの冒頭に説明文言が表示される
+  - デプロイタブで ChainvizToken を選ぶと `initialSupply（CVZ単位）` の
+    ラベルが出る
+  - 呼び出しタブで ChainvizToken の `transfer` を選ぶと、関数の一言説明
+    （「自分のトークン残高から to へ amount を送ります」）と
+    `amount（CVZ単位）` のラベルが出る
+  - 呼び出しタブで `to` に有効なアドレス、`amount` に `1000`（トークン
+    単位）を入力すると送信ボタンが有効になる（#219 が実際に再現していた
+    「1000 と入れたのに 0.0000 CVZ」の原因だった、最小単位の生入力
+    としての誤入力扱いが解消されたことを確認）
+- 確認スクリプトは使い捨てで実行後に削除し、起動していた dev サーバーも
+  終了させた（作業ディレクトリに残していない）
