@@ -111,7 +111,7 @@ interface NodeEntity extends InfraEntity {
   // reth1/beacon1 にラベルを付与する）。省略時は「不明」（旧スナップ
   // ショット互換）で、フロントは p2pRole === "bootnode" の判定のみ行い、
   // 見つからなければブートノード前提の表示を出さない（Issue #123 / #124）。
-  // "none" のノードは「接続確立中」エッジ（§7）の導出対象から除外する
+  // "none" のノードは「接続確立中」エッジ（Issue #123/#124）の導出対象から除外する
   p2pRole?: "bootnode" | "peer" | "none";
   // D層: このノードが内部 API で駆動する相手ノード（同じ論理ノードを構成する
   // 相方クライアント）の id。Ethereum プロファイルでは beacon（CL）に入り、
