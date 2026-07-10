@@ -2135,3 +2135,86 @@ shared は本ブランチでコミット済み。node-env と collector と fron
 **起票した Issue**
 
 - 無し。作業中に本 Issue の範囲外の新規問題は見つからなかった
+
+### 2026-07-11 Issue #215 テスト強化記録（単位A: フロント）
+
+- 担当: tester
+- ブランチ: issue-215-node-role-visibility
+- 内容: 単位A（ノード役割可視化）のフロント実装に対し、実装担当が書いた
+  基本テスト（ハッピーパス中心）へ異常系・境界値・データと表示ロジックの
+  分離を検証するテストを追加した。実装コードは変更していない。追加は18件で、
+  frontend の総テスト数は 1667 → 1685。`pnpm --filter @chainviz/frontend
+  build && test` と対象テストファイルの eslint が通ることを確認済み。
+
+**追加した観点**
+
+- `nodeRoles.test.ts`（+4件）: `describeNodeRole` が前後・途中の空白を
+  トリムせず未知に倒すこと（生値の厳密一致）。`nodeShowsSyncState` の
+  空文字フォールバック（true）。`NODE_ROLE_DESCRIPTORS` の形状不変条件
+  （各エントリが ja/en 両ラベル・glossaryKey・boolean の showsSyncState を
+  漏れなく持つ／showsSyncState が false なのは現状 validator のみ）。
+- `infraNode.test.ts`（+5件、`drivenByContainerName`/`drivesNodeContainerName`
+  の異常系）: 1対多の負けた側の駆動元が自身の drivenBy を持たないこと、
+  逆引き索引の重複解決が「target id 単位の最初の一致」で確定するため
+  最初の駆動元の containerName が空文字でも後続の実名で上書きされないこと
+  （空文字に解決＝ポップオーバー側で falsy 縮退）、循環（beacon⇄reth）でも
+  無限ループにならず双方向が解決すること、自己駆動（drivesNodeId が自分自身）
+  でも自分の containerName に解決するだけでハングしないこと、drivesNodeId が
+  ワークベンチの id を指す場合は node のみを引く解決で行を出さないこと。
+- `InfraNodeCard.test.tsx`（+3件、同期状態ドットのデータ/表示分離）:
+  validator が synced・実ブロック高を持っていてもドットは nodeRole だけで
+  隠れること（データ駆動でなく役割駆動）、syncing の validator でも隠れること、
+  逆に execution で blockHeight 0・syncing という「空データ」でもドットは
+  is-syncing として出ること。
+- `InfraPopover.test.tsx`（+6件、同期/ブロック高行のデータ/表示分離と境界の
+  明示）: validator が synced・blockHeight 777 を持っていても同期/ブロック高の
+  行・値を一切漏らさないこと、execution で 0/syncing でも行と値 0・「同期中」を
+  出すこと、validator が（想定外に）internals.syncStages / internals.mempool を
+  持った場合に同期ステージ節・txpool 行だけは出る非対称（これらは internals の
+  有無で独立に判定され showsSyncState に連動しない。Ethereum プロファイルの
+  validator は internals を持たないため実際には到達しない現状挙動の固定）、
+  駆動元の containerName が空文字のとき drivenBy 行を出さない縮退。
+
+**確認した挙動（実装のバグではないもの）**
+
+- 操作先エッジのホバー（点4の確認）: `OperationTargetEdge` は Issue #221 の
+  `useHoverPopover` パターンは使わず、既存の peer/deploy/internal-link エッジと
+  同じ `onEdgeMouseEnter`/`onEdgeMouseLeave` + `EdgeLabelRenderer`
+  （`pointerEvents: "none"`）のパターンを踏襲している。ポップオーバー本体は
+  ポインタを受けない（＝カードから離れる途中で用語へホバーする #221 の状況が
+  そもそも発生しない）ため、専用フックを使わないのは設計上正しい。兄弟エッジ
+  との一貫性も保たれている。`OperationTargetEdgePopover` の docstring にも
+  この理由が明記されている。
+
+**差し戻し（実装担当 = 描画麗 への報告。低優先度の堅牢性の穴）**
+
+- `describeNodeRole(nodeRole)` は `NODE_ROLE_DESCRIPTORS[nodeRole]` を
+  ブラケットアクセスで引くが、このマップはオブジェクトリテラルで作られて
+  いるため `Object.prototype` を継承している。その結果、`nodeRole` が
+  `"toString"` / `"constructor"` / `"valueOf"` / `"hasOwnProperty"` /
+  `"isPrototypeOf"`（関数）や `"__proto__"`（プロトタイプオブジェクト）と
+  いった継承メンバ名だった場合、`describeNodeRole` は `undefined` ではなく
+  真値（継承した関数/オブジェクト）を返す。
+  - 再現: `describeNodeRole("toString")` → 関数（truthy）を返す（本来は
+    「未知値」として `undefined` を返すべき）。
+  - 影響: 呼び出し側（`InfraNodeCard`/`InfraPopover`）は descriptor を
+    truthy と判定し、`pickLocale(descriptor.label /* undefined */)` が空文字を
+    返すため、カードのサブタイトルが「reth」ではなく「 · reth」（先頭に
+    余分な「 · 」）になり、ポップオーバーには空ラベルの「役割」行が
+    `GlossaryTerm termKey={undefined}` 付きで描かれる。クラッシュはしない
+    （`pickLocale` が undefined を吸収する）が、未知値のフォールバックが
+    安全に働いていない。
+  - 到達性: `nodeRole` は Docker ラベル `com.chainviz.node-role` 由来で
+    通常運用では "execution"/"consensus"/"validator" のみ。上記の値は
+    ラベルを意図的に細工/破損させた場合にのみ発生するため実運用リスクは
+    低いが、点1で問うている「想定外の nodeRole 文字列に対するフォールバックの
+    安全性」の観点では穴。
+  - 推奨修正: `describeNodeRole` の本体を
+    `Object.hasOwn(NODE_ROLE_DESCRIPTORS, nodeRole) ?
+    NODE_ROLE_DESCRIPTORS[nodeRole] : undefined` にする（または
+    `NODE_ROLE_DESCRIPTORS` を `Object.create(null)` ベースで構築する）。
+  - テストの扱い: 現行実装のまま「`describeNodeRole("toString")` は
+    undefined を返す」という回帰テストを足すと失敗するため、本 Issue では
+    そのテストは追加していない（テストは全て green を維持）。修正後に
+    `describeNodeRole("toString")`/`"constructor"`/`"__proto__"` が
+    `undefined` を返すことを固定する回帰テストを追加するのが望ましい。
