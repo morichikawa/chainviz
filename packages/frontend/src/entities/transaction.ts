@@ -3,6 +3,7 @@ import type {
   WalletEntity,
   WorldStateEntity,
 } from "@chainviz/shared";
+import type { MessageKey } from "../i18n/messages.js";
 
 /**
  * C層のトランザクション表示に使う純粋なデータ変換群。React / タイマー側の
@@ -12,6 +13,17 @@ import type {
  */
 
 export type TxStatus = TransactionEntity["status"];
+
+/**
+ * tx の status を i18n メッセージキーへ対応づける表。`WalletPopover` と
+ * `TxLifecyclePopover` の両方が同じステータスバッジ文言を使うため、ここに
+ * 一本化する（Issue #212 単位D）。
+ */
+export const TX_STATUS_MESSAGE_KEY: Record<TxStatus, MessageKey> = {
+  pending: "tx.status.pending",
+  included: "tx.status.included",
+  failed: "tx.status.failed",
+};
 
 /** ウォレットカードに載せる直近 tx の既定表示件数。 */
 export const DEFAULT_RECENT_TX_LIMIT = 6;
