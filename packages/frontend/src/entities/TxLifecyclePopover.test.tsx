@@ -99,3 +99,87 @@ describe("TxLifecyclePopover (ARCHITECTURE.md §6.11, Issue #212 単位D)", () =
     expect(signedStage.getAttribute("data-stage-state")).toBe("done");
   });
 });
+
+/** stage li の中のマーク文字を取り出す。 */
+function stageMark(hash: string, key: string): string {
+  const li = screen.getByTestId(`tx-lifecycle-stage-${hash}-${key}`);
+  return (
+    li.querySelector(".tx-lifecycle-popover__stage-mark")?.textContent ?? ""
+  );
+}
+
+describe("TxLifecyclePopover marks match the derived stage state", () => {
+  it("uses ✓ for done, ● for active, ○ for not-yet-reached on a pending tx", () => {
+    const t = tx({ status: "pending" });
+    wrap(t);
+    expect(stageMark(t.hash, "signed")).toBe("✓");
+    expect(stageMark(t.hash, "sent")).toBe("✓");
+    expect(stageMark(t.hash, "mempool")).toBe("●");
+    expect(stageMark(t.hash, "included")).toBe("○");
+  });
+
+  it("uses ✓ for all four stages on an included tx", () => {
+    const t = tx({ status: "included" });
+    wrap(t);
+    for (const key of ["signed", "sent", "mempool", "included"]) {
+      expect(stageMark(t.hash, key)).toBe("✓");
+    }
+  });
+
+  it("uses ✕ only on the inclusion stage of a failed tx (earlier stages stay ✓)", () => {
+    const t = tx({ status: "failed" });
+    wrap(t);
+    expect(stageMark(t.hash, "signed")).toBe("✓");
+    expect(stageMark(t.hash, "sent")).toBe("✓");
+    expect(stageMark(t.hash, "mempool")).toBe("✓");
+    expect(stageMark(t.hash, "included")).toBe("✕");
+  });
+
+  it("marks the mark span aria-hidden so screen readers rely on the text label, not the glyph", () => {
+    const t = tx({ status: "pending" });
+    wrap(t);
+    const li = screen.getByTestId(`tx-lifecycle-stage-${t.hash}-mempool`);
+    const mark = li.querySelector(".tx-lifecycle-popover__stage-mark");
+    expect(mark?.getAttribute("aria-hidden")).toBe("true");
+  });
+});
+
+describe("TxLifecyclePopover header status badge", () => {
+  it("shows the pending badge text for a pending tx", () => {
+    wrap(tx({ status: "pending" }));
+    expect(screen.getByText("保留中（mempool）")).toBeTruthy();
+  });
+
+  it("shows the failed badge text for a failed tx", () => {
+    wrap(tx({ status: "failed" }));
+    expect(screen.getByText("失敗")).toBeTruthy();
+  });
+
+  it("carries the status in the badge className so CSS can color it", () => {
+    const t = tx({ status: "failed" });
+    const { container } = wrap(t);
+    expect(
+      container.querySelector(".wallet-tx-chip--failed"),
+    ).toBeTruthy();
+  });
+});
+
+describe("TxLifecyclePopover hash rendering boundaries", () => {
+  it("renders a short hash verbatim (shorter than the shorten threshold)", () => {
+    const t = tx({ hash: "0x1", status: "included" });
+    wrap(t);
+    // testid は完全な hash を使うので取得でき、ヘッダ表示は短縮せずそのまま。
+    const popover = screen.getByTestId(`tx-lifecycle-popover-${t.hash}`);
+    const header = popover.querySelector(".tx-lifecycle-popover__hash");
+    expect(header?.textContent).toBe("0x1");
+  });
+
+  it("does not throw and keeps distinct testids when two tx share the same short hash prefix", () => {
+    const a = tx({ hash: "0xdeadbeefaaaa1111", status: "pending" });
+    const b = tx({ hash: "0xdeadbeefbbbb2222", status: "included" });
+    wrap(a);
+    wrap(b);
+    expect(screen.getByTestId(`tx-lifecycle-popover-${a.hash}`)).toBeTruthy();
+    expect(screen.getByTestId(`tx-lifecycle-popover-${b.hash}`)).toBeTruthy();
+  });
+});
