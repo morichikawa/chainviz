@@ -89,12 +89,12 @@ validator:
       専用コンテナとして見え、チェーンのコピーは持たないため同期状態や
       ブロック高は表示しない。
     en: >-
-      A participant that deposits stake (collateral) to take part in
-      proposing and attesting blocks. Consensus is a vote that prevents the
-      chain from being extended arbitrarily, and the validator is that
-      voter. In chainviz it appears as a dedicated container connected to a
-      consensus client; it does not keep its own copy of the chain, so it
-      shows neither sync status nor block height.
+      A participant that deposits stake (collateral) to take part in block
+      proposal and attestation. Consensus is a vote that prevents the chain
+      from being extended arbitrarily, and the validator is that voter. In
+      chainviz it appears as a dedicated container connected to a consensus
+      client; it does not keep its own copy of the chain, so it shows
+      neither sync status nor block height.
   layer: a-infra
   relatedTerms: [cl-client, bootnode]
 

@@ -2317,5 +2317,47 @@ shared は本ブランチでコミット済み。node-env と collector と fron
    変更がある。マージ時にコンフリクト解消が必要になる可能性が高く、統合後に
    品質ゲート（build/lint/test）の再実行を推奨する
 4. 新設 glossary（validator / rpc-endpoint）と i18n 文言の英語版は
-   chainviz-i18n のレビューを通す前提（UX初稿5節）だが、本ブランチの
+   chainviz-i18n のレビューを通す前提(UX初稿5節)だが、本ブランチの
    worklog には実施記録が無い。マージ前に通すかどうかは統括の判断に委ねる
+
+## Issue #215 i18nレビュー記録
+
+上記「記録のみ」4.を受けて、chainviz-i18nが英語対応をレビューした。
+
+**対象**
+
+- `glossary/ethereum/terms/a-infra.yaml` の新設2用語(`validator` /
+  `rpc-endpoint`)の`en`フィールド
+- `packages/frontend/src/i18n/messages.ts` のうちIssue #215で追加された
+  キー(`field.p2pRole`・`field.drivenBy`・`edge.operationTarget`・
+  `edge.operationTarget.hint`)
+- `packages/frontend/src/chain-profiles/ethereum/nodeRoles.ts` の
+  `NODE_ROLE_DESCRIPTORS`(execution/consensus/validatorの役割ラベル)
+
+**確認した内容**
+
+- 用語集内の既存英語エントリ(`bootnode`・`engine-api`等)とのトーン(平易・
+  直接的・時々の口語的contractionを許容)は一致している
+- `NODE_ROLE_DESCRIPTORS`の英語ラベル("Execution client" / "Consensus
+  client" / "Validator")は、glossaryの`el-client`/`cl-client`/`validator`の
+  `name.en`とそのまま一致しており、UIとglossaryで表記揺れが無い
+- `edge.operationTarget.hint`の英語文は、新設`rpc-endpoint`用語の英語定義文
+  と言い回し(pin/pins、"wallets ... connect to one fixed endpoint"等)が
+  揃っており、同じ概念を別の場所で説明する際の一貫性が保たれている
+- `field.drivesNode`("Drives execution node")と`field.drivenBy`("Driven by
+  (consensus node)")は対になるフィールドラベルとして自然に対応しており、
+  値(コンテナ名)と組み合わせたときに読みやすい
+
+**修正した内容**
+
+- `glossary/ethereum/terms/a-infra.yaml`の`validator`の`en`定義文で、
+  "proposing and attesting blocks"(動詞句)を"block proposal and
+  attestation"(名詞句)に修正。すぐ上の`cl-client`エントリが同じ概念を
+  "block proposal and attestation"という名詞句で説明しており、同一ファイル内
+  の近接エントリで同じ内容を異なる言い回しにしていたのを揃えた。内容(何を
+  説明するか)は変更していない
+- それ以外(`rpc-endpoint`の`en`全文、messages.tsの各キー、nodeRoles.tsの
+  役割ラベル)は自然さ・一貫性ともに問題なしと判断し、修正なし
+
+**結論**: 「記録のみ」4.の指摘は解消。上記1件の軽微な文言修正を除き、
+Issue #215のi18n対応は英語話者から見て自然でトーンも一貫している。
