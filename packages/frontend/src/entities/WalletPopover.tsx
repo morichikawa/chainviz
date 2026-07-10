@@ -1,17 +1,12 @@
 import type { ContractEntity, TransactionEntity, WalletEntity } from "@chainviz/shared";
+import { useState } from "react";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
-import type { MessageKey } from "../i18n/messages.js";
-import { formatEther } from "./walletNode.js";
-import { shortHex } from "./transaction.js";
+import { shortHex, TX_STATUS_MESSAGE_KEY } from "./transaction.js";
 import { deriveTxCallPreview } from "./txCallPreview.js";
+import { TxLifecyclePopover } from "./TxLifecyclePopover.js";
 import { resolveWalletTokenBalances } from "./walletTokenBalances.js";
-
-const TX_STATUS_KEY: Record<TransactionEntity["status"], MessageKey> = {
-  pending: "tx.status.pending",
-  included: "tx.status.included",
-  failed: "tx.status.failed",
-};
+import { formatEther } from "./walletNode.js";
 
 /**
  * 「呼び出し内容」プレビュー1件（ARCHITECTURE.md §6.6「WalletPopover の tx
@@ -45,6 +40,41 @@ function TxCallPreviewLine({
     >
       {callLabel} → {targetLabel}
     </span>
+  );
+}
+
+/**
+ * tx 一覧の1行。ホバー/フォーカスで `TxLifecyclePopover`（署名 → 送信 →
+ * mempool → ブロック取り込みの4段階）を表示する（ARCHITECTURE.md §6.11、
+ * Issue #212 単位D）。WalletCard の tx チップと同じポップオーバーを使う
+ * ことで表示内容を一本化する。
+ */
+function WalletPopoverTxItem({
+  tx,
+  contractsByAddress,
+}: {
+  tx: TransactionEntity;
+  contractsByAddress: ReadonlyMap<string, ContractEntity>;
+}) {
+  const { t } = useLanguage();
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <li
+      className="wallet-popover__tx-item"
+      tabIndex={0}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={() => setHovered(true)}
+      onBlur={() => setHovered(false)}
+    >
+      <span className="wallet-popover__tx-hash">{shortHex(tx.hash)}</span>
+      <span className={`wallet-tx-chip wallet-tx-chip--${tx.status}`}>
+        {t(TX_STATUS_MESSAGE_KEY[tx.status])}
+      </span>
+      <TxCallPreviewLine tx={tx} contractsByAddress={contractsByAddress} />
+      {hovered && <TxLifecyclePopover tx={tx} />}
+    </li>
   );
 }
 
@@ -131,15 +161,11 @@ export function WalletPopover({
         ) : (
           <ul className="wallet-popover__tx-list">
             {transactions.map((tx) => (
-              <li key={tx.hash} className="wallet-popover__tx-item">
-                <span className="wallet-popover__tx-hash">
-                  {shortHex(tx.hash)}
-                </span>
-                <span className={`wallet-tx-chip wallet-tx-chip--${tx.status}`}>
-                  {t(TX_STATUS_KEY[tx.status])}
-                </span>
-                <TxCallPreviewLine tx={tx} contractsByAddress={contractsByAddress} />
-              </li>
+              <WalletPopoverTxItem
+                key={tx.hash}
+                tx={tx}
+                contractsByAddress={contractsByAddress}
+              />
             ))}
           </ul>
         )}

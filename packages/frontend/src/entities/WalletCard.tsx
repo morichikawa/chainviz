@@ -1,11 +1,45 @@
+import type { TransactionEntity } from "@chainviz/shared";
 import { Handle, type NodeProps, Position } from "@xyflow/react";
 import { useState } from "react";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { shortHex, txChipLabel } from "./transaction.js";
+import { TxLifecyclePopover } from "./TxLifecyclePopover.js";
 import { resolveWalletTokenBalances } from "./walletTokenBalances.js";
 import { formatEther, type WalletFlowNode } from "./walletNode.js";
 import { WalletPopover } from "./WalletPopover.js";
+
+/**
+ * tx チップ1件。ホバー/フォーカスで `TxLifecyclePopover`（署名 → 送信 →
+ * mempool → ブロック取り込みの4段階）を表示する（ARCHITECTURE.md §6.11、
+ * Issue #212 単位D）。以前あった `title` 属性（hash のみのネイティブ
+ * ツールチップ）はこのポップオーバーに置き換わったため無い。
+ */
+function TxChip({ tx, isSettling }: { tx: TransactionEntity; isSettling: boolean }) {
+  const { t } = useLanguage();
+  const [hovered, setHovered] = useState(false);
+  const label = txChipLabel(tx);
+  const text = label.kind === "deploy" ? t("tx.chip.deploy") : label.text;
+
+  return (
+    <span
+      className={`wallet-tx-chip wallet-tx-chip--${tx.status}${
+        isSettling ? " is-settling" : ""
+      }`}
+      tabIndex={0}
+      data-testid={`wallet-tx-chip-${tx.hash}`}
+      data-status={tx.status}
+      data-label-kind={label.kind}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={() => setHovered(true)}
+      onBlur={() => setHovered(false)}
+    >
+      {text}
+      {hovered && <TxLifecyclePopover tx={tx} />}
+    </span>
+  );
+}
 
 /**
  * C層のウォレット（EOA / スマートアカウント）を表すキャンバス上のカード。
@@ -14,8 +48,9 @@ import { WalletPopover } from "./WalletPopover.js";
  * 確定フラッシュ演出を当てる（Issue #81 の tx ライフサイクル表示）。
  *
  * tx チップのラベルは hash 短縮ではなく「意味」優先で出す（ARCHITECTURE.md
- * §6.6。優先順位は `txChipLabel` 参照。Issue #166）。tx hash 自体は title
- * 属性（ネイティブツールチップ）として残す。
+ * §6.6。優先順位は `txChipLabel` 参照。Issue #166）。tx hash 自体はホバー/
+ * フォーカスで開く `TxLifecyclePopover`（ARCHITECTURE.md §6.11、Issue #212）
+ * のヘッダに表示する（`TxChip` 参照。以前の title 属性は置き換わった）。
  *
  * 残高行の下には、追跡中のトークン残高チップ列を出す（ARCHITECTURE.md
  * §6.7、Issue #168）。対応する `ContractEntity` の token 情報と突き合わせて
@@ -116,24 +151,9 @@ export function WalletCard({ data }: NodeProps<WalletFlowNode>) {
           {transactions.length === 0 ? (
             <span className="wallet-card__tx-empty">{t("wallet.noTx")}</span>
           ) : (
-            transactions.map((tx) => {
-              const label = txChipLabel(tx);
-              const text = label.kind === "deploy" ? t("tx.chip.deploy") : label.text;
-              return (
-                <span
-                  key={tx.hash}
-                  className={`wallet-tx-chip wallet-tx-chip--${tx.status}${
-                    settling.has(tx.hash) ? " is-settling" : ""
-                  }`}
-                  title={shortHex(tx.hash)}
-                  data-testid={`wallet-tx-chip-${tx.hash}`}
-                  data-status={tx.status}
-                  data-label-kind={label.kind}
-                >
-                  {text}
-                </span>
-              );
-            })
+            transactions.map((tx) => (
+              <TxChip key={tx.hash} tx={tx} isSettling={settling.has(tx.hash)} />
+            ))
           )}
         </div>
       </div>
