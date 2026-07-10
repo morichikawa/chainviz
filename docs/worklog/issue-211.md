@@ -2218,3 +2218,34 @@ shared は本ブランチでコミット済み。node-env と collector と fron
     そのテストは追加していない（テストは全て green を維持）。修正後に
     `describeNodeRole("toString")`/`"constructor"`/`"__proto__"` が
     `undefined` を返すことを固定する回帰テストを追加するのが望ましい。
+
+### 2026-07-11 Issue #215 バグ修正（単位A: フロント、テスト強化での差し戻し対応）
+
+- 担当: frontend
+- ブランチ: issue-215-node-role-visibility
+- 内容: 上記のテスト強化記録で報告された `describeNodeRole` の
+  `Object.prototype` 継承メンバ漏れを修正した。
+- 修正前に実際に問題を再現して確認した。Node で
+  `describeNodeRole("toString")` を評価すると `[Function: toString]`、
+  `describeNodeRole("constructor")` は `[Function: Object]`、
+  `describeNodeRole("__proto__")` は `[Object: null prototype] {}` を
+  返しており、報告どおり真値（継承メンバ）が漏れていることを確認した。
+- 修正方法: `NODE_ROLE_DESCRIPTORS` 自体の再構築ではなく、
+  `describeNodeRole` に `Object.hasOwn(NODE_ROLE_DESCRIPTORS, nodeRole)`
+  ガードを追加する方を選んだ（`NODE_ROLE_DESCRIPTORS` は
+  `Readonly<Record<string, NodeRoleDescriptor>>` として他の場所からも
+  `Object.entries` で参照されており、`Object.create(null)` ベースに
+  変えるとその参照箇所への影響範囲を広げるため、影響を
+  `describeNodeRole` 内に閉じた）。
+- 回帰テストを追加した後、修正前のコードに一時的に戻して該当テストが
+  実際に失敗すること（`toString` が `[Function toString]` を返す旨の
+  アサーション失敗）を確認し、修正後に戻して green になることを確認した
+  （`nodeRoles.test.ts` に 1 件追加、frontend 全体は 1686 件 green）。
+  `pnpm --filter @chainviz/frontend build` と
+  `pnpm --filter @chainviz/frontend test` が通ることを確認済み。
+- 正常系（execution/consensus/validator のマッピング、showsSyncState の
+  判定ロジック）は変更していない。
+
+**起票した Issue**
+
+- 無し。差し戻しへの対応のみで、本作業中に新規問題は見つからなかった。
