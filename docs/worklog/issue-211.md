@@ -656,3 +656,85 @@ mempool 投入時の検査として説明する）。
 Commits形式での実際のコミット作成は、このレビューを実行した
 chainviz-i18n セッションに shell/git 実行ツールが無いため未実施。
 ファイル差分のみ適用済み。統括側でのコミット作成を依頼する）
+
+### 2026-07-10 QA検証記録（単位D、chainviz-qa）
+
+ブランチ `issue-212-tx-lifecycle` を実機で検証した。frontend を
+モックモード（`VITE_COLLECTOR_URL` 未設定）で `vite` dev server として
+起動し、Chromium（Playwright）で実際にウォレットカードの tx チップに
+ホバーして、描画されたポップオーバーの DOM とテキストを言語別に確認した。
+failed 状態はモックデータのストリームに存在しないため、dev server が
+配信する実モジュール（`TxLifecyclePopover.tsx` 本体・`LanguageProvider`・
+`GlossaryProvider`）をブラウザ内で直接 import し、実コンポーネントを
+failed の tx で描画して確認した。
+
+**判定: 条件付き。1件の差し戻しあり（chainviz-frontend へ）。**
+
+満たしている完了条件:
+
+- 条件1（4段階表示）: ウォレットカードの tx チップにホバーすると
+  署名 → 送信 → mempool → ブロック取り込みの4段縦リストが実際に表示される。
+- 条件3（included）: included の tx は全4段が `done`（✓）で表示される。
+- 条件4（failed）: failed の tx は署名・送信・mempool が `done`（✓）、
+  4段目のみ `failed`（✕）。説明文は専用の
+  「実行が失敗として記録されました（ブロックには取り込まれています）」/
+  「Recorded as failed (still included in a block).」で、取り込み自体の
+  失敗と誤読させない適切な文言になっている。ヘッダバッジも「失敗」/
+  「Failed」。
+- 条件5（ブロック高の用語解説）: EL ノード（chainviz-reth-node-1）の
+  カードポップオーバーで「ブロック高」に付いた `GlossaryTerm`（termKey=
+  block）にホバーすると、glossary ポップオーバーが日本語・英語とも開き、
+  「ブロック」/「Block」の定義が表示される。ワークベンチノードには
+  ブロック高フィールドが無いことも確認（EL コンテナノードでのみ表示）。
+- 条件6（言語切り替え）: 上記すべてを language-toggle で ja/en 切り替え、
+  段階ラベル・説明文・ステータスバッジ・glossary が両言語で正しく
+  切り替わることを確認した。
+- 条件7のうち「署名中」誤認の主要懸念: 署名(signed)・送信(sent)は
+  pending でも常に `done`（✓）として表示され、「今まさに署名中」という
+  進行中(`active`)表現は一切出ない。Issue タイトルの「署名中かどうか」の
+  懸念（観測不能なリアルタイム状態を観測したかのように見せない）は
+  適切に処理されている。
+
+満たしていない完了条件（差し戻し）:
+
+- 条件2・条件7（pending の未到達段階の説明文）: pending の tx をホバー
+  すると、4段目「ブロック取り込み」はマーク ○（未到達）・
+  `data-stage-state="pending"` で視覚的には未到達と区別されるが、その
+  一言説明が完了を断定する過去形のまま表示される。
+  - 実際の表示（ja）: `○ ブロック取り込み :: ブロックに取り込まれ、
+    全ノードに複製されて確定しました`
+  - 実際の表示（en）: `○ Included in block :: Included in a block,
+    replicated to every node, and final.`
+  - ○マーク（未到達）と、同じ行の説明文が述べる「取り込まれ…確定
+    しました／included…and final」が矛盾しており、未到達の段階なのに
+    あたかも取り込み・確定が起きた事実であるかのように読める。これは
+    chainviz-reviewer の申し送り（本 worklog レビュー記録の非ブロッキング
+    メモ）が指摘した点そのもので、実機の見た目でも誤読を招くと判断した。
+  - この説明文は included が `done`（included の tx）でも `pending`
+    （pending の tx の未到達）でも同一の
+    `tx.lifecycle.desc.included` を使っており、状態で出し分けていない
+    （failed のみ `includedFailed` に分岐している）。
+  - 期待する挙動: 未到達（pending 状態）の included 段階では、完了を
+    断定しない文言（未来形・定義形。例「ブロックに取り込まれると、
+    全ノードに複製されて確定します」）を出す。failed 用の
+    `includedFailed` と同様に、未到達用の説明キーを分岐で用意するのが
+    素直。
+
+再現手順:
+
+1. `packages/frontend` を `VITE_COLLECTOR_URL` 未設定（モックモード）で
+   `vite` 起動する。
+2. Alice の EOA カード（0xa11ce0…）の pending の tx チップにホバーする。
+3. 開いたライフサイクルポップオーバーの4段目「ブロック取り込み」の
+   説明文が「…確定しました」と完了断定の過去形で表示されることを確認。
+
+差し戻し先: chainviz-frontend（描画麗）。`packages/frontend/src/entities/
+TxLifecyclePopover.tsx` の `stageDescriptionKey` と
+`packages/frontend/src/i18n/messages.ts` に、included の未到達
+（`state === "pending"`）用の説明文言を追加し出し分ける。単位Dの他の
+挙動（条件1・3・4・5・6・署名/送信の done 表示）は問題なし。
+
+備考: 検証は使い捨ての Chromium 実行で行い、frontend 側のコード・
+設定は一切変更していない。実データ（稼働中の chainviz-ethereum
+スタック）ではなくモックデータで検証したが、failed を含む全 status の
+描画は実コンポーネントで確認済み。
