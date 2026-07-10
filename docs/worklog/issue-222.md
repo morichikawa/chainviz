@@ -1,0 +1,157 @@
+### 2026-07-10 Issue #222 ノード/ワークベンチ削除中に進行中であることを示す
+フィードバックが無い(設計メモ)
+- 担当: frontend
+- ブランチ: issue-222-delete-pending-feedback
+
+#### 現状確認
+
+- `useCommands.ts` には `runWorkbenchOperation` 用の保留追跡
+  (`pendingOperationCounts` → `pendingOperationWorkbenchIds`) が既にあるが、
+  `removeNode` / `removeWorkbench` にはこの仕組みが無い。`dispatch` 内で
+  `command.action !== "addNode" && command.action !== "addWorkbench"` の
+  時点で早期 return しており、削除コマンドは commandId を `pendingRef` に
+  積むだけで、UI側が参照できる保留状態を一切持たない。
+- `InfraNodeCard.tsx` の削除ボタンは `onClick={onRemove}` のみで、
+  クリック後の状態を反映する仕組みが無い(Issue本文の記載どおり)。
+
+#### 採用する設計
+
+`runWorkbenchOperation` の保留追跡パターン(id をキーにしたカウンタ →
+Set化)をそのまま踏襲する。node と workbench は同じ `entity.id` 空間で
+カードが1枚ずつ対応するため、削除対象の種別を問わず「id ごとの保留
+カウンタ」1つで両方をカバーする。
+
+1. `useCommands.ts`
+   - `pendingRemovalCounts: Map<string, number>` を追加。dispatch 時に
+     `removeNode`/`removeWorkbench` を検知したら対象 id (`nodeId` /
+     `workbenchId`) のカウントを +1 する(runWorkbenchOperation と同じ
+     カウント方式。理論上同じ id への削除コマンドが二重に飛ぶことは
+     UI 上は無い想定だが、ボタン連打時に安全側に倒すため加算式にする)。
+   - `handleCommandResult` で `command.action` が `removeNode`/
+     `removeWorkbench` の場合、成否によらず対象 id のカウントを -1 する
+     (operationPending と同じく「成否によらず解除」。エラー通知は既存の
+     `describeCommandError` 経路でそのまま出る)。
+   - 集計した Set を `pendingRemovalIds` として `UseCommandsResult` に追加
+     し返す。
+2. `entities/infraNode.ts`
+   - `InfraNodeData` に `removalPending?: boolean` を追加(`isNew`/
+     `operationPending` と同じ「時間・保留状態に依存する派生プロパティ」
+     の扱いで、`entitiesToFlowNodes` 自体は持たせず `isSameInfraNode` の
+     比較対象にも含めない)。
+3. `app/App.tsx`
+   - `useCommands` の戻り値から `pendingRemovalIds` を受け取り、
+     `infraNodesWithHighlight` の後付け計算に `removalPending =
+     pendingRemovalIds.has(node.id)` を追加する(`isNew`/`operationPending`
+     と同じ変化検知つきのマージ)。
+4. `entities/InfraNodeCard.tsx` / `styles.css`
+   - UI表現は「カード全体の半透明化 + 削除ボタンの無効化 + スピナー」を
+     採用する(Issue本文の提案どおり。追加時のゴーストカード
+     (`.ghost-card`: `opacity:0.55` + `pointer-events:none`)と一貫させる
+     ため、削除中カードにも同型のクラス `infra-card--removing` を追加し
+     同じ値を使う)。
+   - 削除ボタンは `removalPending` の間 `disabled` にし、内容を「×」から
+     スピナー(`chainviz-spin` を共有する新クラス
+     `infra-card__remove-spinner`)に差し替える。`aria-label`/`title` も
+     `action.remove.pending`(「削除中…」/"Removing…")に切り替える。
+   - 操作パネルを持つワークベンチの操作ボタンについては、削除中は
+     カード自体が `pointer-events: none` になるため個別の無効化ロジックは
+     追加しない(ゴーストカードと同じ扱い)。
+   - 新規メッセージキー `action.remove.pending` を追加
+     (`action.addNode.pending`/`action.addWorkbench.pending` と同じ形式)。
+
+#### 選ばなかった案
+
+- 「ボタンだけ無効化してカードは半透明にしない」案: 追加時のゴーストと
+  見た目の一貫性が薄れるため不採用。
+- 「二重送信防止として一度押したら二度と押せなくする」仕組み自体の追加:
+  今回のスコープは「保留中であることの可視化」であり、二重送信防止の
+  要否は別問題(既存の `runWorkbenchOperation` も二重送信防止はしない
+  方針)。ボタンの `disabled` はあくまで視覚的フィードバックの一部として
+  副次的に付くだけで、それ自体を目的にした設計変更はしない。
+
+#### テスト方針
+
+- `useCommands.ts`: 新規 `useCommandsPendingRemoval.test.tsx` に、
+  `runWorkbenchOperation` 用テストファイルと同じ形式で
+  removeNode/removeWorkbench それぞれの保留セット追跡
+  (即時セット・ok/ng 両方での解除・id ごとの独立性)を書く。
+- `InfraNodeCard.tsx`: 既存 `InfraNodeCard.test.tsx` に
+  `removalPending` 用の describe ブロックを追加(カードのクラス・ボタンの
+  disabled・スピナー表示)。
+
+### 2026-07-10 Issue #222 実装記録
+- 担当: frontend
+- ブランチ: issue-222-delete-pending-feedback
+
+#### 内容
+
+上記の設計メモどおりに実装した。差分の要点:
+
+- `commands/useCommands.ts`: `pendingRemovalCounts`(`Map<id, count>`)を
+  追加し、`dispatch` が `removeNode`/`removeWorkbench` を検知した時点で
+  対象 id のカウントを +1、`handleCommandResult` で成否によらず -1 する。
+  Set化した `pendingRemovalIds` を `UseCommandsResult` に追加した。
+- `entities/infraNode.ts`: `InfraNodeData` に `removalPending?: boolean`
+  を追加(`isNew`/`operationPending` と同じ、時間依存の派生プロパティ)。
+- `app/App.tsx`: `pendingRemovalIds` を受け取り、`infraNodesWithHighlight`
+  の後付け計算に `removalPending` を追加した。
+- `entities/InfraNodeCard.tsx`: `removalPending` の間、カードに
+  `infra-card--removing` クラスを付け(半透明化 + `pointer-events: none`)、
+  削除ボタンを `disabled` にして「×」をスピナー(`infra-card__remove-spinner`)
+  に差し替え、`aria-label`/`title` を「削除中…」に切り替えた。
+- `i18n/messages.ts`: `action.remove.pending`(ja:「削除中…」/
+  en:"Removing…")を追加した。
+- `styles.css`: `.infra-card--removing`(ゴーストカードと同じ
+  `opacity:0.55`+`pointer-events:none`)と `.infra-card__remove-spinner`
+  (既存の `chainviz-spin` キーフレームを共有)を追加した。
+
+#### テスト
+
+- 新規 `commands/useCommandsPendingRemoval.test.tsx`(8件): removeNode/
+  removeWorkbench それぞれの即時セット・commandResult(ok:true/false)
+  両方での解除・id ごとの独立性(node/workbenchで id 空間を共有していても
+  混線しない)・同一idへの多重発行時のカウント方式を検証。
+- 既存 `entities/InfraNodeCard.test.tsx` に `removalPending` 用の
+  describeブロック(6件)を追加: 既定でクラスが付かないこと、
+  `removalPending=true` でクラス付与・ボタンdisabled・スピナー表示・
+  aria-label/title切り替え・クリックしても `removeNode` が呼ばれない
+  こと・workbenchカードでも同じ挙動になることを確認。
+
+#### 動作確認
+
+`pnpm build && pnpm lint && pnpm test`(リポジトリルート、全パッケージ)が
+通ることを確認した。加えて、実際に `pnpm dev`(frontend、モックデータ)を
+起動し、Playwright(`chromium`。この開発環境では `chromium_headless_shell`/
+`chromium` 同梱バイナリの `libnspr4.so` 等の共有ライブラリが不足しており
+そのままでは起動できなかったため、`LD_LIBRARY_PATH` で別途用意済みの
+ライブラリを指す形で回避した)で以下を確認した。
+
+- 修正前(実装差分を `git stash` で一時的に戻した状態): ノード削除ボタンを
+  クリックしても、カードのクラス・ボタンの `disabled`・スピナーのいずれも
+  変化せず、Issue本文どおり「進行中であることを示すフィードバックが無い」
+  ことを再現した。
+- 修正後: `+ ノードを追加` で追加した reth フォロワーカードの削除ボタンを
+  クリックすると、`commandResult` が返るまでの間(モックの
+  `commandLatencyMs` を一時的に3秒へ上げて確認。本番のデフォルトは
+  同期的に近い解決なので実運用ではこの遅延そのものは体感できないが、
+  実際のDocker削除では数秒かかる想定であり、その間ずっとこの表示になる)、
+  カードに `infra-card--removing` が付いて半透明化し、削除ボタンが
+  `disabled` になってスピナーへ切り替わり、`aria-label` が「削除中…」に
+  変わることを確認した。`commandResult` 到着後はエンティティごと
+  カードが消えることも確認した。
+
+#### 決定事項・注意点
+
+- node/workbench は `entity.id` 空間を共有し1entity=1カードなので、
+  `pendingRemovalIds` は種別を分けず単一の `Set<string>` で表現した。
+  同じ id へ2件以上の削除コマンドが飛ぶことは UI 上想定していないが、
+  `runWorkbenchOperation` と同じカウント方式にしてあるため、万一連打で
+  複数飛んでも早期に pending 解除されることはない(安全側)。
+- 削除ボタンの `disabled` 自体は「二重送信防止」を目的にした変更ではなく、
+  視覚的フィードバック(Issue本文の提案)の一部として付随的に付くだけ。
+  既存の `runWorkbenchOperation`(操作ボタンは押下可能なまま)とは
+  ポリシーが異なる点に注意(削除は一度発行したら取り消せない操作なので、
+  ここでは disabled にする判断をした)。
+- カードに `pointer-events: none` を付けるため、削除中はホバー
+  ポップオーバー(`InfraPopover`)も出なくなる(`.ghost-card` と同じ仕様)。
+  これは意図的な挙動。
