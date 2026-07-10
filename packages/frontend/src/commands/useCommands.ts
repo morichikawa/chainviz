@@ -30,6 +30,8 @@ import type { ConnectionStatus } from "../websocket/client.js";
 import {
   DEFAULT_CHAIN_PROFILE,
   describeCommandError,
+  describeCommandNotConnectedError,
+  describeCommandTimeoutError,
   resolveWorkbenchLabel,
 } from "./commandMessages.js";
 
@@ -77,6 +79,14 @@ export interface UseCommandsResult {
    * なった時点で id を集合から外す）。
    */
   pendingOperationWorkbenchIds: Set<string>;
+  /**
+   * removeNode / removeWorkbench を送信してから commandResult が返るまでの
+   * 間、その対象（node/workbench 共通の entity id）を含む集合(Issue #222)。
+   * `pendingOperationWorkbenchIds` と同じ「id ごとのカウンタ→Set化」方式で、
+   * 成否によらず commandResult 到着時に解除する。node/workbench は id空間を
+   * 共有し1entity=1カードなので、種別を問わず単一の Set で表現する。
+   */
+  pendingRemovalIds: Set<string>;
 }
 
 /**
@@ -143,6 +153,16 @@ export function useCommands(
     [pendingOperationCounts],
   );
 
+  // removeNode / removeWorkbench の保留数を対象 id ごとに数える
+  // （UseCommandsResult.pendingRemovalIds の docstring参照。Issue #222）。
+  const [pendingRemovalCounts, setPendingRemovalCounts] = useState<
+    Map<string, number>
+  >(new Map());
+  const pendingRemovalIds = useMemo(
+    () => new Set(pendingRemovalCounts.keys()),
+    [pendingRemovalCounts],
+  );
+
   const handleCommandResult = useCallback<CommandResultHandler>(
     (commandId, ok, error) => {
       const command = pendingRef.current.get(commandId);
@@ -159,6 +179,25 @@ export function useCommands(
           const next = new Map(prev);
           if (current <= 1) next.delete(workbenchId);
           else next.set(workbenchId, current - 1);
+          return next;
+        });
+      }
+
+      // removeNode / removeWorkbench も同じく成否によらず解除する（Issue
+      // #222）。ok:true なら entityRemoved diff で当のカードごと消える
+      // ため実害は無いが、ok:false（削除拒否等）の場合はカードが残ったまま
+      // 保留フラグだけが残り続けないよう、ここで確実に外す。
+      if (
+        command?.action === "removeNode" ||
+        command?.action === "removeWorkbench"
+      ) {
+        const targetId =
+          command.action === "removeNode" ? command.nodeId : command.workbenchId;
+        setPendingRemovalCounts((prev) => {
+          const current = prev.get(targetId) ?? 0;
+          const next = new Map(prev);
+          if (current <= 1) next.delete(targetId);
+          else next.set(targetId, current - 1);
           return next;
         });
       }
@@ -248,7 +287,29 @@ export function useCommands(
       const { commandId } = ghost.data;
       const timer = setTimeout(() => {
         timers.delete(commandId);
+        // pendingRef にまだ command が残っている＝commandResult 自体が一度も
+        // 届いていない（未接続で送信できなかった以外にも、途中で collector
+        // が落ちた・メッセージが失われた等の異常系。Issue #235）ケースだけ、
+        // 実質的な失敗確定としてエラートーストで知らせる。pendingRef はこの
+        // 経路以外では commandResult 到着時にしか消えないため、ここで
+        // 消しておかないと残り続けてしまう。
+        //
+        // 一方 commandResult(ok:true) が既に届いていて pendingRef からも
+        // 消えている場合は、単に実エンティティの到着（diff）がまだ間に
+        // 合っていないだけ（コンテナ起動が遅い等）で、コマンド自体は成功
+        // している。この場合は `GHOST_TIMEOUT_MS` の本来の役割（ghostNode.ts
+        // のコメント参照）どおり、通知はせず黙ってゴーストを消すだけに
+        // とどめる（誤って「失敗した」と伝えてしまう false positive を防ぐ）。
+        const command = pendingRef.current.get(commandId);
+        const resultNeverArrived = pendingRef.current.has(commandId);
+        pendingRef.current.delete(commandId);
         setGhosts((current) => removeGhostByCommandId(current, commandId));
+        if (resultNeverArrived) {
+          notifyRef.current({
+            kind: "error",
+            message: describeCommandTimeoutError(command, tRef.current),
+          });
+        }
       }, GHOST_TIMEOUT_MS);
       timers.set(commandId, timer);
     }
@@ -266,7 +327,15 @@ export function useCommands(
   const dispatch = useCallback(
     (command: Command) => {
       const commandId = sendCommand(command);
-      if (commandId === undefined) return;
+      if (commandId === undefined) {
+        // WebSocket 未接続でコマンドがそもそも送れなかった場合（Issue #235）。
+        // ゴーストを作らず、待たせずに理由付きのエラートーストを出す。
+        notifyRef.current({
+          kind: "error",
+          message: describeCommandNotConnectedError(command, tRef.current),
+        });
+        return;
+      }
       pendingRef.current.set(commandId, command);
 
       if (command.action === "runWorkbenchOperation") {
@@ -298,6 +367,17 @@ export function useCommands(
           });
           setGhosts((current) => [...current, ghost]);
         }
+        return;
+      }
+
+      if (command.action === "removeNode" || command.action === "removeWorkbench") {
+        const targetId =
+          command.action === "removeNode" ? command.nodeId : command.workbenchId;
+        setPendingRemovalCounts((prev) => {
+          const next = new Map(prev);
+          next.set(targetId, (next.get(targetId) ?? 0) + 1);
+          return next;
+        });
         return;
       }
 
@@ -392,5 +472,6 @@ export function useCommands(
     actions,
     ghosts,
     pendingOperationWorkbenchIds,
+    pendingRemovalIds,
   };
 }

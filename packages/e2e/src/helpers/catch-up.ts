@@ -14,6 +14,17 @@
 //
 // タイマー・I/O に触れない純粋なロジック（catchUpTimeoutMs / CatchUpMonitor）
 // と、それらを実クロック・実 RPC で駆動する waitForBlockCatchUp に分けてある。
+//
+// Issue #229: 上記 1. の「ターゲット高さ」を常に「既存ノードの現在の head」
+// にすると、稼働時間が延びるほど gap（＝バックフィルすべき履歴の長さ）が
+// 際限なく伸び、動的タイムアウトも際限なく伸びる。これは合理的だが、外側で
+// 固定の安全網（`maxTimeoutMs` や vitest の it タイムアウト）を必ず設けたく
+// なる以上、いずれ稼働時間に構造的に負ける。そこで「head への完全追従」では
+// なく「開始高さから一定ブロック数以上、停滞なく進行すること」を合格条件に
+// 見直した（`resolveCatchUpTarget` / `waitForMinBlockProgress`）。要求する
+// 進行量は head までの距離とは無関係な固定値にできるため、テストの所要時間が
+// チェーン長・稼働時間に比例しなくなる。停止検出（2.）は目標の決め方に依らず
+// そのまま有効なので、EL 間 P2P 回帰時に「高さが進まない」検出力は変わらない。
 
 import { sleep } from "./wait.js";
 
@@ -120,6 +131,12 @@ export interface WaitForCatchUpOptions {
   now?: () => number;
   /** スリープ関数。テスト用に差し替え可能。 */
   sleepFn?: (ms: number) => Promise<void>;
+  /**
+   * 待ち開始時点の高さ。省略時は `getHeight()` を呼んで測る。
+   * `waitForMinBlockProgress` が目標高さ算出用に測った値を二重取得せず
+   * 再利用するために公開している。
+   */
+  startHeight?: number;
 }
 
 /**
@@ -144,15 +161,22 @@ export async function waitForBlockCatchUp(
     description = "added node to catch up",
     now = () => Date.now(),
     sleepFn = sleep,
+    startHeight: providedStartHeight,
   } = options;
 
   // 待ち開始時点の高さを測ってバックフィル量を見積もる。まだ RPC が応答しない
-  // 場合は gap を target 全量とみなす（最も長く待つ側に倒す）。
+  // 場合は gap を target 全量とみなす（最も長く待つ側に倒す）。呼び出し側が
+  // 既に測った高さを渡している場合（`waitForMinBlockProgress` 経由など）は
+  // 二重に RPC を呼ばずそれを使う。
   let startHeight = 0;
-  try {
-    startHeight = await getHeight();
-  } catch {
-    startHeight = 0;
+  if (providedStartHeight !== undefined) {
+    startHeight = providedStartHeight;
+  } else {
+    try {
+      startHeight = await getHeight();
+    } catch {
+      startHeight = 0;
+    }
   }
   const gap = Math.max(target - startHeight, 0);
   const overallTimeoutMs = Math.min(
@@ -209,4 +233,75 @@ export async function waitForBlockCatchUp(
 
     await sleepFn(intervalMs);
   }
+}
+
+/**
+ * `waitForMinBlockProgress` が使う目標高さ（追従待ちの target）を決める純粋
+ * ロジック（I/O なし。ユニットテストで境界値を確認しやすいよう分離してある）。
+ *
+ * - チェーンが十分育っている（head までの距離が `minProgressBlocks` 以上）
+ *   場合: 目標は `startHeight + minProgressBlocks`。head そのものではなく
+ *   固定の進行量にすることで、head までの距離（＝稼働時間に比例して伸びる
+ *   バックフィル量）に関係なく所要時間を有限に保つ（Issue #229）。
+ * - チェーンがまだ十分育っていない（head までの距離が `minProgressBlocks`
+ *   未満）場合: 目標は `headHeight`（従来どおり head 到達）。この場合は
+ *   CL が genesis から順番にブロックを渡すだけで EL 間 P2P なしでも追従
+ *   できてしまうため、そもそも EL 間 P2P（履歴バックフィル）の回帰を検出
+ *   できる状況ではない。これは新しい合格条件で新たに生まれた制約ではなく、
+ *   従来の「head 到達」を目標にする方式でも同じ理由で成立しなかった既存の
+ *   前提（`commands.test.ts` のコメント参照）であり、変えていない。
+ */
+export function resolveCatchUpTarget({
+  startHeight,
+  headHeight,
+  minProgressBlocks,
+}: {
+  startHeight: number;
+  headHeight: number;
+  minProgressBlocks: number;
+}): number {
+  return Math.min(headHeight, startHeight + minProgressBlocks);
+}
+
+export interface WaitForMinProgressOptions
+  extends Omit<WaitForCatchUpOptions, "startHeight"> {
+  /**
+   * 開始高さから最低限これだけ進行すること（かつその間 stall しないこと）を
+   * 合格条件にする。head までの距離ではなく固定の進行量にすることで、稼働
+   * 時間が延びてもテストの所要時間が有限に保たれる（Issue #229）。
+   */
+  minProgressBlocks: number;
+  /** 既存ノードの現在の高さなど、追いつくべき head の目安。 */
+  headHeight: number;
+}
+
+/**
+ * 追加ノードの高さが「開始時点から `minProgressBlocks` 以上、停滞なく進行
+ * する」ことを待つ。`waitForBlockCatchUp` の「target への到達」をそのまま
+ * 使うが、target は `resolveCatchUpTarget` により
+ * `min(headHeight, startHeight + minProgressBlocks)` に決める（head への
+ * 完全追従は要求しない）。停止検出（stallTimeoutMs、既定 45 秒）は
+ * `waitForBlockCatchUp` と同じくそのまま働くため、EL 間 P2P
+ * （履歴バックフィル）が機能不全になった場合の検出力は変わらない。
+ */
+export async function waitForMinBlockProgress(
+  getHeight: () => Promise<number>,
+  options: WaitForMinProgressOptions,
+): Promise<number> {
+  const { minProgressBlocks, headHeight, ...rest } = options;
+
+  let startHeight = 0;
+  try {
+    startHeight = await getHeight();
+  } catch {
+    startHeight = 0;
+  }
+
+  const target = resolveCatchUpTarget({
+    startHeight,
+    headHeight,
+    minProgressBlocks,
+  });
+
+  return waitForBlockCatchUp(getHeight, target, { ...rest, startHeight });
 }

@@ -59,6 +59,14 @@ export interface InfraNodeData extends Record<string, unknown> {
    * から後付けする。
    */
   operationPending?: boolean;
+  /**
+   * entity が node/workbench で、`removeNode`/`removeWorkbench` が
+   * commandResult 待ちの間だけ true になるフラグ（Issue #222）。
+   * `operationPending` と同じ理由（時間・保留状態に依存する派生状態）で
+   * entitiesToFlowNodes 自体は持たず、呼び出し側（App.tsx）が
+   * `useCommands` の `pendingRemovalIds` から後付けする。
+   */
+  removalPending?: boolean;
 }
 
 export type InfraFlowNode = Node<InfraNodeData, "infra">;

@@ -71,6 +71,7 @@ export const messages = {
     en: "Workbench label",
   },
   "action.remove": { ja: "削除", en: "Remove" },
+  "action.remove.pending": { ja: "削除中…", en: "Removing…" },
   "action.addNode.pending": { ja: "追加中…", en: "Adding…" },
   "action.addWorkbench.pending": { ja: "追加中…", en: "Adding…" },
   "toast.region": { ja: "通知", en: "Notifications" },
@@ -98,6 +99,14 @@ export const messages = {
   "command.error.unknown": {
     ja: "コマンドの実行に失敗しました",
     en: "Command failed",
+  },
+  "command.error.notConnected": {
+    ja: "collector に接続されていません",
+    en: "Not connected to the collector",
+  },
+  "command.error.timeout": {
+    ja: "応答がありませんでした（タイムアウト）",
+    en: "No response (timed out)",
   },
   "role.bootnode": { ja: "ブートノード", en: "Bootnode" },
   "network.execution": { ja: "実行ネットワーク", en: "Execution network" },

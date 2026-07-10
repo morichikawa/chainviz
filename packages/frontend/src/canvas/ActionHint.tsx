@@ -1,4 +1,5 @@
-import { type ReactNode, useId, useState } from "react";
+import { type ReactNode, useId } from "react";
+import { useHoverPopover } from "../interaction/useHoverPopover.js";
 
 export interface ActionHintProps {
   /** ホバー/フォーカス対象になる要素（ボタンなど）。 */
@@ -14,17 +15,19 @@ export interface ActionHintProps {
  * 「`aria-describedby` で参照する自前ポップオーバー」の見た目・実装方針に揃える。
  */
 export function ActionHint({ children, hint }: ActionHintProps) {
-  const [open, setOpen] = useState(false);
+  // Issue #221: 隙間を通過する一瞬の mouseleave で消えないよう遅延クローズ。
+  const { isOpen: open, onMouseEnter, onMouseLeave, onFocus, onBlur } =
+    useHoverPopover();
   const popoverId = useId();
 
   return (
     <span
       className="action-hint"
       aria-describedby={open ? popoverId : undefined}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-      onFocus={() => setOpen(true)}
-      onBlur={() => setOpen(false)}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      onFocus={onFocus}
+      onBlur={onBlur}
     >
       {children}
       {open && (

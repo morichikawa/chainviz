@@ -57,6 +57,8 @@ packages/frontend/src/
   entities/            # ノード/ワークベンチ/ウォレットのカード表示コンポーネント
   glossary/            # インライン解説・用語集パネル
   i18n/                # ja/en 切り替え
+  interaction/         # カード種別を跨ぐ汎用の操作性ロジック（ホバーポップオーバーの
+                       # 開閉遅延など。特定のドメインに属さない横断的なフック）
   layout/              # レイアウトの localStorage 永続化
   notifications/       # トースト通知（コマンド失敗のエラー表示など）
   platform/            # ブラウザ API のラッパー（localStorage などの薄い抽象）

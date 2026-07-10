@@ -148,6 +148,18 @@ export function parseSubscribeError(
  * 試し、エラー応答であれば onError を呼ぶ。再接続後に eth_subscribe を
  * 送り直した際も同じ message ハンドラを通るため、同様にエラーを検知
  * できる。
+ *
+ * onResult 呼び出し境界での例外分離（Issue #238）: onResult（呼び出し側の
+ * onHeader/onTxHash。その先で world-state store への取り込み・WebSocket
+ * 配信まで同期的に実行される）が例外を投げると、ここは ws ライブラリの
+ * "message" イベント発火の同期呼び出しスタックの中であるため、素通しすると
+ * どこにも catch されないまま Node の uncaughtException としてプロセス
+ * 全体を巻き込み、collector が丸ごと落ちる（この購読とは無関係な他の
+ * spec 実行中にプロセスが死に、以降のテストがカスケード失敗する事象の
+ * 原因になっていた）。subscribePeers/subscribeNodeInternals/WalletTracker
+ * など他の周期購読ループは全て「この購読1本の異常としてログして継続する」
+ * 形で例外を握っているため、ここも同じ流儀に揃え、onResult の呼び出しを
+ * try/catch で囲んで onError へ転送する。
  */
 function subscribe<T>(
   wsUrl: string,
@@ -192,7 +204,16 @@ function subscribe<T>(
         return;
       }
       const result = parseSubscriptionResult(raw);
-      if (result !== undefined) onResult(result as T);
+      if (result === undefined) return;
+      try {
+        onResult(result as T);
+      } catch (err) {
+        // onResult（呼び出し側の onHeader/onTxHash）が例外を投げても、この
+        // 購読1本の異常としてログして継続する（Issue #238。上のコメント
+        // 参照。ここで捕まえなければプロセス全体が uncaughtException で
+        // 落ちる）。
+        onError?.(err);
+      }
     });
 
     current.on("error", (err) => onError?.(err));
