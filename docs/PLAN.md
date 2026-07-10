@@ -617,6 +617,9 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
 - [ ] UI-CMD系PlaywrightテストのafterAllクリーンアップが競合状態で
       無効化されうる
       [#233](https://github.com/morichikawa/chainviz/issues/233)
+- [x] 長時間のUI層E2Eフルスイート実行中にcollectorがuncaughtExceptionで
+      exitし、以降の全テストがカスケード失敗する
+      [#238](https://github.com/morichikawa/chainviz/issues/238)
 - [x] collector停止中に送信したaddNode/addWorkbenchはゴースト消滅のみで
       エラートーストが出ない
       [#235](https://github.com/morichikawa/chainviz/issues/235)
