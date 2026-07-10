@@ -134,3 +134,44 @@
 - 動作確認: `pnpm --filter @chainviz/frontend build`（成功）、
   `pnpm --filter @chainviz/frontend test`（113ファイル1753テストgreen。
   従来1736 + 新規17）、新規ファイルのeslint（成功）。
+
+#### レビュー記録
+
+- 担当: reviewer
+- ブランチ: issue-236-transfer-address-validation
+- 判定: **合格**
+- 確認した内容:
+  - 既存ロジックの再利用: 新しいバリデーション関数・正規表現・i18nキーを
+    追加せず、Issue #209 の `isValidOperationArgValue("address", ...)` と
+    既存文言 `operation.arg.invalid.address` をそのまま再利用していることを
+    コードで確認。車輪の再発明は無い。
+  - 表示パターンの一貫性: エラー表示は `OperationArgInput.tsx`
+    （DeployForm/CallForm の address 型引数）と同じ
+    「非空かつ無効なときのみ `operation-form__error` クラスの `<p>` を表示、
+    未入力はボタン無効化のみ」のパターンで、`data-testid` も既存の
+    `${testId}-error` 規約（`operation-transfer-to-error`）に沿っている。
+  - ガードの二重化: ボタンの `disabled` に加えて `handleSubmit` 内でも
+    `canSubmit` を確認しており、Enter キー等の submit イベント経路でも
+    不正な宛先で `onSubmit` が呼ばれないことをテストで検証済み。
+  - テストの質: 実装担当の基本4ケースに加え、tester の
+    `TransferForm.addressValidation.test.tsx`（17件）が 39/41桁・`0x`無し・
+    大文字 `0X`・非16進・埋め込み空白・空白のみ・ラベル文字列などの境界値、
+    宛先と金額のエラー共存・片方のみ訂正・往復編集の状態遷移を DOM の実挙動
+    （エラー表示・ボタン活性・`onSubmit` 呼び出し有無）で検証しており、
+    実装の詳細をなぞるだけの無意味なテストは無い。既存テストの `"0xbob"`
+    差し替えも、TransferForm をレンダーする2ファイルのみに限定されており
+    影響範囲の判断が worklog に記録されている。
+  - 境界の遵守: フロント内で完結する変更で、チェーン固有語彙の漏れ・
+    `packages/shared` への影響は無い。エラーの握りつぶし・環境状態依存の
+    決め打ち定数も無い。collector 側対応が不要という判断は
+    `packages/collector/src/adapters/ethereum/operation-error-summary.ts` の
+    `cliInvalidValue` パターン（`[TO]` の CLI レベルエラーを要約）が既に
+    存在することを確認し、妥当と判断した。
+  - ビルド・lint・テスト: リポジトリルートで `pnpm build` / `pnpm lint` /
+    `pnpm test` が全て成功（frontend: 113ファイル1753テスト green）。
+  - コミット粒度: `fix(frontend)` / `docs` / `test(frontend)` の3コミットで
+    1変更1コミット・Conventional Commits に準拠。
+  - docs: `docs/PLAN.md` のチェック + Issue リンク、`docs/WORKLOG.md` 索引の
+    1行追加、worklog の設計メモ・実装記録・テスト強化記録がいずれも実装と
+    一致している。
+- 指摘事項: 無し。
