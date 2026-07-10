@@ -614,7 +614,7 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
 - [ ] 確定時のコントラクトへのパルス/フラッシュがアドレス表記の
       食い違いで発火しない
       [#232](https://github.com/morichikawa/chainviz/issues/232)
-- [ ] UI-CMD系PlaywrightテストのafterAllクリーンアップが競合状態で
+- [x] UI-CMD系PlaywrightテストのafterAllクリーンアップが競合状態で
       無効化されうる
       [#233](https://github.com/morichikawa/chainviz/issues/233)
 - [x] 長時間のUI層E2Eフルスイート実行中にcollectorがuncaughtExceptionで
