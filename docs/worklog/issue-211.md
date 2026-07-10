@@ -825,3 +825,66 @@ QA差し戻し（pending tx の4段目「ブロック取り込み」が未到達
   チェックがあるため、この経路はフロント側のコンパイルが通る限り
   到達しない（collector が未知の status を送ってきた場合のみ）。
   将来 status を追加する際に、説明文の時制も併せて見直すこと
+
+### 2026-07-10 QA再検証記録（単位D、chainviz-qa）
+
+前回のQA差し戻し（pending の tx で4段目「ブロック取り込み」が未到達○
+マークなのに説明文が完了断定の過去形のままだった件）への修正
+（コミット 21b7a54）を実機で再検証した。結果は合格。前回の差し戻し理由は
+解消されている。
+
+検証方法:
+
+- frontend をモックモード（`VITE_COLLECTOR_URL` 未設定）で `vite` dev
+  server として起動し、Chromium（playwright-core + ローカルの chromium
+  ビルド）で実際にウォレットカードの tx チップにホバーして、描画された
+  ポップオーバーの DOM とテキストを言語別に読み取った。
+- failed 状態はモックデータのストリームに存在しないため、dev server が
+  配信する実モジュール（`TxLifecyclePopover.tsx` 本体・`LanguageProvider`・
+  `GlossaryProvider`）をブラウザ内で直接 import し、実コンポーネントを
+  failed の tx で描画して確認した（前回QAと同じ手法）。
+- frontend 側のコード・設定は一切変更していない。
+
+差し戻し対象（条件2・7）の再確認結果:
+
+- pending の tx の4段目「ブロック取り込み」は、○マーク（未到達・
+  `data-stage-state="pending"`）のまま、説明文が完了を断定しない未来形に
+  変わっていることを確認した。
+  - ja: 「ブロックに取り込まれると、全ノードに複製されて確定します
+    （まだ起きていません）」
+  - en: "Once included in a block, it will be replicated to every node and
+    become final. This has not happened yet."
+  - ○マーク（未到達）と説明文の内容が矛盾しなくなり、前回指摘した
+    「未到達なのに取り込み・確定が起きた事実であるかのように読める」
+    誤読は解消された。日本語・英語の両方で確認した。
+
+回帰確認（前回合格していた項目の再確認）:
+
+- 条件1（4段階表示）: pending の tx チップにホバーすると
+  署名 → 送信 → mempool → ブロック取り込みの4段縦リストが表示される。
+- 条件3（included）: included の tx（Bob の tx）は全4段が `done`（✓）で、
+  4段目の説明文は完了形「ブロックに取り込まれ、全ノードに複製されて
+  確定しました」で正しい。ja/en とも確認。
+- 条件4（failed）: failed の tx は署名・送信・mempool が `done`（✓）、
+  4段目のみ `failed`（✕）で、専用文言「実行が失敗として記録されました
+  （ブロックには取り込まれています）」/ "Recorded as failed (still
+  included in a block)." が表示される。ヘッダバッジも「失敗」/「Failed」。
+  ja/en とも確認。今回の pending 用分岐追加が failed 用分岐に影響して
+  いないことを確認した。
+- 条件5（ブロック高の用語解説）: 稼働中の DOM に
+  `data-testid="glossary-term-block"` のアンカー（ノードポップオーバーの
+  「ブロック高」に張られた block 用語解説）が存在することを確認した。
+- 条件6（言語切り替え）: 上記すべてを ja/en で切り替え、段階ラベル・
+  説明文・ステータスバッジが両言語で正しく切り替わることを確認した。
+- 条件7（署名中の誤認回避）: 署名(signed)・送信(sent)は pending でも常に
+  `done`（✓）で、進行中(`active`)表現は mempool 段階のみに出る。観測不能な
+  「今まさに署名中」というリアルタイム状態は表示されない。
+
+判定: 合格。前回の差し戻し理由は解消され、Issue #212 本文の要望
+（tx が経てきた段階＝署名・送信・mempool・ブロック取り込みの可視化）が
+満たされている。単位Dの他の挙動（条件1・3・4・5・6）にも回帰は無い。
+
+備考: 検証は使い捨ての Chromium 実行で行い、frontend 側のコード・設定は
+一切変更していない。ユニットテスト（`txLifecycle` / `TxLifecyclePopover` /
+`txLifecyclePopoverHover`、計39件）も全通過を確認した。push / PR作成 /
+マージ / Issueクローズは統括の判断・実行に委ねる。
