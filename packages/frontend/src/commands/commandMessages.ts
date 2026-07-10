@@ -45,6 +45,45 @@ export function describeCommandError(
 }
 
 /**
+ * commandResult 自体が返らなかった（＝collector とやり取りできなかった）
+ * ケース用の失敗文言を組み立てる（Issue #235）。`describeCommandError` の
+ * `error` は collector から返る生の（非i18n）文字列を想定しているのに対し、
+ * こちらは理由自体をローカルで判断しているため、理由部分も `t()` で
+ * 訳した文言を使う。
+ */
+function describeLocalCommandError(
+  command: Command | undefined,
+  reasonKey: MessageKey,
+  t: (key: MessageKey) => string,
+): string {
+  const base = command ? t(ERROR_KEY[command.action]) : t("command.error.unknown");
+  return `${base}: ${t(reasonKey)}`;
+}
+
+/**
+ * WebSocket が未接続で、コマンドがそもそも送信できなかった場合の失敗文言
+ * （Issue #235。`ChainvizClient.sendCommand` が `undefined` を返したとき用）。
+ */
+export function describeCommandNotConnectedError(
+  command: Command,
+  t: (key: MessageKey) => string,
+): string {
+  return describeLocalCommandError(command, "command.error.notConnected", t);
+}
+
+/**
+ * ゴーストの安全網タイムアウト（`entities/ghostNode.ts` の
+ * `GHOST_TIMEOUT_MS`）が発火するまで commandResult も実体到着も届かな
+ * かった場合の失敗文言（Issue #235）。
+ */
+export function describeCommandTimeoutError(
+  command: Command | undefined,
+  t: (key: MessageKey) => string,
+): string {
+  return describeLocalCommandError(command, "command.error.timeout", t);
+}
+
+/**
  * 「+ ノードを追加」ボタンの押下前ツールチップ文言を組み立てる（Issue #123
  * UX設計 §4-1）。EL/CL 両方のブートノードを解決できた場合のみ具体的な
  * containerName を含む文言にし、片方でも解決できなければ generic な文言へ

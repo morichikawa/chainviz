@@ -44,8 +44,14 @@ export interface ChainvizClientOptions extends ChainvizClientHandlers {
 export interface ChainvizClient {
   connect(): void;
   disconnect(): void;
-  /** 操作コマンドを送り、生成した commandId を返す。 */
-  sendCommand(command: Command): string;
+  /**
+   * 操作コマンドを送り、生成した commandId を返す。WebSocket が未接続
+   * （`connect()` 未呼び出し、または close/error イベント後で socket が
+   * 手放されている状態）の場合はコマンドを送らず `undefined` を返す
+   * （Issue #235。以前は未接続でも commandId を発行して返してしまい、
+   * 呼び出し側が「実際には送信されていない」ことを知る手段が無かった）。
+   */
+  sendCommand(command: Command): string | undefined;
   getStatus(): ConnectionStatus;
 }
 
@@ -112,9 +118,12 @@ export function createChainvizClient(
       setStatus("disconnected");
     },
 
-    sendCommand(command: Command): string {
+    sendCommand(command: Command): string | undefined {
+      // 未接続（socket が無い）ならコマンドを発行せず、送れなかったことを
+      // 呼び出し側に伝える（Issue #235）。
+      if (!socket) return undefined;
       const commandId = generateCommandId();
-      socket?.send(serializeCommand(commandId, command));
+      socket.send(serializeCommand(commandId, command));
       return commandId;
     },
 

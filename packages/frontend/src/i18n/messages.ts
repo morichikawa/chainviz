@@ -96,6 +96,14 @@ export const messages = {
     ja: "コマンドの実行に失敗しました",
     en: "Command failed",
   },
+  "command.error.notConnected": {
+    ja: "collector に接続されていません",
+    en: "Not connected to the collector",
+  },
+  "command.error.timeout": {
+    ja: "応答がありませんでした（タイムアウト）",
+    en: "No response (timed out)",
+  },
   "role.bootnode": { ja: "ブートノード", en: "Bootnode" },
   "network.execution": { ja: "実行ネットワーク", en: "Execution network" },
   "network.consensus": { ja: "コンセンサスネットワーク", en: "Consensus network" },
