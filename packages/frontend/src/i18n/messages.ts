@@ -203,8 +203,8 @@ export const messages = {
   "operation.deploy.contract": { ja: "コントラクト", en: "Contract" },
   "operation.deploy.submit": { ja: "デプロイする", en: "Deploy" },
   "operation.deploy.note": {
-    ja: "ソースからコンパイルしたコントラクトを配置する tx が送られ、取り込まれるとコントラクトカードが現れます",
-    en: "Sends a tx that places the compiled contract on chain; a contract card appears once it is included.",
+    ja: "ソースからコンパイルしたコントラクトを配置する tx が送られ、取り込まれるとコントラクトカードがキャンバス下段（ウォレットの下の段）に現れます",
+    en: "Sends a tx that places the compiled contract on chain; once included, a contract card appears in the bottom row of the canvas (below the wallets).",
   },
   "operation.call.target": { ja: "対象コントラクト", en: "Target contract" },
   "operation.call.function": { ja: "関数", en: "Function" },
@@ -226,6 +226,13 @@ export const messages = {
   },
   "operation.pending": { ja: "実行中…", en: "Running…" },
   "ghost.contract.deploying": { ja: "デプロイ中… {name}", en: "Deploying… {name}" },
+  // --- C層拡張: コントラクト一覧パネル（ARCHITECTURE.md §6.2。Issue #218/#211） ---
+  "contractList.title": { ja: "コントラクト", en: "Contracts" },
+  "contractList.deploying": { ja: "デプロイ中… {name}", en: "Deploying… {name}" },
+  "contractList.jumpHint": {
+    ja: "クリックでキャンバス上のカードへ移動",
+    en: "Click to jump to the card on the canvas",
+  },
   // --- D層: 内部リンクエッジ・活動パルス（ARCHITECTURE.md §7.6.3/§7.6.4。
   // Issue #188） ---
   "edge.internalLink": { ja: "内部リンク（Engine API）", en: "Internal link (Engine API)" },
