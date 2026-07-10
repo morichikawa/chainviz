@@ -5,6 +5,7 @@ import { useCommandActions } from "../commands/CommandActionsContext.js";
 import { resolveWorkbenchOperationsHint } from "../commands/commandMessages.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
+import { useHoverPopover } from "../interaction/useHoverPopover.js";
 import { OperationPanel } from "../operations/OperationPanel.js";
 import { InfraNodeCardSyncProgress } from "./InfraNodeCardSyncProgress.js";
 import { InfraPopover } from "./InfraPopover.js";
@@ -18,6 +19,11 @@ import type { InfraFlowNode } from "./infraNode.js";
  * entity が workbench の場合のみ、カード下部に定型操作パネル（送金/デプロイ/
  * コントラクト呼び出し）を開く全幅ボタンを持つ（ARCHITECTURE.md §6.5。
  * 「操作は必ずワークベンチという実体から発する」ため起点はカード側に置く）。
+ *
+ * 削除コマンド送信からcommandResultが返るまでの間（`data.removalPending`）は
+ * カード全体を半透明化し、削除ボタンをスピナー付きの無効状態にする（Issue
+ * #222。追加時の仮カード（`.ghost-card`）と同じ見た目の流儀で「進行中」を
+ * 示す）。
  */
 export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
   const {
@@ -27,10 +33,14 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
     maxElBlockHeight,
     isNew,
     operationPending,
+    removalPending,
   } = data;
   const { t } = useLanguage();
   const actions = useCommandActions();
-  const [hovered, setHovered] = useState(false);
+  // ホバー→ポップオーバーの開閉。カードとポップオーバーの間の隙間を通過する
+  // 一瞬だけ mouseleave が発火して消えてしまわないよう、閉じるのは短い遅延
+  // ありで行う（Issue #221。詳細は interaction/useHoverPopover.ts 参照）。
+  const { isOpen: hovered, onMouseEnter, onMouseLeave } = useHoverPopover();
   const [operationPanelOpen, setOperationPanelOpen] = useState(false);
 
   const kindLabel = entity.kind === "node" ? t("card.node") : t("card.workbench");
@@ -54,6 +64,9 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
     "infra-card",
     `infra-card--${entity.kind}`,
     isNew ? "infra-card--new" : "",
+    // 削除コマンド送信からcommandResultが返るまでの間だけ付く見た目
+    // （半透明化。ゴーストカードと同じ opacity/pointer-events。Issue #222）。
+    removalPending ? "infra-card--removing" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -61,8 +74,8 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
   return (
     <div
       className={className}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
       data-testid={`infra-card-${entity.id}`}
     >
       {/* B層のピア接続（紐）を留めるためのハンドル。P2P は無向なので
@@ -106,13 +119,19 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
           <button
             type="button"
             className="infra-card__remove nodrag"
-            aria-label={t("action.remove")}
-            title={t("action.remove")}
+            aria-label={removalPending ? t("action.remove.pending") : t("action.remove")}
+            title={removalPending ? t("action.remove.pending") : t("action.remove")}
+            aria-busy={removalPending}
+            disabled={removalPending}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={onRemove}
             data-testid={`infra-card-remove-${entity.id}`}
           >
-            ×
+            {removalPending ? (
+              <span className="infra-card__remove-spinner" aria-hidden="true" />
+            ) : (
+              "×"
+            )}
           </button>
         )}
       </div>

@@ -1,9 +1,10 @@
 import type { NodeEntity } from "@chainviz/shared";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CommandActionsProvider } from "../commands/CommandActionsContext.js";
 import type { CommandActions } from "../commands/useCommands.js";
 import { LanguageProvider } from "../i18n/LanguageProvider.js";
+import { HOVER_POPOVER_CLOSE_DELAY_MS } from "../interaction/useHoverPopover.js";
 import { CanvasToolbar, type CanvasToolbarProps } from "./CanvasToolbar.js";
 
 function node(overrides: Partial<NodeEntity> = {}): NodeEntity {
@@ -99,8 +100,9 @@ describe("CanvasToolbar", () => {
     expect(input.value).toBe("");
   });
 
-  it("dispatches addNode once per click with no built-in double-submit guard", () => {
-    // 追加ボタン連打の二重送信防止は UI 側では行わない（各クリックが1発行）。
+  it("dispatches addNode once per click while not pending", () => {
+    // pending でない間は、押した回数だけそのまま addNode を発行する
+    // （多重送信の抑止は pendingAddNode による disabled 化で行う。Issue #220）。
     const actions = renderToolbar();
     const button = screen.getByRole("button", { name: /ノードを追加/ });
     fireEvent.click(button);
@@ -168,16 +170,39 @@ describe("CanvasToolbar", () => {
       expect(addWorkbenchButton.className).not.toContain("--pending");
     });
 
-    it("still dispatches addNode when clicked while pending (no disabled attribute)", () => {
+    it("disables the add-node button while pending, blocking double-clicks (Issue #220)", () => {
       const actions = renderToolbar({}, { pendingAddNode: true });
+      const addNodeButton = screen.getByRole(
+        "button",
+        { name: /ノードを追加/ },
+      ) as HTMLButtonElement;
+      expect(addNodeButton.disabled).toBe(true);
+      fireEvent.click(addNodeButton);
+      fireEvent.click(addNodeButton);
+      // disabled なボタンはブラウザがそもそも click イベントを発火させない。
+      expect(actions.addNode).not.toHaveBeenCalled();
+    });
+
+    it("disables the add-workbench button while pending, blocking double-submits (Issue #220)", () => {
+      const actions = renderToolbar({}, { pendingAddWorkbench: true });
+      const addWorkbenchButton = screen.getByRole("button", {
+        name: /ワークベンチを追加/,
+      }) as HTMLButtonElement;
+      expect(addWorkbenchButton.disabled).toBe(true);
+      fireEvent.click(addWorkbenchButton);
+      fireEvent.click(addWorkbenchButton);
+      expect(actions.addWorkbench).not.toHaveBeenCalled();
+    });
+
+    it("re-enables the add-node button once pending resolves (ghost cleared)", () => {
+      const actions = renderToolbar({}, { pendingAddNode: false });
       const addNodeButton = screen.getByRole(
         "button",
         { name: /ノードを追加/ },
       ) as HTMLButtonElement;
       expect(addNodeButton.disabled).toBe(false);
       fireEvent.click(addNodeButton);
-      fireEvent.click(addNodeButton);
-      expect(actions.addNode).toHaveBeenCalledTimes(2);
+      expect(actions.addNode).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -223,15 +248,30 @@ describe("CanvasToolbar", () => {
       );
     });
 
-    it("hides the tooltip again on mouse leave / blur", () => {
-      renderToolbar();
-      const addNodeButton = screen.getByRole("button", { name: /ノードを追加/ });
-      const wrapper = addNodeButton.parentElement as HTMLElement;
-      fireEvent.mouseEnter(wrapper);
-      expect(screen.getByRole("tooltip")).toBeTruthy();
-      fireEvent.mouseLeave(wrapper);
-      expect(screen.queryByRole("tooltip")).toBeNull();
-    });
+    it(
+      "hides the tooltip again on mouse leave / blur, after the close delay " +
+        "(Issue #221: not immediately, so the cursor can still reach the popover " +
+        "across the gap)",
+      () => {
+        vi.useFakeTimers();
+        try {
+          renderToolbar();
+          const addNodeButton = screen.getByRole("button", { name: /ノードを追加/ });
+          const wrapper = addNodeButton.parentElement as HTMLElement;
+          fireEvent.mouseEnter(wrapper);
+          expect(screen.getByRole("tooltip")).toBeTruthy();
+          fireEvent.mouseLeave(wrapper);
+          // 即座には消えない（隙間通過中の可能性があるため）。
+          expect(screen.getByRole("tooltip")).toBeTruthy();
+          act(() => {
+            vi.advanceTimersByTime(HOVER_POPOVER_CLOSE_DELAY_MS);
+          });
+          expect(screen.queryByRole("tooltip")).toBeNull();
+        } finally {
+          vi.useRealTimers();
+        }
+      },
+    );
 
     it("defaults to an empty entity list (generic hints) when entities is omitted", () => {
       renderToolbar();

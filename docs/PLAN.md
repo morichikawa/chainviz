@@ -592,18 +592,18 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       [#215](https://github.com/morichikawa/chainviz/issues/215)
 - [ ] beacon/rethを1個ずつペアでしか追加できない制約についての疑問
       [#216](https://github.com/morichikawa/chainviz/issues/216)
-- [ ] エラー時のトースト通知が長文で右下のポップアップが崩れる
+- [x] エラー時のトースト通知が長文で右下のポップアップが崩れる
       [#217](https://github.com/morichikawa/chainviz/issues/217)
 - [x] デプロイ済みのスマートコントラクト一覧を見れるようにしてほしい
       [#218](https://github.com/morichikawa/chainviz/issues/218)
 - [x] ウォレットがスマートコントラクトに対して何ができるのか分かりにくい
       [#219](https://github.com/morichikawa/chainviz/issues/219)
-- [ ] ノード追加・ワークベンチ追加のボタンが作成中でも連打できてしまう
+- [x] ノード追加・ワークベンチ追加のボタンが作成中でも連打できてしまう
       [#220](https://github.com/morichikawa/chainviz/issues/220)
-- [ ] ノード等のホバーポップオーバーが、カードから離れる途中で消えて
+- [x] ノード等のホバーポップオーバーが、カードから離れる途中で消えて
       中の用語にホバーできない
       [#221](https://github.com/morichikawa/chainviz/issues/221)
-- [ ] ノード/ワークベンチ削除中に進行中であることを示すフィードバックが無い
+- [x] ノード/ワークベンチ削除中に進行中であることを示すフィードバックが無い
       [#222](https://github.com/morichikawa/chainviz/issues/222)
 - [ ] パッケージごとにREADME(設計情報)を用意し、タスクのたびに更新する
       運用にしたい

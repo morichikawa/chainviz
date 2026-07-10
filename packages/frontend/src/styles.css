@@ -189,12 +189,18 @@ body {
 }
 
 /* --- 追加コマンド送信直後のローディング表示（Issue #102） --- */
-/* ボタン自体は disabled にしない（連打を禁止する仕様ではないため）。
-   スピナー + 補足文言だけで「受け付けた」ことを示す。chainviz-spin
-   キーフレームはゴーストカード（.ghost-card__spinner）と共有する。 */
+/* スピナー + 補足文言で「受け付けた」ことを示す。ボタン自体も disabled に
+   なる（Issue #220。連打による多重送信を防ぐ。CanvasToolbar.tsx 側で
+   `disabled` 属性を制御する）。chainviz-spin キーフレームはゴーストカード
+   （.ghost-card__spinner）と共有する。 */
 .canvas-toolbar__button--pending {
   border-color: var(--accent);
   color: var(--muted);
+}
+
+.canvas-toolbar__button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
 }
 
 .canvas-toolbar__spinner {
@@ -258,6 +264,24 @@ body {
 
 .infra-card--workbench {
   border-color: #7a5cff;
+}
+
+/* 削除コマンド送信からcommandResultが返るまでの間だけ付く見た目（Issue
+   #222）。追加時の仮カード（.ghost-card、下記）と同じ opacity/pointer-events
+   の値を使い、「進行中で操作を受け付けない」ことの表現を一貫させる。 */
+.infra-card--removing {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.infra-card__remove-spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  animation: chainviz-spin 0.7s linear infinite;
 }
 
 /* --- 仮カード（ゴーストノード。Issue #102） --- */
@@ -1342,6 +1366,12 @@ body {
   border: 1px solid var(--border);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   font-size: 13px;
+  /* flex item のデフォルト min-width は auto で、中身のコンテンツが持つ
+     最小幅（改行できない最長の連続文字列の幅）を下回って縮まない。将来
+     .toast の直接の子要素が増えた場合に備え、ここでも明示的に 0 にして
+     .toast-stack の max-width（真上）をはみ出さないようにする（詳細は
+     docs/worklog/issue-217.md）。 */
+  min-width: 0;
 }
 
 .toast--error {
@@ -1352,6 +1382,24 @@ body {
 .toast__message {
   flex: 1;
   line-height: 1.4;
+  /* 上の .toast と同じ理由（flex item の min-width: auto 問題）。ここが
+     実際にオーバーフローが発生していた箇所（Issue #217）。 */
+  min-width: 0;
+  /* collector から届くエラー文字列にスペースを含まない長い塊（16進の
+     ハッシュ/アドレス、ファイルパス等）が含まれても、360px 幅の中で
+     強制的に折り返す。 */
+  overflow-wrap: anywhere;
+  /* 通常の white-space: normal だと改行がすべて1つのスペースに畳まれて
+     長い1行になってしまう。pre-wrap にして、元のメッセージに含まれる
+     改行（複数行のスタックトレース等）はそのまま活かしつつ、長い行は
+     引き続き折り返す。 */
+  white-space: pre-wrap;
+  /* 極端に長い（多数行の）メッセージが1件のトーストで画面を占有し続け
+     ないよう保険で高さの上限を設け、超えた分はスクロールで読めるように
+     する。この上限は実行時の観測値に依存しない、表示上の設計値（無理なく
+     読める行数の目安）。 */
+  max-height: 220px;
+  overflow-y: auto;
 }
 
 .toast__dismiss {

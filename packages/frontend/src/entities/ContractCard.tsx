@@ -1,7 +1,7 @@
 import { Handle, type NodeProps, Position } from "@xyflow/react";
-import { useState } from "react";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
+import { useHoverPopover } from "../interaction/useHoverPopover.js";
 import type { ContractActivityChip } from "./contractActivity.js";
 import { ContractPopover } from "./ContractPopover.js";
 import type { ContractFlowNode } from "./contractNode.js";
@@ -14,7 +14,8 @@ import { shortHex } from "./transaction.js";
  */
 function ActivityChip({ chip }: { chip: ContractActivityChip }) {
   const { t } = useLanguage();
-  const [hovered, setHovered] = useState(false);
+  // Issue #221: 隙間を通過する一瞬の mouseleave で消えないよう遅延クローズ。
+  const { isOpen: hovered, onMouseEnter, onMouseLeave } = useHoverPopover();
   const hasDetail = chip.decoded ? chip.args.length > 0 : true;
 
   return (
@@ -26,8 +27,8 @@ function ActivityChip({ chip }: { chip: ContractActivityChip }) {
       ]
         .filter(Boolean)
         .join(" ")}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
       data-testid={`contract-activity-chip-${chip.key}`}
       data-kind={chip.kind}
       data-decoded={chip.decoded}
@@ -73,7 +74,8 @@ function ActivityChip({ chip }: { chip: ContractActivityChip }) {
 export function ContractCard({ data }: NodeProps<ContractFlowNode>) {
   const { entity, activity, isNew, flashKind } = data;
   const { t } = useLanguage();
-  const [hovered, setHovered] = useState(false);
+  // Issue #221: 隙間を通過する一瞬の mouseleave で消えないよう遅延クローズ。
+  const { isOpen: hovered, onMouseEnter, onMouseLeave } = useHoverPopover();
 
   const isUncataloged = entity.name === undefined;
   const name = entity.name ?? t("contract.unknown");
@@ -91,8 +93,8 @@ export function ContractCard({ data }: NodeProps<ContractFlowNode>) {
   return (
     <div
       className={className}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
       data-testid={`contract-card-${entity.address}`}
     >
       {/* デプロイエッジ（ウォレット → コントラクト）の受け口。コントラクトへ
