@@ -1,12 +1,20 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LanguageProvider } from "../i18n/LanguageProvider.js";
+import { HOVER_POPOVER_CLOSE_DELAY_MS } from "../interaction/useHoverPopover.js";
 import { GlossaryProvider } from "./GlossaryProvider.js";
 import { GlossaryTerm } from "./GlossaryTerm.js";
 import type { Glossary } from "./types.js";
 
-afterEach(cleanup);
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 const glossary: Glossary = {
   container: {
@@ -37,18 +45,28 @@ describe("GlossaryTerm", () => {
     expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
-  it("shows and hides the definition popover on hover", () => {
-    wrap(<GlossaryTerm termKey="container">コンテナ</GlossaryTerm>);
-    const term = screen.getByRole("button");
+  it(
+    "shows and hides the definition popover on hover, closing only after the " +
+      "close delay (Issue #221: not immediately, so the cursor can still reach " +
+      "the popover across the visual gap)",
+    () => {
+      wrap(<GlossaryTerm termKey="container">コンテナ</GlossaryTerm>);
+      const term = screen.getByRole("button");
 
-    fireEvent.mouseEnter(term);
-    const tooltip = screen.getByRole("tooltip");
-    expect(tooltip.textContent).toContain("隔離された実行単位");
-    expect(tooltip.textContent).toContain("port-mapping");
+      fireEvent.mouseEnter(term);
+      const tooltip = screen.getByRole("tooltip");
+      expect(tooltip.textContent).toContain("隔離された実行単位");
+      expect(tooltip.textContent).toContain("port-mapping");
 
-    fireEvent.mouseLeave(term);
-    expect(screen.queryByRole("tooltip")).toBeNull();
-  });
+      fireEvent.mouseLeave(term);
+      // 即座には消えない。
+      expect(screen.getByRole("tooltip")).toBeTruthy();
+      act(() => {
+        vi.advanceTimersByTime(HOVER_POPOVER_CLOSE_DELAY_MS);
+      });
+      expect(screen.queryByRole("tooltip")).toBeNull();
+    },
+  );
 
   it("shows the definition in the selected language", () => {
     wrap(<GlossaryTerm termKey="container">Container</GlossaryTerm>, "en");
