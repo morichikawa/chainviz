@@ -1946,3 +1946,192 @@ shared は本ブランチでコミット済み。node-env と collector と fron
   (3) を参照
 - `docs/PLAN.md` の #215 チェックボックスは、frontend の実装まで完了して
   から更新する（node-env・collector分のみでは単位A全体が未完了のため）
+
+### 2026-07-10 実装着手前の設計メモ（単位A、frontend分）
+
+- 担当: frontend
+- ブランチ: issue-215-node-role-visibility
+- 内容: 上記「14. 設計メモ」の「実装引き継ぎ（依存順）(3) frontend」を
+  そのまま実装方針とするが、既存コードを実際に読んだ上で以下を具体化した。
+
+**データフロー**
+
+1. `chain-profiles/ethereum/nodeRoles.ts`（新設）: `NODE_ROLE_DESCRIPTORS`
+   （execution/consensus/validator → `{ label, glossaryKey, showsSyncState }`）
+   と `describeNodeRole(nodeRole)`、および補助関数 `nodeShowsSyncState(nodeRole)`
+   （descriptor が引けない場合は `true` を返す）を置く。`showsSyncState` の
+   分岐先（`InfraNodeCard`/`InfraPopover`）に `"validator"` という文字列
+   リテラルを持ち込まないための唯一の関所にする
+2. `entities/infraNode.ts`: `InfraNodeData.drivenByContainerName?: string` を
+   追加し、`entitiesToFlowNodes` 内で「自分の id を `drivesNodeId` に持つ
+   node」を逆引きして詰める（既存の `drivesNodeContainerName`
+   ＝順方向・オブジェクトから見た解決 とは逆に、`drivenByContainerName`
+   は「自分が誰に駆動されているか」を他ノードの走査から導く）
+3. `InfraNodeCard.tsx`: `describeNodeRole(entity.nodeRole)` からサブタイトル
+   （「{role} · {clientType}」）を組み立て、`nodeShowsSyncState` が false の
+   ときだけ同期状態ドット（`infra-card__status`）を出さない
+4. `InfraPopover.tsx`:
+   - 「役割」行（`field.role` 再利用、値に `GlossaryTerm
+     termKey={descriptor.glossaryKey}`）をクライアント行の直後に追加
+   - 既存 bootnode 行のラベルを `field.role` → 新設 `field.p2pRole` に変更
+   - `nodeShowsSyncState` が false のとき同期状態・ブロック高の2行を出さない
+   - 新設 prop `drivenByContainerName` があれば「駆動元（合意ノード）」行
+     （新設 `field.drivenBy`、GlossaryTerm は既存 `engine-api`）を追加
+   - workbench の「操作先ノード」行（既存 `field.rpcTarget`）のラベルに
+     新設 `GlossaryTerm termKey="rpc-endpoint"` を追加（エッジ側の
+     ポップオーバーは `EdgeLabelRenderer` のラッパーが `pointerEvents:
+     "none"` のため実質ホバー不能。設計メモの指示どおりワークベンチ側に置く）
+5. `operationTargetEdge.ts`: `operationTargetEdgesToFlowEdges` のシグネチャに
+   `nodes: NodeEntity[]` を追加（`internalLinkEdgesToFlowEdges` と同じ
+   `nodesById` 内部構築パターン）し、`OperationTargetEdgeData` に
+   `workbenchContainerName` / `targetContainerName` / `hovered` を持たせる。
+   呼び出し元 `App.tsx` の引数も合わせて変更する
+6. `OperationTargetEdge.tsx`: `DeployEdge.tsx` と同型（`BaseEdge` +
+   hovered 時のみ `EdgeLabelRenderer` でポップオーバー）にする（`InternalLinkEdge`
+   のような二重線・パルスは持たないため、より単純な `DeployEdge` を手本にする）
+7. `OperationTargetEdgePopover.tsx`（新設）: `PeerEdgePopover`/`DeployEdgePopover`
+   と同型。タイトル `edge.operationTarget`、端点 `{workbench} → {target}`、
+   本文 `edge.operationTarget.hint`
+8. `canvas/Canvas.tsx`: `hoveredOperationTargetEdgeId` state を追加し、
+   既存の peer/deploy/internal-link と同じ3点セット（onEdgeMouseEnter/Leave
+   分岐・displayEdges 注入）を1本追加する
+9. glossary（`a-infra.yaml`）に `validator`/`rpc-endpoint` を新設。
+   i18n（`messages.ts`）に `field.p2pRole`/`field.drivenBy`/
+   `edge.operationTarget`/`edge.operationTarget.hint` を追加
+
+**設計メモから実装時に見つけた追加対応（範囲内の波及）**
+
+- `docs/ARCHITECTURE.md` §7.6.3 は「EL 側への逆方向の行は追加しない」という
+  Phase 5 時点の決定を明記していたが、今回の designer 確定版で reth 側に
+  「駆動元」行を追加する決定に更新されたため、実装と同じコミットで §7.6.3
+  の記述も更新する（sync-docs。前回のレビューで docs 更新漏れを指摘された
+  教訓を踏まえ、実装と同時に直す）
+- `TxLifecyclePopover.tsx` の `STAGE_TERM_KEY.sent` は Issue #212 実装時点で
+  `rpc-endpoint` が未新設だったため `workbench` にフォールバックしていた
+  （コード中コメントに明記済み）。本 Issue で `rpc-endpoint` を新設する
+  ため、そのフォールバックを解消し `rpc-endpoint` に差し替える
+  （`docs/ARCHITECTURE.md` §6.11 の表の注記も合わせて更新する）
+- ローカル確認（モックデータ）用に `websocket/mockData.ts` の
+  reth/lighthouse/validator 各ノードへ `nodeRole` を追加する（本番ロジック
+  ではなく開発確認用フィクスチャだが、これが無いと `pnpm dev` のモック
+  モードで今回の表示変更を目視確認できないため）
+
+**変更しないこと**（designer メモの「実装しないと決めたこと」を踏襲）
+
+- `p2pRole` の validator 判定・`classify.ts`・`clientCategory.ts` は変更しない
+- workbench への `com.chainviz.role` ラベル付与は無し（node-env 分で対応済み、
+  frontend 側に追加の消費者を作らない）
+
+### 2026-07-11 実装完了報告（単位A、frontend分）
+
+- 担当: frontend
+- ブランチ: issue-215-node-role-visibility
+- 内容: 上記の設計メモどおり実装した。単位A（#215）は node-env・collector・
+  frontend の3分割すべてが完了し、`docs/PLAN.md` の #215 にチェックを付けた。
+
+**新規ファイル**
+
+- `chain-profiles/ethereum/nodeRoles.ts` / `nodeRoles.test.ts`:
+  `NODE_ROLE_DESCRIPTORS`（execution/consensus/validator →
+  `{label, glossaryKey, showsSyncState}`）、`describeNodeRole`、
+  `nodeShowsSyncState`。コンポーネント側に `"validator"` という文字列
+  リテラルを持ち込まないための唯一の関所にした
+- `entities/OperationTargetEdgePopover.tsx` / `.test.tsx`: 操作先エッジの
+  ホバーポップオーバー本体（`PeerEdgePopover`/`DeployEdgePopover` と同型）
+- `entities/OperationTargetEdge.test.tsx`: エッジコンポーネント単体の
+  ホバー強調（線が太くなる・`--hovered` クラス）のテスト
+
+**既存ファイルの変更**
+
+- `entities/infraNode.ts`: `InfraNodeData.drivenByContainerName` を追加し、
+  `entitiesToFlowNodes` で全ノードを1度走査して「自分を `drivesNodeId` に
+  持つノード」を逆引きする索引を作り、node ごとに詰めた（既存の
+  `drivesNodeContainerName` の逆方向）
+- `entities/InfraNodeCard.tsx`: サブタイトルを nodeRole 解釈結果に応じて
+  「{役割ラベル} · {clientType}」に、`nodeShowsSyncState` が false の
+  ノード（validator）では同期状態ドット自体を描画しないようにした
+- `entities/InfraPopover.tsx`: 「役割」行（クライアント行の直後、
+  `field.role` 再利用）を追加、既存 bootnode 行のラベルを `field.role` →
+  `field.p2pRole` に変更、`showsSyncState` が false のとき同期状態・
+  ブロック高の2行を非表示に、`drivenByContainerName` があれば「駆動元
+  （合意ノード）」行（`field.drivenBy`、GlossaryTerm `engine-api`）を追加、
+  workbench の「操作先ノード」行に `GlossaryTerm termKey="rpc-endpoint"`
+  を追加した
+- `entities/operationTargetEdge.ts`: `operationTargetEdgesToFlowEdges` に
+  `nodes: NodeEntity[]` 引数を追加し、`OperationTargetEdgeData` に
+  `workbenchContainerName`/`targetContainerName`/`hovered` を持たせた。
+  型ガード `isOperationTargetFlowEdge` も新設（Canvas.tsx のホバー処理用）
+- `entities/OperationTargetEdge.tsx`: `DeployEdge.tsx` と同型に、hovered
+  時のみ `EdgeLabelRenderer` で `OperationTargetEdgePopover` を表示する
+  ように変更（元は `BaseEdge` のみの素の実装だった）
+- `canvas/Canvas.tsx`: `hoveredOperationTargetEdgeId` state と
+  onEdgeMouseEnter/Leave 分岐・displayEdges 注入を、既存の peer/deploy/
+  internal-link と同じパターンで1本追加
+- `app/App.tsx`: `operationTargetEdgesToFlowEdges` の呼び出しに
+  `nodeEntities` を追加で渡すよう変更
+- `entities/TxLifecyclePopover.tsx`: `STAGE_TERM_KEY.sent` を `workbench`
+  （暫定フォールバック）から新設の `rpc-endpoint` に差し替えた
+- `i18n/messages.ts`: `field.p2pRole` / `field.drivenBy` /
+  `edge.operationTarget` / `edge.operationTarget.hint` を追加
+- `websocket/mockData.ts`: reth/lighthouse/validator の各モックノードへ
+  `nodeRole`（execution/consensus/validator）を追加し、`pnpm dev`（モック
+  データ）で今回の表示変更を目視確認できるようにした
+- `glossary/ethereum/terms/a-infra.yaml`: `validator`・`rpc-endpoint` を
+  設計メモの定義文どおり新設（3拍子「定義→なぜ必要か→chainvizではどう
+  見えるか」）
+- `docs/ARCHITECTURE.md`: §7.6.3 の「EL 側への逆方向の行は追加しない」
+  という Phase 5 時点の決定を、Issue #215 での更新（駆動元行を追加する
+  決定）に合わせて更新。§6.11 の tx ライフサイクル段階2の表記を
+  `rpc-endpoint` 差し替え済みに更新
+
+**動作確認**
+
+- `pnpm build && pnpm lint && pnpm test`（ルートから全パッケージ対象）が
+  通ることを確認した（shared 62 / collector 1142 / e2e 77 / frontend 1668
+  件 pass）
+- `pnpm dev`（モックデータ、`VITE_COLLECTOR_URL` 未設定）で実際に起動し、
+  Playwright（chromium。`libnspr4`/`libnss3` 等の共有ライブラリ不足は
+  過去セッションの scratchpad/pwlibs の回避策を再利用）で確認した:
+  - reth-node-1/2 のカードサブタイトルが「実行クライアント · reth」、
+    lighthouse-1 が「コンセンサスクライアント · lighthouse」、
+    validator-1/2 が「バリデーター · lighthouse」になっている
+  - validator-1/2 のカードには同期状態ドットが無く（reth/beacon/
+    workbench には有る）、ポップオーバーにも「同期状態」「ブロック高」
+    行が出ない（「役割: バリデーター」行のみ出る）
+  - reth-node-1 のポップオーバーに「駆動元（合意ノード）:
+    chainviz-lighthouse-1」行が出る（既存の「駆動する実行ノード」行と
+    は独立に共存することも確認）
+  - 操作先エッジ（workbench-alice → reth-node-1）にホバーすると
+    ポップオーバーが出て、タイトル・端点・一般論/chainviz都合/
+    ブートノードとの無関係性の3点を含む本文が表示される
+  - workbench-alice のポップオーバーの「操作先ノード」ラベルが
+    `rpc-endpoint` の用語解説アンカーになっており、ホバーで用語
+    ポップオーバー（RPCエンドポイントの定義）が開くことを確認した
+    （エッジ側のポップオーバーは `EdgeLabelRenderer` の
+    `pointerEvents: "none"` によりアンカーを置いても機能しないため、
+    設計メモどおりワークベンチ側にのみ置いた）
+- 確認用に作成した Playwright スクリプトは `packages/e2e/` 配下に
+  一時的に置いて実行し、確認後に削除した（恒久ファイルとしては残して
+  いない）
+
+**次の担当が知っておくべきこと**
+
+- 単位A（#215）は本記録をもって全分割（node-env・collector・frontend）が
+  完了。`docs/PLAN.md` の #215 にチェック済み
+- `TxLifecyclePopover.tsx` の `STAGE_TERM_KEY.sent` を `rpc-endpoint` に
+  差し替えたのは Issue #215 のスコープ内（#212 の暫定実装が明示的に
+  「rpc-endpoint 新設後に差し替え」と書いていたコメントを解消しただけ）で、
+  #212 のロジック自体（4段階の導出・マーク・説明文）は変更していない
+- `OperationTargetEdgeData` の型を `Record<string, unknown>` から具体的な
+  フィールドを持つ interface に変更し、`operationTargetEdgesToFlowEdges`
+  のシグネチャに `nodes` 引数を追加した（呼び出し元は `App.tsx` の1箇所
+  のみで、他に影響は無いことを確認済み）
+- Issue #221（ホバーポップオーバーがカードから離れる途中で消える問題）は
+  未着手のまま（`docs/PLAN.md` に未チェックで残っている）。本Issueでは
+  `useHoverPopover` のような専用フックは新設せず、既存の
+  `onMouseEnter`/`onMouseLeave` ベースの hover state 管理パターン
+  （peer/deploy/internal-link と同じ）をそのまま踏襲した
+
+**起票した Issue**
+
+- 無し。作業中に本 Issue の範囲外の新規問題は見つからなかった
