@@ -1,8 +1,10 @@
 import { Handle, type NodeProps, Position } from "@xyflow/react";
 import { useState } from "react";
 import { ActionHint } from "../canvas/ActionHint.js";
+import { describeNodeRole, nodeShowsSyncState } from "../chain-profiles/ethereum/nodeRoles.js";
 import { useCommandActions } from "../commands/CommandActionsContext.js";
 import { resolveWorkbenchOperationsHint } from "../commands/commandMessages.js";
+import { pickLocale } from "../i18n/i18n.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { useHoverPopover } from "../interaction/useHoverPopover.js";
@@ -15,6 +17,11 @@ import type { InfraFlowNode } from "./infraNode.js";
  * A層のコンテナを表すキャンバス上のカード（React Flow カスタムノード）。
  * ヘッダにコンテナ名、サブタイトルにクライアント種別/ラベルを出し、
  * ホバーで詳細ポップオーバー（InfraPopover）を表示する。
+ *
+ * entity が node の場合、`nodeRole` が解釈できればサブタイトルへ
+ * 「{役割ラベル} · {clientType}」を出し（Issue #215）、`nodeRole` が
+ * `showsSyncState: false`（現状は validator のみ）なら同期状態ドット自体を
+ * 描画しない（バリデーターはチェーンを同期する係ではないため）。
  *
  * entity が workbench の場合のみ、カード下部に定型操作パネル（送金/デプロイ/
  * コントラクト呼び出し）を開く全幅ボタンを持つ（ARCHITECTURE.md §6.5。
@@ -30,12 +37,13 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
     entity,
     rpcTargetContainerName,
     drivesNodeContainerName,
+    drivenByContainerName,
     maxElBlockHeight,
     isNew,
     operationPending,
     removalPending,
   } = data;
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const actions = useCommandActions();
   // ホバー→ポップオーバーの開閉。カードとポップオーバーの間の隙間を通過する
   // 一瞬だけ mouseleave が発火して消えてしまわないよう、閉じるのは短い遅延
@@ -44,9 +52,26 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
   const [operationPanelOpen, setOperationPanelOpen] = useState(false);
 
   const kindLabel = entity.kind === "node" ? t("card.node") : t("card.workbench");
+  // ノードの役割（execution/consensus/validator）が分かれば
+  // 「{役割ラベル} · {clientType}」、分からなければ従来どおり clientType
+  // のみを出す（Issue #215。`chain-profiles/ethereum/nodeRoles.ts` が
+  // 生の nodeRole の解釈を担い、ここには chainviz-Ethereum 固有のリテラルを
+  // 持ち込まない）。
+  const nodeRoleDescriptor =
+    entity.kind === "node" ? describeNodeRole(entity.nodeRole) : undefined;
   const subtitle =
-    entity.kind === "node" ? entity.clientType : entity.label;
+    entity.kind === "node"
+      ? nodeRoleDescriptor
+        ? `${pickLocale(nodeRoleDescriptor.label, lang)} · ${entity.clientType}`
+        : entity.clientType
+      : entity.label;
   const synced = entity.kind === "node" ? entity.syncStatus === "synced" : true;
+  // このノードがチェーンのコピーを同期する係か（Issue #215）。validator は
+  // ステークで合意に参加する係であり、チェーンを同期する係ではないため、
+  // 同期状態ドットを出さない（値ゼロのまま出し続ける旧挙動は「壊れている」
+  // 誤解を招く）。workbench は node ではないため常に true 扱い。
+  const showsSyncState =
+    entity.kind === "node" ? nodeShowsSyncState(entity.nodeRole) : true;
   // ブートノードの明示（Issue #124 C）。collector が正規化できなかった
   // 旧スナップショット・別チェーンでは p2pRole が省略されるため、その場合は
   // バッジを出さないフォールバックに倒す（通常ピア前提の表示にしない）。
@@ -93,10 +118,12 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
         isConnectable={false}
       />
       <div className="infra-card__header">
-        <span
-          className={`infra-card__status ${synced ? "is-synced" : "is-syncing"}`}
-          aria-hidden="true"
-        />
+        {showsSyncState && (
+          <span
+            className={`infra-card__status ${synced ? "is-synced" : "is-syncing"}`}
+            aria-hidden="true"
+          />
+        )}
         <span className="infra-card__kind">
           <GlossaryTerm
             termKey={entity.kind === "workbench" ? "workbench" : "container"}
@@ -174,6 +201,7 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
           entity={entity}
           rpcTargetContainerName={rpcTargetContainerName}
           drivesNodeContainerName={drivesNodeContainerName}
+          drivenByContainerName={drivenByContainerName}
           maxElBlockHeight={maxElBlockHeight}
         />
       )}

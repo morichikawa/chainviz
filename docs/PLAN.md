@@ -588,7 +588,7 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       [#213](https://github.com/morichikawa/chainviz/issues/213)
 - [x] ブートノードとvalidator(2-1/1-1)がP2P接続確立中の表示のまま変化しない
       [#214](https://github.com/morichikawa/chainviz/issues/214)
-- [ ] rethとbeaconそれぞれの役割・関連性がUIから見えてこない
+- [x] rethとbeaconそれぞれの役割・関連性がUIから見えてこない
       [#215](https://github.com/morichikawa/chainviz/issues/215)
 - [ ] beacon/rethを1個ずつペアでしか追加できない制約についての疑問
       [#216](https://github.com/morichikawa/chainviz/issues/216)

@@ -1,6 +1,9 @@
-import type { WorkbenchEntity } from "@chainviz/shared";
+import type { NodeEntity, WorkbenchEntity } from "@chainviz/shared";
 import { describe, expect, it } from "vitest";
-import { operationTargetEdgesToFlowEdges } from "./operationTargetEdge.js";
+import {
+  isOperationTargetFlowEdge,
+  operationTargetEdgesToFlowEdges,
+} from "./operationTargetEdge.js";
 
 function workbench(overrides: Partial<WorkbenchEntity> = {}): WorkbenchEntity {
   return {
@@ -17,10 +20,29 @@ function workbench(overrides: Partial<WorkbenchEntity> = {}): WorkbenchEntity {
   };
 }
 
+function node(overrides: Partial<NodeEntity> = {}): NodeEntity {
+  return {
+    kind: "node",
+    id: "reth-1",
+    containerName: "chainviz-reth-1",
+    ip: "172.20.0.10",
+    ports: [8545],
+    resources: { cpuPercent: 1, memMB: 100 },
+    process: { name: "reth node" },
+    chainType: "ethereum",
+    clientType: "reth",
+    syncStatus: "synced",
+    blockHeight: 1,
+    headBlockHash: "0x0",
+    ...overrides,
+  };
+}
+
 describe("operationTargetEdgesToFlowEdges", () => {
-  it("draws a permanent edge from a workbench to its resolved RPC target", () => {
+  it("draws a permanent edge from a workbench to its resolved RPC target, with both container names attached", () => {
     const wb = workbench({ rpcTargetNodeId: "reth-1" });
-    const edges = operationTargetEdgesToFlowEdges([wb], ["wb-1", "reth-1"]);
+    const reth = node();
+    const edges = operationTargetEdgesToFlowEdges([wb], [reth], ["wb-1", "reth-1"]);
     expect(edges).toEqual([
       {
         id: "optarget-wb-1",
@@ -28,30 +50,49 @@ describe("operationTargetEdgesToFlowEdges", () => {
         source: "wb-1",
         target: "reth-1",
         className: "operation-target-edge",
+        data: {
+          workbenchContainerName: "chainviz-wb-1",
+          targetContainerName: "chainviz-reth-1",
+        },
       },
     ]);
   });
 
   it("skips a workbench with no resolved rpcTargetNodeId (Issue #123 §4-5 fallback)", () => {
     const wb = workbench({});
-    expect(operationTargetEdgesToFlowEdges([wb], ["wb-1"])).toEqual([]);
+    expect(operationTargetEdgesToFlowEdges([wb], [], ["wb-1"])).toEqual([]);
   });
 
   it("does not draw a dangling edge when the workbench itself is not present", () => {
     const wb = workbench({ rpcTargetNodeId: "reth-1" });
-    expect(operationTargetEdgesToFlowEdges([wb], ["reth-1"])).toEqual([]);
+    const reth = node();
+    expect(operationTargetEdgesToFlowEdges([wb], [reth], ["reth-1"])).toEqual([]);
   });
 
   it("does not draw a dangling edge when the target node is not present (e.g. removed)", () => {
     const wb = workbench({ rpcTargetNodeId: "reth-1" });
-    expect(operationTargetEdgesToFlowEdges([wb], ["wb-1"])).toEqual([]);
+    const reth = node();
+    expect(operationTargetEdgesToFlowEdges([wb], [reth], ["wb-1"])).toEqual([]);
+  });
+
+  it("does not draw an edge when the target id is present but not resolvable via nodes (inconsistent caller input)", () => {
+    const wb = workbench({ rpcTargetNodeId: "reth-1" });
+    // "reth-1" は present には含まれるが nodes 配列に無い（呼び出し元の不整合）。
+    const edges = operationTargetEdgesToFlowEdges([wb], [], ["wb-1", "reth-1"]);
+    expect(edges).toEqual([]);
   });
 
   it("draws one edge per workbench when several resolve targets", () => {
     const wb1 = workbench({ id: "wb-1", rpcTargetNodeId: "reth-1" });
-    const wb2 = workbench({ id: "wb-2", rpcTargetNodeId: "reth-1" });
+    const wb2 = workbench({
+      id: "wb-2",
+      containerName: "chainviz-wb-2",
+      rpcTargetNodeId: "reth-1",
+    });
+    const reth = node();
     const edges = operationTargetEdgesToFlowEdges(
       [wb1, wb2],
+      [reth],
       ["wb-1", "wb-2", "reth-1"],
     );
     expect(edges).toHaveLength(2);
@@ -64,8 +105,10 @@ describe("operationTargetEdgesToFlowEdges", () => {
     // いる側のエッジはそのまま残す(片方の後始末が他方を巻き込まない)。
     const wbLive = workbench({ id: "wb-1", rpcTargetNodeId: "reth-1" });
     const wbDangling = workbench({ id: "wb-2", rpcTargetNodeId: "reth-2" });
+    const reth1 = node({ id: "reth-1", containerName: "chainviz-reth-1" });
     const edges = operationTargetEdgesToFlowEdges(
       [wbLive, wbDangling],
+      [reth1],
       // reth-2 は present に含めない(削除済み)。
       ["wb-1", "wb-2", "reth-1"],
     );
@@ -74,15 +117,42 @@ describe("operationTargetEdgesToFlowEdges", () => {
   });
 
   it("returns an empty array for no workbenches", () => {
-    expect(operationTargetEdgesToFlowEdges([], [])).toEqual([]);
+    expect(operationTargetEdgesToFlowEdges([], [], [])).toEqual([]);
   });
 
   it("accepts a plain array (not only a Set) for presentInfraIds", () => {
     const wb = workbench({ rpcTargetNodeId: "reth-1" });
+    const reth = node();
     const edges = operationTargetEdgesToFlowEdges(
       [wb],
+      [reth],
       new Set(["wb-1", "reth-1"]),
     );
     expect(edges).toHaveLength(1);
+  });
+});
+
+describe("isOperationTargetFlowEdge (Issue #215)", () => {
+  it("returns true for an operationTarget-typed edge", () => {
+    expect(
+      isOperationTargetFlowEdge({
+        id: "e1",
+        source: "a",
+        target: "b",
+        type: "operationTarget",
+      }),
+    ).toBe(true);
+  });
+
+  it("returns false for edges of another type", () => {
+    expect(
+      isOperationTargetFlowEdge({ id: "e1", source: "a", target: "b", type: "peer" }),
+    ).toBe(false);
+  });
+
+  it("returns false for an edge with no type", () => {
+    expect(
+      isOperationTargetFlowEdge({ id: "e1", source: "a", target: "b" }),
+    ).toBe(false);
   });
 });

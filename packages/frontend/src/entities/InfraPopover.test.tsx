@@ -2,9 +2,20 @@ import type { NodeEntity, WorkbenchEntity } from "@chainviz/shared";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { GlossaryProvider } from "../glossary/GlossaryProvider.js";
+import type { Glossary } from "../glossary/types.js";
 import { LanguageProvider } from "../i18n/LanguageProvider.js";
 import type { InfraEntity } from "./infraNode.js";
 import { InfraPopover } from "./InfraPopover.js";
+
+const rpcEndpointGlossary: Glossary = {
+  "rpc-endpoint": {
+    key: "rpc-endpoint",
+    name: { ja: "RPCエンドポイント", en: "RPC endpoint" },
+    definition: { ja: "窓口となるノードのAPI", en: "The API of the gateway node" },
+    layer: "a-infra",
+    relatedTerms: [],
+  },
+};
 
 afterEach(cleanup);
 
@@ -42,6 +53,7 @@ function renderPopover(
   lang: "ja" | "en" = "ja",
   drivesNodeContainerName?: string,
   maxElBlockHeight?: number,
+  drivenByContainerName?: string,
 ) {
   return render(
     <LanguageProvider initialLanguage={lang}>
@@ -50,6 +62,7 @@ function renderPopover(
           entity={entity}
           drivesNodeContainerName={drivesNodeContainerName}
           maxElBlockHeight={maxElBlockHeight}
+          drivenByContainerName={drivenByContainerName}
         />
       </GlossaryProvider>
     </LanguageProvider>,
@@ -72,52 +85,224 @@ describe("InfraPopover data-testid instrumentation (Issue #198, ARCHITECTURE.md 
   });
 });
 
-describe("InfraPopover role row (Issue #124 C)", () => {
-  it("shows a role row with the bootnode value for a bootnode node", () => {
+describe("InfraPopover P2P role row (Issue #124 C, relabeled field.p2pRole in Issue #215)", () => {
+  it("shows a P2P role row with the bootnode value for a bootnode node", () => {
     renderPopover({ ...node, p2pRole: "bootnode" });
-    expect(screen.getByText("役割")).toBeTruthy();
+    expect(screen.getByText("P2Pでの役割")).toBeTruthy();
     expect(screen.getByText("ブートノード")).toBeTruthy();
   });
 
-  it("does not show a role row for a peer node", () => {
+  it("does not show a P2P role row for a peer node", () => {
     renderPopover({ ...node, p2pRole: "peer" });
-    expect(screen.queryByText("役割")).toBeNull();
+    expect(screen.queryByText("P2Pでの役割")).toBeNull();
     expect(screen.queryByText("ブートノード")).toBeNull();
   });
 
-  it("does not show a role row when p2pRole is undefined (旧スナップショット想定)", () => {
+  it("does not show a P2P role row when p2pRole is undefined (旧スナップショット想定)", () => {
     const withoutRole: NodeEntity = { ...node };
     delete withoutRole.p2pRole;
     renderPopover(withoutRole);
-    expect(screen.queryByText("役割")).toBeNull();
+    expect(screen.queryByText("P2Pでの役割")).toBeNull();
   });
 
-  it("does not show a role row for a workbench (bootnode is a node-only concept)", () => {
+  it("does not show a P2P role row for a workbench (bootnode is a node-only concept)", () => {
     // ワークベンチには p2pRole フィールド自体が無い。役割行は node 分岐内に
     // あるため、型を欺いて bootnode を差し込んでも出ないことを固定する。
     const corrupted = { ...workbench, p2pRole: "bootnode" } as unknown as InfraEntity;
     renderPopover(corrupted);
-    expect(screen.queryByText("役割")).toBeNull();
+    expect(screen.queryByText("P2Pでの役割")).toBeNull();
   });
 
-  it("shows the role row regardless of removable (independent fields)", () => {
+  it("shows the P2P role row regardless of removable (independent fields)", () => {
     // 役割行は removable と無関係。削除不可(compose起動)のブートノードでも出る。
     renderPopover({ ...node, p2pRole: "bootnode", removable: false });
-    expect(screen.getByText("役割")).toBeTruthy();
+    expect(screen.getByText("P2Pでの役割")).toBeTruthy();
     expect(screen.getByText("ブートノード")).toBeTruthy();
   });
 
-  it("shows the role row alongside the sync/blockHeight fields for a syncing bootnode", () => {
+  it("shows the P2P role row alongside the sync/blockHeight fields for a syncing bootnode", () => {
     // 役割行は同期状態と独立。同期中でも役割行と同期行の両方が出る。
     renderPopover({ ...node, p2pRole: "bootnode", syncStatus: "syncing" });
-    expect(screen.getByText("役割")).toBeTruthy();
+    expect(screen.getByText("P2Pでの役割")).toBeTruthy();
     expect(screen.getByText("同期中")).toBeTruthy();
   });
 
-  it("localizes the role row to English", () => {
+  it("localizes the P2P role row to English", () => {
     renderPopover({ ...node, p2pRole: "bootnode" }, "en");
-    expect(screen.getByText("Role")).toBeTruthy();
+    expect(screen.getByText("P2P role")).toBeTruthy();
     expect(screen.getByText("Bootnode")).toBeTruthy();
+  });
+});
+
+describe("InfraPopover node role row (Issue #215)", () => {
+  it("shows the role row for an execution node with the EL client glossary anchor", () => {
+    renderPopover({ ...node, nodeRole: "execution" });
+    expect(screen.getByText("役割")).toBeTruthy();
+    expect(screen.getByText("実行クライアント")).toBeTruthy();
+  });
+
+  it("shows the role row for a consensus node", () => {
+    renderPopover({ ...node, clientType: "lighthouse", nodeRole: "consensus" });
+    expect(screen.getByText("役割")).toBeTruthy();
+    expect(screen.getByText("コンセンサスクライアント")).toBeTruthy();
+  });
+
+  it("shows the role row for a validator node", () => {
+    renderPopover({ ...node, clientType: "lighthouse", nodeRole: "validator" });
+    expect(screen.getByText("役割")).toBeTruthy();
+    expect(screen.getByText("バリデーター")).toBeTruthy();
+  });
+
+  it("does not show the role row when nodeRole is undefined (legacy snapshot)", () => {
+    renderPopover(node);
+    expect(screen.queryByText("役割")).toBeNull();
+  });
+
+  it("does not show the role row for an unmapped nodeRole value", () => {
+    renderPopover({ ...node, nodeRole: "sequencer" });
+    expect(screen.queryByText("役割")).toBeNull();
+  });
+
+  it("does not show the role row for a workbench (node-only concept)", () => {
+    const corrupted = {
+      ...workbench,
+      nodeRole: "execution",
+    } as unknown as InfraEntity;
+    renderPopover(corrupted);
+    expect(screen.queryByText("役割")).toBeNull();
+  });
+
+  it("shows both the role row and the P2P role row together when both apply", () => {
+    // 役割行(field.role)とP2P役割行(field.p2pRole)は別軸で共存する。
+    renderPopover({ ...node, nodeRole: "execution", p2pRole: "bootnode" });
+    expect(screen.getByText("役割")).toBeTruthy();
+    expect(screen.getByText("実行クライアント")).toBeTruthy();
+    expect(screen.getByText("P2Pでの役割")).toBeTruthy();
+    expect(screen.getByText("ブートノード")).toBeTruthy();
+  });
+
+  it("localizes the role row to English", () => {
+    renderPopover({ ...node, nodeRole: "validator" }, "en");
+    expect(screen.getByText("Role")).toBeTruthy();
+    expect(screen.getByText("Validator")).toBeTruthy();
+  });
+});
+
+describe("InfraPopover sync/blockHeight visibility by nodeRole (Issue #215)", () => {
+  it("shows the sync and blockHeight rows for an execution node", () => {
+    renderPopover({ ...node, nodeRole: "execution" });
+    expect(screen.getByText("同期状態")).toBeTruthy();
+    expect(screen.getByText("ブロック高")).toBeTruthy();
+  });
+
+  it("shows the sync and blockHeight rows when nodeRole is undefined (legacy snapshot fallback)", () => {
+    renderPopover(node);
+    expect(screen.getByText("同期状態")).toBeTruthy();
+    expect(screen.getByText("ブロック高")).toBeTruthy();
+  });
+
+  it("hides the sync and blockHeight rows for a validator node", () => {
+    renderPopover({ ...node, nodeRole: "validator" });
+    expect(screen.queryByText("同期状態")).toBeNull();
+    expect(screen.queryByText("ブロック高")).toBeNull();
+    expect(screen.queryByText("同期済み")).toBeNull();
+    expect(screen.queryByText("10")).toBeNull();
+  });
+
+  it("still shows the role row for a validator even though sync fields are hidden", () => {
+    renderPopover({ ...node, nodeRole: "validator" });
+    expect(screen.getByText("役割")).toBeTruthy();
+    expect(screen.getByText("バリデーター")).toBeTruthy();
+  });
+
+  it("suppresses the sync/blockHeight rows for a validator carrying real synced data (display is role-driven, not data-driven)", () => {
+    // データと表示ロジックの分離: validator が synced・実ブロック高 777 を
+    // 持っていても、同期/ブロック高の行・値ともに一切漏らさない。
+    renderPopover({ ...node, nodeRole: "validator", syncStatus: "synced", blockHeight: 777 });
+    expect(screen.queryByText("同期状態")).toBeNull();
+    expect(screen.queryByText("ブロック高")).toBeNull();
+    expect(screen.queryByText("同期済み")).toBeNull();
+    expect(screen.queryByText("777")).toBeNull();
+  });
+
+  it("shows the sync/blockHeight rows for an execution node with empty progress (0/syncing still displayed)", () => {
+    // 逆向き: 役割 execution で blockHeight 0・syncing という「空データ」でも
+    // 行は出す（省略 = 未観測 とは区別する）。値 0 と「同期中」を表示する。
+    renderPopover({ ...node, nodeRole: "execution", syncStatus: "syncing", blockHeight: 0 });
+    expect(screen.getByText("同期状態")).toBeTruthy();
+    expect(screen.getByText("同期中")).toBeTruthy();
+    expect(screen.getByText("ブロック高")).toBeTruthy();
+    expect(screen.getByText("0")).toBeTruthy();
+  });
+
+  it("still renders the sync stages section for a validator that (unexpectedly) carries internals.syncStages", () => {
+    // 境界の明示: syncStages セクションは internals の有無で独立に判定され、
+    // showsSyncState には連動しない。Ethereum プロファイルでは validator は
+    // internals を持たないため実際には到達しないが、万一持った場合は
+    // 「同期状態/ブロック高」行は隠れるのにステージ節だけは出るという非対称に
+    // なる（現状挙動を固定。役割ゲートは基本の同期行にのみ効く）。
+    renderPopover(
+      {
+        ...node,
+        nodeRole: "validator",
+        internals: { syncStages: [{ stage: "Headers", checkpoint: 10 }] },
+      },
+      "ja",
+      undefined,
+      64,
+    );
+    expect(screen.queryByText("同期状態")).toBeNull();
+    expect(screen.getByText("同期ステージ")).toBeTruthy();
+  });
+
+  it("still renders the txpool row for a validator that (unexpectedly) carries internals.mempool", () => {
+    // 上と同じ非対称の txpool 版。行の有無は internals.mempool の有無で決まる。
+    renderPopover({
+      ...node,
+      nodeRole: "validator",
+      internals: { mempool: { pending: 1, queued: 2 } },
+    });
+    expect(screen.queryByText("同期状態")).toBeNull();
+    expect(screen.getByText("txpool")).toBeTruthy();
+  });
+});
+
+describe("InfraPopover drivenBy row (ARCHITECTURE.md §7.6.3 updated, Issue #215)", () => {
+  it("shows a drivenBy row with the resolved consensus node's containerName", () => {
+    renderPopover(node, "ja", undefined, undefined, "chainviz-lighthouse-1");
+    expect(screen.getByText("駆動元（合意ノード）")).toBeTruthy();
+    expect(screen.getByText("chainviz-lighthouse-1")).toBeTruthy();
+  });
+
+  it("does not show the drivenBy row when it cannot be resolved", () => {
+    renderPopover(node);
+    expect(screen.queryByText("駆動元（合意ノード）")).toBeNull();
+  });
+
+  it("does not show the drivenBy row when the resolved containerName is an empty string (欠落時の縮退)", () => {
+    // 駆動元ノードの containerName が空文字だと逆引き結果も空文字になり
+    // （infraNode.ts のテスト参照）、ポップオーバー側は falsy 判定で
+    // 「未解決」と同じく行を出さない。空の欄を描かない安全側。
+    renderPopover(node, "ja", undefined, undefined, "");
+    expect(screen.queryByText("駆動元（合意ノード）")).toBeNull();
+  });
+
+  it("does not show the drivenBy row for a workbench", () => {
+    renderPopover(workbench, "ja", undefined, undefined, "chainviz-lighthouse-1");
+    expect(screen.queryByText("駆動元（合意ノード）")).toBeNull();
+  });
+
+  it("localizes the drivenBy row to English", () => {
+    renderPopover(node, "en", undefined, undefined, "chainviz-lighthouse-1");
+    expect(screen.getByText("Driven by (consensus node)")).toBeTruthy();
+  });
+
+  it("shows both drivesNode and drivenBy rows together (defensive, not expected on a real node)", () => {
+    renderPopover(node, "ja", "chainviz-reth-2", undefined, "chainviz-lighthouse-1");
+    expect(screen.getByText("駆動する実行ノード")).toBeTruthy();
+    expect(screen.getByText("chainviz-reth-2")).toBeTruthy();
+    expect(screen.getByText("駆動元（合意ノード）")).toBeTruthy();
+    expect(screen.getByText("chainviz-lighthouse-1")).toBeTruthy();
   });
 });
 
@@ -147,6 +332,35 @@ describe("InfraPopover drivesNode row (ARCHITECTURE.md §7.6.3, Issue #188)", ()
     renderPopover({ ...node, syncStatus: "syncing" }, "ja", "chainviz-reth-1");
     expect(screen.getByText("同期中")).toBeTruthy();
     expect(screen.getByText("駆動する実行ノード")).toBeTruthy();
+  });
+});
+
+describe("InfraPopover workbench RPC target field glossary anchor (Issue #215)", () => {
+  it("anchors the rpc-endpoint glossary term on the RPC target label when it resolves", () => {
+    render(
+      <LanguageProvider initialLanguage="ja">
+        <GlossaryProvider glossary={rpcEndpointGlossary}>
+          <InfraPopover
+            entity={workbench}
+            rpcTargetContainerName="chainviz-reth-1"
+          />
+        </GlossaryProvider>
+      </LanguageProvider>,
+    );
+    expect(screen.getByText("操作先ノード")).toBeTruthy();
+    expect(screen.getByText("chainviz-reth-1")).toBeTruthy();
+    expect(screen.getByTestId("glossary-term-rpc-endpoint")).toBeTruthy();
+  });
+
+  it("does not render the anchor when the RPC target cannot be resolved", () => {
+    render(
+      <LanguageProvider initialLanguage="ja">
+        <GlossaryProvider glossary={{}}>
+          <InfraPopover entity={workbench} />
+        </GlossaryProvider>
+      </LanguageProvider>,
+    );
+    expect(screen.queryByTestId("glossary-term-rpc-endpoint")).toBeNull();
   });
 });
 
