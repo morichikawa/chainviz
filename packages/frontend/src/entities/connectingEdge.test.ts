@@ -178,6 +178,43 @@ describe("connectingEdgesToFlowEdges", () => {
     expect(edges.every((e) => e.target === "reth-1")).toBe(true);
   });
 
+  it("excludes a node with p2pRole 'none' from the connecting edge target (Issue #214)", () => {
+    // validator client 相当。consensus カテゴリだが P2P に参加しないため
+    // PeerEdge を永久に持たず、除外しないと「接続確立中」が固着してしまう。
+    const vc = node({
+      id: "lighthouse-vc-1",
+      clientType: "lighthouse",
+      p2pRole: "none",
+    });
+    const edges = connectingEdgesToFlowEdges(
+      [vc],
+      [],
+      { consensus: bootConsensus },
+      ["lighthouse-vc-1", "lighthouse-1"],
+    );
+    expect(edges).toEqual([]);
+  });
+
+  it("keeps drawing a connecting edge when p2pRole is omitted (undefined, unchanged behavior)", () => {
+    // p2pRole 省略時（旧 collector との互換含む）は従来どおり対象に含める。
+    const peer = node({ id: "reth-2", clientType: "reth", p2pRole: undefined });
+    const edges = connectingEdgesToFlowEdges(
+      [peer],
+      [],
+      { execution: bootExecution },
+      ["reth-2", "reth-1"],
+    );
+    expect(edges).toEqual([
+      {
+        id: "connecting-reth-2",
+        type: "connecting",
+        source: "reth-2",
+        target: "reth-1",
+        className: "connecting-edge",
+      },
+    ]);
+  });
+
   it("returns an empty array for no nodes", () => {
     expect(connectingEdgesToFlowEdges([], [], {}, [])).toEqual([]);
   });
