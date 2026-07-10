@@ -105,6 +105,65 @@ describe("ContractListPanel", () => {
     expect(rows[1]?.textContent).toContain("Second");
   });
 
+  it("renders deployed and deploying rows together, keeping the given order", () => {
+    wrap(
+      [
+        { nodeId: "ghost-1", status: "deploying", name: "Counter" },
+        { nodeId: "0xaaa", status: "deployed", name: "ChainvizToken", address: "0xaaa" },
+      ],
+      () => {},
+    );
+    const rows = screen.getAllByTestId(/^contract-list-row-/);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.textContent).toContain("デプロイ中");
+    expect(rows[1]?.textContent).toContain("ChainvizToken");
+    // 件数バッジは deployed/deploying を合わせた総数。
+    expect(screen.getByTestId("contract-list-panel").textContent).toContain("2");
+  });
+
+  it("renders a deploying row without crashing when the name is undefined", () => {
+    wrap([{ nodeId: "ghost-x", status: "deploying", name: undefined }], () => {});
+    const row = screen.getByTestId("contract-list-row-ghost-x");
+    expect(row.textContent).toContain("デプロイ中");
+  });
+
+  it("renders a deployed row with an empty shortened address when address is missing", () => {
+    // deployed 行は本来 address を持つが、欠落しても shortHex("") = "" で
+    // 落ちずに描画する（防御的挙動を固定）。
+    wrap([{ nodeId: "n1", status: "deployed", name: "Counter", address: undefined }], () => {});
+    const row = screen.getByTestId("contract-list-row-n1");
+    expect(row.textContent).toContain("Counter");
+  });
+
+  it("shows a count that matches the number of rows for many entries", () => {
+    const entries: ContractListEntry[] = Array.from({ length: 12 }, (_, i) => ({
+      nodeId: `0x${i}`,
+      status: "deployed" as const,
+      name: `C${i}`,
+      address: `0x${i}`,
+    }));
+    wrap(entries, () => {});
+    expect(screen.getAllByTestId(/^contract-list-row-/)).toHaveLength(12);
+    expect(screen.getByTestId("contract-list-panel").textContent).toContain("12");
+  });
+
+  it("fires onSelect for whichever row is clicked even if the caller must guard a stale id", () => {
+    // パネルは onSelect を呼ぶだけの薄い層。対象ノードが React Flow 上に
+    // 既に無い場合の防御（if (!node) return）は Canvas 側の責務であり、
+    // パネルは id を渡す責務のみを持つ（関心の分離を固定する）。
+    const onSelect = vi.fn();
+    wrap(
+      [
+        { nodeId: "0xaaa", status: "deployed", name: "A", address: "0xaaa" },
+        { nodeId: "0xbbb", status: "deployed", name: "B", address: "0xbbb" },
+      ],
+      onSelect,
+    );
+    fireEvent.click(screen.getByTestId("contract-list-row-0xbbb"));
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onSelect).toHaveBeenCalledWith("0xbbb");
+  });
+
   it("localizes to English", () => {
     render(
       <LanguageProvider initialLanguage="en">

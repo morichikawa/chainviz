@@ -50,6 +50,29 @@ describe("useAppearanceOrder", () => {
     expect(result.current.size).toBe(0);
   });
 
+  it("assigns a single sequence number to a duplicate id within one input array", () => {
+    // 同じ id が同一配列に重複していても番号は1つだけ（防御的挙動）。
+    const { result } = renderHook(() => useAppearanceOrder(["a", "a", "b"]));
+    expect(result.current.get("a")).toBe(0);
+    expect(result.current.get("b")).toBe(1);
+    expect(result.current.size).toBe(2);
+  });
+
+  it("gives the real contract id a higher order than the ghost it replaced (newest on top)", () => {
+    // ghost → 実カードの置換: ghost が消えて実カード(address)が現れると、
+    // 実カードには新しい番号が振られ、一覧の最上段へ来る（worklog「単位C」の
+    // 想定挙動: デプロイが今しがた実体化した、という事実と一致）。
+    const { result, rerender } = renderHook(({ ids }) => useAppearanceOrder(ids), {
+      initialProps: { ids: ["0xexisting", "ghost-cmd-1"] },
+    });
+    const ghostOrder = result.current.get("ghost-cmd-1");
+    rerender({ ids: ["0xexisting", "0xnewcontract"] });
+    expect(result.current.get("0xnewcontract")).toBeGreaterThan(ghostOrder as number);
+    expect(result.current.get("0xnewcontract")).toBeGreaterThan(
+      result.current.get("0xexisting") as number,
+    );
+  });
+
   it("keeps a strictly increasing order across many appearances (no collisions)", () => {
     const { result, rerender } = renderHook(({ ids }) => useAppearanceOrder(ids), {
       initialProps: { ids: [] as string[] },

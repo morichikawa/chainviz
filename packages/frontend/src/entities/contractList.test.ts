@@ -80,6 +80,50 @@ describe("buildContractListEntries", () => {
   it("returns an empty array when there is nothing deployed or deploying", () => {
     expect(buildContractListEntries([], [])).toEqual([]);
   });
+
+  it("preserves input order across multiple deployed contracts", () => {
+    const nodes = [
+      contractNode({ address: "0xaaa", name: "First" }),
+      contractNode({ address: "0xbbb", name: "Second" }),
+      contractNode({ address: "0xccc", name: "Third" }),
+    ];
+    const entries = buildContractListEntries(nodes, []);
+    expect(entries.map((e) => e.nodeId)).toEqual(["0xaaa", "0xbbb", "0xccc"]);
+  });
+
+  it("preserves input order across multiple deploying ghosts", () => {
+    const ghosts = [
+      deployingGhost("cmd-1", "Counter"),
+      deployingGhost("cmd-2", "ChainvizToken"),
+    ];
+    const entries = buildContractListEntries([], ghosts);
+    expect(entries.map((e) => e.name)).toEqual(["Counter", "ChainvizToken"]);
+    expect(entries.every((e) => e.status === "deploying")).toBe(true);
+  });
+
+  it("combines several deployed and several deploying entries, all deployed first", () => {
+    const nodes = [
+      contractNode({ address: "0xaaa", name: "First" }),
+      contractNode({ address: "0xbbb", name: "Second" }),
+    ];
+    const ghosts = [deployingGhost("cmd-1", "Counter"), deployingGhost("cmd-2", "Extra")];
+    const entries = buildContractListEntries(nodes, ghosts);
+    expect(entries.map((e) => e.status)).toEqual([
+      "deployed",
+      "deployed",
+      "deploying",
+      "deploying",
+    ]);
+  });
+
+  it("keeps an empty ghost label as an empty name rather than dropping the entry", () => {
+    // ghost の label は本来空にならない想定だが、空でも行自体は落とさない
+    // （呼び出し側 ContractListPanel が name ?? "" で描画する）。
+    const ghost = deployingGhost("cmd-1", "");
+    const entries = buildContractListEntries([], [ghost]);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ status: "deploying", name: "" });
+  });
 });
 
 describe("sortEntriesByAppearance", () => {
@@ -114,6 +158,48 @@ describe("sortEntriesByAppearance", () => {
     const sorted = sortEntriesByAppearance(entries, order);
     expect(sorted.map((e) => e.nodeId)).toEqual(["a", "unknown"]);
   });
+
+  it("returns an empty array when there are no entries", () => {
+    expect(sortEntriesByAppearance([], new Map())).toEqual([]);
+  });
+
+  it("keeps the input order for entries sharing the same order value (stable)", () => {
+    const entries = [entry("a"), entry("b"), entry("c")];
+    const order = new Map([
+      ["a", 1],
+      ["b", 1],
+      ["c", 1],
+    ]);
+    const sorted = sortEntriesByAppearance(entries, order);
+    expect(sorted.map((e) => e.nodeId)).toEqual(["a", "b", "c"]);
+  });
+
+  it("keeps input order for all entries when the order map is empty (all treated as oldest)", () => {
+    const entries = [entry("a"), entry("b"), entry("c")];
+    const sorted = sortEntriesByAppearance(entries, new Map());
+    expect(sorted.map((e) => e.nodeId)).toEqual(["a", "b", "c"]);
+  });
+
+  it("puts a freshly-appeared deploying ghost above an older deployed contract", () => {
+    // buildContractListEntries は deployed を先に並べるが、出現順ソートで
+    // 「今しがた出たデプロイ中の行」が最上段へ来る（実利用シナリオ）。
+    const deployedEntry: ContractListEntry = {
+      nodeId: "0xold",
+      status: "deployed",
+      address: "0xold",
+    };
+    const deployingEntry: ContractListEntry = {
+      nodeId: "ghost-new",
+      status: "deploying",
+      name: "Counter",
+    };
+    const order = new Map([
+      ["0xold", 0],
+      ["ghost-new", 1],
+    ]);
+    const sorted = sortEntriesByAppearance([deployedEntry, deployingEntry], order);
+    expect(sorted.map((e) => e.nodeId)).toEqual(["ghost-new", "0xold"]);
+  });
 });
 
 describe("resolveNodeCenter", () => {
@@ -136,5 +222,25 @@ describe("resolveNodeCenter", () => {
       x: 10 + FALLBACK_NODE_WIDTH / 2,
       y: 10 + FALLBACK_NODE_HEIGHT / 2,
     });
+  });
+
+  it("uses the measured width but falls back on a missing height (partial measured)", () => {
+    const center = resolveNodeCenter({ x: 100, y: 200 }, { width: 40 });
+    expect(center).toEqual({ x: 120, y: 200 + FALLBACK_NODE_HEIGHT / 2 });
+  });
+
+  it("uses the measured height but falls back on a missing width (partial measured)", () => {
+    const center = resolveNodeCenter({ x: 100, y: 200 }, { height: 60 });
+    expect(center).toEqual({ x: 100 + FALLBACK_NODE_WIDTH / 2, y: 230 });
+  });
+
+  it("handles negative positions (cards laid out above/left of the origin)", () => {
+    const center = resolveNodeCenter({ x: -100, y: -50 }, { width: 40, height: 60 });
+    expect(center).toEqual({ x: -80, y: -20 });
+  });
+
+  it("handles a zero-sized measured node without dividing away the position", () => {
+    const center = resolveNodeCenter({ x: 30, y: 40 }, { width: 0, height: 0 });
+    expect(center).toEqual({ x: 30, y: 40 });
   });
 });
