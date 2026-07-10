@@ -5,6 +5,7 @@ import { useCommandActions } from "../commands/CommandActionsContext.js";
 import { resolveWorkbenchOperationsHint } from "../commands/commandMessages.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
+import { useHoverPopover } from "../interaction/useHoverPopover.js";
 import { OperationPanel } from "../operations/OperationPanel.js";
 import { InfraNodeCardSyncProgress } from "./InfraNodeCardSyncProgress.js";
 import { InfraPopover } from "./InfraPopover.js";
@@ -36,7 +37,10 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
   } = data;
   const { t } = useLanguage();
   const actions = useCommandActions();
-  const [hovered, setHovered] = useState(false);
+  // ホバー→ポップオーバーの開閉。カードとポップオーバーの間の隙間を通過する
+  // 一瞬だけ mouseleave が発火して消えてしまわないよう、閉じるのは短い遅延
+  // ありで行う（Issue #221。詳細は interaction/useHoverPopover.ts 参照）。
+  const { isOpen: hovered, onMouseEnter, onMouseLeave } = useHoverPopover();
   const [operationPanelOpen, setOperationPanelOpen] = useState(false);
 
   const kindLabel = entity.kind === "node" ? t("card.node") : t("card.workbench");
@@ -70,8 +74,8 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
   return (
     <div
       className={className}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
       data-testid={`infra-card-${entity.id}`}
     >
       {/* B層のピア接続（紐）を留めるためのハンドル。P2P は無向なので
