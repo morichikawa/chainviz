@@ -574,7 +574,9 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
 - [x] デプロイのコンストラクタ引数にABI型と不一致な値を入力するとforgeの
       生エラーがそのままトーストに表示される
       [#209](https://github.com/morichikawa/chainviz/issues/209)
-- [ ] ワークベンチに複数ウォレットが紐づいているように見える
+- [x] ワークベンチに複数ウォレットが紐づいているように見える
+      （調査の結果、不具合ではなくモックデータの意図的な仕様と判明。
+      コード変更なし）
       [#210](https://github.com/morichikawa/chainviz/issues/210)
 - [ ] コントラクトをデプロイしたらUI上でどう表現されるのか伝わりにくい
       [#211](https://github.com/morichikawa/chainviz/issues/211)
