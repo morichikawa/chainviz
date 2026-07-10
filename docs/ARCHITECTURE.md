@@ -113,6 +113,18 @@ interface NodeEntity extends InfraEntity {
   // 見つからなければブートノード前提の表示を出さない（Issue #123 / #124）。
   // "none" のノードは「接続確立中」エッジ（Issue #123/#124）の導出対象から除外する
   p2pRole?: "bootnode" | "peer" | "none";
+  // ノードの役割（チェーン動作の中で何をする係か。Issue #215）。値はチェーン
+  // プロファイル依存の生の文字列（Ethereum では "execution" / "consensus" /
+  // "validator"）で、解釈・表示はフロントのチェーンプロファイル表現セット
+  // （`chain-profiles/ethereum/nodeRoles.ts`）の責務（OperationEdge.operation /
+  // SyncStageProgress.stage と同じパターン。union 型に焼き込まない）。
+  // collector は Docker ラベル `com.chainviz.role`（既存。addNode の動的
+  // コンテナには lifecycle が付与済み、compose の静的コンテナにはノード環境
+  // テンプレートが付与する）から導出する（Issue #65 のラベル方針）。
+  // p2pRole とは別軸（validator client は nodeRole="validator" かつ
+  // p2pRole="none"）。省略 = 不明（ラベル未付与・旧スナップショット互換）で、
+  // フロントは役割表示を出さない側に倒す。表現セットに無い未知の値も同様
+  nodeRole?: string;
   // D層: このノードが内部 API で駆動する相手ノード（同じ論理ノードを構成する
   // 相方クライアント）の id。Ethereum プロファイルでは beacon（CL）に入り、
   // 対になる Execution（EL）を Engine API で駆動する関係を表す（チェーン固有
