@@ -174,6 +174,36 @@ export const messages = {
     en: "Not in the catalog, so it cannot be decoded (raw identifier).",
   },
   "tx.chip.deploy": { ja: "デプロイ", en: "Deploy" },
+  // --- C層拡張: tx ライフサイクルのホバーポップオーバー（ARCHITECTURE.md
+  // §6.11。Issue #212 単位D） ---
+  "tx.lifecycle.stage.signed": { ja: "署名", en: "Signed" },
+  "tx.lifecycle.stage.sent": { ja: "送信", en: "Sent" },
+  "tx.lifecycle.stage.mempool": { ja: "mempool", en: "Mempool" },
+  "tx.lifecycle.stage.included": { ja: "ブロック取り込み", en: "Included in block" },
+  "tx.lifecycle.desc.signed": {
+    ja: "ワークベンチの中で秘密鍵により署名済み。この時点ではまだチェーンに触れていません",
+    en: "Signed with the private key inside the workbench. Nothing has touched the chain yet.",
+  },
+  "tx.lifecycle.desc.sent": {
+    ja: "署名済み tx が操作先ノードへ送られました",
+    en: "The signed tx was sent to the RPC target node.",
+  },
+  "tx.lifecycle.desc.mempool": {
+    ja: "ノードが署名・nonce・残高を検査し、取り込み待ちの列に入れます",
+    en: "The node checks the signature, nonce, and balance, then queues it for inclusion.",
+  },
+  "tx.lifecycle.desc.included": {
+    ja: "ブロックに取り込まれ、全ノードに複製されて確定しました",
+    en: "Included in a block, replicated to every node, and final.",
+  },
+  "tx.lifecycle.desc.includedPending": {
+    ja: "ブロックに取り込まれると、全ノードに複製されて確定します（まだ起きていません）",
+    en: "Once included in a block, it will be replicated to every node and become final. This has not happened yet.",
+  },
+  "tx.lifecycle.desc.includedFailed": {
+    ja: "実行が失敗として記録されました（ブロックには取り込まれています）",
+    en: "Recorded as failed (still included in a block).",
+  },
   // --- C層拡張: 定型操作パネル（送金・デプロイ・コントラクト呼び出し。
   // ARCHITECTURE.md §6.5/§6.8） ---
   "action.workbenchOperations": { ja: "操作を実行…", en: "Run operation…" },

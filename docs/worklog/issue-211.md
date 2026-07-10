@@ -1121,3 +1121,491 @@ mempool 投入時の検査として説明する）。
   そのウォレットの追跡対象に含めていないため受け取り側残高は未追跡表示に
   なるが、送り元（デプロイヤー）の残高が正確に 100 CVZ 減ったことで
   移動量がトークン単位で扱われていることを確認できている。
+## 8. 実装記録(単位D: tx ライフサイクル表示、#212)
+
+### 2026-07-10 実装着手前の設計メモ
+
+- 担当: frontend
+- ブランチ: issue-212-tx-lifecycle
+- 前提: 上記4節の設計をそのまま実装する。`packages/shared` の型変更は無し。
+  `signature` glossary の第2段階アンカーは worklog 記載の `rpc-endpoint`
+  （単位A、本ブランチの時点では未実装）ではなく、フォールバックとして
+  明記されている `workbench` を使う（`glossary/ethereum/terms/a-infra.yaml`
+  に既存）
+
+**ファイル構成（1ファイル1責務を維持するため新規分割）**:
+
+- `packages/frontend/src/entities/txLifecycle.ts`（新規）: 既存 status
+  （`pending` | `included` | `failed`）から4段階
+  （signed/sent/mempool/included）の状態（`done` / `active` / `failed` /
+  `pending`(未到達)）を導出する純粋関数 `deriveTxLifecycle`。実時間の
+  タイマーは持たない（`useTxLifecycle.ts` と同じ「エンティティ→表示用
+  データ変換はここ、Reactの副作用は別」という既存の分離方針を踏襲）
+- `packages/frontend/src/entities/txLifecycle.test.ts`（新規）: 上記の
+  pending/included/failed 3パターンの導出結果を検証
+- `packages/frontend/src/entities/TxLifecyclePopover.tsx`（新規）: tx
+  チップ・tx一覧行の共通ポップオーバー本体。ヘッダ（shortHex(hash) +
+  既存ステータスバッジ）+ 4段階リスト（マーク + GlossaryTerm付きラベル +
+  一言説明）。`deriveTxLifecycle` の結果を描画するだけで、状態導出ロジック
+  は持たない
+- `packages/frontend/src/entities/TxLifecyclePopover.test.tsx`（新規）:
+  pending/included/failed それぞれで正しい段階の完了/進行中/未到達/失敗
+  表示になっているかを検証
+- `packages/frontend/src/entities/transaction.ts`: `TX_STATUS_MESSAGE_KEY`
+  （tx.status.* への対応表）をここに集約する。現状 `WalletPopover.tsx`
+  内にローカル定数として存在するが、`TxLifecyclePopover.tsx` でも同じ
+  対応表が要るため共有元をここに一本化し、`WalletPopover.tsx` はここから
+  import するよう改める（ロジックの二重管理を避ける）
+- `WalletCard.tsx`: tx チップ (`span.wallet-tx-chip`) 自体に GlossaryTerm と
+  同型のホバー/フォーカス状態を追加し、ホバー中は `TxLifecyclePopover` を
+  子要素として描画する。既存の `title` 属性（hash のみ）はポップオーバーに
+  置き換わるため削除する。既存のテスト対象（`data-testid`・`data-status`・
+  `is-settling` クラス）はそのまま維持する
+- `WalletPopover.tsx`: tx 一覧の `<li>` (`wallet-popover__tx-item`) にも
+  同様のホバー状態を追加し、同じ `TxLifecyclePopover` を使う（worklogの
+  「WalletCard / WalletPopover の tx チップ共通」の指示どおり、表示内容を
+  1つのコンポーネントに共通化する）
+- `InfraPopover.tsx`: 「ブロック高」ラベルに `GlossaryTerm termKey="block"`
+  を追加する（worklogの「アンカー」指示）
+- i18n: `tx.lifecycle.*` を新設（段階ラベル4つ + 一言説明4つ + failed時の
+  4段階目の代替説明1つ）。文言は本設計メモの3節の表をそのまま使う
+- glossary: `glossary/ethereum/terms/c-transaction.yaml` に `signature` と
+  `block` を新設（本設計メモ4節「単位D」の定義文をそのまま使う）
+- CSS: `.tx-lifecycle-popover` を新設（`.glossary-popover` と同系の見た目）。
+  `.wallet-tx-chip` と `.wallet-popover__tx-item` に `position: relative`
+  を追加し、ポップオーバーがチップ/行の直下に出るようにする
+
+**表示しないと決めたこと（観測不能な状態を作らない）**:
+
+- 「今署名中です」というリアルタイム状態は表示しない。段階1・2は
+  「chainviz に tx が見えている時点で常に完了済み」という事後の説明として
+  常に ✓ 表示にする
+- 段階3（mempool）の一言説明が、統括コメントの「バリデーション」段階
+  （署名・nonce・残高チェック）の回答を兼ねる。独立した状態としては
+  見せない
+
+### 2026-07-10 実装完了
+
+設計メモどおりに実装した。設計メモからの変更点・補足は以下のとおり。
+
+- `docs/ARCHITECTURE.md` §6.11「tx ライフサイクル表示（Issue #212 単位D）」
+  を新設し、導出ロジック・UI構成・glossary追加・見送った範囲を記載した
+  （設計メモ自体は worklog に残るが、実装済み機能の正式な記述は
+  ARCHITECTURE.md 側に置く方針に合わせた）
+- 未到達段階（`pending` state）のマークは設計メモで明記されていなかった
+  ため「○」（控えめな空丸）を採用した。done=✓ / active=● / failed=✕ と
+  区別しつつ、「進行中」と誤読されないよう CSS で opacity を下げている
+- `TxChip`（WalletCard 側）・`WalletPopoverTxItem`（WalletPopover 側）は
+  それぞれのファイル内のプライベートなサブコンポーネントとして実装した
+  （`TxCallPreviewLine` など既存の同ファイル内サブコンポーネントの流儀を
+  踏襲。別ファイルに切り出すほどの複雑さは無いと判断）
+- 動作確認: `pnpm build` / `pnpm lint` / `pnpm test`（frontend 全体、
+  1430件）が通ることを確認した。加えて `pnpm --filter @chainviz/frontend
+  dev` でモックデータを起動し、Playwright（headless Chromium）で実際に
+  tx チップをホバーして `TxLifecyclePopover` が表示されること、
+  pending/included/failed それぞれで4段階の状態（✓/●/○/✕）と各段階の
+  一言説明が正しく出ることを目視確認した。ノードカードの「ブロック高」
+  ラベルに `glossary-term-block` のアンカーが実際に描画されることも
+  確認した
+- 本Issueの範囲外として見送ったもの（設計メモ6節と同じ）: ブロック
+  チェーン構造そのものの可視化（最新ブロックの帯等）、コントラクト
+  内部状態（Counter の現在値等、`eth_call` 対応が必要）。これらは
+  ユーザー確認待ちのため新規Issueは起票していない
+- 作業中に見つけた範囲外の問題: 無し（既存の #244 / #245 は設計メモ
+  7節で起票済みのものを参照したのみで、新規には至っていない）
+
+### 2026-07-10 テスト強化記録（単位D）
+
+実装担当が書いた基本テスト（ハッピーパス中心）に対し、異常系・境界値・
+不変条件・UI操作の独立性の観点を追加した。実装コードは変更していない。
+
+追加した観点は以下のとおり。
+
+- `txLifecycle.test.ts`（導出ロジックの不変条件）
+  - 全 status（pending/included/failed）で常に4段階を固定順
+    `signed → sent → mempool → included` で返すこと
+  - Issue #212 の中心的な設計判断「観測不能な状態を誇張しない」の担保:
+    `signed`/`sent` はどの status でも決して `active` にならず常に `done`
+    であること、`active` は `mempool` 段階にのみ現れること、`failed` は
+    `included` 段階にのみ現れること
+  - pending は `active` がちょうど1件、included/failed は0件であること
+  - 呼び出しごとに新しい配列・オブジェクトを返し、返り値を変更しても
+    後続の呼び出しに汚染が漏れないこと
+  - `deriveTxLifecycleFromTx` が全 status で `deriveTxLifecycle` と同一の
+    出力を返す（tx エンティティの status に委譲している）こと
+- `TxLifecyclePopover.test.tsx`（マーク文字とヘッダの整合）
+  - 4段階のマーク（✓=done / ●=active / ○=未到達 / ✕=failed）が
+    `deriveTxLifecycle` の各状態と一致して描画されること（pending/
+    included/failed それぞれ）
+  - マーク span が `aria-hidden="true"` で、スクリーンリーダーはテキスト
+    ラベル側を読むこと
+  - ヘッダのステータスバッジが pending/failed でも正しい文言・
+    className（`wallet-tx-chip--<status>`）で出ること（従来は included
+    のみ検証）
+  - hash 短縮の境界: 短縮閾値未満の hash（例 `0x1`）はそのまま表示され、
+    testid は完全 hash を使うので取得できること／短縮後に同じ接頭辞に
+    見える2件でも testid が衝突しないこと
+- `txLifecyclePopoverHover.test.tsx`（新規。ホバー開閉の独立性）
+  - `TxChip`（WalletCard）・`WalletPopoverTxItem`（WalletPopover）の
+    ライフサイクルポップオーバーが、ホバー/フォーカス前は描画されず、
+    mouseEnter/focus で開き mouseLeave/blur で閉じること
+  - 複数チップが並んでも各 tx ごとに独立して開閉し、1件のホバー状態が
+    別のチップへ漏れないこと。`DEFAULT_RECENT_TX_LIMIT`（6件）を同時に
+    並べても各 tx のポップオーバーが独立していること
+
+回帰検出力の確認: 導出ロジックを意図的に壊す（`signed` を `active` に
+する／`TxChip` のホバーガードを外す）と上記テストが実際に失敗すること
+を確認してから元に戻した。
+
+テストファイルは関心事ごとに分けた（導出ロジック＝`txLifecycle.test.ts`、
+ポップオーバーの描画＝`TxLifecyclePopover.test.tsx`、ホバー開閉の操作＝
+新規 `txLifecyclePopoverHover.test.tsx`）。
+
+動作確認: `pnpm build` / `pnpm lint` / `pnpm test`（frontend 全体、
+1453件に増加）が通ることを確認した。
+
+作業中に見つけたバグ・改善提案: 無し（実装は設計どおりで、テストで
+検出すべき挙動のずれは見つからなかった）。
+
+### 2026-07-10 レビュー記録（単位D、chainviz-reviewer）
+
+ブランチ `issue-212-tx-lifecycle` の全12コミット（横断設計メモ e0237fc を
+含む）を静的レビューした。判定は**合格**。
+
+確認した内容:
+
+- `pnpm build` / `pnpm lint` / `pnpm test`（frontend 1453件を含む全パッケージ）
+  がリポジトリ全体で通ることを確認した
+- 「観測不能な状態を観測したかのように表示しない」という制約の遵守:
+  `deriveTxLifecycle` は署名(signed)・送信(sent)を全 status で常に `done`
+  とし、`active` は mempool 段階にのみ現れる。将来 status に値が追加された
+  場合も default 節で全段階「未到達」へフォールバックし、嘘の完了表示を
+  しない（never 型による網羅チェック付き）。テスト
+  （`txLifecycle.test.ts` の不変条件群）もこの制約を直接検証しており、
+  実装を壊すと落ちることがテスト強化記録で確認済み
+- `TxLifecyclePopover.tsx` は既存パターン（`role="tooltip"`、
+  `data-testid` の `<種別>-<hash>` 命名、glossary-popover 系の CSS、
+  マーク文字の `aria-hidden`）と一貫している。状態導出はコンポーネントに
+  持たず `txLifecycle.ts` に分離されている（1ファイル1責務）
+- `TxChip` / `WalletPopoverTxItem` のサブコンポーネント化は既存の
+  `data-testid` / `data-status` / `is-settling` クラス・残高・nonce・
+  トークンチップ表示を維持している。`title` 属性（hash のみ）の削除は
+  設計メモ・ARCHITECTURE.md §6.11 に明記された置き換えで、コメントにも
+  経緯が残っている
+- glossary 新設2語（signature / block）は既存の `{ja, en}` +
+  `layer` + `relatedTerms` 形式に沿い、relatedTerms が参照する用語キー
+  （transaction / eoa / workbench / mempool / gossip）は全て実在する。
+  `GlossaryTerm` のアンカー（signature / workbench / mempool / block）も
+  全キー実在を確認した
+- `docs/ARCHITECTURE.md` §6.11・`docs/PLAN.md` のチェック・
+  `docs/WORKLOG.md` 索引・本 worklog の実装/テスト強化記録は実装と
+  整合している
+- エラーの握りつぶし・環境状態依存の決め打ち定数は無い（新規コードに
+  try/catch・タイマー・閾値定数が無い）
+- コミット粒度は「導出ロジック / i18n / glossary / ポップオーバー本体 /
+  統合 / アンカー追加 / docs / テスト3種 / worklog」と関心事ごとに
+  分かれており適切
+
+非ブロッキングの申し送り（差し戻し不要、QA・統括向けメモ）:
+
+- pending の tx をホバーしたとき、未到達の4段階目（ブロック取り込み）の
+  一言説明が「〜確定しました」と過去形のまま表示される（○マークと
+  opacity 0.6 で「未到達」は視覚的に区別される）。UX設計メモの表を
+  そのまま実装した結果であり設計との齟齬ではないが、実機で誤読が
+  懸念されるようなら状態別文言の検討余地がある。QA での見え方確認を
+  推奨する
+- 新設 i18n 文言・glossary 英語版は chainviz-i18n のレビュー対象
+  （設計メモ5節の指示）。未実施であればマージ前後に手配が必要
+- 本ブランチは main + e0237fc（issue-211 ブランチと共有する横断設計メモ
+  コミット）を基点に積まれている。#211 側と #212 側のどちらの PR を
+  先にマージしても git 上は問題ないが、両 PR に同一コミットが表示される
+  点は把握しておくこと
+
+### 2026-07-10 英語訳レビュー記録（単位D、chainviz-i18n）
+
+レビュー対象は以下2点。日本語の定義文の内容自体は対象外とし、英訳の質
+（自然さ・既存エントリとのトーン/語彙の一貫性）のみを確認した。
+
+- `packages/frontend/src/i18n/messages.ts` の `tx.lifecycle.*`（段階ラベル
+  4つ・一言説明4つ・failed時の代替説明1つ）
+- `glossary/ethereum/terms/c-transaction.yaml` の新設エントリ `signature`
+  （署名）・`block`（ブロック）の `en` フィールド
+
+**総評**: 全体として直訳ではなく自然な英語話者の言い回しになっており、
+既存エントリの語調ともよく合っている。具体的には:
+
+- `signature`/`block` とも、冒頭が名詞句フラグメントで始まる既存の
+  house style（`nonce`/`eoa`/`wei` 等と同じ）を踏襲している
+- `signature` の "the private key never leaves it" や `block` の
+  "once it lands"（`mempool` エントリの "A submitted tx lands here" と
+  同じ語彙）など、既存語彙との一貫性が意図的に保たれている
+- `tx.lifecycle.desc.signed` の "Nothing has touched the chain yet." と
+  `signature` glossary 本文の "nothing has touched the chain yet" が
+  同一の言い回しで揃えてあり、2箇所にまたがる説明として一貫している
+- mempool/gas/nonce 等の技術用語は標準的な訳語のまま使われており、
+  独自の意訳は見られない
+
+**指摘・修正した点（1件）**:
+
+- `tx.lifecycle.desc.mempool` の英訳 "The node checks the signature,
+  nonce and balance, then queues it for inclusion." で、3項目の列挙
+  なのに Oxford comma が抜けていた。同じファイル内の既存エントリ
+  （`wei`: "Balances, transfer amounts, and gas costs are all handled…"）
+  および同一追加内の `tx.lifecycle.desc.included`（"Included in a block,
+  replicated to every node, and final."）はいずれも Oxford comma 付きで
+  一貫しているため、内部一貫性の観点から "the signature, nonce, and
+  balance" に修正した（意味の変更なし）
+
+**検討したが見送った点**:
+
+- `tx.lifecycle.stage.included` の英訳が "Included in block" で、他の
+  3段階ラベル（Signed / Sent / Mempool、いずれも1語）に対して唯一の
+  フレーズになっている点は一見不揃いに見えるが、対応する日本語ラベルも
+  「ブロック取り込み」（他の3つより長い）で意図的に「mempool」の
+  「取り込み待ち」と区別するための表記になっている。日本語側の内容
+  決定に対応した訳であり、翻訳の質の問題ではないため修正しなかった
+  （英語側だけ既存の `tx.status.included`「Included」に合わせて短縮する
+  という案は検討したが、日本語の意図的な書き分けを踏まえると独断で
+  変えるべきではないと判断した。気になる場合は chainviz-frontend に
+  ラベルの長さについて再検討を提案する）
+- `signature` glossary の en 本文が「tx チップの」を明示的に訳出せず
+  「the tx lifecycle popover」としている点も、意味は変わらず自然な
+  圧縮と判断し修正しなかった
+
+**修正コミット**: `fix(frontend): tx lifecycle英語訳のOxfordコンマを既存エントリに合わせて統一` 相当の1コミットとして
+`packages/frontend/src/i18n/messages.ts` のみを変更（Conventional
+Commits形式での実際のコミット作成は、このレビューを実行した
+chainviz-i18n セッションに shell/git 実行ツールが無いため未実施。
+ファイル差分のみ適用済み。統括側でのコミット作成を依頼する）
+
+### 2026-07-10 QA検証記録（単位D、chainviz-qa）
+
+ブランチ `issue-212-tx-lifecycle` を実機で検証した。frontend を
+モックモード（`VITE_COLLECTOR_URL` 未設定）で `vite` dev server として
+起動し、Chromium（Playwright）で実際にウォレットカードの tx チップに
+ホバーして、描画されたポップオーバーの DOM とテキストを言語別に確認した。
+failed 状態はモックデータのストリームに存在しないため、dev server が
+配信する実モジュール（`TxLifecyclePopover.tsx` 本体・`LanguageProvider`・
+`GlossaryProvider`）をブラウザ内で直接 import し、実コンポーネントを
+failed の tx で描画して確認した。
+
+**判定: 条件付き。1件の差し戻しあり（chainviz-frontend へ）。**
+
+満たしている完了条件:
+
+- 条件1（4段階表示）: ウォレットカードの tx チップにホバーすると
+  署名 → 送信 → mempool → ブロック取り込みの4段縦リストが実際に表示される。
+- 条件3（included）: included の tx は全4段が `done`（✓）で表示される。
+- 条件4（failed）: failed の tx は署名・送信・mempool が `done`（✓）、
+  4段目のみ `failed`（✕）。説明文は専用の
+  「実行が失敗として記録されました（ブロックには取り込まれています）」/
+  「Recorded as failed (still included in a block).」で、取り込み自体の
+  失敗と誤読させない適切な文言になっている。ヘッダバッジも「失敗」/
+  「Failed」。
+- 条件5（ブロック高の用語解説）: EL ノード（chainviz-reth-node-1）の
+  カードポップオーバーで「ブロック高」に付いた `GlossaryTerm`（termKey=
+  block）にホバーすると、glossary ポップオーバーが日本語・英語とも開き、
+  「ブロック」/「Block」の定義が表示される。ワークベンチノードには
+  ブロック高フィールドが無いことも確認（EL コンテナノードでのみ表示）。
+- 条件6（言語切り替え）: 上記すべてを language-toggle で ja/en 切り替え、
+  段階ラベル・説明文・ステータスバッジ・glossary が両言語で正しく
+  切り替わることを確認した。
+- 条件7のうち「署名中」誤認の主要懸念: 署名(signed)・送信(sent)は
+  pending でも常に `done`（✓）として表示され、「今まさに署名中」という
+  進行中(`active`)表現は一切出ない。Issue タイトルの「署名中かどうか」の
+  懸念（観測不能なリアルタイム状態を観測したかのように見せない）は
+  適切に処理されている。
+
+満たしていない完了条件（差し戻し）:
+
+- 条件2・条件7（pending の未到達段階の説明文）: pending の tx をホバー
+  すると、4段目「ブロック取り込み」はマーク ○（未到達）・
+  `data-stage-state="pending"` で視覚的には未到達と区別されるが、その
+  一言説明が完了を断定する過去形のまま表示される。
+  - 実際の表示（ja）: `○ ブロック取り込み :: ブロックに取り込まれ、
+    全ノードに複製されて確定しました`
+  - 実際の表示（en）: `○ Included in block :: Included in a block,
+    replicated to every node, and final.`
+  - ○マーク（未到達）と、同じ行の説明文が述べる「取り込まれ…確定
+    しました／included…and final」が矛盾しており、未到達の段階なのに
+    あたかも取り込み・確定が起きた事実であるかのように読める。これは
+    chainviz-reviewer の申し送り（本 worklog レビュー記録の非ブロッキング
+    メモ）が指摘した点そのもので、実機の見た目でも誤読を招くと判断した。
+  - この説明文は included が `done`（included の tx）でも `pending`
+    （pending の tx の未到達）でも同一の
+    `tx.lifecycle.desc.included` を使っており、状態で出し分けていない
+    （failed のみ `includedFailed` に分岐している）。
+  - 期待する挙動: 未到達（pending 状態）の included 段階では、完了を
+    断定しない文言（未来形・定義形。例「ブロックに取り込まれると、
+    全ノードに複製されて確定します」）を出す。failed 用の
+    `includedFailed` と同様に、未到達用の説明キーを分岐で用意するのが
+    素直。
+
+再現手順:
+
+1. `packages/frontend` を `VITE_COLLECTOR_URL` 未設定（モックモード）で
+   `vite` 起動する。
+2. Alice の EOA カード（0xa11ce0…）の pending の tx チップにホバーする。
+3. 開いたライフサイクルポップオーバーの4段目「ブロック取り込み」の
+   説明文が「…確定しました」と完了断定の過去形で表示されることを確認。
+
+差し戻し先: chainviz-frontend（描画麗）。`packages/frontend/src/entities/
+TxLifecyclePopover.tsx` の `stageDescriptionKey` と
+`packages/frontend/src/i18n/messages.ts` に、included の未到達
+（`state === "pending"`）用の説明文言を追加し出し分ける。単位Dの他の
+挙動（条件1・3・4・5・6・署名/送信の done 表示）は問題なし。
+
+備考: 検証は使い捨ての Chromium 実行で行い、frontend 側のコード・
+設定は一切変更していない。実データ（稼働中の chainviz-ethereum
+スタック）ではなくモックデータで検証したが、failed を含む全 status の
+描画は実コンポーネントで確認済み。
+
+### 2026-07-10 QA差し戻し対応（単位D、chainviz-frontend）
+
+QA検証記録の差し戻し（条件2・7: pending の未到達段階の説明文が完了断定の
+過去形のまま）に対応した。
+
+修正内容:
+
+- `packages/frontend/src/entities/TxLifecyclePopover.tsx` の
+  `stageDescriptionKey` に、`included` 段階が `pending`（未到達）状態の
+  場合の分岐を追加した。`failed` 状態の `includedFailed` と同じパターンで、
+  `state === "pending"` のときは新設した `tx.lifecycle.desc.includedPending`
+  を返すようにした
+- `packages/frontend/src/i18n/messages.ts` に
+  `tx.lifecycle.desc.includedPending` を新設した。ja は「ブロックに
+  取り込まれると、全ノードに複製されて確定します（まだ起きていません）」、
+  en は "Once included in a block, it will be replicated to every node and
+  become final. This has not happened yet."。完了を断定せず、未来形・
+  「まだ起きていない」ことを明示する文言にした
+- `TxLifecyclePopover.test.tsx` に、pending の tx で included 段階の
+  `data-stage-state` が `pending` であること、説明文が旧来の完了断定文
+  （「…確定しました」）を含まないこと、新設の未来形文言を含むことを
+  検証するテストを1件追加した
+
+不具合の再現と修正確認:
+
+- 修正前（`TxLifecyclePopover.tsx` の変更のみを一時的に `git stash` で
+  戻した状態）で追加テストを実行し、`○ブロック取り込み` の説明文に旧来の
+  完了断定文「ブロックに取り込まれ、全ノードに複製されて確定しました」が
+  含まれてテストが失敗することを確認した
+- `git stash pop` で修正を戻し、テストが通ることを確認した
+- `pnpm --filter @chainviz/frontend dev` でモックモードの frontend を
+  起動し、Playwright（使い捨て Chromium 実行）で Alice の EOA カードの
+  pending tx チップにホバーして、実際のブラウザ描画で4段目の説明文が
+  ja「ブロックに取り込まれると、全ノードに複製されて確定します（まだ
+  起きていません）」、en "Once included in a block, it will be replicated
+  to every node and become final. This has not happened yet." になって
+  いることを目視確認した（言語切り替えも実施）。○マーク（未到達）と
+  説明文の内容が矛盾しなくなったことを確認した
+
+動作確認: `pnpm build` / `pnpm lint` / `pnpm test`
+（frontend 1454件を含む全パッケージ）が通ることを確認した。
+
+作業中に見つけた範囲外の問題: 無し。QA差し戻しの範囲内のみを修正した。
+
+### 2026-07-10 QA差し戻し対応の再レビュー（単位D、chainviz-reviewer）
+
+QA差し戻し（pending tx の4段目「ブロック取り込み」が未到達○マークなのに
+完了断定の過去形説明文のままだった件）への修正（コミット 21b7a54）を
+レビューした。結果は合格。
+
+確認した内容:
+
+- `TxLifecyclePopover.tsx` の `stageDescriptionKey` の分岐:
+  `included` 段階について、現在の `deriveTxLifecycle` が返しうる3状態
+  （done / pending / failed）がすべて別々の文言キーに対応した
+  （done → `desc.included`、pending → 新設 `desc.includedPending`、
+  failed → 既存 `desc.includedFailed`）。既存の `includedFailed` と
+  同じパターンで実装されており、分岐漏れなし。分岐の理由もコメントで
+  説明されている
+- i18n 文言: 新設 `tx.lifecycle.desc.includedPending` は ja が
+  「〜すると、〜確定します（まだ起きていません）」と未来形+補足の
+  括弧書きで、`includedFailed` の括弧書きスタイル・文末に句点を
+  付けない既存スタイルと一貫している。en も既存の複文スタイル
+  （`desc.signed` 等）と揃っており、"This has not happened yet." で
+  未到達であることが明確
+- 追加テストの質: pending tx の included 段階について
+  `data-stage-state` が pending であること・旧来の完了断定文を
+  含まないこと・新設文言を含むことの3点を検証しており、実装の詳細を
+  なぞるだけのテストではない。実際に修正コミット直前の
+  `TxLifecyclePopover.tsx` に一時的に戻して該当テストを実行し、
+  1件失敗（旧文言が表示される）することを確認したうえで復元し、
+  15件全件通過に戻ることを確認した（ミューテーション確認）
+- `pnpm build` / `pnpm lint` / `pnpm test`（frontend 1454件を含む
+  全パッケージ）がリポジトリ全体で通ることを確認した
+- コミット粒度: 修正本体（コード+i18n+回帰テスト = 1つの関心事）と
+  worklog 追記が別コミットに分かれており適切
+
+範囲外の観察（差し戻し対象外・非ブロッキング）:
+
+- `txLifecycle.ts` の `deriveTxLifecycle` の default フォールバック
+  （将来 status が増えた場合に全段階 pending を返す経路）では、
+  signed / sent / mempool の3段階も○マーク+過去形説明文の組み合わせに
+  なりうる。ただし `TxStatus` は閉じた union で `never` による網羅性
+  チェックがあるため、この経路はフロント側のコンパイルが通る限り
+  到達しない（collector が未知の status を送ってきた場合のみ）。
+  将来 status を追加する際に、説明文の時制も併せて見直すこと
+
+### 2026-07-10 QA再検証記録（単位D、chainviz-qa）
+
+前回のQA差し戻し（pending の tx で4段目「ブロック取り込み」が未到達○
+マークなのに説明文が完了断定の過去形のままだった件）への修正
+（コミット 21b7a54）を実機で再検証した。結果は合格。前回の差し戻し理由は
+解消されている。
+
+検証方法:
+
+- frontend をモックモード（`VITE_COLLECTOR_URL` 未設定）で `vite` dev
+  server として起動し、Chromium（playwright-core + ローカルの chromium
+  ビルド）で実際にウォレットカードの tx チップにホバーして、描画された
+  ポップオーバーの DOM とテキストを言語別に読み取った。
+- failed 状態はモックデータのストリームに存在しないため、dev server が
+  配信する実モジュール（`TxLifecyclePopover.tsx` 本体・`LanguageProvider`・
+  `GlossaryProvider`）をブラウザ内で直接 import し、実コンポーネントを
+  failed の tx で描画して確認した（前回QAと同じ手法）。
+- frontend 側のコード・設定は一切変更していない。
+
+差し戻し対象（条件2・7）の再確認結果:
+
+- pending の tx の4段目「ブロック取り込み」は、○マーク（未到達・
+  `data-stage-state="pending"`）のまま、説明文が完了を断定しない未来形に
+  変わっていることを確認した。
+  - ja: 「ブロックに取り込まれると、全ノードに複製されて確定します
+    （まだ起きていません）」
+  - en: "Once included in a block, it will be replicated to every node and
+    become final. This has not happened yet."
+  - ○マーク（未到達）と説明文の内容が矛盾しなくなり、前回指摘した
+    「未到達なのに取り込み・確定が起きた事実であるかのように読める」
+    誤読は解消された。日本語・英語の両方で確認した。
+
+回帰確認（前回合格していた項目の再確認）:
+
+- 条件1（4段階表示）: pending の tx チップにホバーすると
+  署名 → 送信 → mempool → ブロック取り込みの4段縦リストが表示される。
+- 条件3（included）: included の tx（Bob の tx）は全4段が `done`（✓）で、
+  4段目の説明文は完了形「ブロックに取り込まれ、全ノードに複製されて
+  確定しました」で正しい。ja/en とも確認。
+- 条件4（failed）: failed の tx は署名・送信・mempool が `done`（✓）、
+  4段目のみ `failed`（✕）で、専用文言「実行が失敗として記録されました
+  （ブロックには取り込まれています）」/ "Recorded as failed (still
+  included in a block)." が表示される。ヘッダバッジも「失敗」/「Failed」。
+  ja/en とも確認。今回の pending 用分岐追加が failed 用分岐に影響して
+  いないことを確認した。
+- 条件5（ブロック高の用語解説）: 稼働中の DOM に
+  `data-testid="glossary-term-block"` のアンカー（ノードポップオーバーの
+  「ブロック高」に張られた block 用語解説）が存在することを確認した。
+- 条件6（言語切り替え）: 上記すべてを ja/en で切り替え、段階ラベル・
+  説明文・ステータスバッジが両言語で正しく切り替わることを確認した。
+- 条件7（署名中の誤認回避）: 署名(signed)・送信(sent)は pending でも常に
+  `done`（✓）で、進行中(`active`)表現は mempool 段階のみに出る。観測不能な
+  「今まさに署名中」というリアルタイム状態は表示されない。
+
+判定: 合格。前回の差し戻し理由は解消され、Issue #212 本文の要望
+（tx が経てきた段階＝署名・送信・mempool・ブロック取り込みの可視化）が
+満たされている。単位Dの他の挙動（条件1・3・4・5・6）にも回帰は無い。
+
+備考: 検証は使い捨ての Chromium 実行で行い、frontend 側のコード・設定は
+一切変更していない。ユニットテスト（`txLifecycle` / `TxLifecyclePopover` /
+`txLifecyclePopoverHover`、計39件）も全通過を確認した。push / PR作成 /
+マージ / Issueクローズは統括の判断・実行に委ねる。

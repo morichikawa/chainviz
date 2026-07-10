@@ -105,10 +105,12 @@ export function InfraPopover({
                 : t("sync.syncing")
             }
           />
-          <Field
-            label={t("field.blockHeight")}
-            value={String(entity.blockHeight)}
-          />
+          <div className="infra-field">
+            <span className="infra-field__label">
+              <GlossaryTerm termKey="block">{t("field.blockHeight")}</GlossaryTerm>
+            </span>
+            <span className="infra-field__value">{String(entity.blockHeight)}</span>
+          </div>
           {drivesNodeContainerName && (
             <div className="infra-field">
               <span className="infra-field__label">
