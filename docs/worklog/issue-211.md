@@ -399,3 +399,96 @@ mempool 投入時の検査として説明する）。
 - [#245](https://github.com/morichikawa/chainviz/issues/245)
   カードのホバーポップオーバーが隣接カードの下に描画され読めない
   （z-order。#221 とは別の問題）
+
+## 8. 実装記録(単位D: tx ライフサイクル表示、#212)
+
+### 2026-07-10 実装着手前の設計メモ
+
+- 担当: frontend
+- ブランチ: issue-212-tx-lifecycle
+- 前提: 上記4節の設計をそのまま実装する。`packages/shared` の型変更は無し。
+  `signature` glossary の第2段階アンカーは worklog 記載の `rpc-endpoint`
+  （単位A、本ブランチの時点では未実装）ではなく、フォールバックとして
+  明記されている `workbench` を使う（`glossary/ethereum/terms/a-infra.yaml`
+  に既存）
+
+**ファイル構成（1ファイル1責務を維持するため新規分割）**:
+
+- `packages/frontend/src/entities/txLifecycle.ts`（新規）: 既存 status
+  （`pending` | `included` | `failed`）から4段階
+  （signed/sent/mempool/included）の状態（`done` / `active` / `failed` /
+  `pending`(未到達)）を導出する純粋関数 `deriveTxLifecycle`。実時間の
+  タイマーは持たない（`useTxLifecycle.ts` と同じ「エンティティ→表示用
+  データ変換はここ、Reactの副作用は別」という既存の分離方針を踏襲）
+- `packages/frontend/src/entities/txLifecycle.test.ts`（新規）: 上記の
+  pending/included/failed 3パターンの導出結果を検証
+- `packages/frontend/src/entities/TxLifecyclePopover.tsx`（新規）: tx
+  チップ・tx一覧行の共通ポップオーバー本体。ヘッダ（shortHex(hash) +
+  既存ステータスバッジ）+ 4段階リスト（マーク + GlossaryTerm付きラベル +
+  一言説明）。`deriveTxLifecycle` の結果を描画するだけで、状態導出ロジック
+  は持たない
+- `packages/frontend/src/entities/TxLifecyclePopover.test.tsx`（新規）:
+  pending/included/failed それぞれで正しい段階の完了/進行中/未到達/失敗
+  表示になっているかを検証
+- `packages/frontend/src/entities/transaction.ts`: `TX_STATUS_MESSAGE_KEY`
+  （tx.status.* への対応表）をここに集約する。現状 `WalletPopover.tsx`
+  内にローカル定数として存在するが、`TxLifecyclePopover.tsx` でも同じ
+  対応表が要るため共有元をここに一本化し、`WalletPopover.tsx` はここから
+  import するよう改める（ロジックの二重管理を避ける）
+- `WalletCard.tsx`: tx チップ (`span.wallet-tx-chip`) 自体に GlossaryTerm と
+  同型のホバー/フォーカス状態を追加し、ホバー中は `TxLifecyclePopover` を
+  子要素として描画する。既存の `title` 属性（hash のみ）はポップオーバーに
+  置き換わるため削除する。既存のテスト対象（`data-testid`・`data-status`・
+  `is-settling` クラス）はそのまま維持する
+- `WalletPopover.tsx`: tx 一覧の `<li>` (`wallet-popover__tx-item`) にも
+  同様のホバー状態を追加し、同じ `TxLifecyclePopover` を使う（worklogの
+  「WalletCard / WalletPopover の tx チップ共通」の指示どおり、表示内容を
+  1つのコンポーネントに共通化する）
+- `InfraPopover.tsx`: 「ブロック高」ラベルに `GlossaryTerm termKey="block"`
+  を追加する（worklogの「アンカー」指示）
+- i18n: `tx.lifecycle.*` を新設（段階ラベル4つ + 一言説明4つ + failed時の
+  4段階目の代替説明1つ）。文言は本設計メモの3節の表をそのまま使う
+- glossary: `glossary/ethereum/terms/c-transaction.yaml` に `signature` と
+  `block` を新設（本設計メモ4節「単位D」の定義文をそのまま使う）
+- CSS: `.tx-lifecycle-popover` を新設（`.glossary-popover` と同系の見た目）。
+  `.wallet-tx-chip` と `.wallet-popover__tx-item` に `position: relative`
+  を追加し、ポップオーバーがチップ/行の直下に出るようにする
+
+**表示しないと決めたこと（観測不能な状態を作らない）**:
+
+- 「今署名中です」というリアルタイム状態は表示しない。段階1・2は
+  「chainviz に tx が見えている時点で常に完了済み」という事後の説明として
+  常に ✓ 表示にする
+- 段階3（mempool）の一言説明が、統括コメントの「バリデーション」段階
+  （署名・nonce・残高チェック）の回答を兼ねる。独立した状態としては
+  見せない
+
+### 2026-07-10 実装完了
+
+設計メモどおりに実装した。設計メモからの変更点・補足は以下のとおり。
+
+- `docs/ARCHITECTURE.md` §6.11「tx ライフサイクル表示（Issue #212 単位D）」
+  を新設し、導出ロジック・UI構成・glossary追加・見送った範囲を記載した
+  （設計メモ自体は worklog に残るが、実装済み機能の正式な記述は
+  ARCHITECTURE.md 側に置く方針に合わせた）
+- 未到達段階（`pending` state）のマークは設計メモで明記されていなかった
+  ため「○」（控えめな空丸）を採用した。done=✓ / active=● / failed=✕ と
+  区別しつつ、「進行中」と誤読されないよう CSS で opacity を下げている
+- `TxChip`（WalletCard 側）・`WalletPopoverTxItem`（WalletPopover 側）は
+  それぞれのファイル内のプライベートなサブコンポーネントとして実装した
+  （`TxCallPreviewLine` など既存の同ファイル内サブコンポーネントの流儀を
+  踏襲。別ファイルに切り出すほどの複雑さは無いと判断）
+- 動作確認: `pnpm build` / `pnpm lint` / `pnpm test`（frontend 全体、
+  1430件）が通ることを確認した。加えて `pnpm --filter @chainviz/frontend
+  dev` でモックデータを起動し、Playwright（headless Chromium）で実際に
+  tx チップをホバーして `TxLifecyclePopover` が表示されること、
+  pending/included/failed それぞれで4段階の状態（✓/●/○/✕）と各段階の
+  一言説明が正しく出ることを目視確認した。ノードカードの「ブロック高」
+  ラベルに `glossary-term-block` のアンカーが実際に描画されることも
+  確認した
+- 本Issueの範囲外として見送ったもの（設計メモ6節と同じ）: ブロック
+  チェーン構造そのものの可視化（最新ブロックの帯等）、コントラクト
+  内部状態（Counter の現在値等、`eth_call` 対応が必要）。これらは
+  ユーザー確認待ちのため新規Issueは起票していない
+- 作業中に見つけた範囲外の問題: 無し（既存の #244 / #245 は設計メモ
+  7節で起票済みのものを参照したのみで、新規には至っていない）

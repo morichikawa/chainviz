@@ -578,7 +578,7 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       [#210](https://github.com/morichikawa/chainviz/issues/210)
 - [ ] コントラクトをデプロイしたらUI上でどう表現されるのか伝わりにくい
       [#211](https://github.com/morichikawa/chainviz/issues/211)
-- [ ] チェーンの繋がり方・署名中かどうか・状態の中身を可視化してほしい
+- [x] チェーンの繋がり方・署名中かどうか・状態の中身を可視化してほしい
       [#212](https://github.com/morichikawa/chainviz/issues/212)
 - [ ] ワークベンチからの操作でなにができるのかの説明がほしい
       [#213](https://github.com/morichikawa/chainviz/issues/213)
