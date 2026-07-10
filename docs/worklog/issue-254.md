@@ -167,3 +167,45 @@ collector を「起動済み」として受け取ってしまう。
 - `detectLaunchStatus` は今後 collector に 3 つ目の独立した listen 処理が
   増えた場合、そのままでは検知できない（2 つの listening ログの一致だけを
   見る設計のため）。増える場合はこの判定ロジックも合わせて拡張が必要。
+
+#### テスト強化（2026-07-11・テスト担当）
+
+- 担当: tester
+- 対象: `packages/e2e/src/helpers/collector-launch.unit.test.ts`
+  （純粋ロジック `detectLaunchStatus` のユニットテスト。`pnpm test` /
+  `vitest.unit.config.ts` 側で回り Docker 不要）
+
+実装担当が追加した基本ケース（ハッピーパス・片側 listening・後発
+EADDRINUSE）に対し、異常系・境界値を補強した。追加した観点は以下:
+
+1. WS・ロギングプロキシ両方が同時に EADDRINUSE で終了したケース。
+2. ロギングプロキシ側の EADDRINUSE が WS の listening ログより先に
+   現れるケース（ログ出現順に依存せず、どちらのエラーが先に検出されても
+   portInUse になることを固定）。
+3. 両方の listening ログが揃っていてもログに EADDRINUSE が混在する場合、
+   安全側に portInUse を優先する（EADDRINUSE 最優先の設計を明示的に固定。
+   この優先順位を崩す変異を入れると本テストが落ちることをミューテーション
+   で確認済み）。
+4. ロギングプロキシ側が EADDRINUSE 以外の理由（EACCES = 権限エラー）で
+   失敗して終了した場合、portInUse には該当させず crashed として扱い、
+   終了コードを保持すること。あわせて `crashedMessage` に EACCES の原因
+   ログが失われず含まれること（握りつぶさない）を確認。
+5. シグナルで kill され exitCode が null のまま終了したケース
+   （crashed の exitCode が null で伝わる境界）。
+6. 片側だけ listening でプロセスが生存し続ける間は pending を返し続ける
+   こと（誤って listening を確定させず、`waitForOwnProcessToListen` 側の
+   有限タイムアウトに打ち切りを委ねる＝ハングしない）。
+7. 既定 `proxyPort = port + 1` により WS/プロキシのポート番号が隣接する
+   境界で、"WebSocket server" / "logging proxy" の接頭辞差により数値の
+   部分一致で listening ログを取り違えないこと。
+
+補足:
+
+- 「WS 側と proxy 側が同時に衝突する」実プロセス版の検証は、WS が先に
+  bind して即座に EADDRINUSE で失敗する経路になり、既存の
+  `collector-port-collision.test.ts`（Issue #64、WS 衝突）でカバー済みの
+  経路と同一のため、実プロセス統合テストは追加せず純粋ロジック側で
+  順序非依存性を固定する方針とした。
+- 実装ロジックの変更は行っていない（テスト追加のみ）。既存 80 テスト・
+  今回追加分を含め `pnpm -F @chainviz/e2e build` / `pnpm -F @chainviz/e2e
+  test` は全 88 テスト green。
