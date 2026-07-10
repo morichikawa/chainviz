@@ -56,6 +56,9 @@ function rethNode(n: number, blockHeight: number): NodeEntity {
     syncStatus: "synced",
     blockHeight,
     headBlockHash: `0x${blockHeight.toString(16).padStart(8, "0")}`,
+    // Issue #215: ノードの役割（カードサブタイトル・ポップオーバーの
+    // 「役割」行）をオフラインで確認できるようにする。
+    nodeRole: "execution",
     // D層: 同期ステージ・txpool内訳をオフラインで確認できるようにする
     // （ARCHITECTURE.md §7.6.5/§7.6.6。Issue #189）。
     internals: {
@@ -78,6 +81,8 @@ const lighthouseNode: NodeEntity = {
   syncStatus: "synced",
   blockHeight: 128,
   headBlockHash: "0x00000080",
+  // Issue #215: 上記 rethNode と同じ理由でコンセンサスクライアントの役割を付ける。
+  nodeRole: "consensus",
   // D層: このbeaconがEngine APIで駆動するreth（ARCHITECTURE.md §7.6.3。
   // Issue #188）。内部リンクエッジ1本をオフラインで確認できるようにする。
   drivesNodeId: "reth-node-1",
@@ -410,7 +415,9 @@ function unknownContract(): ContractEntity {
  * validator client(VC)相当のノード。beacon へ Beacon API で接続するだけで
  * libp2p の P2P には参加しないため `p2pRole: "none"` を持つ（Issue #214）。
  * PeerEdge を1本も持たない状態が正しい定常状態であり、除外条件を目視で
- * 確認できるように既定スナップショットへ含める。
+ * 確認できるように既定スナップショットへ含める。`nodeRole: "validator"`
+ * により、カードの同期状態ドット・ポップオーバーの同期状態/ブロック高が
+ * 出ないこと（Issue #215）もオフラインで確認できる。
  */
 function validatorNode(n: number): NodeEntity {
   return {
@@ -427,6 +434,7 @@ function validatorNode(n: number): NodeEntity {
     blockHeight: 128,
     headBlockHash: "0x00000080",
     p2pRole: "none",
+    nodeRole: "validator",
   };
 }
 
