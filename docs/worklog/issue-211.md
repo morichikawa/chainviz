@@ -1609,3 +1609,191 @@ QA差し戻し（pending tx の4段目「ブロック取り込み」が未到達
 一切変更していない。ユニットテスト（`txLifecycle` / `TxLifecyclePopover` /
 `txLifecyclePopoverHover`、計39件）も全通過を確認した。push / PR作成 /
 マージ / Issueクローズは統括の判断・実行に委ねる。
+
+## 14. 設計メモ（単位A: #215、designer確定版）
+
+### 2026-07-10 単位Aの設計確定
+
+- 担当: designer
+- ブランチ: issue-215-node-role-visibility
+- 内容: 上記4節「単位A」のUX設計初稿を精査し、実装可能な形に確定した。
+  `NodeEntity.nodeRole` の型定義は本ブランチで実装・テスト済み
+  （`pnpm build && pnpm lint && pnpm test` 全パッケージ通過を確認済み。
+  shared 62件 / collector 1126件 / frontend 1606件）
+
+### UX初稿からの変更点（要注意）
+
+**ラベルは `com.chainviz.node-role` を新設せず、既存の `com.chainviz.role`
+を再利用する。** 精査の結果、collector には既にこのラベルが存在していた
+（`packages/collector/src/adapters/ethereum/labels.ts` の `ROLE_LABEL`。
+値は `execution` / `consensus` / `workbench`）。addNode / addWorkbench が
+作る動的コンテナには `node-lifecycle.ts` の `nodeLabels()` /
+`workbenchLabels()` が**既に付与済み**。理由:
+
+- UX初稿どおり `com.chainviz.node-role` を新設すると、addNode で作る
+  コンテナに `com.chainviz.role=execution` と
+  `com.chainviz.node-role=execution` という**同じ意味のラベルが2つ**並び、
+  値がずれると検知しづらい不整合になる（labels.ts が警告しているのと
+  同種の問題）
+- 再利用なら **collector の lifecycle 側は変更ゼロ**（動的コンテナは既に
+  ラベル済み）。既存の稼働中 managed コンテナも nodeRole が自動で入る
+- 静的コンテナへの `com.chainviz.role` 追加は managed 回収
+  （`recoverManagedContainers`）に干渉しない（回収フィルタは
+  `com.chainviz.managed=true` が必須で、compose の静的コンテナには
+  付かないため）。値 `validator` は compose の静的 VC のみが持ち、
+  addNode は VC を作らないので `toManagedContainer` の role 検証
+  （execution/consensus/workbench のみ許容）にも影響しない
+
+### 確定した型・ラベル・データフロー
+
+- **shared（実装済み）**: `NodeEntity.nodeRole?: string`。生文字列
+  （Ethereum プロファイルでは `execution` / `consensus` / `validator`）。
+  解釈・表示はフロント表現セットの責務。省略 = 不明（ラベル未付与・
+  旧スナップショット）。p2pRole とは別軸で統合しない（validator client は
+  `nodeRole="validator"` かつ `p2pRole="none"`）。ARCHITECTURE.md §2 の
+  スキーマ記述も更新済み
+- **ラベル**: `com.chainviz.role`（既存）。静的コンテナ = compose が付与、
+  動的コンテナ = collector lifecycle が付与（実装済み・変更不要）
+- **データフロー**: compose / lifecycle がラベル付与 → docker 観測
+  （`ContainerObservation.labels`）→ Ethereum アダプタ `toEntity` が
+  `nodeRole` へ転記 → フロント `chain-profiles/ethereum/nodeRoles.ts` が
+  表示（ラベル・用語解説キー・同期状態表示の要否）へ解釈
+
+### 実装引き継ぎ（依存順）
+
+shared は本ブランチでコミット済み。node-env と collector と frontend は
+コード上は互いに独立で並行可能（実機での結合確認は全部そろってから）。
+
+**(1) node-env（`profiles/ethereum/docker-compose.yml`）**
+
+- 6つのノードサービスに `com.chainviz.role` ラベルを追加する:
+  reth1/reth2 = `"execution"`、beacon1/beacon2 = `"consensus"`、
+  validator1/validator2 = `"validator"`。reth1/beacon1 は既存の
+  `com.chainviz.p2p-role: "bootnode"` と並記、validator1/2 と reth2/beacon2
+  は `labels:` ブロック自体の新設になる
+- workbench サービスには付けない（NodeEntity.nodeRole の唯一の消費者は
+  ノードカードで、workbench はエンティティ種別自体が別。使われないラベルを
+  先回りで足さない）
+- 注意: 稼働中のスタックにはラベルが反映されない（Docker のラベルは
+  コンテナ作成時に固定）。`docker compose up -d` でラベル差分により
+  該当コンテナが再作成されることを README に書く必要はないが、QA には
+  再作成が必要である旨を引き継ぐこと
+
+**(2) collector（`packages/collector/src/adapters/ethereum/`）**
+
+- `index.ts` の `toEntity()`: node 分岐の返却オブジェクトに
+  `obs.labels[ROLE_LABEL]` が非空文字列なら `nodeRole` として**生値の
+  まま**設定する（p2pRole のような値の検証・写像はしない。未知の値は
+  フロント表現セットが無視する契約。省略 = 不明の流儀は optional
+  フィールドの組み立てで実現する。`removable` と違い常設キーにしない）
+- `labels.ts` の `ROLE_LABEL` docstring 更新: 「managed=true のコンテナが
+  持つ」→「全ノードコンテナの役割宣言（静的 = compose テンプレート、
+  動的 = lifecycle が付与）。値は execution / consensus / validator /
+  workbench。NodeEntity.nodeRole の出所（Issue #215）」へ
+- `classify.ts`・`node-lifecycle.ts` は**変更不要**（分類ロジックは
+  従来どおりイメージ名/プロセス名ベース。role ラベルを分類に使う
+  リファクタは今回のスコープ外）
+- テストは `index.test.ts`（toEntity 経由の nodeRole 転記: ラベル有り3値・
+  ラベル無し省略・空文字列省略）に追加する
+
+**(3) frontend（`packages/frontend/src/`）**
+
+- `chain-profiles/ethereum/nodeRoles.ts` 新設（`syncStageLabels.ts` と
+  同じ流儀。テストも同名 `.test.ts`）:
+  - `NODE_ROLE_DESCRIPTORS: Readonly<Record<string, NodeRoleDescriptor>>`
+    と `describeNodeRole(nodeRole: string | undefined):
+    NodeRoleDescriptor | undefined`
+  - `NodeRoleDescriptor = { label: Localized; glossaryKey: string;
+    showsSyncState: boolean }`
+  - `execution` → ラベル「実行クライアント / Execution client」、
+    glossaryKey `el-client`、showsSyncState: true
+  - `consensus` → 「コンセンサスクライアント / Consensus client」、
+    `cl-client`、true
+  - `validator` → 「バリデーター / Validator」、`validator`（新設）、
+    **false**
+  - `showsSyncState` は「このノードはチェーンのコピーを同期する係か」。
+    UX初稿の「validator の同期状態表示を消す」判定を、コンポーネントに
+    `"validator"` というプロファイル固有リテラルを書かずに実現するための
+    フラグ。descriptor が引けない（nodeRole 省略・未知値）ときは true
+    扱い（現状表示の維持）
+- `entities/InfraNodeCard.tsx`:
+  - サブタイトル: node かつ descriptor が引けたら
+    「{役割ラベル} · {clientType}」、引けなければ従来どおり clientType のみ
+  - 同期状態ドット（`infra-card__status`）: node かつ
+    `showsSyncState === false` なら**描画しない**（syncing 色で出し続ける
+    現状が「壊れている」誤解を招くため。workbench は従来どおり）
+- `entities/InfraPopover.tsx`:
+  - 「役割」行を node かつ descriptor が引けたときに常設: ラベルは既存
+    i18n キー `field.role`（「役割 / Role」をそのまま再利用）、値に
+    `GlossaryTerm termKey={descriptor.glossaryKey}` を張る
+  - 既存 bootnode 行のラベルを `field.role` → **新設 `field.p2pRole`**
+    （「P2P での役割 / P2P role」）へ変更（役割行との軸の混同を防ぐ。
+    UX初稿の指示どおり。`field.role` キー自体は役割行が引き継ぐので
+    削除しない）
+  - `showsSyncState === false` のとき「同期状態」「ブロック高」の行を
+    出さない
+  - 「駆動元（合意ノード）」行: 新設 prop `drivenByContainerName` が
+    あれば表示。ラベルは新設 `field.drivenBy`、GlossaryTerm は既存
+    `engine-api`（「駆動する実行ノード」行と対称）
+- `entities/infraNode.ts`: `InfraNodeData.drivenByContainerName?: string`
+  を追加し、`entitiesToFlowNodes` で導出（node について「自分を
+  `drivesNodeId` に持つ node」の containerName を逆引き。Ethereum では
+  beacon→reth の1対1なので最初の一致でよい）。`isSameInfraNode` は
+  変更不要（`drivesNodeContainerName` と同じく実質不変の導出値。docstring
+  の該当箇所に併記すること）
+- 操作先エッジのポップオーバー新設:
+  - `entities/operationTargetEdge.ts`: `OperationTargetEdgeData` に
+    `workbenchContainerName` / `targetContainerName` / `hovered` を持たせ、
+    `operationTargetEdgesToFlowEdges` で端点名を詰める（呼び出し元から
+    nodesById 相当を渡す。シグネチャ変更はテストも更新）
+  - `entities/OperationTargetEdgePopover.tsx` 新設（`PeerEdgePopover` と
+    同型の薄い表示コンポーネント）: タイトル = 新設 `edge.operationTarget`
+    （「操作先（RPC 接続先） / RPC target」）、端点表示
+    「{workbench} → {target}」、本文 = 新設 `edge.operationTarget.hint`
+    （UX初稿4節の i18n 表の文言をそのまま使う。「実際の Ethereum でも
+    ウォレットは決まった1つの RPC エンドポイントに接続する」一般論と
+    「chainviz は全操作観測のため1本に固定」という chainviz 都合、
+    「ブートノード役とは無関係」の3点を必ず含める。Issue #215 コメントの
+    切り分けを崩さない）
+  - `entities/OperationTargetEdge.tsx`: hovered 時に線を強調し
+    `EdgeLabelRenderer` でポップオーバーを出す（`InternalLinkEdge` と
+    同じ構成）
+  - `canvas/Canvas.tsx`: `hoveredOperationTargetEdgeId` state と
+    onEdgeMouseEnter/Leave の分岐、displayEdges での hovered 注入を追加
+    （peer/deploy/internal-link と同じパターン）
+  - 注意: EdgeLabelRenderer のラッパーは `pointerEvents: "none"` のため、
+    エッジポップオーバー内に GlossaryTerm アンカーを置いてもホバーできない。
+    `rpc-endpoint` の用語解説アンカーはエッジ側ではなく**ワークベンチの
+    ポップオーバーの「操作先ノード」ラベル**（`field.rpcTarget` の行。
+    現在は素の `Field`）に張る
+- i18n（`i18n/messages.ts`）新設キー: `field.p2pRole` / `field.drivenBy` /
+  `edge.operationTarget` / `edge.operationTarget.hint`（文言はUX初稿4節の
+  表のとおり。役割ラベル自体は nodeRoles.ts 側に置き messages.ts に
+  入れない）
+- glossary（`glossary/ethereum/terms/a-infra.yaml`）: `validator` と
+  `rpc-endpoint` を新設。定義の内容・relatedTerms（validator: cl-client,
+  bootnode / rpc-endpoint: workbench, bootnode）はUX初稿4節のとおり。
+  既存の3拍子（定義→なぜ必要か→chainvizではどう見えるか）で書き、
+  英語版は chainviz-i18n のレビューを通す
+
+### 実装しないと決めたこと（理由つき）
+
+- `p2pRole` の validator 判定（`isValidatorService`、compose サービス名
+  ベース）を role ラベル参照へ置き換えるリファクタ: #214 の確定挙動で
+  あり、動くものを本Issueで巻き込まない。nodeRole 導入後に一本化する
+  価値はあるが、必要になった時点で別途判断する
+- `classify.ts` の分類（イメージ名/プロセス名ベース）への role ラベルの
+  利用: 同上。分類とラベルは独立に機能する
+- `clientCategory.ts`（フロントの EL/CL 判定）の nodeRole ベースへの
+  置き換え: ghost カード・接続予定エッジで使われており、nodeRole が
+  無い状況（addNode 直後の ghost はエンティティ未着）でも動く必要が
+  ある。今回は触らない
+- compose の workbench サービスへの role ラベル付与: 消費者がいない
+  （前述）
+
+### 未確定のまま残す点（実装時判断でよい）
+
+- サブタイトルの区切り文字（「 · 」）や役割行の表示順（クライアント行の
+  直後を想定）などの見た目の細部
+- 操作先エッジのホバー時の強調幅・ポップオーバーの具体的なクラス名
+  （既存の peer-popover 系に合わせる想定）
