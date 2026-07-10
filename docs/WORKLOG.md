@@ -125,3 +125,4 @@
 | #217 | Issue #217 長文エラーでトースト通知のレイアウトが崩れる不具合を修正(flex itemのmin-width:auto問題が原因。.toast/.toast__messageにmin-width:0・overflow-wrap:anywhere・white-space:pre-wrap・max-height+overflow-yを追加) | [2026-07-10](worklog/issue-217.md) |
 | #220 | Issue #220 ノード追加・ワークベンチ追加ボタンの連打防止。既存のゴースト(仮カード)有無から算出するpendingAddNode/pendingAddWorkbenchをボタンのdisabled属性に反映し、直前の追加が解決するまで再クリックできないようにした | [2026-07-10](worklog/issue-220.md) |
 | #222 | Issue #222 ノード/ワークベンチ削除中の進行中フィードバック(半透明化+削除ボタン無効化+スピナー)を追加。既存のワークベンチ操作保留追跡(pendingOperationWorkbenchIds)と同じ設計で`pendingRemovalIds`を実装 | [2026-07-10](worklog/issue-222.md) |
+| #238 | Issue #238 長時間のUI層E2Eフルスイート実行中にcollectorがuncaughtExceptionでexitしカスケード失敗する不具合の原因調査・修正。eth-ws-client.tsのsubscribe()内でonResult(onHeader/onTxHash)の呼び出しがtry/catchで囲われておらず、例外が発生するとws内部の同期呼び出しスタックを経てプロセス全体を落としていた。onResult呼び出しをtry/catchで囲みonErrorへ転送するよう修正 | [2026-07-11](worklog/issue-238.md) |
