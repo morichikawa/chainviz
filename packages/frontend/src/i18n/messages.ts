@@ -190,7 +190,7 @@ export const messages = {
   },
   "tx.lifecycle.desc.mempool": {
     ja: "ノードが署名・nonce・残高を検査し、取り込み待ちの列に入れます",
-    en: "The node checks the signature, nonce and balance, then queues it for inclusion.",
+    en: "The node checks the signature, nonce, and balance, then queues it for inclusion.",
   },
   "tx.lifecycle.desc.included": {
     ja: "ブロックに取り込まれ、全ノードに複製されて確定しました",
