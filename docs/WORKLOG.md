@@ -116,3 +116,4 @@
 | #228 | Issue #228 SCENARIOS.md棚卸しで削除し忘れていたa-b-layer.test.tsの移行済みWSテスト2件を削除 | [2026-07-09](worklog/issue-228.md) |
 | #201 | Issue #201 C層シナリオ(UI-C: 送金・デプロイ・呼び出し・トークン残高・未知コントラクト)のPlaywright実装。実装中にWalletEntity.recentTxHashes未配線・forge createの--constructor-args空配列不具合(collector)・デプロイエッジのアドレス表記不一致(frontend)を発見し修正 | [2026-07-09](worklog/issue-201.md) |
 | #202 | Issue #202 異常系・複数クライアントシナリオ(UI-ERR・UI-MULTI)のPlaywright実装と、移行済みWSテスト(reconnect.test.tsの2件)の削除。collectorプロセスの停止・再起動をプロセスをまたいで扱うcollector-registry.tsを追加 | [2026-07-09](worklog/issue-202.md) |
+| #203 | Issue #203 D層UIシナリオ(UI-D-01〜03)のPlaywright実装。ステップ10の最終Issueで、これによりSCENARIOS.mdのUIシナリオが全件`済`になり完了条件を満たした | [2026-07-10](worklog/issue-203.md) |
