@@ -259,3 +259,62 @@ Issue #238 の再現条件（`commands-node`/`multi-client`/`contract-lifecycle`
    挙動を回帰として固定済みであるため、現時点で対応不要と判断する。
    将来 onResult に素の async コールバックを渡す購読を追加する際は
    この境界に注意すること（本ファイルのテストコメントに記載あり）
+
+#### QA検証記録（chainviz-qa）
+
+判定: **合格**（Issue #238 の完了条件「collector がクラッシュし以降の全テストが
+カスケード失敗する」が実際に解消されていることを実機で確認した）。
+
+検証環境: 既に稼働中の Ethereum スタック（`chainviz-ethereum`、reth1 =
+172.28.1.1:8546、稼働 4〜5 時間・ブロック高さ 7700 前後で進行中）を利用。
+
+1. **ユニットテスト**: `pnpm --filter @chainviz/collector test`（43 ファイル
+   1149 件）が全件 green。うち `eth-ws-client-callback-safety.test.ts`（12 件）
+   がコールバック例外分離を担保している。
+
+2. **実ノードへの例外注入（本Issueの核心の検証）**: ビルド済みの
+   `createWsEthClient` を稼働中 reth（`ws://172.28.1.1:8546`）へ実接続し、
+   `subscribeNewHeads` の `onHeader` が受信ブロックごとに毎回例外を投げる
+   スクリプトを実行した。テストのモックではなく実コード・実ノードでの確認。
+   - **修正後（dist の現行コード）**: 実際に進行する 20 ブロック連続で
+     onHeader が毎回例外を投げたが、20 件すべてが `onError` に転送され、
+     購読は生き続け、`uncaughtException` は一度も発火せず、プロセスは
+     落ちなかった。
+   - **修正前の再現確認**: コンパイル済み JS の該当箇所から try/catch を
+     外した版（`eth-ws-client-prefix.js`。ソースは変更せず dist のコピーを
+     一時的にパッチして検証後に削除）で同じスクリプトを実行したところ、
+     最初のブロックの onHeader が投げた時点で `uncaughtException` となり
+     `process.exit(1)` した。これは Issue #238 の症状（collector プロセスが
+     丸ごと落ちる）そのものであり、修正が実際にこの不具合を止めていること、
+     およびテストが検出対象としている不具合が実在することを確認した。
+
+3. **複数 E2E ファイルの連続実行**: 実 collector 子プロセスを立てて実スタックを
+   相手にする vitest E2E のうち、addNode/removeNode 系（commands / error-paths /
+   reconnect）とブロック・tx 伝播系（a-b-layer / d-layer）の代表 5 ファイルを
+   連続実行した（実行時間 約 622 秒）。
+   - 5 ファイル中 4 ファイル（error-paths 4 件・d-layer 3 件・a-b-layer 1 件・
+     reconnect 2 件、計 11 件）が全て合格。
+   - commands.test.ts の addNode 1 件のみ失敗したが、内容は「追加した reth が
+     540 秒以内に既存チェーンの現在高さ（7873）へ追いつけなかった（到達
+     5501）」という**新規ノードの同期タイムアウト**であり、collector の
+     クラッシュではない。実際、同ファイル内の後続テスト（removeNode）も、
+     後続の 4 ファイルも全て collector が生きたまま合格しており、Issue #238 の
+     症状である「以降の全テストのカスケード失敗」は起きていない。collector の
+     出力にも uncaughtException / fatal / ECONNREFUSED の痕跡は無かった。
+
+**検証中に判明した環境上の注意点（Issue #238 とは無関係、申し送り）**
+
+- E2E ハーネスが起動する collector は WS ポートを `CHAINVIZ_COLLECTOR_PORT`
+  （既定 4123）で受け取るが、ロギングプロキシポート（既定 4001）は
+  `CHAINVIZ_PROXY_PORT` を明示しない限り 4001 固定。ホスト上で dev collector が
+  既に 4001 を占有していると、E2E collector が起動時に `EADDRINUSE` で fatal
+  exit し、全 spec が ECONNREFUSED で落ちる。今回は `CHAINVIZ_PROXY_PORT` を
+  空きポートに設定して回避した。E2E ハーネス側でプロキシポートも
+  WS ポートと同様に自動割り当て/衝突回避する余地がある（別途 e2e 担当で
+  検討推奨）。
+- commands.test.ts の addNode 追従テストは、既存チェーンが長時間稼働で高く
+  なるほど新規ノードの初期同期に時間がかかり、固定の全体タイムアウト
+  （540 秒）を超えて失敗しやすくなる。今回の失敗はこの性質によるもので
+  Issue #238 の回帰ではないが、CLAUDE.md の「今この瞬間に観測できる状態に
+  依存した固定値」の観点から、E2E 担当側でタイムアウトを到達速度から動的に
+  導出するか前提条件を明記する改善を別途検討する価値がある。
