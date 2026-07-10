@@ -738,3 +738,47 @@ TxLifecyclePopover.tsx` の `stageDescriptionKey` と
 設定は一切変更していない。実データ（稼働中の chainviz-ethereum
 スタック）ではなくモックデータで検証したが、failed を含む全 status の
 描画は実コンポーネントで確認済み。
+
+### 2026-07-10 QA差し戻し対応（単位D、chainviz-frontend）
+
+QA検証記録の差し戻し（条件2・7: pending の未到達段階の説明文が完了断定の
+過去形のまま）に対応した。
+
+修正内容:
+
+- `packages/frontend/src/entities/TxLifecyclePopover.tsx` の
+  `stageDescriptionKey` に、`included` 段階が `pending`（未到達）状態の
+  場合の分岐を追加した。`failed` 状態の `includedFailed` と同じパターンで、
+  `state === "pending"` のときは新設した `tx.lifecycle.desc.includedPending`
+  を返すようにした
+- `packages/frontend/src/i18n/messages.ts` に
+  `tx.lifecycle.desc.includedPending` を新設した。ja は「ブロックに
+  取り込まれると、全ノードに複製されて確定します（まだ起きていません）」、
+  en は "Once included in a block, it will be replicated to every node and
+  become final. This has not happened yet."。完了を断定せず、未来形・
+  「まだ起きていない」ことを明示する文言にした
+- `TxLifecyclePopover.test.tsx` に、pending の tx で included 段階の
+  `data-stage-state` が `pending` であること、説明文が旧来の完了断定文
+  （「…確定しました」）を含まないこと、新設の未来形文言を含むことを
+  検証するテストを1件追加した
+
+不具合の再現と修正確認:
+
+- 修正前（`TxLifecyclePopover.tsx` の変更のみを一時的に `git stash` で
+  戻した状態）で追加テストを実行し、`○ブロック取り込み` の説明文に旧来の
+  完了断定文「ブロックに取り込まれ、全ノードに複製されて確定しました」が
+  含まれてテストが失敗することを確認した
+- `git stash pop` で修正を戻し、テストが通ることを確認した
+- `pnpm --filter @chainviz/frontend dev` でモックモードの frontend を
+  起動し、Playwright（使い捨て Chromium 実行）で Alice の EOA カードの
+  pending tx チップにホバーして、実際のブラウザ描画で4段目の説明文が
+  ja「ブロックに取り込まれると、全ノードに複製されて確定します（まだ
+  起きていません）」、en "Once included in a block, it will be replicated
+  to every node and become final. This has not happened yet." になって
+  いることを目視確認した（言語切り替えも実施）。○マーク（未到達）と
+  説明文の内容が矛盾しなくなったことを確認した
+
+動作確認: `pnpm build` / `pnpm lint` / `pnpm test`
+（frontend 1454件を含む全パッケージ）が通ることを確認した。
+
+作業中に見つけた範囲外の問題: 無し。QA差し戻しの範囲内のみを修正した。
