@@ -1,5 +1,6 @@
 import type { ContractEntity } from "@chainviz/shared";
 import type { Edge } from "@xyflow/react";
+import { buildLowerCaseIndex } from "./addressCasing.js";
 
 /**
  * ウォレット → コントラクトの「デプロイ」エッジ（ARCHITECTURE.md §6.3
@@ -53,14 +54,15 @@ export function isDeployFlowEdge(edge: Edge): edge is DeployFlowEdge {
  * 無視して照合したうえで、実際にキャンバス上に存在するウォレットの表記
  * （React Flow のノード id と一致する表記）を edge の端点として使う
  * （表記がずれたままだと React Flow がノードを解決できずエッジを描画
- * できないため、`present` 側の元の表記を採用する）。
+ * できないため、`present` 側の元の表記を採用する）。この照合ロジックは
+ * `addressCasing.ts` に集約している（同型の不具合が別ファイルにも見つかった
+ * ため。Issue #232 参照）。
  */
 export function deployEdgesToFlowEdges(
   contracts: ContractEntity[],
   presentWalletIds: Iterable<string>,
 ): DeployFlowEdge[] {
-  const presentByLowerCase = new Map<string, string>();
-  for (const id of presentWalletIds) presentByLowerCase.set(id.toLowerCase(), id);
+  const presentByLowerCase = buildLowerCaseIndex(presentWalletIds);
   const result: DeployFlowEdge[] = [];
 
   for (const contract of contracts) {
