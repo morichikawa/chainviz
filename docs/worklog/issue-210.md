@@ -69,3 +69,43 @@
   必要になる可能性がある）。
 - 調査のために一時的に起動したモック用 vite（ポート5299）は調査後に停止済み。
   既存の dev スタック（docker / collector / vite 5173）には手を加えていない。
+
+### 2026-07-10 Issue #210 レビュー（調査記録の検証）
+
+- 担当: reviewer
+- ブランチ: issue-210-workbench-multiple-wallets
+- 内容: detective の調査記録（コミット 35243bc、docs-only）の静的レビュー。
+  結果は**合格**。「不具合ではなくモックデータの意図した挙動」という結論を
+  支持する。
+- 確認した根拠:
+  - `packages/frontend/src/entities/ownershipEdge.ts` の
+    `ownershipEdgesToFlowEdges` はウォレット1件（`ownerWorkbenchId` 非 null
+    かつ所有者がキャンバスに存在）につきエッジ1本しか作らない。記載どおり。
+  - `packages/collector/src/adapters/ethereum/index.ts` の
+    `workbenchWalletIds` は mnemonic 未設定なら空配列、あれば導出アドレス
+    1件のみを返す。`wallet-tracker.ts` の `workbenchWallets` も
+    1ワークベンチ=1アドレス。記載どおり。
+  - `packages/collector/src/world-state/diff.ts` の `computeWalletDiff` は
+    観測から消えたウォレットの `ownerWorkbenchId` を null に更新するため、
+    実接続パスで「1ワークベンチに2ウォレット所有」が持続する経路は無い。
+    記載どおり。なお所有エッジは `WorkbenchEntity.walletIds` ではなく
+    `WalletEntity.ownerWorkbenchId` から導出されるため、実接続で複数エッジが
+    出るには同一 owner の WalletEntity が複数必要だが、上記のとおり生成経路が
+    1件しかなく構造的に起きない（結論の裏取りとして独立に確認）。
+  - `packages/frontend/src/websocket/mockData.ts` は `workbench-alice` に
+    `walletIds: [ALICE_WALLET, SAFE_WALLET]` を持たせ、`safeWallet()` は
+    `isSmartAccount: true`・`ownerWorkbenchId: "workbench-alice"`。記載どおり。
+  - `docs/CONCEPT.md`「ウォレット・アカウントの可視化」に「1ワークベンチが
+    複数アドレスを持つ場合にも技術的には対応」「コントラクトウォレット
+    （Smart Account）も同種の要素として表示」とあり、モックの2ウォレットは
+    設計どおり。`WorkbenchEntity.walletIds: string[]`
+    （`packages/shared/src/world-state/entities.ts`）も同趣旨で整合。
+  - モックモード判別のバッジ「· モックデータ」は
+    `packages/frontend/src/app/App.tsx`（`connection.mock`）に実在する。
+- 差分の確認: `main..HEAD` はコミット1件のみで、変更は
+  `docs/worklog/issue-210.md`（新規）と `docs/WORKLOG.md`（索引1行）のみ。
+  コード変更なし。コミット粒度も問題なし。
+- ビルド・テスト: `pnpm lint` / `pnpm build` / `pnpm test` 全通過
+  （frontend 1421件を含む全パッケージ成功）。
+- 注意点: docs-only 変更のため、CLAUDE.md の例外規定により chainviz-qa は
+  省略可（reviewer 合格のみで足りる）。
