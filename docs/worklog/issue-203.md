@@ -180,3 +180,80 @@ UI層全体(`pnpm test:e2e:ui`、32件)もgreen。`pnpm build` /
 e2e unit 77)もいずれもgreen。テスト強化で検出された実装バグは無し
 (起票したIssueも無し)。
 
+
+### 2026-07-10 Issue #203 レビュー記録(reviewer 合格)
+
+- 担当: reviewer(査読)
+- ブランチ: issue-203-ui-d-scenarios(mainからの8コミット、HEAD 5488efc)
+
+#### 確認内容と結果(合格)
+
+- **ビルド・lint・テスト**: `pnpm build` / `pnpm lint` / `pnpm test`
+  (shared / e2e unit / collector 1103 / frontend 1372)がすべて成功。
+- **§8.4規約との対応**: 3シナリオ(UI-D-01〜03)とも `test()` タイトルが
+  「<シナリオID>: <タイトル>」でSCENARIOS.mdの見出しと対応し、前提・
+  操作・確認の各箇条書きが同じ文言の `test.step` として実装されている
+  ことを突き合わせで確認した(UI-D-01のタイトルのみ空白の差異あり。
+  後述の軽微な指摘参照)。
+- **frontend実装との突き合わせ**: spec が依拠するセレクタ・値をすべて
+  frontend 側の実体と照合した。edge id 生成規則(`internal-link-<from>=><to>`)、
+  クラス(`internal-link-edge` / React Flow の `react-flow__edge-internalLink`、
+  否定側の `peer-edge` / `react-flow__edge-peer`)、二重線の芯
+  (`.internal-link-edge__core`)、パルス(`.internal-link-pulse`)、
+  ポップオーバー内訳(`.internal-link-popover__calls` の `<method> ×<count>`
+  形式)、同期ステージ(`.infra-popover__sync-stages` /
+  `__sync-stage-row` / `.infra-field__value` に `stage.checkpoint` を
+  数値のまま描画)、txpool(`glossary-term-txpool` testid と
+  `pending {pending} · queued {queued}` の日英同一文言)のいずれも
+  実装と一致する。
+- **interactions.ts の2つの回避策の妥当性**:
+  - `dispatchHover`: React Flow はノード(HTML)をエッジ(SVG)より上位
+    レイヤーに描くため、エッジ経路が隣接カードと重なると実座標ヒット
+    テストの `hover()` が奪われる、という背景説明は React Flow の描画
+    構造と整合する。React の合成 `mouseover` はバブリングで届くため、
+    対象要素への直接 dispatch でヒットテストを迂回できるという理屈も
+    正しい。「単独でヒットテストできる要素は素直に `hover()` を使う」
+    という使い分けの指針が doc コメントにあるのも良い。
+  - `descendantContainingTestId`: `filter({has})` に別インスタンスの
+    Locator を渡す組み合わせで解決に失敗する事象への回避としてネイティブ
+    CSS `:has()`(Chromium で安定サポート済み)へ寄せるのは妥当。1つの
+    Locator に閉じるため今回の事象の再発余地が無い。testId をセレクタ
+    文字列へ無エスケープで埋め込むが、利用箇所は内部定数のみで実害なし。
+- **expectSustainedPulseCycles の検証力**: 1観測=1パルス
+  (`useNodeLinkActivityPulses`。パルスの key は seq ごとに一意、
+  ポーリング間隔3秒 > パルス表示900msで重なりも無い)という前提を
+  frontend 実装で確認したうえで、count が 1→0→1→0→1 と遷移するには
+  互いに異なるパルス要素が3個以上、各タイムアウト内に順次出現する
+  必要があることを確認した。`toHaveCount(0)` 成立後の `toHaveCount(1)` は
+  新しいパルスでしか満たせないため、「たまたま1回出た」単発では通らない。
+  消滅ウィンドウ(約2.1秒)も Playwright の自動リトライ間隔で確実に観測
+  できる幅であり、周期性の検証として実質を伴う。
+- **固定値の前提条件**: タイムアウト5種(A層ポーリング20s・内部状態60s・
+  初回パルス60s・消滅900ms×5・2回目以降15s)とも、根拠と前提条件
+  (slot時間2秒 < ポーリング間隔3秒、値を変えたら合わせる箇所)が
+  コード内コメントと本worklogの両方に明記されており、運用ルールを満たす。
+  `test.setTimeout` も worst case の合計から導出されている。
+- **エラーの握りつぶし**: 新規コードに try/catch は無く、握りつぶしに
+  該当する箇所なし。
+- **コミット粒度**: 8コミットとも1関心事(spec実装/SCENARIOS更新/docs/
+  ヘルパー切り出し/各シナリオの強化×3/強化記録)に閉じており、
+  Conventional Commits形式に適合。
+- **docs整合**: SCENARIOS.mdのUI-D 3見出しの`保`→`済`更新(節見出しの
+  着手条件注記の削除を含む)、PLAN.mdのチェックとステップ10完了の記録、
+  WORKLOG.md索引の1行、本worklogの記述(実装中に判明した2つの回避策の
+  経緯を含む)がいずれも実装と一致する。UI層シナリオが全32件(spec上の
+  test() 数と一致)で`済`になっていることも数え上げで確認した。
+  UI-D系に対応する移行元WSテストが無い(PROTO-D-01は「残す」判定)ため
+  削除対象が無い、という判断も棚卸し表と一致する。
+
+#### 軽微な指摘(差し戻し不要。次回以降の参考)
+
+- UI-D-01 の `test()` タイトルが「beacon→reth」で、SCENARIOS.md の見出し
+  「beacon → reth」と矢印前後の空白だけ異なる(他31件は完全一致)。ID で
+  対応は一意に取れるため実害は無いが、§8.4の「1対1に対応」の趣旨からは
+  次にこのファイルへ触れる際に揃えるのが望ましい。
+- PLAN.md のステップ10完了記録が、完了条件のうち「プロトコル層は引き続き
+  green」に対して PROTO-CMD-01 の環境要因(長時間稼働スタック。既知の
+  #229)による例外を明記して完了扱いとしている。判断の透明性は確保されて
+  おり妥当だが、QA(検証担当)は自身の実行時にも同事象が #229 の範囲に
+  収まるかを確認されたい。
