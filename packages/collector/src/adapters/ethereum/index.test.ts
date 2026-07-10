@@ -472,6 +472,121 @@ describe("EthereumAdapter.pollInfra", () => {
     expect(node.p2pRole).toBe("peer");
   });
 
+  it("marks a validator client (VC) node as p2pRole 'none' (Issue #214)", async () => {
+    // lighthouse の validator1/validator2 は compose サービス名に "validator"
+    // を含み、libp2p の P2P ネットワークに参加しない（beacon へ Beacon API で
+    // 接続するのみ）。frontend が「接続確立中」エッジの対象から除外できる
+    // よう、p2pRole は "none" になる（isValidatorService の前提条件参照）。
+    const validatorFixture: Fixture = {
+      summary: {
+        Id: "id-validator1",
+        Names: ["/chainviz-ethereum-validator1-1"],
+        Image: "sigp/lighthouse:latest",
+        State: "running",
+        Labels: {
+          "com.docker.compose.project": "chainviz-ethereum",
+          "com.docker.compose.service": "validator1",
+        },
+        NetworkSettings: { Networks: { chain: { IPAddress: "172.28.0.3" } } },
+      },
+      top: {
+        Titles: ["PID", "CMD"],
+        Processes: [["1", "lighthouse vc"]],
+      },
+    };
+    const adapter = new EthereumAdapter(
+      new DockerPoller(clientFrom([validatorFixture])),
+    );
+    const partial = await adapter.pollInfra();
+    const node = partial.entities?.[0] as NodeEntity;
+    expect(node.clientType).toBe("lighthouse");
+    expect(node.p2pRole).toBe("none");
+  });
+
+  it("matches the validator compose service name case-insensitively (Issue #214)", async () => {
+    const validatorFixture: Fixture = {
+      summary: {
+        Id: "id-validator-upper",
+        Names: ["/chainviz-ethereum-VALIDATOR2-1"],
+        Image: "sigp/lighthouse:latest",
+        State: "running",
+        Labels: {
+          "com.docker.compose.project": "chainviz-ethereum",
+          "com.docker.compose.service": "VALIDATOR2",
+        },
+        NetworkSettings: { Networks: { chain: { IPAddress: "172.28.0.4" } } },
+      },
+      top: {
+        Titles: ["PID", "CMD"],
+        Processes: [["1", "lighthouse vc"]],
+      },
+    };
+    const adapter = new EthereumAdapter(
+      new DockerPoller(clientFrom([validatorFixture])),
+    );
+    const partial = await adapter.pollInfra();
+    const node = partial.entities?.[0] as NodeEntity;
+    expect(node.p2pRole).toBe("none");
+  });
+
+  it("prefers the bootnode label over the validator service name when both are present (Issue #214)", async () => {
+    // 現行構成では起こり得ない組み合わせだが、優先順位（ラベル > VC判定）を
+    // 契約として固定しておく。
+    const validatorFixture: Fixture = {
+      summary: {
+        Id: "id-validator-bootnode",
+        Names: ["/chainviz-ethereum-validator1-1"],
+        Image: "sigp/lighthouse:latest",
+        State: "running",
+        Labels: {
+          "com.docker.compose.project": "chainviz-ethereum",
+          "com.docker.compose.service": "validator1",
+          "com.chainviz.p2p-role": "bootnode",
+        },
+        NetworkSettings: { Networks: { chain: { IPAddress: "172.28.0.5" } } },
+      },
+      top: {
+        Titles: ["PID", "CMD"],
+        Processes: [["1", "lighthouse vc"]],
+      },
+    };
+    const adapter = new EthereumAdapter(
+      new DockerPoller(clientFrom([validatorFixture])),
+    );
+    const partial = await adapter.pollInfra();
+    const node = partial.entities?.[0] as NodeEntity;
+    expect(node.p2pRole).toBe("bootnode");
+  });
+
+  it("keeps a beacon node's p2pRole as peer even though its service name shares the lighthouse client type with validators (Issue #214)", async () => {
+    // beacon も lighthouse クライアントだが compose サービス名は "beacon1" で
+    // "validator" を含まないため、通常どおり peer のままであることを確認する
+    // （VC 判定が誤って beacon にも波及しないことの回帰防止）。
+    const beaconFixture: Fixture = {
+      summary: {
+        Id: "id-beacon1",
+        Names: ["/chainviz-ethereum-beacon1-1"],
+        Image: "sigp/lighthouse:latest",
+        State: "running",
+        Labels: {
+          "com.docker.compose.project": "chainviz-ethereum",
+          "com.docker.compose.service": "beacon1",
+        },
+        NetworkSettings: { Networks: { chain: { IPAddress: "172.28.2.1" } } },
+      },
+      top: {
+        Titles: ["PID", "CMD"],
+        Processes: [["1", "lighthouse bn"]],
+      },
+    };
+    const adapter = new EthereumAdapter(
+      new DockerPoller(clientFrom([beaconFixture])),
+    );
+    const partial = await adapter.pollInfra();
+    const node = partial.entities?.[0] as NodeEntity;
+    expect(node.p2pRole).toBe("peer");
+  });
+
   it("rejects when the underlying poller fails to list containers", async () => {
     const failing: DockerClient = {
       listContainers: async () => {

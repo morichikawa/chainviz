@@ -70,12 +70,21 @@ export interface NodeEntity extends InfraEntity {
    * この値に正規化する想定）。collector（ChainAdapter）が Docker ラベル
    * `com.chainviz.p2p-role` から導出する（Issue #65 の「ラベルを単一の真実の
    * 情報源とする」方針）。
+   *
+   * "none" は「P2P ネットワークに参加しないノード」を表す（Issue #214）。
+   * チェーンのクライアントプロセスではあるが P2P の観測対象にならない
+   * コンポーネント（例: Ethereum プロファイルの validator client。beacon へ
+   * HTTP API で接続するだけで libp2p に参加しない）に ChainAdapter が設定する。
+   * このノードを端点とする PeerEdge は決して観測されないため、フロントは
+   * P2P 接続を前提にした表示（「接続確立中」エッジ等）の対象から除外する。
+   *
    * optional なのはフィールド未付与の旧スナップショットとの互換のため。
-   * 省略時は「不明」を意味し、フロントは `p2pRole === "bootnode"` の判定
-   * だけを行い、該当ノードが見つからなければブートノード前提の表示
-   * （バッジ・接続予定先の予告）を出さない側に倒す（Issue #123 / #124）。
+   * 省略時は「不明」を意味し（"none" = 「参加しないと判明している」とは
+   * 区別する）、フロントは `p2pRole === "bootnode"` の判定だけを行い、
+   * 該当ノードが見つからなければブートノード前提の表示（バッジ・接続予定先の
+   * 予告）を出さない側に倒す（Issue #123 / #124）。
    */
-  p2pRole?: "bootnode" | "peer";
+  p2pRole?: "bootnode" | "peer" | "none";
   /**
    * D層: このノードが内部 API で駆動する相手ノード（同じ論理ノードを構成する
    * 相方クライアント）のエンティティ id。Ethereum プロファイルでは

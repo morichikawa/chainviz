@@ -11,6 +11,7 @@ import {
   executionRpcUrls,
   executionStableIdForBeacon,
   executionTargets,
+  isValidatorService,
 } from "./targets.js";
 
 function obs(overrides: Partial<ContainerObservation> = {}): ContainerObservation {
@@ -898,6 +899,74 @@ describe("executionRpcUrls", () => {
 
   it("skips execution containers without an IP", () => {
     expect(executionRpcUrls([obs({ ip: "" })])).toEqual([]);
+  });
+});
+
+describe("isValidatorService (Issue #214)", () => {
+  it("returns true for a compose service name containing 'validator'", () => {
+    expect(isValidatorService(validator1)).toBe(true);
+  });
+
+  it("matches case-insensitively", () => {
+    const upper = obs({
+      labels: { "com.docker.compose.service": "VALIDATOR2" },
+    });
+    expect(isValidatorService(upper)).toBe(true);
+  });
+
+  it("returns false for beacon and execution services", () => {
+    expect(isValidatorService(beacon1)).toBe(false);
+    expect(isValidatorService(obs())).toBe(false);
+  });
+
+  it("returns false when the compose service label is missing", () => {
+    expect(isValidatorService(obs({ labels: {} }))).toBe(false);
+  });
+
+  it("matches 'validator' anywhere in the service name (substring, not exact/prefix)", () => {
+    // 判定は /validator/i の部分一致。番号付き（validator1）だけでなく、
+    // 接頭辞・接尾辞・中間に "validator" を含む名前も該当する。実 profile の
+    // 命名（validator1/validator2）を含め、想定される派生命名を取りこぼさない。
+    for (const service of [
+      "validator",
+      "validator-1",
+      "eth-validator",
+      "cl-validator-a",
+      "myvalidatorpool",
+    ]) {
+      expect(
+        isValidatorService(
+          obs({ labels: { "com.docker.compose.service": service } }),
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it("returns false for names that merely resemble but do not contain 'validator'", () => {
+    // タイポ・部分語（"valid"/"vali"）では該当しない。誤検出しないことの確認。
+    for (const service of ["valid", "validate", "vali-node", "beacon1", "reth1"]) {
+      expect(
+        isValidatorService(
+          obs({ labels: { "com.docker.compose.service": service } }),
+        ),
+      ).toBe(false);
+    }
+  });
+
+  it("is purely name-based and does not inspect the client type (documents the current limitation)", () => {
+    // isValidatorService は compose サービス名だけで判定し、実際のクライアント
+    // 種別（reth/lighthouse 等）を見ない。したがって "validator" を含む名前の
+    // execution ノード（現行 Ethereum profile には存在しないが、将来の別チェーン
+    // プロファイルではあり得る）も true になる。この非対称性（beaconTargets は
+    // クライアント種別も併せて絞るのに対し、toEntity の VC 判定は名前のみ）を
+    // 既知の挙動として固定する。将来プロファイル追加時の頑健性は #246 で追跡。
+    const rethNamedValidator = obs({
+      stableId: "chainviz-ethereum/tx-validator1",
+      labels: { "com.docker.compose.service": "tx-validator1" },
+      image: "ghcr.io/paradigmxyz/reth:latest",
+      processes: [{ command: "reth node", name: "reth" }],
+    });
+    expect(isValidatorService(rethNamedValidator)).toBe(true);
   });
 });
 

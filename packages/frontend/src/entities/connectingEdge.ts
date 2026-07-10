@@ -28,6 +28,9 @@ export type ConnectingFlowEdge = Edge<ConnectingEdgeData>;
  * - クライアント種別が execution/consensus のどちらにも属さない場合、または
  *   対応する層のブートノードが解決できない場合はスキップする（§4-5）。
  * - 端点（自ノード・ブートノード）の両方が現在キャンバス上に存在しないと描かない。
+ * - P2P ネットワークに参加しないノード（`p2pRole: "none"`。Ethereum プロファイル
+ *   では validator client が該当）は、PeerEdge を永久に持ち得ないため対象外
+ *   （Issue #214）。`p2pRole` 省略（undefined）時は従来どおり対象に含める。
  */
 export function connectingEdgesToFlowEdges(
   nodes: NodeEntity[],
@@ -49,6 +52,7 @@ export function connectingEdgesToFlowEdges(
   const result: ConnectingFlowEdge[] = [];
   for (const node of nodes) {
     if (connected.has(node.id)) continue; // 実エッジが1本でもあれば対象外
+    if (node.p2pRole === "none") continue; // P2P非参加ノード（Issue #214）
 
     const category = clientCategory(node.clientType);
     const boot =
