@@ -464,7 +464,7 @@ UI で同等以上に検証できるシナリオは Playwright（実ブラウザ
 - [x] 異常系・複数クライアントシナリオ(UI-ERR・UI-MULTI)の Playwright
       実装と、移行済み WS テストの整理
       [#202](https://github.com/morichikawa/chainviz/issues/202)
-- [ ] D層 UI シナリオ(UI-D)の Playwright 実装(ステップ9の #188/#189 の
+- [x] D層 UI シナリオ(UI-D)の Playwright 実装(ステップ9の #188/#189 の
       実装完了が前提)
       [#203](https://github.com/morichikawa/chainviz/issues/203)
 
@@ -474,6 +474,16 @@ UI で同等以上に検証できるシナリオは Playwright（実ブラウザ
 green になる。UI へ移行した WS テストが削除され、プロトコル層に残す
 テスト(SCENARIOS.md §3)は引き続き green。`pnpm lint && pnpm build &&
 pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
+
+**ステップ10 完了**(2026-07-10、#203 で全チェックボックス完了):
+`packages/e2e/SCENARIOS.md` の UI シナリオ(`保` マーカーは無くなり、
+全件 `済`)を実装し、`pnpm test:e2e:ui` で全32テストが green (実測
+3.7分)。移行対象だった WS テストは各 Issue の実装時に削除済み。
+プロトコル層(`pnpm test:e2e`)は PROTO-CMD-01 が長時間稼働スタック
+特有の環境要因(既知。[Issue #229](https://github.com/morichikawa/chainviz/issues/229)
+参照、#203 に起因する回帰ではない)で不安定な場合があるが、それ以外の
+プロトコル層テストは green。`pnpm lint && pnpm build && pnpm test`
+にはUI層テストは含まれない(想定どおり)。
 
 ## ステップ 11 以降（概要のみ。詳細は着手時にこのドキュメントへ追記）
 
