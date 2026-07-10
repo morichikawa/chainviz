@@ -275,6 +275,91 @@ describe("InfraNodeCard new-arrival highlight (Issue #123 §4-4)", () => {
   });
 });
 
+describe("InfraNodeCard node role subtitle (Issue #215)", () => {
+  it("shows '{role label} · {clientType}' when nodeRole resolves to a known descriptor", () => {
+    renderCard({ ...node, nodeRole: "execution" });
+    expect(
+      screen.getByTestId("infra-card-reth-follower-1").textContent,
+    ).toContain("実行クライアント · reth");
+  });
+
+  it("shows the consensus role label for lighthouse when nodeRole is consensus", () => {
+    renderCard({ ...node, clientType: "lighthouse", nodeRole: "consensus" });
+    expect(
+      screen.getByTestId("infra-card-reth-follower-1").textContent,
+    ).toContain("コンセンサスクライアント · lighthouse");
+  });
+
+  it("shows the validator role label", () => {
+    renderCard({ ...node, clientType: "lighthouse", nodeRole: "validator" });
+    expect(
+      screen.getByTestId("infra-card-reth-follower-1").textContent,
+    ).toContain("バリデーター · lighthouse");
+  });
+
+  it("falls back to clientType only when nodeRole is undefined (legacy snapshot)", () => {
+    renderCard(node);
+    const subtitle = screen
+      .getByTestId("infra-card-reth-follower-1")
+      .querySelector(".infra-card__subtitle");
+    expect(subtitle?.textContent).toBe("reth");
+  });
+
+  it("falls back to clientType only when nodeRole is an unmapped value", () => {
+    renderCard({ ...node, nodeRole: "sequencer" });
+    const subtitle = screen
+      .getByTestId("infra-card-reth-follower-1")
+      .querySelector(".infra-card__subtitle");
+    expect(subtitle?.textContent).toBe("reth");
+  });
+
+  it("does not affect the workbench subtitle (label, node-only concept)", () => {
+    renderCard(workbench);
+    const subtitle = screen
+      .getByTestId("infra-card-workbench-1")
+      .querySelector(".infra-card__subtitle");
+    expect(subtitle?.textContent).toBe("Carol");
+  });
+});
+
+describe("InfraNodeCard sync status dot visibility (Issue #215)", () => {
+  it("shows the sync status dot for an execution node", () => {
+    renderCard({ ...node, nodeRole: "execution" });
+    expect(
+      screen
+        .getByTestId("infra-card-reth-follower-1")
+        .querySelector(".infra-card__status"),
+    ).not.toBeNull();
+  });
+
+  it("shows the sync status dot when nodeRole is undefined (legacy snapshot fallback)", () => {
+    renderCard(node);
+    expect(
+      screen
+        .getByTestId("infra-card-reth-follower-1")
+        .querySelector(".infra-card__status"),
+    ).not.toBeNull();
+  });
+
+  it("hides the sync status dot for a validator node", () => {
+    renderCard({ ...node, nodeRole: "validator" });
+    expect(
+      screen
+        .getByTestId("infra-card-reth-follower-1")
+        .querySelector(".infra-card__status"),
+    ).toBeNull();
+  });
+
+  it("still shows the sync status dot for a workbench (kind is never node)", () => {
+    renderCard(workbench);
+    expect(
+      screen
+        .getByTestId("infra-card-workbench-1")
+        .querySelector(".infra-card__status"),
+    ).not.toBeNull();
+  });
+});
+
 describe("InfraNodeCard RPC target popover field (Issue #123 §4-4)", () => {
   it("shows the RPC target field on hover when rpcTargetContainerName resolves", () => {
     renderCard(workbench, {}, { rpcTargetContainerName: "chainviz-reth-1" });
