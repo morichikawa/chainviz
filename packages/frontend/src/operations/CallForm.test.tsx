@@ -130,6 +130,62 @@ describe("CallForm (ARCHITECTURE.md §6.5-3)", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
+  it("shows an error only on the invalid arg, leaving the valid sibling arg unflagged", () => {
+    // transfer(address to, uint amount) で to だけが不正なとき、to にのみ
+    // エラーが出て amount には出ないことを確認する（どの引数が無効か特定
+    // できる）。
+    renderForm();
+    fireEvent.change(screen.getByTestId("operation-call-arg-to"), {
+      target: { value: "0xbob" },
+    });
+    fireEvent.change(screen.getByTestId("operation-call-arg-amount"), {
+      target: { value: "42" },
+    });
+    expect(screen.getByTestId("operation-call-arg-to-error")).toBeTruthy();
+    expect(screen.queryByTestId("operation-call-arg-amount-error")).toBeNull();
+  });
+
+  it("shows an error only on the invalid uint arg while the address arg stays valid", () => {
+    renderForm();
+    fireEvent.change(screen.getByTestId("operation-call-arg-to"), {
+      target: { value: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+    });
+    fireEvent.change(screen.getByTestId("operation-call-arg-amount"), {
+      target: { value: "1.5" },
+    });
+    expect(screen.getByTestId("operation-call-arg-amount-error")).toBeTruthy();
+    expect(screen.queryByTestId("operation-call-arg-to-error")).toBeNull();
+  });
+
+  it("re-enables submit after both invalid args are corrected", () => {
+    // 2つとも不正 → 送信不可、両方直す → 送信可、という遷移を確認する。
+    const { onSubmit } = renderForm();
+    fireEvent.change(screen.getByTestId("operation-call-arg-to"), {
+      target: { value: "0xbob" },
+    });
+    fireEvent.change(screen.getByTestId("operation-call-arg-amount"), {
+      target: { value: "nope" },
+    });
+    expect((screen.getByText("実行する") as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    fireEvent.change(screen.getByTestId("operation-call-arg-to"), {
+      target: { value: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+    });
+    fireEvent.change(screen.getByTestId("operation-call-arg-amount"), {
+      target: { value: "42" },
+    });
+    const button = screen.getByText("実行する") as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    fireEvent.click(button);
+    expect(onSubmit).toHaveBeenCalledWith({
+      contractAddress: "0xcccccccccccccccccccccccccccccccccccccc",
+      functionName: "transfer(address,uint256)",
+      args: ["0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "42"],
+      amountWei: undefined,
+    });
+  });
+
   it("disables submit while a required arg is left blank", () => {
     const { onSubmit } = renderForm();
     const button = screen.getByText("実行する") as HTMLButtonElement;

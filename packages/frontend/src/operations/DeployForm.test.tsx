@@ -111,6 +111,51 @@ describe("DeployForm (ARCHITECTURE.md §6.5-2)", () => {
     });
   });
 
+  it("gates submit on every arg when a contract has multiple constructor args", () => {
+    // カタログ上は現状 address 型のコンストラクタ引数を持つエントリは無いが、
+    // 将来増えたときに「1つでも無効なら送信不可・全て有効なら送信可」が
+    // 崩れないことを合成カタログで確認しておく。
+    const multiArg: ContractCatalogEntry = {
+      catalogKey: "MultiArg",
+      displayName: { ja: "MultiArg", en: "MultiArg" },
+      description: { ja: "複数引数", en: "multiple args" },
+      constructorArgs: [
+        { name: "owner", type: "address" },
+        { name: "supply", type: "uint" },
+      ],
+      functions: [],
+    };
+    const onSubmit = vi.fn();
+    render(
+      <LanguageProvider initialLanguage="ja">
+        <DeployForm catalog={[multiArg]} onSubmit={onSubmit} />
+      </LanguageProvider>,
+    );
+    const button = screen.getByText("デプロイする") as HTMLButtonElement;
+
+    // owner を有効なアドレスに、supply を不正な値にすると送信不可のまま。
+    fireEvent.change(screen.getByTestId("operation-deploy-arg-owner"), {
+      target: { value: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+    });
+    fireEvent.change(screen.getByTestId("operation-deploy-arg-supply"), {
+      target: { value: "not-a-number" },
+    });
+    expect(screen.getByTestId("operation-deploy-arg-supply-error")).toBeTruthy();
+    expect(screen.queryByTestId("operation-deploy-arg-owner-error")).toBeNull();
+    expect(button.disabled).toBe(true);
+
+    // supply も有効にすると送信できるようになり、両引数が順序どおり渡る。
+    fireEvent.change(screen.getByTestId("operation-deploy-arg-supply"), {
+      target: { value: "1000" },
+    });
+    expect(button.disabled).toBe(false);
+    fireEvent.click(button);
+    expect(onSubmit).toHaveBeenCalledWith({
+      contractKey: "MultiArg",
+      constructorArgs: ["0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "1000"],
+    });
+  });
+
   it("clears the previous contract's arg values when switching selection", () => {
     renderForm();
     fireEvent.change(screen.getByTestId("operation-deploy-arg-initialSupply"), {
