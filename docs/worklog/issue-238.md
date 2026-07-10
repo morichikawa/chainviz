@@ -203,3 +203,59 @@ Issue #238 の再現条件（`commands-node`/`multi-client`/`contract-lifecycle`
   onError へ揃えたい場合は `Promise.resolve(onResult(...)).catch(onError)`
   のような対応が別途必要になる。現行の呼び出し元は同期処理（または内部で
   try/catch 済みの async を `void` で捨てる）ため今は不要と判断した。
+
+#### レビュー（chainviz-reviewer）
+
+判定: **合格**。
+
+確認した内容:
+
+- **根本原因への対処**: `subscribe()` の `"message"` ハンドラで
+  `onResult` 呼び出しだけが try/catch されていなかった非対称性が修正の
+  対象であり、修正はその境界を正しく閉じている。修正箇所は
+  `eth-ws-client.ts` の1箇所のみで、正常系の挙動・シグネチャに変更はない
+- **テストが実際に不具合を検出できること**: レビュー時に try/catch を
+  一時的に外した状態で `eth-ws-client-callback-safety.test.ts` を実行し、
+  12件中11件が失敗する（= 修正なしでは通らない）ことを確認した。
+  通過する1件は「非同期 reject は同期 try/catch の対象外」という
+  修正の有無に依存しない境界挙動の固定テストであり、通過は妥当。
+  確認後にソースは `git checkout` で復元済み
+- **他の購読ループとの対称性**: `subscribePeers`・`WalletTracker`・
+  `subscribeNodeInternals`・`handlePendingTx`/`handleBlockInclusion` が
+  いずれも「例外をログして購読継続」の形であることをコード上で確認し、
+  今回の修正で `onResult` 境界も同じ流儀に揃ったことを確認した
+- **ビルド・lint・テスト**: `pnpm build`・`pnpm lint`・`pnpm test`
+  （collector 43ファイル/1149件、frontend 106ファイル/1623件）全件通過
+- **コミット粒度**: fix+基本テスト / テスト強化 / docs×2 の4コミットに
+  分かれており、Conventional Commits 準拠
+- **docs**: PLAN.md のチェック+Issue リンク、WORKLOG.md 索引行、本ファイル
+  の記録がいずれも実装と一致。`docs/ARCHITECTURE.md` には例外伝播の詳細に
+  関する記述はなく、齟齬なし
+
+テスト強化担当からの申し送り2点への判断:
+
+1. **onError 未指定時に例外が静かに消える点**: 実運用の呼び出し元は
+   `EthereumAdapter.subscribeBlocks`（index.ts:490）と
+   `subscribeTransactions`（同 530・541）の3箇所のみで、全て
+   `console.error` へログする onError を渡していることを確認した。
+   よって現状の実害は無い。また `onError?.()` の optional パターンは
+   今回の修正が導入したものではなく、同ファイルの `"error"` イベント
+   ハンドラや Issue #143 の eth_subscribe 拒否検知でも既に使われている
+   既存設計である。したがって本Issueの差し戻し理由とはしない。
+   ただし CLAUDE.md の「エラーを握りつぶさない」方針との整合上、
+   「onError 未指定時は console.error へフォールバックする（または
+   モジュール内私有関数 subscribe() のレベルで onError を必須にする）」
+   改善を別Issueとして起票することを推奨する（`"error"` イベント経路も
+   同じ性質を持つため、まとめて扱うのが適切）。なお catch 内コメントの
+   「ログして継続する」は onError が渡された場合にのみ成立する表現である
+   点も、その改善の際に併せて解消されるのが望ましい
+2. **同期 try/catch が async コールバックの reject を捕捉しない点**:
+   現行の呼び出し元のうち subscribeBlocks の onHeader は完全に同期
+   （blockTracker.record → store.applyBlock → broadcastDiff）、
+   subscribeTransactions の2つは async だが関数本体全体が try/catch で
+   囲われており reject が外へ漏れない構造であることを確認した。仮に
+   漏れた場合も installProcessSafetyNet の unhandledRejection は
+   「ログして継続」であり process.exit には至らない。テストがこの境界
+   挙動を回帰として固定済みであるため、現時点で対応不要と判断する。
+   将来 onResult に素の async コールバックを渡す購読を追加する際は
+   この境界に注意すること（本ファイルのテストコメントに記載あり）
