@@ -47,22 +47,20 @@ const node: InfraEntity = {
   removable: true,
 };
 
-function renderCard(
-  entity: InfraEntity,
-  extraData: { operationPending?: boolean; rpcTargetContainerName?: string } = {},
-  onAncestorPointerDown?: () => void,
-) {
-  const actions: CommandActions = {
-    addNode: vi.fn(),
-    addWorkbench: vi.fn(),
-    removeNode: vi.fn(),
-    removeWorkbench: vi.fn(),
-    runWorkbenchOperation: vi.fn(),
-  };
-  const props = { data: { entity, ...extraData } } as unknown as Parameters<
+type ExtraData = { operationPending?: boolean; rpcTargetContainerName?: string };
+
+function buildProps(entity: InfraEntity, extraData: ExtraData) {
+  return { data: { entity, ...extraData } } as unknown as Parameters<
     typeof InfraNodeCard
   >[0];
-  render(
+}
+
+function renderTree(
+  props: Parameters<typeof InfraNodeCard>[0],
+  actions: CommandActions,
+  onAncestorPointerDown?: () => void,
+) {
+  return (
     <ReactFlowProvider>
       <LanguageProvider initialLanguage="ja">
         <GlossaryProvider glossary={{}}>
@@ -79,9 +77,37 @@ function renderCard(
           </CommandActionsProvider>
         </GlossaryProvider>
       </LanguageProvider>
-    </ReactFlowProvider>,
+    </ReactFlowProvider>
   );
-  return { actions };
+}
+
+function renderCard(
+  entity: InfraEntity,
+  extraData: ExtraData = {},
+  onAncestorPointerDown?: () => void,
+) {
+  const actions: CommandActions = {
+    addNode: vi.fn(),
+    addWorkbench: vi.fn(),
+    removeNode: vi.fn(),
+    removeWorkbench: vi.fn(),
+    runWorkbenchOperation: vi.fn(),
+  };
+  const { rerender } = render(
+    renderTree(buildProps(entity, extraData), actions, onAncestorPointerDown),
+  );
+  return {
+    actions,
+    // 上流（App.tsx）が data オブジェクトを差し替えて再レンダーする状況を
+    // 再現するための薄いラッパ。extraData だけ差し替えて同じ InfraNodeCard を
+    // 更新する（isSameInfraNode の判定でノードオブジェクトが作り直される
+    // タイミングの検証に使う）。
+    rerenderWith(next: ExtraData) {
+      rerender(
+        renderTree(buildProps(entity, next), actions, onAncestorPointerDown),
+      );
+    },
+  };
 }
 
 describe("InfraNodeCard operate button (ARCHITECTURE.md §6.5)", () => {
@@ -159,6 +185,46 @@ describe("InfraNodeCard operate button (ARCHITECTURE.md §6.5)", () => {
     renderCard(workbench, { operationPending: true });
     const button = screen.getByTestId(`infra-card-operate-${workbench.id}`);
     expect(button.getAttribute("aria-busy")).toBe("true");
+  });
+
+  // Issue #237 の境界値: undefined / true だけでなく、明示的な false が
+  // 渡された場合も aria-busy="false" になる（`?? false` フォールバックが
+  // 明示 false を書き換えて消してしまわないこと）を確認する。
+  it("renders aria-busy=false when data.operationPending is explicitly false", () => {
+    renderCard(workbench, { operationPending: false });
+    const button = screen.getByTestId(`infra-card-operate-${workbench.id}`);
+    expect(button.getAttribute("aria-busy")).toBe("false");
+  });
+
+  // Issue #237 の核心である「タイミング依存の欠落」を、上流の再レンダー列
+  // として直接再現する。App.tsx の infraNodesWithHighlight は、対象
+  // ワークベンチが保留状態を経験するまでは operationPending を undefined の
+  // まま渡し、保留(true)になった後もブロック到達で isSameInfraNode の判定に
+  // よりノードオブジェクトが作り直されると再び undefined に戻り得る。
+  // その undefined → true → undefined という遷移を通じて、aria-busy 属性が
+  // 常に DOM 上に存在し（null にならず）、値だけが正しく切り替わることを
+  // 確認する（修正前はこの列の 1 番目と 3 番目で属性自体が欠落した）。
+  it("keeps aria-busy present across undefined → true → undefined transitions (Issue #237 object-swap timing)", () => {
+    const { rerenderWith } = renderCard(workbench, {
+      operationPending: undefined,
+    });
+    const readAriaBusy = () =>
+      screen
+        .getByTestId(`infra-card-operate-${workbench.id}`)
+        .getAttribute("aria-busy");
+
+    // 一度も保留を経験していない状態（undefined 渡し）。
+    expect(readAriaBusy()).toBe("false");
+
+    // 操作を開始して保留（true）になる。
+    rerenderWith({ operationPending: true });
+    expect(readAriaBusy()).toBe("true");
+
+    // ブロック到達でノードオブジェクトが差し替わり operationPending が
+    // undefined に戻る。ここで属性が欠落しない（null にならない）ことが
+    // Issue #237 の回帰防止点。
+    rerenderWith({ operationPending: undefined });
+    expect(readAriaBusy()).toBe("false");
   });
 
   it("still allows opening the panel while pending (no double-submit guard, ARCHITECTURE.md §6.5)", () => {
