@@ -226,7 +226,7 @@ export const messages = {
   },
   "operation.pending": { ja: "実行中…", en: "Running…" },
   "ghost.contract.deploying": { ja: "デプロイ中… {name}", en: "Deploying… {name}" },
-  // --- C層拡張: コントラクト一覧パネル（ARCHITECTURE.md §6.2。Issue #218/#211） ---
+  // --- C層拡張: コントラクト一覧パネル（docs/worklog/issue-211.md「単位C」。Issue #218/#211） ---
   "contractList.title": { ja: "コントラクト", en: "Contracts" },
   "contractList.deploying": { ja: "デプロイ中… {name}", en: "Deploying… {name}" },
   "contractList.jumpHint": {
