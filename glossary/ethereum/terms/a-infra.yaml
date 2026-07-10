@@ -76,3 +76,47 @@ workbench:
       represents one actor per container.
   layer: a-infra
   relatedTerms: [container, el-client]
+
+validator:
+  name:
+    ja: バリデーター
+    en: Validator
+  definition:
+    ja: >-
+      ステーク（担保）を預けてブロックの提案・承認に参加する係。合意は
+      チェーンを勝手に伸ばさないための多数決であり、バリデーターはその
+      投票者にあたる。chainviz ではコンセンサスクライアントに接続された
+      専用コンテナとして見え、チェーンのコピーは持たないため同期状態や
+      ブロック高は表示しない。
+    en: >-
+      A participant that deposits stake (collateral) to take part in
+      proposing and attesting blocks. Consensus is a vote that prevents the
+      chain from being extended arbitrarily, and the validator is that
+      voter. In chainviz it appears as a dedicated container connected to a
+      consensus client; it does not keep its own copy of the chain, so it
+      shows neither sync status nor block height.
+  layer: a-infra
+  relatedTerms: [cl-client, bootnode]
+
+rpc-endpoint:
+  name:
+    ja: RPCエンドポイント
+    en: RPC endpoint
+  definition:
+    ja: >-
+      ウォレットやアプリがチェーンとやり取りする窓口となる、1つのノードの
+      API。実際の Ethereum でも「一番近いノードを探す」のではなく、あらかじめ
+      決めた1つのエンドポイント（自分のノードや Infura / Alchemy などの
+      事業者）に固定的に接続するのが普通。chainviz では全操作を観測（ロギング
+      プロキシ）するため接続先をこの1本に固定しており、それが操作先エッジ
+      として見える。P2P ネットワークの入口であるブートノードとは別の概念。
+    en: >-
+      The API of a single node that a wallet or app talks to. Real Ethereum
+      wallets don't "find the nearest node" either — they connect to one
+      fixed endpoint decided in advance (your own node, or a provider like
+      Infura / Alchemy). chainviz additionally pins every operation's target
+      to one node so its logging proxy can observe all calls; that pinned
+      connection is what the operation-target edge shows. This is a separate
+      concept from the bootnode, which is the entry point for P2P discovery.
+  layer: a-infra
+  relatedTerms: [workbench, bootnode]
