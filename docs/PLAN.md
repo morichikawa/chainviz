@@ -590,7 +590,7 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       [#215](https://github.com/morichikawa/chainviz/issues/215)
 - [ ] beacon/rethを1個ずつペアでしか追加できない制約についての疑問
       [#216](https://github.com/morichikawa/chainviz/issues/216)
-- [ ] エラー時のトースト通知が長文で右下のポップアップが崩れる
+- [x] エラー時のトースト通知が長文で右下のポップアップが崩れる
       [#217](https://github.com/morichikawa/chainviz/issues/217)
 - [x] デプロイ済みのスマートコントラクト一覧を見れるようにしてほしい
       [#218](https://github.com/morichikawa/chainviz/issues/218)
