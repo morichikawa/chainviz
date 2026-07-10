@@ -12,6 +12,14 @@ export interface DeployedContractCandidate {
   /** `<select>` に出す表示ラベル（表示名 + shortHex(address)）。 */
   label: string;
   catalog: ContractCatalogEntry;
+  /**
+   * トークン量入力の単位換算（Issue #219）に使うsymbol/decimals。
+   * デプロイ済み実体の実測値（`ContractEntity.token`）を優先し、
+   * 無ければカタログの静的値（`ContractCatalogEntry.token`）にフォール
+   * バックする。どちらにも無ければ`undefined`（トークン単位入力を出さず、
+   * 引数はunit指定があっても最小単位の生入力のまま扱われる）。
+   */
+  token?: { symbol: string; decimals: number };
 }
 
 /**
@@ -42,6 +50,7 @@ export function deriveDeployedContracts(
       address: contract.address,
       label: `${name} (${shortHex(contract.address)})`,
       catalog: entry,
+      token: contract.token ?? entry.token,
     });
   }
 

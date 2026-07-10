@@ -7,7 +7,8 @@ const TOKEN_ENTRY: ContractCatalogEntry = {
   catalogKey: "ChainvizToken",
   displayName: { ja: "ChainvizToken", en: "ChainvizToken" },
   description: { ja: "最小のERC20", en: "minimal ERC20" },
-  constructorArgs: [{ name: "initialSupply", type: "uint" }],
+  token: { symbol: "CVZ", decimals: 18 },
+  constructorArgs: [{ name: "initialSupply", type: "uint", unit: "token" }],
   functions: [],
 };
 
@@ -85,5 +86,42 @@ describe("deriveDeployedContracts", () => {
       },
     ];
     expect(deriveDeployedContracts(entities, catalog)).toEqual([]);
+  });
+
+  describe("token metadata (Issue #219)", () => {
+    it("falls back to the catalog's static token metadata when the entity has none observed yet", () => {
+      const entities: WorldStateEntity[] = [
+        contract({ name: "ChainvizToken", catalogKey: "ChainvizToken", token: undefined }),
+      ];
+      const candidates = deriveDeployedContracts(entities, catalog);
+      expect(candidates[0].token).toEqual({ symbol: "CVZ", decimals: 18 });
+    });
+
+    it("prefers the entity's observed token metadata over the catalog's static value", () => {
+      const entities: WorldStateEntity[] = [
+        contract({
+          name: "ChainvizToken",
+          catalogKey: "ChainvizToken",
+          token: { symbol: "CVZ2", decimals: 6 },
+        }),
+      ];
+      const candidates = deriveDeployedContracts(entities, catalog);
+      expect(candidates[0].token).toEqual({ symbol: "CVZ2", decimals: 6 });
+    });
+
+    it("leaves token undefined for a contract whose catalog entry has no token metadata (e.g. Counter)", () => {
+      const counterEntry: ContractCatalogEntry = {
+        catalogKey: "Counter",
+        displayName: { ja: "Counter", en: "Counter" },
+        description: { ja: "カウンタ", en: "counter" },
+        constructorArgs: [],
+        functions: [],
+      };
+      const entities: WorldStateEntity[] = [
+        contract({ name: "Counter", catalogKey: "Counter" }),
+      ];
+      const candidates = deriveDeployedContracts(entities, [counterEntry]);
+      expect(candidates[0].token).toBeUndefined();
+    });
   });
 });
