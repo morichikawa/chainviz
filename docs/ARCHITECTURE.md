@@ -98,15 +98,21 @@ interface NodeEntity extends InfraEntity {
   blockHeight: number;
   headBlockHash: string;
   // P2P ネットワーク上の役割。"bootnode" = 新規参加ノードが最初に接続する
-  // 入口役、"peer" = それ以外の通常ピア。bootnode はチェーン非依存の P2P
+  // 入口役、"peer" = それ以外の通常ピア、"none" = P2P ネットワークに参加
+  // しないノード（Issue #214。例: Ethereum の validator client。beacon へ
+  // HTTP API で接続するだけで libp2p に参加しないため、これを端点とする
+  // PeerEdge は決して観測されない）。bootnode はチェーン非依存の P2P
   // 一般語彙として使う（Bitcoin の seed node 等も同系概念）。collector は
   // Docker ラベル `com.chainviz.p2p-role`（値 "bootnode" のときのみ
-  // bootnode、それ以外は peer）から導出する（Issue #65 の「ラベルを単一の
+  // bootnode）と ChainAdapter 内の分類（Ethereum アダプタは compose
+  // サービス名に "validator" を含むコンテナを "none" と判定）から導出し、
+  // どちらにも該当しなければ peer とする（Issue #65 の「ラベルを単一の
   // 真実の情報源とする」方針。Ethereum プロファイルでは compose で
   // reth1/beacon1 にラベルを付与する）。省略時は「不明」（旧スナップ
   // ショット互換）で、フロントは p2pRole === "bootnode" の判定のみ行い、
-  // 見つからなければブートノード前提の表示を出さない（Issue #123 / #124）
-  p2pRole?: "bootnode" | "peer";
+  // 見つからなければブートノード前提の表示を出さない（Issue #123 / #124）。
+  // "none" のノードは「接続確立中」エッジ（§7）の導出対象から除外する
+  p2pRole?: "bootnode" | "peer" | "none";
   // D層: このノードが内部 API で駆動する相手ノード（同じ論理ノードを構成する
   // 相方クライアント）の id。Ethereum プロファイルでは beacon（CL）に入り、
   // 対になる Execution（EL）を Engine API で駆動する関係を表す（チェーン固有
