@@ -43,7 +43,11 @@ const workbench: WorkbenchEntity = {
 function renderCard(
   entity: InfraEntity,
   actions: Partial<CommandActions> = {},
-  extraData: { rpcTargetContainerName?: string; isNew?: boolean } = {},
+  extraData: {
+    rpcTargetContainerName?: string;
+    isNew?: boolean;
+    removalPending?: boolean;
+  } = {},
 ) {
   const full: CommandActions = {
     addNode: vi.fn(),
@@ -272,6 +276,60 @@ describe("InfraNodeCard new-arrival highlight (Issue #123 §4-4)", () => {
     expect(
       screen.getByTestId("infra-card-reth-follower-1").className,
     ).not.toContain("infra-card--new");
+  });
+});
+
+describe("InfraNodeCard removal-pending feedback (Issue #222)", () => {
+  it("does not add the removing class by default", () => {
+    renderCard(node);
+    expect(
+      screen.getByTestId("infra-card-reth-follower-1").className,
+    ).not.toContain("infra-card--removing");
+  });
+
+  it("adds the removing class and disables the remove button when data.removalPending is true", () => {
+    renderCard(node, {}, { removalPending: true });
+    expect(
+      screen.getByTestId("infra-card-reth-follower-1").className,
+    ).toContain("infra-card--removing");
+    const button = removeButton("reth-follower-1") as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+  });
+
+  it("shows a spinner instead of the × glyph while removalPending", () => {
+    renderCard(node, {}, { removalPending: true });
+    const button = removeButton("reth-follower-1");
+    expect(button.querySelector(".infra-card__remove-spinner")).not.toBeNull();
+    expect(button.textContent).not.toContain("×");
+  });
+
+  it("shows the × glyph and no spinner by default", () => {
+    renderCard(node);
+    const button = removeButton("reth-follower-1");
+    expect(button.querySelector(".infra-card__remove-spinner")).toBeNull();
+    expect(button.textContent).toContain("×");
+  });
+
+  it("switches the remove button's label/title to the removing text while pending", () => {
+    renderCard(node, {}, { removalPending: true });
+    const button = removeButton("reth-follower-1");
+    expect(button.getAttribute("aria-label")).toBe("削除中…");
+    expect(button.getAttribute("title")).toBe("削除中…");
+  });
+
+  it("does not call removeNode when clicking a disabled (removalPending) button", () => {
+    const actions = renderCard(node, {}, { removalPending: true });
+    fireEvent.click(removeButton("reth-follower-1"));
+    expect(actions.removeNode).not.toHaveBeenCalled();
+  });
+
+  it("applies the same removing feedback to a workbench card", () => {
+    renderCard(workbench, {}, { removalPending: true });
+    expect(
+      screen.getByTestId("infra-card-workbench-1").className,
+    ).toContain("infra-card--removing");
+    const button = removeButton("workbench-1") as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
   });
 });
 

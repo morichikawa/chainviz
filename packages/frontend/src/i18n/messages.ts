@@ -67,6 +67,7 @@ export const messages = {
     en: "Workbench label",
   },
   "action.remove": { ja: "削除", en: "Remove" },
+  "action.remove.pending": { ja: "削除中…", en: "Removing…" },
   "action.addNode.pending": { ja: "追加中…", en: "Adding…" },
   "action.addWorkbench.pending": { ja: "追加中…", en: "Adding…" },
   "toast.region": { ja: "通知", en: "Notifications" },
