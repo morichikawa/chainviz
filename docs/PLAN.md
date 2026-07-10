@@ -623,6 +623,9 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
 - [x] collector停止中に送信したaddNode/addWorkbenchはゴースト消滅のみで
       エラートーストが出ない
       [#235](https://github.com/morichikawa/chainviz/issues/235)
+- [x] 送金フォーム(TransferForm)の宛先にクライアント側のアドレス形式
+      バリデーションが無い
+      [#236](https://github.com/morichikawa/chainviz/issues/236)
 
 ## 運用ルール（全ステップ共通）
 

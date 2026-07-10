@@ -129,3 +129,4 @@
 | #222 | Issue #222 ノード/ワークベンチ削除中の進行中フィードバック(半透明化+削除ボタン無効化+スピナー)を追加。既存のワークベンチ操作保留追跡(pendingOperationWorkbenchIds)と同じ設計で`pendingRemovalIds`を実装 | [2026-07-10](worklog/issue-222.md) |
 | #238 | Issue #238 長時間のUI層E2Eフルスイート実行中にcollectorがuncaughtExceptionでexitしカスケード失敗する不具合の原因調査・修正。eth-ws-client.tsのsubscribe()内でonResult(onHeader/onTxHash)の呼び出しがtry/catchで囲われておらず、例外が発生するとws内部の同期呼び出しスタックを経てプロセス全体を落としていた。onResult呼び出しをtry/catchで囲みonErrorへ転送するよう修正 | [2026-07-11](worklog/issue-238.md) |
 | #235 | Issue #235 collector停止中のaddNode/addWorkbenchがゴースト消滅のみでエラートーストが出ない不具合を修正。`ChainvizClient.sendCommand`が未接続でも常にcommandIdを返していたのが根本原因で、未接続時は`undefined`を返すよう変更。あわせてゴーストの安全網タイムアウトでもcommandResult自体が届かなかった場合はエラートーストを出すようにした | [2026-07-11](worklog/issue-235.md) |
+| #236 | Issue #236 送金フォーム(TransferForm)の宛先にIssue #209の`isValidOperationArgValue("address", ...)`を再利用したクライアント側アドレス形式バリデーションを追加。不正な形式では送信ボタンを無効化し既存の`operation.arg.invalid.address`文言でインラインエラーを表示する | [2026-07-11](worklog/issue-236.md) |
