@@ -125,3 +125,4 @@
 | #217 | Issue #217 長文エラーでトースト通知のレイアウトが崩れる不具合を修正(flex itemのmin-width:auto問題が原因。.toast/.toast__messageにmin-width:0・overflow-wrap:anywhere・white-space:pre-wrap・max-height+overflow-yを追加) | [2026-07-10](worklog/issue-217.md) |
 | #220 | Issue #220 ノード追加・ワークベンチ追加ボタンの連打防止。既存のゴースト(仮カード)有無から算出するpendingAddNode/pendingAddWorkbenchをボタンのdisabled属性に反映し、直前の追加が解決するまで再クリックできないようにした | [2026-07-10](worklog/issue-220.md) |
 | #222 | Issue #222 ノード/ワークベンチ削除中の進行中フィードバック(半透明化+削除ボタン無効化+スピナー)を追加。既存のワークベンチ操作保留追跡(pendingOperationWorkbenchIds)と同じ設計で`pendingRemovalIds`を実装 | [2026-07-10](worklog/issue-222.md) |
+| #254 | Issue #254 dev collector稼働中はpnpm test:e2eが起動不能な不具合を修正。startCollectorがCHAINVIZ_PROXY_PORTを子プロセスへ渡すようにし、detectLaunchStatusをWebSocket・ロギングプロキシ両方のlisteningログが揃うまで判定確定しないよう拡張 | [2026-07-11](worklog/issue-254.md) |
