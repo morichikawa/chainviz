@@ -945,6 +945,28 @@ describe("isValidatorService (Issue #246, com.chainviz.role ベースの判定)"
     }
   });
 
+  // 完全一致（=== "validator"）であることを、"validator" に似ているが
+  // 一致しない値（大文字小文字の揺れ・前後空白・接尾辞・空文字など）で
+  // 固定する。ROLE_LABEL は compose / node-lifecycle.ts が付与する固定値
+  // のみを想定するため、これらは一切正規化されず false になる。
+  it.each([
+    "Validator", // 先頭のみ大文字
+    "vAlIdAtOr", // 混在
+    "validator ", // 末尾に空白
+    " validator", // 先頭に空白
+    " validator ", // 前後に空白
+    "validator-2", // 接尾辞つき
+    "validator1", // 数字が続く（compose サービス名に似た値）
+    "validators", // 複数形
+    "tx-validator", // 接頭辞つき（旧実装なら誤検出しえた形）
+    "validator\n", // 末尾改行
+    "", // 空文字
+  ])("returns false for the near-miss role label value %j", (roleValue) => {
+    expect(
+      isValidatorService(obs({ labels: { [ROLE_LABEL]: roleValue } })),
+    ).toBe(false);
+  });
+
   it("ignores the compose service name entirely; only the role label matters (regression test for Issue #246)", () => {
     // 旧実装（Issue #214）は compose サービス名に "validator" を含むかの
     // 部分一致で判定していたため、将来の別チェーンプロファイルで
