@@ -640,6 +640,9 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
 - [x] describeSyncStageがObject.prototypeの継承メンバを漏らす可能性がある
       (describeNodeRoleと同種の穴)
       [#258](https://github.com/morichikawa/chainviz/issues/258)
+- [x] デプロイtxで発生したイベント(mintのTransfer等)が復号されず生チップ
+      表示になる
+      [#244](https://github.com/morichikawa/chainviz/issues/244)
 
 ## 運用ルール（全ステップ共通）
 
