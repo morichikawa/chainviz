@@ -617,6 +617,9 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
 - [ ] UI-CMD系PlaywrightテストのafterAllクリーンアップが競合状態で
       無効化されうる
       [#233](https://github.com/morichikawa/chainviz/issues/233)
+- [x] dev collector稼働中はpnpm test:e2eが起動不能(proxyポート衝突が
+      listen判定をすり抜ける)
+      [#254](https://github.com/morichikawa/chainviz/issues/254)
 - [x] 長時間のUI層E2Eフルスイート実行中にcollectorがuncaughtExceptionで
       exitし、以降の全テストがカスケード失敗する
       [#238](https://github.com/morichikawa/chainviz/issues/238)
@@ -626,6 +629,9 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
 - [x] 送金フォーム(TransferForm)の宛先にクライアント側のアドレス形式
       バリデーションが無い
       [#236](https://github.com/morichikawa/chainviz/issues/236)
+- [x] describeSyncStageがObject.prototypeの継承メンバを漏らす可能性がある
+      (describeNodeRoleと同種の穴)
+      [#258](https://github.com/morichikawa/chainviz/issues/258)
 
 ## 運用ルール（全ステップ共通）
 
