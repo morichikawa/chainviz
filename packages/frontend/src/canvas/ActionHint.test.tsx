@@ -82,4 +82,28 @@ describe("ActionHint", () => {
     expect(() => fireEvent.mouseEnter(wrapper)).not.toThrow();
     expect(screen.getByRole("tooltip").textContent).toBe("");
   });
+
+  it(
+    "accepts a ReactNode hint (not just a plain string), e.g. multi-line " +
+      "markup with a nested element (Issue #251)",
+    () => {
+      render(
+        <ActionHint
+          hint={
+            <>
+              <span>line one</span>
+              <span data-testid="hint-nested">line two</span>
+            </>
+          }
+        >
+          <button type="button">Click me</button>
+        </ActionHint>,
+      );
+      const wrapper = screen.getByRole("button").parentElement as HTMLElement;
+      fireEvent.mouseEnter(wrapper);
+      const tooltip = screen.getByRole("tooltip");
+      expect(tooltip.textContent).toBe("line oneline two");
+      expect(tooltip.querySelector('[data-testid="hint-nested"]')).toBeTruthy();
+    },
+  );
 });

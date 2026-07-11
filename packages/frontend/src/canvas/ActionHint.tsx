@@ -5,8 +5,12 @@ import { PopoverPortal } from "../interaction/PopoverPortal.js";
 export interface ActionHintProps {
   /** ホバー/フォーカス対象になる要素（ボタンなど）。 */
   children: ReactNode;
-  /** ポップオーバーに表示する説明文。 */
-  hint: string;
+  /**
+   * ポップオーバーに表示する説明文。単純な文字列に加えて、`GlossaryTerm` を
+   * 埋め込んだ複数行構成（Issue #251: ノード追加ボタンの「なぜペアか」の
+   * 2段目）も渡せるよう ReactNode を受け付ける。
+   */
+  hint: ReactNode;
 }
 
 /**
