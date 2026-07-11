@@ -668,6 +668,11 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       受理するparseHeadSlotを新設し、それ以外はthrowするよう統一。
       docs/worklog/issue-282.md参照)
       [#282](https://github.com/morichikawa/chainviz/issues/282)
+- [ ] validatorがbeaconと視覚的に関連付けられておらず「浮いて見える」
+      (設計完了: 既存のdrivesNodeIdを再利用しvalidator→beaconにも
+      内部リンクエッジを描く。ARCHITECTURE.md §7.6.11・
+      docs/worklog/issue-285.md参照。実装はcollector/frontendへ引き継ぐ)
+      [#285](https://github.com/morichikawa/chainviz/issues/285)
 
 ## 運用ルール（全ステップ共通）
 
