@@ -193,3 +193,153 @@ validator1/validator2 のみ。動的コンテナへの考慮は不要。
   `internalLinkKinds.ts` 新設・ポップオーバー文言切り替え・
   `beacon-api` 用語新設）は別担当が引き続き対応する。collector 側の
   `NodeEntity.drivesNodeId` 解決はこの実装で完結している
+### 2026-07-11 実装着手前の方針確認（frontend）
+
+- 担当: frontend
+- ブランチ: `issue-285-validator-beacon-link-frontend`（collector 担当が
+  `issue-285-validator-beacon-link` を同時に使用中のため、設計メモに
+  記載の前例（Issue #274）に倣い分岐。マージ時に統括が cherry-pick で
+  合流する）
+
+実装ファイル構成（1ファイル1責務を踏まえた分割）:
+
+1. `entities/internalLinkEdge.ts`: `InternalLinkEdgeData` に
+   `drivingNodeRole?: string` / `drivenNodeRole?: string` を追加し、
+   `internalLinkEdgesToFlowEdges` で駆動する側・される側それぞれの
+   `NodeEntity.nodeRole` を詰める（値渡しのみ、解釈はしない）。
+2. `chain-profiles/ethereum/internalLinkKinds.ts`（新設）: 役割の組
+   （駆動する側→される側）→ 見出し・見出しの GlossaryTerm キー・説明文・
+   活動セクション表示可否のマッピングを持つ
+   `describeInternalLinkKind(drivingNodeRole, drivenNodeRole)` を提供する
+   （`nodeRoles.ts` の `describeNodeRole` と同じ「マッピングに無い組は
+   フォールバックへ倒す」流儀。ARCHITECTURE.md §7.6.11 の表の3行
+   （consensus→execution / validator→consensus / それ以外・不明）を
+   そのままテーブル化する）。
+   InfraPopover の「駆動する実行ノード」「駆動元（合意ノード）」行の
+   ラベル選択は、上記の役割組マッピングとは別に、専用のヘルパー
+   `describeDrivesField(ownNodeRole)` / `describeDrivenByField(drivingNodeRole)`
+   を同ファイルに置く。**この2つは「role 不明時はフォールバックで隠す」
+   ではなく「validator のときだけ新表現、それ以外（consensus・不明を
+   含む）は既存の engine-api 表現を既定にする」**方式にする。理由:
+   相手ノードの role まで完全なペアが揃わないと行ごと消える設計にすると、
+   既存の drivesNode/drivenBy 行が「role 未設定の旧スナップショットでは
+   出ない」という新たな退行を生む（既存テストが多数この前提で書かれて
+   いる）。エッジポップオーバー側（`describeInternalLinkKind`）は逆に
+   「情報が無ければ汎用表現に倒す」という ARCHITECTURE.md 表どおりの
+   3行フォールバックを厳密に実装する（エッジ自体・端点名は role に
+   関係なく常に見えるため、見出し・活動セクションが汎用化しても実害が
+   小さい）。この非対称は意図的な設計判断であり、実装時に統一しない。
+3. `entities/InternalLinkEdgePopover.tsx`: `drivingNodeRole`/
+   `drivenNodeRole` を受け取り `describeInternalLinkKind` の結果で
+   見出し・説明・活動セクション表示を切り替える。
+4. `entities/InternalLinkEdge.tsx`: `data.drivingNodeRole`/
+   `data.drivenNodeRole` を `InternalLinkEdgePopover` へ橋渡しするだけ
+   （ロジックを持たない）。
+5. `entities/infraNode.ts`: 駆動元逆引き索引に nodeRole も載せ、
+   `InfraNodeData.drivenByNodeRole` として渡す（`drivesNodeContainerName`
+   側は entity 自身の `nodeRole` が既に InfraPopover で参照可能なので
+   新規フィールド不要）。
+6. `entities/InfraPopover.tsx`: `drivesFieldDescriptor` /
+   `drivenFieldDescriptor` を計算し、既存のハードコードされた
+   `field.drivesNode`/`field.drivenBy` + `engine-api` 固定を置き換える。
+7. `i18n/messages.ts`: `edge.internalLinkValidator` /
+   `edge.internalLinkGeneric`（フォールバック見出し）/
+   `internalEdge.validatorPair` / `internalEdge.genericPair`
+   （フォールバック説明文）/ `field.connectsToBeacon` /
+   `field.validatorClient` を追加。
+8. `glossary/ethereum/terms/d-internal.yaml`: `beacon-api` を新設。
+   `a-infra.yaml` の `validator`/`cl-client` と `d-internal.yaml` の
+   `engine-api` の `relatedTerms` に `beacon-api` を追記する（逆リンク）。
+
+影響範囲の確認: 既存の内部リンク関連テスト（
+`InternalLinkEdgePopover.test.tsx` 等）は nodeRole 未指定のフィクスチャで
+書かれており、role 不明時にフォールバック表現へ切り替わる新仕様の下では
+文言が変わる。これらは実運用（Issue #215 で全 Ethereum サービスに
+`nodeRole` ラベルが付く）を反映して `drivingNodeRole="consensus"` /
+`drivenNodeRole="execution"` を明示するよう更新し、role 不明時の
+フォールバック自体は別途新規テストで固定する。
+
+### 2026-07-11 実装完了（frontend）
+
+方針確認どおりに実装した。主な変更点:
+
+- `entities/internalLinkEdge.ts`: `InternalLinkEdgeData` に
+  `drivingNodeRole?`/`drivenNodeRole?` を追加し、
+  `internalLinkEdgesToFlowEdges` が駆動する側・される側それぞれの
+  `NodeEntity.nodeRole` をそのまま値渡しするようにした。
+- `chain-profiles/ethereum/internalLinkKinds.ts`（新設）:
+  `describeInternalLinkKind(drivingNodeRole, drivenNodeRole)` で
+  consensus→execution / validator→consensus / それ以外（フォールバック）
+  の3パターンの見出し・説明文・活動セクション表示可否を解決する。
+  `describeDrivesField`/`describeDrivenByField` は InfraPopover の
+  「駆動する/される」行専用のヘルパーで、方針確認メモに記載した
+  非対称フォールバック（validator のときだけ新表現、それ以外は既存の
+  Engine API 表現を既定にし行を隠さない）を実装した。
+- `entities/InternalLinkEdgePopover.tsx`: 見出し・説明文・活動セクションを
+  `describeInternalLinkKind` の結果に応じて出し分けるよう書き換えた。
+  見出しにアンカーが無い場合（フォールバック）は `GlossaryTerm` を使わず
+  プレーンテキストで見出しを出す。
+- `entities/InternalLinkEdge.tsx`: `data.drivingNodeRole`/`drivenNodeRole`
+  を `InternalLinkEdgePopover` へそのまま橋渡しするだけの変更。
+- `entities/infraNode.ts`: 駆動元逆引き索引（`drivenByContainerNameByTargetId`）
+  に加えて `drivenByNodeRoleByTargetId` を新設し、
+  `InfraNodeData.drivenByNodeRole` として渡すようにした。
+- `entities/InfraPopover.tsx` / `entities/InfraNodeCard.tsx`:
+  「駆動する◯◯ノード」「駆動元（◯◯ノード）」行のラベル・GlossaryTerm
+  キーを `describeDrivesField`/`describeDrivenByField` の結果に置き換えた。
+  `drivenByNodeRole` を新しい prop として追加し、`InfraNodeCard` から
+  そのまま橋渡しするよう配線した。
+- `i18n/messages.ts`: `edge.internalLinkValidator` /
+  `edge.internalLinkGeneric`（フォールバック見出し） /
+  `internalEdge.validatorPair` / `internalEdge.genericPair`
+  （フォールバック説明文） / `field.connectsToBeacon` /
+  `field.validatorClient` を追加した。
+- `glossary/ethereum/terms/d-internal.yaml`: `beacon-api` を新設した
+  （英語定義は初稿。chainviz-i18n のレビュー対象）。
+  `glossary/ethereum/terms/a-infra.yaml` の `validator`/`cl-client` と
+  `d-internal.yaml` の `engine-api` の `relatedTerms` に `beacon-api` へ
+  の逆リンクを追記した。
+- `websocket/mockData.ts`: `validatorNode` に
+  `drivesNodeId: "lighthouse-1"` を追加し、validator→beacon の内部リンク
+  エッジ・文言切り替え・活動セクション非表示をオフラインでも確認できる
+  ようにした（validator-1/validator-2 とも既定モックに存在する唯一の
+  beacon である lighthouse-1 を指す fan-in構成。既存の
+  `internalLinkEdgesToFlowEdges` はこの構成を独立した複数エッジとして
+  正しく描画できることをテストで確認済み）。
+
+テスト:
+
+- `entities/internalLinkEdge.test.ts`: nodeRole の伝搬・省略時の挙動を
+  追加。
+- `chain-profiles/ethereum/internalLinkKinds.test.ts`（新設）:
+  `describeInternalLinkKind`/`describeDrivesField`/`describeDrivenByField`
+  の3パターン・フォールバックを網羅。
+- `entities/InternalLinkEdgePopover.test.tsx`: 既存テストを
+  `drivingNodeRole="consensus"`/`drivenNodeRole="execution"` を明示する
+  形に更新し、validator→consensus・フォールバックそれぞれの新規
+  describe ブロックを追加（活動セクションが完全に非表示になることを
+  含む）。
+- `entities/InfraPopover.test.tsx` / `entities/infraNode.test.ts`:
+  `drivenByNodeRole` の伝搬・validator 側の行ラベル切り替え・
+  role 不明時に行が消えないことを追加。
+- `app/App.internalLinkValidator.test.tsx`（新設）: モッククライアント
+  経由で `App` を実際にマウントし、validator-1→lighthouse-1 の内部
+  リンクエッジが現れること、validator-1 のポップオーバーに
+  「接続先の beacon ノード」行が出ること（consensus→execution 用の
+  「駆動する実行ノード」は出ないこと）を確認する。
+
+検証: `pnpm build`（`tsc -b` と `vite build` の両方）・`pnpm test`
+（frontendパッケージ全体、123ファイル/1922テスト）・`pnpm eslint`
+（変更ファイルのみ）が全て通ることを確認した。
+
+引き継ぎ事項:
+
+- collector 側（`targets.ts`/`index.ts` の `resolveDrivesNodeId`）は
+  `issue-285-validator-beacon-link` ブランチで並行実装中。マージ時は
+  設計メモに記載のとおり統括が cherry-pick で合流する想定。
+- frontend 側だけでは `docs/PLAN.md` のチェックボックス（Issue #285は
+  collector/frontend合わせて1項目）は完了とみなせないため、今回は
+  チェックを付けていない。collector 側の実装完了・両ブランチの合流後に
+  更新すること。
+- 英語の glossary 定義（`beacon-api`）・i18n 文言は初稿であり、
+  chainviz-i18n のレビューが必要（設計メモに記載済み）。
