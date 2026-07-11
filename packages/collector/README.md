@@ -43,8 +43,11 @@ pnpm --filter @chainviz/collector start
 - 待受ポート: WebSocket **4000** / ロギングプロキシ **4001**(いずれも
   `0.0.0.0` に bind。理由は `docs/ARCHITECTURE.md`「未確定のまま残す項目」の
   Issue #99 の項を参照)
-- 主な環境変数: `CHAINVIZ_PROXY_PORT` / `CHAINVIZ_PROXY_TARGET` /
-  `CHAINVIZ_WORKBENCH_RPC_HOST` / `CHAINVIZ_ETHEREUM_PROFILE_DIR`
+- 環境変数(全 5 つ): `CHAINVIZ_COLLECTOR_PORT`(WebSocket 待受ポート) /
+  `CHAINVIZ_PROXY_PORT`(ロギングプロキシ待受ポート) /
+  `CHAINVIZ_PROXY_TARGET`(プロキシの中継先) /
+  `CHAINVIZ_WORKBENCH_RPC_HOST`(ワークベンチから見たプロキシのホスト名) /
+  `CHAINVIZ_ETHEREUM_PROFILE_DIR`(プロファイルディレクトリの解決)
 
 ## テスト
 

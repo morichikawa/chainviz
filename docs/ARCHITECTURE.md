@@ -5,9 +5,9 @@
 
 ## 1. リポジトリ構成
 
-pnpm workspace によるモノレポ。3パッケージに分割し、`shared` の型を
-`collector` / `frontend` の両方から参照することで、ワールドステートの
-スキーマを二重定義しない。
+pnpm workspace によるモノレポ。4パッケージ（`shared` / `collector` /
+`frontend` / `e2e`）に分割し、`shared` の型を残る 3 パッケージから
+参照することで、ワールドステートのスキーマを二重定義しない。
 
 ```
 chainviz/
