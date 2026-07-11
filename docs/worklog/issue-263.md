@@ -178,3 +178,34 @@ aria-busyの`undefined`/`true`/`false`各値と`undefined → true → undefined
   確認した。
 - その他の観点（build/test・修正内容・テストの質・コミット粒度・docs
   整合）は前回レビューで確認済みのため再確認は差分のみとした。
+
+#### QA検証記録（qa）
+
+合格。実機（jsdom 上で実際に `InfraNodeCard` をレンダーし、削除ボタンの
+DOM 属性を観測）で以下を確認した。
+
+- 使い捨ての検証テストで、上流が `removalPending` を明示 merge していない
+  状態（`data.removalPending` = undefined）でワークベンチカードをレンダー
+  した際、削除ボタンの実 DOM が
+  `<button ... aria-busy="false" data-testid="infra-card-remove-workbench-1">×</button>`
+  となり、`getAttribute("aria-busy")` が属性欠落（null）ではなく文字列
+  `"false"` を返すことを確認した（完了条件2の undefined 起点ケース）。
+- 同じ削除ボタンを実際に `fireEvent.click` したところ
+  `removeWorkbench("workbench-1")` が1回呼ばれ、通常の削除操作フローが
+  従来通り動作することを確認した（回帰確認・完了条件3）。
+- コマンド結果待ちの削除保留状態（`removalPending` = true）へ再レンダー
+  すると、ボタンが `aria-busy="true"`・`disabled`・スピナー表示になる
+  ことを DOM 上で確認した（完了条件1）。
+- そこから上流がオブジェクトを差し替えて再び undefined を渡す遷移
+  （削除完了/カード残存中）でも、`aria-busy` は属性欠落せず明示値
+  `"false"` に戻ることを確認した（完了条件2のタイミング依存ケース）。
+- 修正が実際に効いていることの独立確認として、`InfraNodeCard.tsx` の
+  削除ボタンを一時的に `aria-busy={removalPending}` へ戻すと、同じ検証で
+  undefined 起点の `getAttribute("aria-busy")` が null（属性欠落）となり
+  元の不具合が再現することを確認し、その後 `?? false` へ復元した。
+- 既存テスト（`InfraNodeCard.test.tsx` 50件・`InfraNodeCardPendingAria.test.tsx`
+  8件）がいずれも通ることを確認した。検証用の使い捨てファイルは確認後に
+  削除し、作業ツリーはクリーンな状態に戻した。
+
+元 Issue（削除ボタンの aria-busy 属性がタイミング次第で欠落する）は
+解消されており、完了条件を満たしている。
