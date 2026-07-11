@@ -298,6 +298,28 @@ describe("InfraPopover height row label override by nodeRole (Issue #274)", () =
     expect(screen.getByText("16587")).toBeTruthy();
   });
 
+  it("keeps the head-slot label while the value is still the placeholder (0 / syncing unobserved window)", () => {
+    // Issue #274 item 6: 高さ行のラベル切り替えは役割（nodeRole）で決まり、
+    // 値そのものには依存しない。collector の D層観測が届く前の約 3 秒間は
+    // syncStatus="syncing" / blockHeight=0 のプレースホルダのままだが、
+    // consensus ノードならこの窓の間も「ヘッドスロット」ラベル + 値 "0" を
+    // 出す（Issue #215 の "display is role-driven, not data-driven" と同じ
+    // データ／表示ロジックの分離。観測前に一瞬「ブロック高」になって
+    // 切り替わるようなちらつきが無いことを固定する）。
+    renderPopover({
+      ...node,
+      clientType: "lighthouse",
+      nodeRole: "consensus",
+      syncStatus: "syncing",
+      blockHeight: 0,
+    });
+    expect(screen.getByText("ヘッドスロット")).toBeTruthy();
+    expect(screen.queryByText("ブロック高")).toBeNull();
+    // 同期状態行はプレースホルダのまま「同期中」、高さは "0"。
+    expect(screen.getByText("同期中")).toBeTruthy();
+    expect(screen.getByText("0")).toBeTruthy();
+  });
+
   it("keeps the block-height label for an execution node (no override)", () => {
     renderPopover({ ...node, nodeRole: "execution" });
     expect(screen.getByText("ブロック高")).toBeTruthy();

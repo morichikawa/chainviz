@@ -167,4 +167,14 @@ describe("describeHeightField", () => {
   it("returns undefined for undefined (unlabeled container, legacy snapshot)", () => {
     expect(describeHeightField(undefined)).toBeUndefined();
   });
+
+  it("does not leak inherited Object.prototype members (guard flows through describeNodeRole)", () => {
+    // describeHeightField は describeNodeRole 経由で引くため、Issue #215 で
+    // 入れた Object.hasOwn ガードがそのまま効く。"toString" 等の継承メンバ名を
+    // 誤って記述子として扱わない（heightField 相当の値を返さない）ことを固定。
+    expect(describeHeightField("toString")).toBeUndefined();
+    expect(describeHeightField("constructor")).toBeUndefined();
+    expect(describeHeightField("__proto__")).toBeUndefined();
+    expect(describeHeightField("hasOwnProperty")).toBeUndefined();
+  });
 });
