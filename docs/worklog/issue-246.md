@@ -247,3 +247,30 @@ Issue #246 で旧実装（compose サービス名への部分一致、Issue #214
   実装（`targets.ts` の `isValidatorService` JSDoc）と突き合わせて
   記述の一致を確認した。
 
+### 2026-07-11 Issue #246 再レビュー
+
+- 担当: reviewer
+- ブランチ: issue-246-validator-service-detection（先端 f8a7e6d 時点）
+- 判定: **合格**
+
+前回の差し戻し（指摘は `docs/ARCHITECTURE.md` の `p2pRole` コメント1点のみ）
+に対する修正コミット f8a7e6d を確認した。
+
+- 指摘箇所（109〜112行目）が「Ethereum アダプタは `com.chainviz.role`
+  ラベルの値が厳密に "validator" と一致するコンテナを "none" と判定」に
+  更新され、実装（`packages/collector/src/adapters/ethereum/targets.ts` の
+  `isValidatorService`: `obs.labels[ROLE_LABEL] === "validator"`）と一致する
+  ことを突き合わせて確認した。旧実装（サービス名部分一致 = Issue #214）
+  から Issue #246 で変更した経緯も併記されており、履歴の追跡性がある
+- 周辺の残存記述も確認: 104行目（VC が P2P に参加しない一般説明）・
+  120行目以降（`nodeRole` の説明。ラベル生値転記）はいずれも現状の実装と
+  整合しており、修正漏れはない
+- 前回レビュー（2f55115 時点）以降の差分は docs 2ファイル
+  （`docs/ARCHITECTURE.md`・`docs/worklog/issue-246.md`）のみで、コード・
+  テストに変更はない。前回実施したリポジトリ全体の
+  `pnpm lint` / `pnpm build` / `pnpm test` 全成功の結果は有効
+- コミット粒度: f8a7e6d は「指摘対応の docs 修正とその作業記録」で
+  1つの関心事に収まっており問題なし。Conventional Commits 準拠
+
+以上により Issue #246 のレビューは合格。push / PR 作成 / マージは
+統括の判断に委ねる。
