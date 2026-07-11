@@ -278,6 +278,79 @@ describe("InfraPopover sync/blockHeight visibility by nodeRole (Issue #215)", ()
   });
 });
 
+const slotGlossary: Glossary = {
+  slot: {
+    key: "slot",
+    name: { ja: "スロット", en: "Slot" },
+    definition: { ja: "2秒ごとの提案機会", en: "A 2-second proposal opportunity" },
+    layer: "a-infra",
+    relatedTerms: [],
+  },
+};
+
+describe("InfraPopover height row label override by nodeRole (Issue #274)", () => {
+  it("shows the head-slot label instead of block-height for a consensus node", () => {
+    renderPopover({ ...node, clientType: "lighthouse", nodeRole: "consensus", blockHeight: 16587 });
+    expect(screen.getByText("ヘッドスロット")).toBeTruthy();
+    expect(screen.queryByText("ブロック高")).toBeNull();
+    // 値自体は変換せず entity.blockHeight（= collector が入れた head_slot）を
+    // そのまま表示する（意味づけの変更のみ）。
+    expect(screen.getByText("16587")).toBeTruthy();
+  });
+
+  it("keeps the block-height label for an execution node (no override)", () => {
+    renderPopover({ ...node, nodeRole: "execution" });
+    expect(screen.getByText("ブロック高")).toBeTruthy();
+    expect(screen.queryByText("ヘッドスロット")).toBeNull();
+  });
+
+  it("keeps the block-height label when nodeRole is undefined (legacy snapshot fallback)", () => {
+    renderPopover(node);
+    expect(screen.getByText("ブロック高")).toBeTruthy();
+    expect(screen.queryByText("ヘッドスロット")).toBeNull();
+  });
+
+  it("keeps the block-height label for an unmapped nodeRole value", () => {
+    renderPopover({ ...node, nodeRole: "sequencer" });
+    expect(screen.getByText("ブロック高")).toBeTruthy();
+    expect(screen.queryByText("ヘッドスロット")).toBeNull();
+  });
+
+  it("localizes the head-slot label to English for a consensus node", () => {
+    renderPopover({ ...node, nodeRole: "consensus" }, "en");
+    expect(screen.getByText("Head slot")).toBeTruthy();
+    expect(screen.queryByText("Block height")).toBeNull();
+  });
+
+  it("anchors the slot glossary term on the head-slot label when it resolves", () => {
+    render(
+      <LanguageProvider initialLanguage="ja">
+        <GlossaryProvider glossary={slotGlossary}>
+          <InfraPopover
+            anchorRef={createAnchorRef()}
+            entity={{ ...node, clientType: "lighthouse", nodeRole: "consensus" }}
+          />
+        </GlossaryProvider>
+      </LanguageProvider>,
+    );
+    expect(screen.getByTestId("glossary-term-slot")).toBeTruthy();
+  });
+
+  it("anchors the block glossary term (not slot) on the block-height label for an execution node", () => {
+    render(
+      <LanguageProvider initialLanguage="ja">
+        <GlossaryProvider glossary={slotGlossary}>
+          <InfraPopover
+            anchorRef={createAnchorRef()}
+            entity={{ ...node, nodeRole: "execution" }}
+          />
+        </GlossaryProvider>
+      </LanguageProvider>,
+    );
+    expect(screen.queryByTestId("glossary-term-slot")).toBeNull();
+  });
+});
+
 describe("InfraPopover drivenBy row (ARCHITECTURE.md §7.6.3 updated, Issue #215)", () => {
   it("shows a drivenBy row with the resolved consensus node's containerName", () => {
     renderPopover(node, "ja", undefined, undefined, "chainviz-lighthouse-1");
