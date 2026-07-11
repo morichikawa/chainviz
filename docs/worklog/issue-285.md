@@ -401,3 +401,69 @@ frontend `packages/frontend/src/chain-profiles/ethereum/internalLinkKinds.test.t
 検証: `pnpm --filter @chainviz/collector build && test`（46ファイル/1270
 テスト）、`pnpm --filter @chainviz/frontend build && test`（123ファイル/
 1925テスト）が全て通過。追加分は collector +5・frontend +3。
+
+### 2026-07-11 レビュー結果（合格）
+
+- 担当: reviewer
+- 対象: `issue-285-validator-beacon-link` ブランチ（merge-base
+  `eacffa5` からの全 17 コミット。collector/frontend の並行実装を統括が
+  cherry-pick で合流させた後の状態）
+- 判定: **合格**（差し戻し事項なし）
+
+確認した内容:
+
+- **cherry-pick 合流の健全性**: `git diff main..HEAD` に見えた
+  `docs/worklog/issue-287.md` 等の「削除」は、分岐後に main へ Issue #287 が
+  マージされたことによる見かけ上の差分で、merge-base 比の実差分は本 Issue の
+  変更のみ。重複・取りこぼしは無い
+- **設計メモからの逸脱なし**: 「既存 `drivesNodeId` 再利用・専用エッジ種別
+  不採用・compose サービス名による静的解決」の 3 点すべて設計どおり。
+  collector は `beaconStableIdForValidator`（`isValidatorService` ガード +
+  `findPairedStableId`）の薄いラッパーと `resolveDrivesNodeId` の
+  フォールスルー化のみで、`nodeLinkActivity` は変更していない
+- **非対称フォールバックの妥当性**: `describeInternalLinkKind`（厳密ペア
+  一致、未知はフォールバック）と `describeDrivesField`/`describeDrivenByField`
+  （validator のときだけ新表現、それ以外は既存 Engine API 表現で行を隠さ
+  ない）の非対称は、旧スナップショット互換の退行防止という理由が
+  コード内コメント・worklog の両方に明記されており妥当。両者を誤って
+  統一する退行はテスト（intentional asymmetry の describe）で固定済み
+- **境界の遵守**: チェーン固有語彙（Engine API / Beacon API）の解釈は
+  `chain-profiles/ethereum/internalLinkKinds.ts` に閉じ、shared スキーマは
+  「駆動する側→される側」の一般関係のまま。`internalLinkEdge.ts` は
+  nodeRole を生文字列で値渡しするだけで解釈しない（既存 `describeNodeRole`
+  と同じ流儀）
+- **shared の変更**: `NodeEntity.drivesNodeId` の docstring 更新のみで
+  構造変更なし（diff で確認）
+- **エラー握りつぶし・決め打ち定数**: 新規の catch 節・タイムアウト等の
+  固定値は無し
+- **テストの質**: collector（取り違え防止・ラベル無し後方互換・候補
+  フィルタ・プロジェクトスコープ・addNode フォロワー非干渉）、frontend
+  （3 パターン + フォールバック網羅・空文字列境界・非対称の対比固定・
+  App マウントでの配線確認）とも異常系・境界値を実質的にカバー。
+  worklog に「意図的に壊して検出を確認した」記録もある
+- **ビルド・lint・テスト**: `pnpm lint && pnpm build && pnpm test` 全
+  パッケージ通過（shared 62 / collector 1270 / e2e 158 / frontend 1925）
+- **docs との整合**: ARCHITECTURE.md §2/§7.3/§7.4/§7.6.11・PLAN.md・
+  WORKLOG.md 索引・glossary（`beacon-api` 新設 + 逆リンク 3 箇所）とも
+  実装と一致。`beacon-api` の日本語定義は §7.6.11 の必須ポイント
+  （何であるか・なぜ必要か・chainviz では）を満たしている
+- **コミット粒度**: 17 コミットとも Conventional Commits 準拠で、関心事
+  ごと（shared docstring / 設計 docs / collector 実装 / frontend の
+  i18n・記述子テーブル・エッジデータ・ポップオーバー・glossary・モック /
+  テスト強化）に分かれている
+
+統括への申し送り（差し戻しではない軽微な注意点）:
+
+1. main とのマージで `docs/PLAN.md` と `docs/WORKLOG.md` の 2 ファイルが
+   コンフリクトする（`git merge-tree` で確認。本ブランチと Issue #287 が
+   同じ箇所に末尾追記しているため）。どちらも両方のエントリを保持する
+   だけの解消でよい。コード側（`index.ts` は #287 と本ブランチの両方が
+   変更しているが行範囲が異なる）は衝突しない
+2. E2E（UI 層）シナリオは追加していない。バックログ UX 項目の前例
+   （#215/#274 も SCENARIOS.md 追記なし）と整合し、代わりに
+   `App.internalLinkValidator.test.tsx` が配線をカバーしているため妥当と
+   判断するが、frontend の worklog にこの判断が明記されていなかったため
+   本記録で補う
+3. `docs/PLAN.md` の #285 注記に「レビュー・QA待ち」とあるが、マージ時点
+   では古くなる文言なので、気になるならマージ前に整理してよい（必須では
+   ない）
