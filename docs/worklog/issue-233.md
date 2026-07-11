@@ -393,3 +393,89 @@ collector 1154・frontend 1732)すべて green。追加3コミット
 QA への申し送りは前回レビュー時のものを引き継ぐ(`pnpm test:e2e:ui` の
 実機実行と、完走後の `docker ps -a` での残存コンテナ確認。multi-client の
 UI-MULTI 系も対象に含めること)。
+
+#### QA検証記録(chainviz-qa)
+
+**判定: 完了条件を満たしていない(NOT PASS。差し戻し)。**
+
+実機(docker compose Ethereumスタック + Playwright実ブラウザ)で
+`pnpm test:e2e:ui` を対象5ファイル(commands-node / commands-workbench /
+wallet-balance / token-balance / multi-client)に対して実行した。
+
+**環境準備**: この環境では Playwright の chromium が必要とするシステム
+ライブラリ(libnspr4.so / libnss3.so / libnssutil3.so / libasound.so.2 等)が
+未インストールで、初回実行は全テストがブラウザ起動段階で失敗した
+(`error while loading shared libraries: libnspr4.so`)。過去のセッション
+(Issue #245 対応)が scratchpad に展開済みだった同ライブラリ群を
+`LD_LIBRARY_PATH` で参照させ、実ブラウザ(Google Chrome for Testing 149)が
+起動することを確認してから再実行した。docker スタックは globalSetup が
+`docker compose up -d` で起動し、チェーン進行を確認して開始した。
+
+**結果**: 7 passed / 4 failed / 2 did not run。実行後 `docker ps -a` で
+動的追加ノード `chainviz-ethereum-reth4` / `chainviz-ethereum-beacon4` が
+稼働中のまま残存した。**完了条件(UI層E2E完走後に追加した動的コンテナが
+後片付けされていること)は満たされていない。**
+
+**残存の根本原因(Issue #233 の変更とは別のリグレッション)**:
+
+- UI-CMD-01(commands-node.spec.ts:79)が
+  `expect(addedRethId).toBeTruthy()`(line 125)で決定的に失敗する
+  (同条件で2回再現)。addNode 自体は成功しノードカードは
+  before.size+2 まで増える(line 110 は通過)が、追加カードの subtitle を
+  `subtitle === "reth"` / `=== "lighthouse"` の完全一致で判定している
+  (line 122-123)ため、どちらにも一致せず addedRethId / addedBeaconId が
+  空文字のままになる。
+- 原因は Issue #215(node-role-visibility、本ブランチに取り込み済みの
+  コミット e327072)がノードカードの subtitle を、役割が判明している場合に
+  「{役割ラベル} · {clientType}」形式(例: 「実行クライアント · reth」)へ
+  変更したこと。追加されるフォロワー reth は役割 execution に分類される
+  ため subtitle は「実行クライアント · reth」となり、`=== "reth"` は偽に
+  なる(InfraNodeCard.test.tsx の #215 ケースが
+  「実行クライアント · reth」を期待していることと一致)。UI-CMD-01 の
+  判定はこの形式変更に追従していない。UI層E2Eは CI(pre-push)で実行
+  されない(lint/build/unit-testのみ)ため、#215 マージ時にこの破綻が
+  検知されず潜在化していた(main 側の commands-node.spec.ts も同じ完全
+  一致のままであり、本ブランチ固有の破綻ではない)。
+- UI-CMD-01 が ID 捕捉前に失敗する結果、afterAll の
+  `cleanupRemovableCards(browser, [addedRethId=""], ...)` は空文字を除外して
+  対象0件で即 return し、addNode が作成した reth4/beacon4 を後始末できない。
+- この残存 reth4/beacon4 が後続 multi-client(UI-MULTI-01/02)の
+  `waitForBaselineNodes`(6ノード期待)を「Received: 8」で失敗させる連鎖も
+  起きた(残存2ノード分が上乗せされた)。token-balance(UI-C-05)の失敗は
+  操作パネル submit ボタンのクリックが p2p-legend 要素に遮られる別要因の
+  タイムアウトで、これも Issue #233 とは無関係。
+
+**Issue #233 のヘルパー自体は正常に機能している(肯定的証拠)**:
+
+- token-balance(UI-C-05)はテスト本体が途中で失敗したにもかかわらず、
+  実行後に受け取り用ワークベンチのコンテナは1つも残存しなかった。これは
+  「テストが entityId を捕捉済みで、かつ本体が途中失敗した」ケースで
+  `cleanupRemovableCards` の安全網が実際にコンテナを削除できたことを示す
+  (まさに Issue #233 が対象とする後片付けシナリオ)。
+- したがって残存 reth4/beacon4 は `cleanup.ts` の欠陥ではなく、UI-CMD-01 が
+  ID を捕捉できずに失敗した(= 安全網に渡す ID が空になった)ことに起因する。
+
+**副次的観点(設計判断として記録)**:
+
+- 現行の安全網は「テストが捕捉した entityId」しか掃除できない。追加は
+  docker レベルで成功しているのにテストが ID 捕捉前に失敗するケース
+  (今回の UI-CMD-01)ではコンテナが漏れる。Issue #238 の残存コンテナ
+  問題の再発を確実に防ぐには、捕捉済み ID の削除に加えて「キャンバス上の
+  削除可能カード(compose 起動でないもの)をすべて掃除する」形の安全網に
+  する選択肢がある。ただしこれは Issue #233 の当初スコープを超える設計
+  判断のため、対応可否は統括に委ねる。
+
+**差し戻し先の提案**:
+
+1. (完了条件のブロッカー)UI-CMD-01 の subtitle 判定を Issue #215 の新形式
+   「{役割ラベル} · {clientType}」に追従させる修正 → frontend(または
+   e2e の UI spec 担当)。これが解消しないと本 Issue の完了確認
+   (E2E 完走 + コンテナ残存なし)が取れない。別 Issue 化して先に直すのが
+   妥当。
+2. Issue #233 本体(`cleanup.ts` への集約)の扱い(このまま合格とみなすか、
+   上記副次観点の安全網強化まで含めるか)は統括の判断。
+
+**環境後始末**: 本検証で作成した reth4/beacon4 は QA 側で `docker rm -f` で
+除去済み。ベースの compose スタックは再利用のため稼働継続。事前から存在
+した停止コンテナ reth3/beacon3(2026-07-09 生成、本セッション作成物では
+ない)は残置している。
