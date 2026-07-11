@@ -343,3 +343,61 @@ validator1/validator2 のみ。動的コンテナへの考慮は不要。
   更新すること。
 - 英語の glossary 定義（`beacon-api`）・i18n 文言は初稿であり、
   chainviz-i18n のレビューが必要（設計メモに記載済み）。
+
+### 2026-07-11 テスト強化（エッジケース・異常系・境界値）
+
+- 担当: tester
+- ブランチ: issue-285-validator-beacon-link（collector/frontend の合流後の続き）
+- collector/frontend の実装担当が書いた基本テストを土台に、以下の観点で
+  テストを追加した。実装ロジックは変更していない（テストファイルのみ）。
+
+collector `packages/collector/src/adapters/ethereum/targets.test.ts`
+（`beaconStableIdForValidator` の describe に3件追加）:
+
+- 複数 validator の取り違え防止: validator1↔beacon1 と validator2↔beacon2 が
+  同時に存在する状況で、ノード群キーで正しく分岐し取り違えないことを固定。
+- 後方互換: compose サービス名が "validator1" でも `com.chainviz.role`
+  ラベルが無い旧スナップショットでは VC と見なさず undefined を返す（既存の
+  非-VC 判定を壊さず、ラベル導入前の観測に誤リンクを生やさない）。
+- 候補フィルタ: ノード群キー "1" は一致するが beacon 位置のコンテナが
+  consensus クライアントでない（reth プロセス）場合、`isConsensusBeaconNode`
+  で弾かれ対応付けない。キー一致だけでなく候補フィルタも効いていることを固定。
+
+collector `packages/collector/src/adapters/ethereum/index.test.ts`
+（`resolveDrivesNodeId`（validator→beacon）の describe に2件追加。
+`validator2WithRoleFixture` を新設）:
+
+- フルトポロジの取り違え防止: reth1/beacon1/validator1 と reth2/beacon2/
+  validator2 が同時に存在する状況で、validator→beacon・beacon→execution の
+  両解決が 1↔2 を取り違えないことを pollInfra 経由で固定。
+- addNode フォロワー: validator 無しの reth3+beacon3 ペア（managed ラベル付き）
+  を追加しても、beacon3→reth3 の既存解決のみが張られ、validator 起点の
+  誤リンクが生えないこと・静的 validator1↔beacon1 が維持されることを固定
+  （設計メモ「addNode のフォロワーは validator 無し」の前提の回帰テスト）。
+
+frontend `packages/frontend/src/chain-profiles/ethereum/internalLinkKinds.test.ts`
+（非対称フォールバックの describe を新設。空文字列の境界1件も追加）:
+
+- 意図的な非対称の固定: 相手ノードの role が不明な同一状況において、
+  エッジ見出し用の `describeInternalLinkKind` は汎用フォールバックへ倒す
+  一方、InfraPopover 行用の `describeDrivesField`/`describeDrivenByField` は
+  validator 固有のラベルを保ち行を隠さないことを対比で固定。両者を同じ
+  「厳密ペア一致」ロジックに統一する退行を検出する。consensus 側でも
+  同様にフィールドは既存 Engine API 表現を保つことを併せて確認。
+- `describeDrivenByField("")` が空文字列を未マッピング扱いにし engine-api
+  フィールドを保つ境界を固定。
+
+回帰検出の確認（意図的に実装を壊して新テストが検出することを確認後、元に戻した）:
+
+- `beaconStableIdForValidator` の `isValidatorService` ガードを外す → 後方互換
+  テスト（targets/index）が失敗。
+- 候補フィルタを `isConsensusBeaconNode` から `isBeaconService` に緩める →
+  候補フィルタテストが失敗。
+- `findPairedStableId` のノード群キー一致判定を無効化 → 取り違え防止テスト
+  （targets/index の crosstalk）が失敗。
+- `describeDrivesField` を `describeInternalLinkKind` の厳密フォールバックに
+  統一 → 非対称テストが失敗。
+
+検証: `pnpm --filter @chainviz/collector build && test`（46ファイル/1270
+テスト）、`pnpm --filter @chainviz/frontend build && test`（123ファイル/
+1925テスト）が全て通過。追加分は collector +5・frontend +3。
