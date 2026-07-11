@@ -199,3 +199,132 @@
 - shared は**型変更なし**（`syncStatus`/`blockHeight` へのドキュメント
   コメント追記のみ）。`pnpm build` / `pnpm test` が全パッケージで通る
   ことを設計フェーズで確認済み。
+
+### 2026-07-11 Issue #274 実装方針の確認（collector）
+
+- 担当: collector
+- ブランチ: issue-274-beacon-sync-display
+- 設計メモ（上記）を実装に落とす際の関数構成・データフローを確認。
+  設計からの変更は無いが、既存コードとの対応関係を明記しておく。
+
+1. `beacon-api.ts`: 既存の `fetchNodePeerId` / `fetchConnectedPeerIds` と
+   同じ形（`HttpClient` + `baseUrl` を受けて Beacon API 固有の JSON 形状を
+   このファイル内だけで正規化する）で `fetchBeaconSyncing` を追加する。
+   返り値の型名は `BeaconSyncingSnapshot`（`isSyncing` / `isOptimistic` /
+   `elOffline` / `headSlot`）とする。`head_slot` は `Number(...)` で
+   パースし `Number.isFinite` で検査、`is_syncing` は `typeof === "boolean"`
+   で検査してどちらも満たさなければ throw。`is_optimistic` / `el_offline`
+   は `=== true` の真偽判定にすることで、値が欠落（`undefined`）していても
+   例外にならず false 扱いになる（決定事項 3 をそのまま関数に落とし込む）。
+2. `beacon-sync-status.ts`: `resolveBeaconSyncStatus(raw: BeaconSyncingSnapshot):
+   ResolvedSyncStatus` は 3 フラグの OR 判定のみの純関数。`ResolvedSyncStatus`
+   は `sync-status.ts` から import して型を共用する（EL/CL で同じ形の
+   値を pollInfra が読む）。`BeaconSyncStatusCache` は `NodeSyncStatusCache`
+   と違い最大値比較をしないため `Map<string, ResolvedSyncStatus>` を
+   `set` / `resolve` / `forgetNode` で包むだけの薄いクラスにする。
+3. `index.ts`:
+   - フィールド追加: `beaconSyncStatusCache = new BeaconSyncStatusCache()`
+     （`syncStatusCache` の直後）、`trackedBeaconSyncIds = new Set<string>()`
+     （`trackedNodeInternalsIds` の直後。EL 用の追跡集合とは別に持つ設計
+     どおり）。
+   - `pollNodeInternalsOnce` 内で `beaconTargets(observations)`（既存の
+     ピアポーリングで使っている関数をそのまま再利用。validator は
+     `beaconTargets` の時点で既に除外済み）を呼び、EL 用の
+     `trackedNodeInternalsIds` と同じパターンで `trackedBeaconSyncIds` の
+     差分から `forgetNode` する。EL の `pollOneNodeInternals` 呼び出しと
+     新設の `pollOneBeaconSync` 呼び出しは同じ `Promise.all` にまとめて
+     並行実行する（両者は独立した対象集合・独立したキャッシュなので
+     混ぜてよい）。
+   - 新規メソッド `pollOneBeaconSync(target: BeaconTarget)`: 取得失敗を
+     `pollOneNodeInternals` と同じ流儀（`console.error` に stableId と
+     実際のエラー内容を出し、そのノードだけ諦めて前回値を保持）で処理する。
+   - `toEntity`: `this.syncStatusCache.resolve(obs.stableId) ??
+     this.beaconSyncStatusCache.resolve(obs.stableId) ?? { syncStatus:
+     "syncing" as const, blockHeight: 0 }` の順で解決する。既存コメント
+     （353〜357行目付近、「CL ノード・観測前…」の記述）を更新し、CL は
+     `beaconSyncStatusCache` から埋まる旨を明記する。
+
+このメモの内容で実装を進める。
+
+### 2026-07-11 Issue #274 実装記録（collector）
+
+- 担当: collector
+- ブランチ: issue-274-beacon-sync-display
+- 変更ファイル:
+  - `packages/collector/src/adapters/ethereum/beacon-api.ts`:
+    `fetchBeaconSyncing(http, baseUrl)` を追加。`GET /eth/v1/node/syncing`
+    を叩き `BeaconSyncingSnapshot`（`isSyncing`/`isOptimistic`/`elOffline`/
+    `headSlot`）へ正規化する。`is_syncing` が boolean で読めない、
+    `head_slot` が数値としてパースできない場合は throw（呼び出し側で
+    ログさせる）。`is_optimistic`/`el_offline` の欠落は `=== true` 判定に
+    することで自動的に false 扱いになる。
+  - `packages/collector/src/adapters/ethereum/beacon-sync-status.ts`
+    （新規）: `resolveBeaconSyncStatus(raw)` と `BeaconSyncStatusCache`
+    （`set`/`resolve`/`forgetNode`）。`ResolvedSyncStatus` 型は
+    `sync-status.ts` から import して EL 用キャッシュと形を揃えた。
+  - `packages/collector/src/adapters/ethereum/index.ts`: フィールド
+    `beaconSyncStatusCache` / `trackedBeaconSyncIds` を追加。
+    `pollNodeInternalsOnce` で `beaconTargets(observations)` を並行に
+    `pollOneNodeInternals`（EL）と同じ `Promise.all` に混ぜて処理する
+    新規メソッド `pollOneBeaconSync` を呼ぶ。取得失敗はそのノードだけ
+    `console.error` に stableId と実際のエラー内容を出して諦め、キャッシュは
+    前回値を保持する（一時的縮退）。観測から消えた beacon は
+    `trackedBeaconSyncIds` の差分で `forgetNode`。`toEntity` は
+    `syncStatusCache.resolve(...) ?? beaconSyncStatusCache.resolve(...)`
+    の順でフォールバックする（対象ノード集合は互いに素）。
+- テスト:
+  - `beacon-api.test.ts` に `fetchBeaconSyncing` のケースを追加
+    （実測レスポンス形状のパース、フラグ欠落時の false 扱い、
+    head_slot=0（genesis）の扱い、`is_syncing`/`head_slot` の不正値での
+    throw、HTTP クライアント自体の例外伝播）。
+  - `beacon-sync-status.test.ts`（新規）: `resolveBeaconSyncStatus` の
+    判定表（3 フラグの組み合わせ）と `BeaconSyncStatusCache` の
+    set/resolve/forgetNode、他ノードとの比較を持たないことの確認。
+  - `peer-block-adapter.test.ts`: 新規 describe ブロック
+    「EthereumAdapter syncStatus/blockHeight for CL (beacon) via Beacon
+    API (Issue #274)」を追加し、D層ループ（`subscribeNodeInternals`）→
+    `beaconSyncStatusCache` → `pollInfra`（`toEntity`）の結合フローを
+    検証（head_slot の反映、EL とは単位が異なり混同しないこと、
+    3 フラグそれぞれが true の場合の syncing 判定、beacon 間で相互比較
+    しないこと、取得失敗時に前回値を保持すること、削除時の forgetNode、
+    validator が対象外であること）。
+- 既存テストへの影響（重要）: `pollNodeInternalsOnce` が同じ tick で
+  beacon の同期状態も取得するようになったため、`subscribeNodeInternals`
+  系の既存テストのうち beacon フィクスチャを含み `httpClient` を渡して
+  いなかったものは、既定の `createFetchHttpClient()`（実 fetch）が
+  使われてしまい、fake timers 環境下で実ネットワーク待ちが解決タイミングと
+  噛み合わず 3 件が不安定に失敗した（`vi.advanceTimersByTimeAsync` が
+  実ソケット I/O を早送りできないため）。対処として:
+  - `beaconHttp` ヘルパー（`peer-block-adapter.test.ts`）を拡張し、
+    `/eth/v1/node/syncing` に既定で健全な応答（synced/head_slot 0）を
+    返すようにした（`syncing` フィールドで上書き可能）。
+  - 同期状態の値自体を検証しない既存テストには、実ネットワークに
+    フォールバックしないための新規ヘルパー `defaultBeaconSyncHttp(...ips)`
+    経由でモック `httpClient` を明示的に渡すよう修正した。
+  - Issue #187 側の既存テスト「CL(beacon)ノードは D層メトリクスを
+    持たないためプレースホルダのまま」は、beacon 自身の Beacon API
+    取得が失敗するケース（モック HttpClient がそのベース URL に応答を
+    持たない）に意味が変わったため、タイトル・コメントを実態に合わせて
+    修正した（`beaconHttp({})` で意図的に「取得失敗時の前回値保持」を
+    検証するテストとして残した）。
+  - **テストにモック HttpClient を渡さない場合、実ネットワークへ
+    フォールバックしてテストが不安定になる**ことが分かったので、
+    今後 `subscribeNodeInternals` 系のテストに beacon フィクスチャを
+    加える際は必ず `httpClient` を明示すること（次の担当への申し送り）。
+- 実機確認（docker compose、`pnpm dev:up`）: 稼働中のスタックに対し
+  WebSocket スナップショットを取得し、`beacon1`/`beacon2` の
+  `syncStatus` が `"synced"`、`blockHeight` が `head_slot`（17311）で
+  `reth1`/`reth2` の `blockHeight`（EL のブロック高、17300/17301）とは
+  異なる値になっていることを確認した。`validator1`/`validator2` は
+  従来どおり `syncing`/0 のプレースホルダのまま（`beaconTargets` の
+  選別基準どおり対象外であり非退行）。
+- 確認コマンド: `pnpm --filter @chainviz/collector build` /
+  `pnpm --filter @chainviz/collector test`（1214 件）/
+  `pnpm build`（全パッケージ）がいずれも成功。
+- frontend 側（`nodeRoles.ts` の高さ行 override・`InfraPopover.tsx` の
+  ラベル切り替え・`glossary` の `slot` 新設）は未着手のまま別担当へ
+  引き継ぐ。collector 側の `NodeEntity.blockHeight` には既に
+  head_slot が入っており、フロント未対応の間は「ブロック高」ラベルの
+  まま大きめの値（head_slot）が表示される暫定状態になる（既存の
+  ラベル文言を変更しない限りの制約であり、機能追加前提の一時的な見え方）。
+

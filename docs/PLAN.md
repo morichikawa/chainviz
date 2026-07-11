@@ -659,10 +659,11 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       常に失敗する
       [#270](https://github.com/morichikawa/chainviz/issues/270)
 - [ ] CLノード(beacon)の同期状態が永久に「同期中」(blockHeight 0)と
-      表示される(設計完了: Beacon API /eth/v1/node/syncingを情報源に
-      syncStatus/blockHeight(=head_slot)を埋め、フロントはconsensus役割の
-      高さ行を「ヘッドスロット」表示に切り替える。実装はcollector/
-      frontend担当へ引き継ぎ。docs/worklog/issue-274.md参照)
+      表示される(設計完了・collector実装完了: Beacon API
+      /eth/v1/node/syncingを情報源にsyncStatus/blockHeight(=head_slot)を
+      埋めた。フロントはconsensus役割の高さ行を「ヘッドスロット」表示に
+      切り替える対応が残り(frontend担当へ引き継ぎ)。docs/worklog/issue-274.md
+      参照)
       [#274](https://github.com/morichikawa/chainviz/issues/274)
 
 ## 運用ルール（全ステップ共通）
