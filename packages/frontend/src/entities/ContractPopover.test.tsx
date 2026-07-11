@@ -17,10 +17,13 @@ function contract(overrides: Partial<ContractEntity> = {}): ContractEntity {
 }
 
 function wrap(entity: ContractEntity, lang: "ja" | "en" = "ja") {
+  // PopoverPortal(Issue #245)の必須 prop anchorRef 用の detached 要素。
+  // このテストの関心は表示内容であり、実際の画面上の位置は対象外。
+  const anchorRef = { current: document.createElement("div") };
   return render(
     <LanguageProvider initialLanguage={lang}>
       <GlossaryProvider glossary={{}}>
-        <ContractPopover entity={entity} />
+        <ContractPopover anchorRef={anchorRef} entity={entity} />
       </GlossaryProvider>
     </LanguageProvider>,
   );

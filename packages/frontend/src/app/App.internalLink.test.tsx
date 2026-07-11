@@ -109,10 +109,14 @@ describe("App: internal link edge wiring (ARCHITECTURE.md §7.6.3)", () => {
     fireEvent.mouseEnter(card);
 
     // "chainviz-reth-1" は reth-node-1 カード自身の見出し（infra-card__name）
-    // にも常に表示されているため、lighthouse-1 カードの範囲（ポップオーバー
-    // を含む）に絞って検証する（`within` を使わないと同じテキストが2箇所に
-    // マッチし getByText が失敗する）。
-    const scope = within(card);
+    // にも常に表示されているため、ポップオーバー自体の範囲に絞って検証する
+    // （`within` を使わないと同じテキストが2箇所にマッチし getByText が
+    // 失敗する）。ポップオーバーは PopoverPortal（Issue #245）により
+    // `document.body` 直下へ portal 描画され、カード（`infra-card-*`）の
+    // DOM 子孫ではなくなったため、カードではなくポップオーバー自身の
+    // testid でスコープする。
+    const popover = await screen.findByTestId("infra-popover-lighthouse-1");
+    const scope = within(popover);
     expect(scope.getByText("駆動する実行ノード")).toBeTruthy();
     expect(scope.getByText("chainviz-reth-1")).toBeTruthy();
   });

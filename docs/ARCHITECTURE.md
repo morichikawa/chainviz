@@ -58,7 +58,9 @@ packages/frontend/src/
   glossary/            # インライン解説・用語集パネル
   i18n/                # ja/en 切り替え
   interaction/         # カード種別を跨ぐ汎用の操作性ロジック（ホバーポップオーバーの
-                       # 開閉遅延など。特定のドメインに属さない横断的なフック）
+                       # 開閉遅延・React Flow ノードの外（document.body）へ
+                       # portal 描画する位置追従など。特定のドメインに属さない
+                       # 横断的なフック・コンポーネント）
   layout/              # レイアウトの localStorage 永続化
   notifications/       # トースト通知（コマンド失敗のエラー表示など）
   platform/            # ブラウザ API のラッパー（localStorage などの薄い抽象）
@@ -106,8 +108,10 @@ interface NodeEntity extends InfraEntity {
   // PeerEdge は決して観測されない）。bootnode はチェーン非依存の P2P
   // 一般語彙として使う（Bitcoin の seed node 等も同系概念）。collector は
   // Docker ラベル `com.chainviz.p2p-role`（値 "bootnode" のときのみ
-  // bootnode）と ChainAdapter 内の分類（Ethereum アダプタは compose
-  // サービス名に "validator" を含むコンテナを "none" と判定）から導出し、
+  // bootnode）と ChainAdapter 内の分類（Ethereum アダプタは
+  // `com.chainviz.role` ラベルの値が厳密に "validator" と一致するコンテナを
+  // "none" と判定。Issue #246。旧実装は compose サービス名への "validator"
+  // 部分一致だった＝Issue #214）から導出し、
   // どちらにも該当しなければ peer とする（Issue #65 の「ラベルを単一の
   // 真実の情報源とする」方針。Ethereum プロファイルでは compose で
   // reth1/beacon1 にラベルを付与する）。省略時は「不明」（旧スナップ
@@ -1495,8 +1499,16 @@ globalTeardown:
   これにより `test:e2e` と `test:e2e:ui` の同時実行（別 worktree 含む）も
   スタック・ポートの奪い合いにならない
 - **ポート割り当て**: collector は dev 4000 / vitest e2e 4123 /
-  ポート衝突テスト 4199 / **UI 層 4125**。frontend は dev 5173 /
+  ポート衝突テスト 4199 / ロギングプロキシポート衝突テスト 4210 /
+  **UI 層 4125**。frontend は dev 5173 /
   **UI 層 5275**。既存の実行系と同時に手元で使っても衝突しない
+- **ロギングプロキシポートの規約**（Issue #254）: e2e の各 collector は
+  ロギングプロキシに WebSocket ポート +1 を既定で使う（本番の
+  4000/4001 の関係を踏襲）。現行の組は
+  4123/4124（vitest e2e 既定）・4125/4126（UI 層）・
+  4199/4200（ポート衝突テスト）・4210/4211（ロギングプロキシポート衝突
+  テスト）。新しく固定 WebSocket ポートを追加する際は、その値の +1 が
+  既存のいずれの WebSocket ポートとも重複しないか確認すること
 - `VITE_COLLECTOR_URL` は vite dev サーバー起動時に確定する（ビルド時
   埋め込み）ため、webServer の起動コマンドの環境変数で渡す。vite dev の
   起動は 1 秒未満（実測 0.6 秒）で、ビルド済み配布物との差異が問題に

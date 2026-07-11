@@ -1,7 +1,9 @@
 import type { TransactionEntity } from "@chainviz/shared";
+import type { RefObject } from "react";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import type { MessageKey } from "../i18n/messages.js";
+import { PopoverPortal } from "../interaction/PopoverPortal.js";
 import { TX_STATUS_MESSAGE_KEY, shortHex } from "./transaction.js";
 import {
   deriveTxLifecycleFromTx,
@@ -67,13 +69,26 @@ function stageDescriptionKey(stage: TxLifecycleStage): MessageKey {
  * 単位D）。ヘッダ（hash 短縮 + 既存ステータスバッジ）+ 4段階の縦リストを
  * 表示するだけで、状態導出ロジックは `txLifecycle.ts` の
  * `deriveTxLifecycleFromTx` に委ねる。
+ *
+ * `anchorRef` はこのポップオーバーを開いた tx チップ/行への ref（Issue #245）。
+ * React Flow のノードはそれぞれ独立したスタッキングコンテキストを持つため、
+ * `PopoverPortal` でそのアンカーを基準位置に body 直下へ描画し、隣接カードの
+ * 下に隠れないようにする。
  */
-export function TxLifecyclePopover({ tx }: { tx: TransactionEntity }) {
+export function TxLifecyclePopover({
+  anchorRef,
+  tx,
+}: {
+  anchorRef: RefObject<HTMLElement | null>;
+  tx: TransactionEntity;
+}) {
   const { t } = useLanguage();
   const stages = deriveTxLifecycleFromTx(tx);
 
   return (
-    <div
+    <PopoverPortal
+      anchorRef={anchorRef}
+      gapPx={6}
       className="tx-lifecycle-popover"
       role="tooltip"
       data-testid={`tx-lifecycle-popover-${tx.hash}`}
@@ -111,6 +126,6 @@ export function TxLifecyclePopover({ tx }: { tx: TransactionEntity }) {
           </li>
         ))}
       </ul>
-    </div>
+    </PopoverPortal>
   );
 }

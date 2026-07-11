@@ -15,6 +15,7 @@ import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { cleanupRemovableCards } from "./support/cleanup.js";
 import { serviceEntityId } from "./support/serviceIds.js";
+import { subtitleEndsWithClientType } from "./support/subtitle.js";
 
 /**
  * addNode で追加した reth+beacon ペアがカードとして出現するまでの待ち上限。
@@ -119,8 +120,14 @@ test.describe.serial("UI-CMD ノード追加・削除の連鎖シナリオ", () 
             .getByTestId(`infra-card-${entityId}`)
             .locator(".infra-card__subtitle")
             .textContent();
-          if (subtitle === "reth") addedRethId = entityId;
-          else if (subtitle === "lighthouse") addedBeaconId = entityId;
+          // subtitle は「{役割ラベル} · {clientType}」または（役割不明時）
+          // `{clientType}` 単独のいずれか（Issue #215）。役割ラベルの文言を
+          // 決め打ちで比較せず、末尾が clientType と一致するかで判定する
+          // (Issue #270)。
+          if (!subtitle) continue;
+          if (subtitleEndsWithClientType("reth").test(subtitle)) addedRethId = entityId;
+          else if (subtitleEndsWithClientType("lighthouse").test(subtitle))
+            addedBeaconId = entityId;
         }
         expect(addedRethId, "added reth card must be identified").toBeTruthy();
         expect(addedBeaconId, "added beacon card must be identified").toBeTruthy();

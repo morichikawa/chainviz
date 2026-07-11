@@ -1,7 +1,9 @@
+import type { RefObject } from "react";
 import { describeNodeRole, nodeShowsSyncState } from "../chain-profiles/ethereum/nodeRoles.js";
 import { format, pickLocale } from "../i18n/i18n.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
+import { PopoverPortal } from "../interaction/PopoverPortal.js";
 import { InfraPopoverSyncStages } from "./InfraPopoverSyncStages.js";
 import type { InfraEntity } from "./infraNode.js";
 
@@ -53,14 +55,21 @@ function Field({ label, value }: { label: string; value: string }) {
  * validator のみ）のときは「同期状態」「ブロック高」の2行を出さない
  * （バリデーターはチェーンを同期する係ではなく、値ゼロを出し続けると
  * 「壊れている」誤解を招くため）。
+ *
+ * `anchorRef` はこのポップオーバーを開いたカード本体への ref（Issue #245）。
+ * React Flow のノードはそれぞれ独立したスタッキングコンテキストを持つため、
+ * `PopoverPortal` でこのカードを基準位置に body 直下へ描画し、隣接カードの
+ * 下に隠れないようにする。
  */
 export function InfraPopover({
+  anchorRef,
   entity,
   rpcTargetContainerName,
   drivesNodeContainerName,
   drivenByContainerName,
   maxElBlockHeight,
 }: {
+  anchorRef: RefObject<HTMLElement | null>;
   entity: InfraEntity;
   rpcTargetContainerName?: string;
   drivesNodeContainerName?: string;
@@ -78,7 +87,9 @@ export function InfraPopover({
     entity.kind === "node" ? nodeShowsSyncState(entity.nodeRole) : true;
 
   return (
-    <div
+    <PopoverPortal
+      anchorRef={anchorRef}
+      gapPx={8}
       className="infra-popover"
       role="tooltip"
       data-testid={`infra-popover-${entity.id}`}
@@ -203,6 +214,6 @@ export function InfraPopover({
           )}
         </>
       )}
-    </div>
+    </PopoverPortal>
   );
 }

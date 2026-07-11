@@ -1,5 +1,6 @@
-import { type ReactNode, useId } from "react";
+import { type ReactNode, useId, useRef } from "react";
 import { useHoverPopover } from "../interaction/useHoverPopover.js";
+import { PopoverPortal } from "../interaction/PopoverPortal.js";
 
 export interface ActionHintProps {
   /** ホバー/フォーカス対象になる要素（ボタンなど）。 */
@@ -19,9 +20,13 @@ export function ActionHint({ children, hint }: ActionHintProps) {
   const { isOpen: open, onMouseEnter, onMouseLeave, onFocus, onBlur } =
     useHoverPopover();
   const popoverId = useId();
+  // Issue #245: React Flow のノードはそれぞれ独立したスタッキングコンテキスト
+  // を持つため、隣接カードの下に隠れないよう body 直下へ portal 描画する。
+  const anchorRef = useRef<HTMLSpanElement>(null);
 
   return (
     <span
+      ref={anchorRef}
       className="action-hint"
       aria-describedby={open ? popoverId : undefined}
       onMouseEnter={onMouseEnter}
@@ -31,9 +36,15 @@ export function ActionHint({ children, hint }: ActionHintProps) {
     >
       {children}
       {open && (
-        <span className="action-hint__popover glossary-popover" id={popoverId} role="tooltip">
+        <PopoverPortal
+          anchorRef={anchorRef}
+          gapPx={8}
+          className="action-hint__popover glossary-popover"
+          id={popoverId}
+          role="tooltip"
+        >
           {hint}
-        </span>
+        </PopoverPortal>
       )}
     </span>
   );

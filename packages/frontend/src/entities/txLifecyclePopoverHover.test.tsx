@@ -161,10 +161,12 @@ describe("WalletCard TxChip lifecycle popover open/close (Issue #212 単位D)", 
 
 describe("WalletPopover tx item lifecycle popover open/close (Issue #212 単位D)", () => {
   function renderPopover(txs: TransactionEntity[]) {
+    // PopoverPortal(Issue #245)の必須 prop anchorRef 用の detached 要素。
+    const anchorRef = { current: document.createElement("div") };
     render(
       <LanguageProvider initialLanguage="ja">
         <GlossaryProvider glossary={{}}>
-          <WalletPopover entity={wallet()} transactions={txs} />
+          <WalletPopover anchorRef={anchorRef} entity={wallet()} transactions={txs} />
         </GlossaryProvider>
       </LanguageProvider>,
     );

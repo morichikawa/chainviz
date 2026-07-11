@@ -1,5 +1,5 @@
 import { Handle, type NodeProps, Position } from "@xyflow/react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ActionHint } from "../canvas/ActionHint.js";
 import { describeNodeRole, nodeShowsSyncState } from "../chain-profiles/ethereum/nodeRoles.js";
 import { useCommandActions } from "../commands/CommandActionsContext.js";
@@ -50,6 +50,10 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
   // ありで行う（Issue #221。詳細は interaction/useHoverPopover.ts 参照）。
   const { isOpen: hovered, onMouseEnter, onMouseLeave } = useHoverPopover();
   const [operationPanelOpen, setOperationPanelOpen] = useState(false);
+  // Issue #245: カード本体を InfraPopover の位置合わせの基準（アンカー）にする。
+  // React Flow のノードはそれぞれ独立したスタッキングコンテキストを持つため、
+  // ポップオーバー自体は body 直下へ portal 描画する（InfraPopover 参照）。
+  const cardRef = useRef<HTMLDivElement>(null);
 
   const kindLabel = entity.kind === "node" ? t("card.node") : t("card.workbench");
   // ノードの役割（execution/consensus/validator）が分かれば
@@ -98,6 +102,7 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
 
   return (
     <div
+      ref={cardRef}
       className={className}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
@@ -182,7 +187,16 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
                   ? "infra-card__operate nodrag infra-card__operate--pending"
                   : "infra-card__operate nodrag"
               }
-              aria-busy={operationPending}
+              // Issue #237: 上流（App.tsx の infraNodesWithHighlight）は、
+              // 対象ワークベンチが一度も保留(true)を経験していない間、また
+              // ブロック到達のたびに isSameInfraNode の判定でノードオブジェクト
+              // が差し替わった直後は operationPending を明示的に merge せず
+              // undefined のまま渡してくることがある。React は aria-*
+              // 属性に undefined/null を渡すと属性自体を DOM から省略する
+              // ため、ここで明示的に false へフォールバックし、DOM 上に
+              // 常に aria-busy が存在する状態を保証する（上流のメモ化
+              // 最適化そのものは変更しない）。
+              aria-busy={operationPending ?? false}
               onPointerDown={(event) => event.stopPropagation()}
               onClick={() => setOperationPanelOpen((current) => !current)}
               data-testid={`infra-card-operate-${entity.id}`}
@@ -198,6 +212,7 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
       )}
       {hovered && (
         <InfraPopover
+          anchorRef={cardRef}
           entity={entity}
           rpcTargetContainerName={rpcTargetContainerName}
           drivesNodeContainerName={drivesNodeContainerName}

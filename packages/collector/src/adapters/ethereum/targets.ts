@@ -6,6 +6,7 @@
 import type { ContainerObservation } from "../../docker/types.js";
 import { BEACON_API_PORT } from "./beacon-api.js";
 import { classifyContainer } from "./classify.js";
+import { ROLE_LABEL } from "./labels.js";
 import { EXECUTION_METRICS_PORT } from "./reth-metrics-client.js";
 
 const COMPOSE_SERVICE_LABEL = "com.docker.compose.service";
@@ -132,26 +133,32 @@ function isBeaconService(obs: ContainerObservation): boolean {
 }
 
 /**
- * compose サービス名に "validator" を含むか（Issue #214）。
+ * コンテナが VC（validator client）かどうかを、`com.chainviz.role`
+ * ラベル（`ROLE_LABEL`）の値が厳密に `"validator"` と一致するかで判定する
+ * （Issue #246。旧実装は compose サービス名への `/validator/i` 部分一致
+ * だった＝Issue #214）。
  *
  * lighthouse の validator client（VC）は libp2p の P2P ネットワークに参加
  * しない（beacon へ HTTP の Beacon API で接続するだけ）ため、`toEntity` の
  * `p2pRole` 導出で「P2P 非参加」（`"none"`）を判定するのに使う。
  *
- * 前提条件（この判定が成立するための構成上の制約。崩れた場合はこの関数を
- * 見直す必要がある）:
- * - `profiles/ethereum/docker-compose.yml` の VC サービス名
- *   （`validator1`/`validator2`）が "validator" を含む命名になっていること
- * - `node-lifecycle.ts`（addNode コマンド）は VC を持つノードを一切作らない
- *   （フォロワー reth+beacon ペアのみを作成する）こと。したがって動的追加
- *   ノードがこの判定に巻き込まれることはない
+ * `ROLE_LABEL` は静的コンテナ（compose テンプレート、
+ * `profiles/ethereum/docker-compose.yml` の validator1/validator2 に
+ * `com.chainviz.role: "validator"` を明示的に設定済み）・動的コンテナ
+ * （addNode/addWorkbench 時に `node-lifecycle.ts` が付与）の両方に必ず付く
+ * ため、compose サービス名の命名規則に依存しない。名前だけ "validator" を
+ * 含む（例: 将来の別チェーンプロファイルの `tx-validator` のような）P2P
+ * 参加ノードを、compose 側が明示した役割と無関係に誤って VC と判定する
+ * ことがない（Issue #246 で指摘された、旧実装の頑健性の課題を解消）。
  *
- * `isBeaconService` と対になる同系のロジックであり、判定材料（compose
- * サービス名）・除外対象（"beacon"/"validator" の混同防止）の考え方を揃える。
+ * ラベルが無い・想定外の値の場合は false（他のラベル判定
+ * `MANAGED_LABEL`・`P2P_ROLE_LABEL` と同じ「省略・想定外 = 安全側」の流儀）。
+ * `ROLE_LABEL` の値は collector が生成するものではなく compose /
+ * `node-lifecycle.ts` が付与する固定値のみを想定するため、大文字小文字の
+ * ゆらぎは正規化しない（`nodeRole` への生値転記、Issue #215 と同じ方針）。
  */
 export function isValidatorService(obs: ContainerObservation): boolean {
-  const service = obs.labels[COMPOSE_SERVICE_LABEL] ?? "";
-  return /validator/i.test(service);
+  return obs.labels[ROLE_LABEL] === "validator";
 }
 
 /**

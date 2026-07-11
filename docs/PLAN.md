@@ -611,18 +611,38 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
 - [ ] docs/CONCEPT.md・docs/ARCHITECTURE.mdが文章のみで分かりにくいので
       図解(Mermaid等)を増やしたい
       [#224](https://github.com/morichikawa/chainviz/issues/224)
-- [ ] 確定時のコントラクトへのパルス/フラッシュがアドレス表記の
+- [x] 確定時のコントラクトへのパルス/フラッシュがアドレス表記の
       食い違いで発火しない
       [#232](https://github.com/morichikawa/chainviz/issues/232)
 - [x] UI-CMD系PlaywrightテストのafterAllクリーンアップが競合状態で
       無効化されうる
       [#233](https://github.com/morichikawa/chainviz/issues/233)
+- [x] dev collector稼働中はpnpm test:e2eが起動不能(proxyポート衝突が
+      listen判定をすり抜ける)
+      [#254](https://github.com/morichikawa/chainviz/issues/254)
 - [x] 長時間のUI層E2Eフルスイート実行中にcollectorがuncaughtExceptionで
       exitし、以降の全テストがカスケード失敗する
       [#238](https://github.com/morichikawa/chainviz/issues/238)
 - [x] collector停止中に送信したaddNode/addWorkbenchはゴースト消滅のみで
       エラートーストが出ない
       [#235](https://github.com/morichikawa/chainviz/issues/235)
+- [x] カードのホバーポップオーバーが隣接カードの下に描画され読めない
+      [#245](https://github.com/morichikawa/chainviz/issues/245)
+- [x] isValidatorServiceがサービス名のみで判定しており将来の別チェーン
+      プロファイルで誤検出しうる
+      [#246](https://github.com/morichikawa/chainviz/issues/246)
+- [x] operationPendingのoperateボタンでaria-busy属性がブロック到達
+      タイミング次第で欠落する
+      [#237](https://github.com/morichikawa/chainviz/issues/237)
+- [x] 送金フォーム(TransferForm)の宛先にクライアント側のアドレス形式
+      バリデーションが無い
+      [#236](https://github.com/morichikawa/chainviz/issues/236)
+- [x] describeSyncStageがObject.prototypeの継承メンバを漏らす可能性がある
+      (describeNodeRoleと同種の穴)
+      [#258](https://github.com/morichikawa/chainviz/issues/258)
+- [x] UI-CMD-01のaddNode成功判定が#215のsubtitle形式変更に追従しておらず
+      常に失敗する
+      [#270](https://github.com/morichikawa/chainviz/issues/270)
 
 ## 運用ルール（全ステップ共通）
 

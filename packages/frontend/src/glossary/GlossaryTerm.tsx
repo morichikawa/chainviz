@@ -1,7 +1,8 @@
-import { type ReactNode, useId } from "react";
+import { type ReactNode, useId, useRef } from "react";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { pickLocale } from "../i18n/i18n.js";
 import { useHoverPopover } from "../interaction/useHoverPopover.js";
+import { PopoverPortal } from "../interaction/PopoverPortal.js";
 import { useGlossary } from "./GlossaryProvider.js";
 
 export interface GlossaryTermProps {
@@ -23,6 +24,10 @@ export function GlossaryTerm({ termKey, children }: GlossaryTermProps) {
   const { isOpen: open, onMouseEnter, onMouseLeave, onFocus, onBlur } =
     useHoverPopover();
   const popoverId = useId();
+  // Issue #245: React Flow のノードはそれぞれ独立したスタッキングコンテキスト
+  // を持つため、隣接カードの下に隠れないよう body 直下へ portal 描画する
+  // （PopoverPortal 参照）。位置合わせの基準はこの用語自体（アンカー）。
+  const anchorRef = useRef<HTMLSpanElement>(null);
 
   const term = lookup(termKey);
   const label = children ?? (term ? pickLocale(term.name, lang) : termKey);
@@ -33,6 +38,7 @@ export function GlossaryTerm({ termKey, children }: GlossaryTermProps) {
 
   return (
     <span
+      ref={anchorRef}
       className="glossary-term"
       tabIndex={0}
       role="button"
@@ -45,7 +51,9 @@ export function GlossaryTerm({ termKey, children }: GlossaryTermProps) {
     >
       <span className="glossary-term__label">{label}</span>
       {open && (
-        <span
+        <PopoverPortal
+          anchorRef={anchorRef}
+          gapPx={6}
           className="glossary-popover"
           id={popoverId}
           role="tooltip"
@@ -62,7 +70,7 @@ export function GlossaryTerm({ termKey, children }: GlossaryTermProps) {
               {term.relatedTerms.join(", ")}
             </span>
           )}
-        </span>
+        </PopoverPortal>
       )}
     </span>
   );

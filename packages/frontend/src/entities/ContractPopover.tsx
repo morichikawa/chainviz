@@ -1,7 +1,8 @@
 import type { ContractEntity } from "@chainviz/shared";
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
+import { PopoverPortal } from "../interaction/PopoverPortal.js";
 import { shortHex } from "./transaction.js";
 
 function Field({ label, value }: { label: ReactNode; value: string }) {
@@ -43,13 +44,29 @@ function withAbiAnchor(text: string): ReactNode {
  *
  * カタログ未登録（`name` 省略）の場合は説明文を差し替え、ABI を復号できない
  * ことを伝える（§6.4）。
+ *
+ * `anchorRef` はこのポップオーバーを開いたカード本体への ref（Issue #245）。
+ * React Flow のノードはそれぞれ独立したスタッキングコンテキストを持つため、
+ * `PopoverPortal` でこのカードを基準位置に body 直下へ描画し、隣接カードの
+ * 下に隠れないようにする。
  */
-export function ContractPopover({ entity }: { entity: ContractEntity }) {
+export function ContractPopover({
+  anchorRef,
+  entity,
+}: {
+  anchorRef: RefObject<HTMLElement | null>;
+  entity: ContractEntity;
+}) {
   const { t } = useLanguage();
   const isUncataloged = entity.name === undefined;
 
   return (
-    <div className="infra-popover contract-popover" role="tooltip">
+    <PopoverPortal
+      anchorRef={anchorRef}
+      gapPx={8}
+      className="infra-popover contract-popover"
+      role="tooltip"
+    >
       <p className="contract-popover__description">
         {isUncataloged
           ? withAbiAnchor(t("contract.popover.unknownDescription"))
@@ -82,6 +99,6 @@ export function ContractPopover({ entity }: { entity: ContractEntity }) {
           </span>
         </div>
       )}
-    </div>
+    </PopoverPortal>
   );
 }

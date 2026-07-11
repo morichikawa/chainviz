@@ -1,5 +1,6 @@
 import type { TransactionEntity } from "@chainviz/shared";
 import { Handle, type NodeProps, Position } from "@xyflow/react";
+import { useRef } from "react";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { useHoverPopover } from "../interaction/useHoverPopover.js";
@@ -25,9 +26,13 @@ function TxChip({ tx, isSettling }: { tx: TransactionEntity; isSettling: boolean
     useHoverPopover();
   const label = txChipLabel(tx);
   const text = label.kind === "deploy" ? t("tx.chip.deploy") : label.text;
+  // Issue #245: 隣接カードの下に隠れないよう body 直下へ portal 描画する。
+  // 位置合わせの基準はこのチップ自体（アンカー）。
+  const chipRef = useRef<HTMLSpanElement>(null);
 
   return (
     <span
+      ref={chipRef}
       className={`wallet-tx-chip wallet-tx-chip--${tx.status}${
         isSettling ? " is-settling" : ""
       }`}
@@ -41,7 +46,7 @@ function TxChip({ tx, isSettling }: { tx: TransactionEntity; isSettling: boolean
       onBlur={onBlur}
     >
       {text}
-      {hovered && <TxLifecyclePopover tx={tx} />}
+      {hovered && <TxLifecyclePopover anchorRef={chipRef} tx={tx} />}
     </span>
   );
 }
@@ -69,6 +74,8 @@ export function WalletCard({ data }: NodeProps<WalletFlowNode>) {
   const { t } = useLanguage();
   // Issue #221: 隙間を通過する一瞬の mouseleave で消えないよう遅延クローズ。
   const { isOpen: hovered, onMouseEnter, onMouseLeave } = useHoverPopover();
+  // Issue #245: カード本体を WalletPopover の位置合わせの基準にする。
+  const cardRef = useRef<HTMLDivElement>(null);
 
   const kindTermKey = entity.isSmartAccount ? "smart-account" : "eoa";
   const kindLabel = entity.isSmartAccount
@@ -87,6 +94,7 @@ export function WalletCard({ data }: NodeProps<WalletFlowNode>) {
 
   return (
     <div
+      ref={cardRef}
       className="infra-card infra-card--wallet"
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
@@ -165,6 +173,7 @@ export function WalletCard({ data }: NodeProps<WalletFlowNode>) {
       </div>
       {hovered && (
         <WalletPopover
+          anchorRef={cardRef}
           entity={entity}
           transactions={transactions}
           contractsByAddress={contractsByAddress}

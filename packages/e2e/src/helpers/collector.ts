@@ -15,6 +15,8 @@ import { sleep } from "./wait.js";
 
 export interface RunningCollector {
   port: number;
+  /** ロギングプロキシの待ち受けポート（Issue #254）。 */
+  proxyPort: number;
   process: ChildProcess;
   /** 標準出力・標準エラーの蓄積（失敗時の調査用）。 */
   readLogs(): string;
@@ -22,17 +24,24 @@ export interface RunningCollector {
 }
 
 /**
- * 子プロセス自身が指定ポートで listen し終えるまで待つ。
+ * 子プロセス自身が WebSocket サーバー・ロギングプロキシの両方で listen し
+ * 終えるまで待つ。
  *
  * WebSocket 接続を試みる方式（旧実装）だと、別プロセス（別 worktree の
  * test:e2e など）が同じポートで既に listen している場合に、自分の子プロセスが
  * EADDRINUSE で即死していても誤って「起動できた」と判定してしまう
  * （Issue #64）。そのため、必ず「自分が起動したこの子プロセスのログ」だけを
  * 根拠に判定する。
+ *
+ * collector は WebSocket サーバーとロギングプロキシという独立した 2 つの
+ * listen を順番に行う（WS が先）。WS の listening ログだけを根拠にすると、
+ * その直後にロギングプロキシ側が（ポート衝突などで）失敗しても検知できない
+ * （Issue #254）。そのため両方の listening ログが揃うまで判定を確定させない。
  */
 function waitForOwnProcessToListen(
   child: ChildProcess,
   port: number,
+  proxyPort: number,
   getLogs: () => string,
   timeoutMs: number,
 ): Promise<void> {
@@ -56,6 +65,7 @@ function waitForOwnProcessToListen(
       const status = detectLaunchStatus({
         logs: getLogs(),
         port,
+        proxyPort,
         exited: child.exitCode !== null || child.signalCode !== null,
         exitCode: child.exitCode,
       });
@@ -64,7 +74,9 @@ function waitForOwnProcessToListen(
           settle(resolve);
           return;
         case "portInUse":
-          settle(() => reject(new Error(portInUseMessage(port, getLogs()))));
+          settle(() =>
+            reject(new Error(portInUseMessage(port, proxyPort, getLogs()))),
+          );
           return;
         case "crashed":
           settle(() =>
@@ -81,7 +93,8 @@ function waitForOwnProcessToListen(
         reject(
           new Error(
             `timed out after ${timeoutMs}ms waiting for collector to log ` +
-              `"listening on port ${port}". logs:\n${getLogs()}`,
+              `"listening on port ${port}" and "listening on port ` +
+              `${proxyPort}". logs:\n${getLogs()}`,
           ),
         ),
       );
@@ -100,16 +113,28 @@ function waitForOwnProcessToListen(
 }
 
 /**
- * collector を指定ポートで起動し、WebSocket が接続を受け付けるまで待つ。
- * ポートは CHAINVIZ_COLLECTOR_PORT で子プロセスへ渡す（既存の dev collector と
- * 衝突しないよう既定の 4000 とは別のポートを使う）。
+ * collector を指定ポートで起動し、WebSocket・ロギングプロキシの両方が
+ * 接続を受け付けるまで待つ。
+ *
+ * WebSocket ポートは CHAINVIZ_COLLECTOR_PORT で、ロギングプロキシのポートは
+ * CHAINVIZ_PROXY_PORT で子プロセスへ渡す。どちらも既定の dev collector
+ * （4000 / 4001）とは別のポートを使う。ロギングプロキシの既定値を
+ * `port + 1` にしているのは、本番の既定値（WS:4000 / proxy:4001）と同じ
+ * 「+1」の関係を踏襲したもので、既存の e2e 専用 WS ポート（4123 / 4125 /
+ * 4199 等）どうしでも重複しない（Issue #254。従来は CHAINVIZ_PROXY_PORT を
+ * 渡していなかったため、子プロセスは常に既定のロギングプロキシポート
+ * （4001）を使おうとし、dev collector 稼働中はそこで衝突していた）。
  */
-export async function startCollector(port = 4123): Promise<RunningCollector> {
+export async function startCollector(
+  port = 4123,
+  proxyPort = port + 1,
+): Promise<RunningCollector> {
   const child = spawn(process.execPath, [collectorEntry], {
     cwd: repoRoot,
     env: {
       ...process.env,
       CHAINVIZ_COLLECTOR_PORT: String(port),
+      CHAINVIZ_PROXY_PORT: String(proxyPort),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -129,6 +154,7 @@ export async function startCollector(port = 4123): Promise<RunningCollector> {
 
   const running: RunningCollector = {
     port,
+    proxyPort,
     process: child,
     readLogs: () => logs,
     stop: () =>
@@ -147,7 +173,7 @@ export async function startCollector(port = 4123): Promise<RunningCollector> {
   };
 
   try {
-    await waitForOwnProcessToListen(child, port, () => logs, 30_000);
+    await waitForOwnProcessToListen(child, port, proxyPort, () => logs, 30_000);
   } catch (err) {
     await running.stop();
     throw err;

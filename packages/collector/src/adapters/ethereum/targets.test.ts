@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ContainerObservation } from "../../docker/types.js";
+import { ROLE_LABEL } from "./labels.js";
 import { EXECUTION_METRICS_PORT } from "./reth-metrics-client.js";
 import {
   beaconStableIdForExecution,
@@ -42,7 +43,10 @@ const beacon1 = obs({
 const validator1 = obs({
   stableId: "chainviz-ethereum/validator1",
   name: "chainviz-ethereum-validator1-1",
-  labels: { "com.docker.compose.service": "validator1" },
+  labels: {
+    "com.docker.compose.service": "validator1",
+    [ROLE_LABEL]: "validator",
+  },
   image: "sigp/lighthouse:latest",
   ip: "172.28.0.3",
   processes: [{ command: "lighthouse vc", name: "lighthouse" }],
@@ -902,71 +906,98 @@ describe("executionRpcUrls", () => {
   });
 });
 
-describe("isValidatorService (Issue #214)", () => {
-  it("returns true for a compose service name containing 'validator'", () => {
+describe("isValidatorService (Issue #246, com.chainviz.role ベースの判定)", () => {
+  it("returns true when com.chainviz.role is exactly 'validator'", () => {
     expect(isValidatorService(validator1)).toBe(true);
   });
 
-  it("matches case-insensitively", () => {
-    const upper = obs({
-      labels: { "com.docker.compose.service": "VALIDATOR2" },
-    });
-    expect(isValidatorService(upper)).toBe(true);
-  });
-
-  it("returns false for beacon and execution services", () => {
+  it("returns false for beacon and execution services (no role label)", () => {
     expect(isValidatorService(beacon1)).toBe(false);
     expect(isValidatorService(obs())).toBe(false);
   });
 
-  it("returns false when the compose service label is missing", () => {
+  it("returns false when the role label is missing entirely", () => {
     expect(isValidatorService(obs({ labels: {} }))).toBe(false);
   });
 
-  it("matches 'validator' anywhere in the service name (substring, not exact/prefix)", () => {
-    // 判定は /validator/i の部分一致。番号付き（validator1）だけでなく、
-    // 接頭辞・接尾辞・中間に "validator" を含む名前も該当する。実 profile の
-    // 命名（validator1/validator2）を含め、想定される派生命名を取りこぼさない。
-    for (const service of [
-      "validator",
-      "validator-1",
-      "eth-validator",
-      "cl-validator-a",
-      "myvalidatorpool",
-    ]) {
-      expect(
-        isValidatorService(
-          obs({ labels: { "com.docker.compose.service": service } }),
-        ),
-      ).toBe(true);
+  it("returns false when the compose service label is missing but the role label is present", () => {
+    // 判定はロール ラベルのみを見るため、compose サービス名ラベル自体が
+    // 欠けていても com.chainviz.role: "validator" さえあれば true になる。
+    expect(
+      isValidatorService(obs({ labels: { [ROLE_LABEL]: "validator" } })),
+    ).toBe(true);
+  });
+
+  it("does not normalize case (role label values are fixed strings from compose/node-lifecycle.ts)", () => {
+    // ROLE_LABEL の値は collector が生成するものではなく compose /
+    // node-lifecycle.ts が付与する固定値のみを想定するため、旧実装
+    // （名前ベース）にあった大文字小文字を無視する挙動は引き継がない。
+    expect(
+      isValidatorService(obs({ labels: { [ROLE_LABEL]: "VALIDATOR" } })),
+    ).toBe(false);
+  });
+
+  it("returns false for other known role label values (execution/consensus/workbench)", () => {
+    for (const role of ["execution", "consensus", "workbench"]) {
+      expect(isValidatorService(obs({ labels: { [ROLE_LABEL]: role } }))).toBe(
+        false,
+      );
     }
   });
 
-  it("returns false for names that merely resemble but do not contain 'validator'", () => {
-    // タイポ・部分語（"valid"/"vali"）では該当しない。誤検出しないことの確認。
-    for (const service of ["valid", "validate", "vali-node", "beacon1", "reth1"]) {
-      expect(
-        isValidatorService(
-          obs({ labels: { "com.docker.compose.service": service } }),
-        ),
-      ).toBe(false);
-    }
+  // 完全一致（=== "validator"）であることを、"validator" に似ているが
+  // 一致しない値（大文字小文字の揺れ・前後空白・接尾辞・空文字など）で
+  // 固定する。ROLE_LABEL は compose / node-lifecycle.ts が付与する固定値
+  // のみを想定するため、これらは一切正規化されず false になる。
+  it.each([
+    "Validator", // 先頭のみ大文字
+    "vAlIdAtOr", // 混在
+    "validator ", // 末尾に空白
+    " validator", // 先頭に空白
+    " validator ", // 前後に空白
+    "validator-2", // 接尾辞つき
+    "validator1", // 数字が続く（compose サービス名に似た値）
+    "validators", // 複数形
+    "tx-validator", // 接頭辞つき（旧実装なら誤検出しえた形）
+    "validator\n", // 末尾改行
+    "", // 空文字
+  ])("returns false for the near-miss role label value %j", (roleValue) => {
+    expect(
+      isValidatorService(obs({ labels: { [ROLE_LABEL]: roleValue } })),
+    ).toBe(false);
   });
 
-  it("is purely name-based and does not inspect the client type (documents the current limitation)", () => {
-    // isValidatorService は compose サービス名だけで判定し、実際のクライアント
-    // 種別（reth/lighthouse 等）を見ない。したがって "validator" を含む名前の
-    // execution ノード（現行 Ethereum profile には存在しないが、将来の別チェーン
-    // プロファイルではあり得る）も true になる。この非対称性（beaconTargets は
-    // クライアント種別も併せて絞るのに対し、toEntity の VC 判定は名前のみ）を
-    // 既知の挙動として固定する。将来プロファイル追加時の頑健性は #246 で追跡。
-    const rethNamedValidator = obs({
+  it("ignores the compose service name entirely; only the role label matters (regression test for Issue #246)", () => {
+    // 旧実装（Issue #214）は compose サービス名に "validator" を含むかの
+    // 部分一致で判定していたため、将来の別チェーンプロファイルで
+    // "validator" を含むが実際は P2P に参加するノードの service 名
+    // （例: "tx-validator"）を誤って VC と判定しうる、という指摘が #246。
+    // ラベルベースの現在の実装では、名前に "validator" を含んでいても
+    // role ラベルが "validator" 以外なら false になることを固定する。
+    const rethNamedLikeValidator = obs({
       stableId: "chainviz-ethereum/tx-validator1",
-      labels: { "com.docker.compose.service": "tx-validator1" },
+      labels: {
+        "com.docker.compose.service": "tx-validator1",
+        [ROLE_LABEL]: "execution",
+      },
       image: "ghcr.io/paradigmxyz/reth:latest",
       processes: [{ command: "reth node", name: "reth" }],
     });
-    expect(isValidatorService(rethNamedValidator)).toBe(true);
+    expect(isValidatorService(rethNamedLikeValidator)).toBe(false);
+
+    // 逆に、compose サービス名が "validator" を一切含まなくても role
+    // ラベルが "validator" なら true になる（名前ではなくラベルが判定
+    // 材料そのものであることの確認）。
+    const namedDifferentlyButValidatorRole = obs({
+      stableId: "chainviz-ethereum/vc-a",
+      labels: {
+        "com.docker.compose.service": "vc-a",
+        [ROLE_LABEL]: "validator",
+      },
+      image: "sigp/lighthouse:latest",
+      processes: [{ command: "lighthouse vc", name: "lighthouse" }],
+    });
+    expect(isValidatorService(namedDifferentlyButValidatorRole)).toBe(true);
   });
 });
 
