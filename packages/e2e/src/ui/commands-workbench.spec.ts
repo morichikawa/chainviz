@@ -9,6 +9,7 @@
 
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { cleanupRemovableCards } from "./support/cleanup.js";
 import { serviceEntityId } from "./support/serviceIds.js";
 
 /**
@@ -62,19 +63,13 @@ test.describe.serial("UI-CMD ワークベンチ追加・削除の連鎖シナリ
   test.afterAll(async ({ browser }) => {
     // UI-CMD-07 が失敗して削除できなかった場合の後始末(残存コンテナを
     // 残さない。commands.test.ts の afterAll と同じ考え方)。
-    if (addedWorkbenchIds.length === 0) return;
-    const page = await browser.newPage();
-    try {
-      await page.goto("/");
-      for (const workbenchId of addedWorkbenchIds) {
-        const removeButton = page.getByTestId(`infra-card-remove-${workbenchId}`);
-        if ((await removeButton.count()) > 0) {
-          await removeButton.click();
-        }
-      }
-    } finally {
-      await page.close();
-    }
+    // goto直後はスナップショット反映前でボタンのcount()が0のままなことが
+    // あるため、単純なcount()判定ではなくwaitForで出現を待ち、クリック後も
+    // 実際にカードが消えるまで待ってからpage.closeする
+    // (競合状態で後始末が無効化されうる問題。Issue #233)。
+    await cleanupRemovableCards(browser, addedWorkbenchIds, {
+      timeoutMs: ADD_WORKBENCH_CARD_TIMEOUT_MS,
+    });
   });
 
   test("UI-CMD-05: ラベルを入れてワークベンチを追加できる", async ({ page }) => {
