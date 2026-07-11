@@ -124,4 +124,56 @@ describe("describeDrivenByField (driving counterpart's role -> backward field la
       glossaryKey: "engine-api",
     });
   });
+
+  it("treats an empty-string driving role as unmapped and keeps the engine-api field", () => {
+    expect(describeDrivenByField("")).toEqual({
+      labelKey: "field.drivenBy",
+      glossaryKey: "engine-api",
+    });
+  });
+});
+
+describe("intentional asymmetry between edge-kind and field descriptors (Issue #285)", () => {
+  // worklog の設計判断: エッジポップオーバー用の describeInternalLinkKind は
+  // 「役割ペアが完全に確定しなければ汎用フォールバックへ倒す」一方、
+  // InfraPopover の行用の describeDrivesField / describeDrivenByField は
+  // 「validator のときだけ新表現、相手の role が不明でも行は隠さない」。
+  // この非対称は意図的なもので、両者を同じ「厳密ペア一致」ロジックに
+  // 統一してしまう退行を検出するためのテスト。
+
+  it("hides the edge kind (fallback) but keeps the validator field when the counterpart role is unknown", () => {
+    // 同じ「validator 側の役割だけ判明、相手（beacon）の role は未設定」という
+    // 状況を両ヘルパーに与える。
+    const edgeKind = describeInternalLinkKind("validator", undefined);
+    expect(edgeKind.headingKey).toBe("edge.internalLinkGeneric");
+    expect(edgeKind.headingGlossaryKey).toBeUndefined();
+    expect(edgeKind.showsActivity).toBe(false);
+
+    // 一方で InfraPopover の駆動する側/される側の行は validator 固有の
+    // ラベルのまま（フォールバックに倒さない）。
+    expect(describeDrivesField("validator")).toEqual({
+      labelKey: "field.connectsToBeacon",
+      glossaryKey: "beacon-api",
+    });
+    expect(describeDrivenByField("validator")).toEqual({
+      labelKey: "field.validatorClient",
+      glossaryKey: "validator",
+    });
+  });
+
+  it("hides the edge kind (fallback) but keeps the engine-api field when only the consensus role is known", () => {
+    // consensus→execution も相手の role が欠けるとエッジ見出しは汎用化するが、
+    // フィールドは既存の Engine API 表現を保つ（退行防止の対称確認）。
+    expect(describeInternalLinkKind("consensus", undefined).headingKey).toBe(
+      "edge.internalLinkGeneric",
+    );
+    expect(describeDrivesField("consensus")).toEqual({
+      labelKey: "field.drivesNode",
+      glossaryKey: "engine-api",
+    });
+    expect(describeDrivenByField("consensus")).toEqual({
+      labelKey: "field.drivenBy",
+      glossaryKey: "engine-api",
+    });
+  });
 });
