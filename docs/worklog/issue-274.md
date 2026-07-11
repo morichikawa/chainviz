@@ -412,3 +412,65 @@
     永久に『同期中』」）は、issue 全体が collector 実装込みで完了する
     までチェックを付けていない（本チェックボックスは1 Issue = collector +
     frontend 両方の実装を含む粒度のため）。
+
+### 2026-07-11 Issue #274 テスト強化（異常系・境界値）
+
+- 担当: tester
+- ブランチ: issue-274-beacon-sync-display（collector・frontend の実装を
+  合流済みのブランチ上で作業）
+- 実装担当が書いた基本テスト（ハッピーパス中心）に対し、異常系・境界値・
+  データと表示の分離の観点でケースを追加した。実装コードは変更していない。
+
+#### collector 側
+
+- `beacon-api.test.ts`（`fetchBeaconSyncing`）:
+  - `head_slot` が JSON 数値（文字列でない）でもパースできること。
+  - `is_optimistic` が非 boolean の真値（文字列 `"true"`）、`el_offline` が
+    非 boolean の真値（数値 `1`）のとき、`=== true` の厳密判定により false に
+    倒れること（補助フラグの欠落を不調表示にしない方針との一貫性）。対に、
+    本物の boolean `true` はそのまま透過することも固定。
+- `beacon-sync-status.test.ts`（`resolveBeaconSyncStatus`）:
+  - 3 フラグ（is_syncing / is_optimistic / el_offline）の全 8 組み合わせを
+    網羅する `it.each` の真理値表を追加。個別 it では抜けていた FTT / TFT /
+    TTF の 3 通りを含め、「すべて false のときだけ synced」を明示的に固定。
+  - `BeaconSyncStatusCache`: forgetNode 後に同じ stableId を再観測する
+    ライフサイクル（removeNode → addNode 相当）で前回値が残らず新しい値で
+    埋まることを固定。
+- `peer-block-adapter.test.ts`（Issue #274 の結合テスト describe）:
+  - 同じ D層 tick で EL の `/metrics` 取得が失敗しても、CL(beacon)の
+    `/eth/v1/node/syncing` は影響を受けずに解決されること（`pollOneBeaconSync`
+    と `pollOneNodeInternals` が独立したキャッシュ・対象集合で互いに干渉
+    しない。逆向き（beacon 失敗時に EL が埋まる）は既存テストがカバー済み）。
+
+#### frontend 側
+
+- `nodeRoles.test.ts`（`describeHeightField`）: `"toString"` /
+  `"constructor"` / `"__proto__"` / `"hasOwnProperty"` などの継承メンバ名で
+  記述子を誤って返さないこと（Issue #215 で入れた `Object.hasOwn` ガードが
+  `describeNodeRole` 経由で `describeHeightField` にも効くことの確認）。
+- `InfraPopover.test.tsx`（Issue #274 の高さ行ラベル override describe）:
+  - consensus ノードの値が未観測窓のプレースホルダ（syncStatus="syncing" /
+    blockHeight=0）のままでも、高さ行が「ヘッドスロット」ラベル + 値 "0" を
+    出すこと（ラベル切り替えは役割で決まり値に依存しない。Issue #215 の
+    「display is role-driven, not data-driven」と同じデータ／表示ロジックの
+    分離。観測前に一瞬「ブロック高」になってから切り替わるちらつきが無い）。
+
+#### 確認
+
+- `pnpm --filter @chainviz/collector build` / `test`（1228 件、+14）、
+  `pnpm --filter @chainviz/frontend build` / `test`（1884 件、+2）が
+  いずれも成功。
+
+#### 実装担当への申し送り（潜在的なエッジ・軽微）
+
+- `fetchBeaconSyncing` の `head_slot` パースは `Number(...)` を使うため、
+  以下の異常入力を throw せず静かに受理する（`Number.isFinite` を通過する）:
+  空文字列 `""` / 空白のみ `" "` → 0、`"0x10"` → 16（16進として解釈）、
+  `"1e3"` → 1000、`null` → 0。特に空文字列・null が 0 になると、本 Issue が
+  解消しようとした「同期中 / blockHeight 0」の症状を再現しうる（欠落
+  `undefined` は NaN で throw されるのと非対称）。実運用の lighthouse は常に
+  正しい 10進文字列を返すため実害の可能性は低く、今回はテストで固定せず
+  報告に留めた（現状の挙動を「正」として enshrine すると将来の厳格化を
+  妨げるため）。より厳格にするなら 10進整数文字列の形（例: `/^\d+$/`）で
+  検証してから `Number` に渡す選択肢がある。実装を変えるかは collector
+  担当の判断に委ねる。
