@@ -264,3 +264,80 @@ export class PeerObservationCache {
      `pollPeersOnce` を 1 回失敗させて即座にエッジが消えることを一時的に
      確認してから、修正後に 1〜graceTicks 回の失敗ではエッジが維持され、
      超過後に消えることを確認する。
+
+#### 実装結果
+
+- 新規: `packages/collector/src/adapters/ethereum/peer-observation-cache.ts`
+  （`PeerObservationCache`）、`peer-observation-cache.test.ts`（単体）、
+  `consensus-peer-hysteresis.test.ts`（`pollPeersOnce` 経由の結合挙動）。
+- 変更: `packages/collector/src/adapters/ethereum/index.ts`。
+  `CONSENSUS_PEER_OBSERVATION_GRACE_TICKS = 3` を追加し、
+  `consensusPeerFailureCounts`（`Map<string, number>`）を
+  `PeerObservationCache` インスタンスへ置き換えた。
+  `fetchConsensusPeerNodes` は成功時に `recordSuccess`、失敗時に
+  `recordFailure` を呼び、`fallback` があればそれを返してエッジを
+  維持する。`logConsensusPeerPollFailure` は連続失敗回数を
+  `PeerObservationCache` から受け取る形に変え、ログの判定条件・文言は
+  変更していない。
+- 未決定事項の実装時判断（実装方針メモに記載済み）: lastGood は猶予
+  超過後も破棄せず保持し続ける実装にした。ジェネリクス化はしていない。
+  結合テストは `consensus-peer-hysteresis.test.ts` に分離した。
+- `toPeerEdges`・`world-state`・frontend・`packages/shared` は無変更。
+
+#### 修正前後の確認（バグ再現・回帰確認）
+
+- 修正前（`PeerObservationCache` 配線前の `index.ts`）で、`pollPeersOnce`
+  を beacon2 だけ失敗するモックで 2 回呼ぶ結合テストを一時的に書いて
+  実行し、1 回目の失敗で即座にエッジが消えること（`second` が `[]` に
+  なること）を確認した（このテストコード自体はコミットせず、確認後に
+  削除した）。
+- 修正後は同条件で `consensus-peer-hysteresis.test.ts` の各テスト
+  （境界値含む）が通ることを確認済み。
+- 既存 `consensus-peer-poll-failure-log.test.ts` は無変更のまま
+  （`git diff --stat` で差分なしを確認）、全 9 ケースが通ることを確認
+  （#287 のログ間引き挙動に回帰が無いことの裏付け）。
+
+#### 実機検証（docker compose）
+
+作業ディレクトリの `profiles/ethereum` には、別の worktree
+（issue-285）が起動した稼働中の `chainviz-ethereum` スタック（かつホスト側
+で稼働中の公式 collector/frontend が接続中）が既に存在していたため、
+そちらには一切手を触れず、検証専用の隔離スタックを別途起動して確認した。
+
+- 検証手順: `docker-compose.yml` を複製し、プロジェクト名
+  （`chainviz-eth288`）・サブネット（`172.30.0.0/16`）・ホスト公開ポート
+  （18545/15052）・関連する固定 IP（`RETH_P2P_IP`/`ENR_ADDRESS`/
+  `ipv4_address`）だけを書き換えた一時的な compose ファイルで
+  `docker compose -p chainviz-eth288 up -d` を実行（既存スタックとは
+  完全に独立したネットワーク・ポート・ボリュームで並行稼働）。
+- ビルド済みの本ブランチの collector を
+  `CHAINVIZ_COLLECTOR_PORT=4100 CHAINVIZ_PROXY_PORT=4101` で起動し、
+  この隔離スタックだけを観測する専用ポートで待受させた（公式インスタンス
+  の 4000/4001 とは無衝突）。WebSocket に接続する簡易スクリプトで
+  `edgeAdded`/`edgeRemoved` を実況ログした。
+- **単発の一時的失敗（`docker pause`/`unpause` で約 5 秒間 beacon2 を
+  無応答にする）**: collector ログに
+  `[ethereum] consensus peer poll failed for chainviz-eth288/beacon2:
+  ... AbortError` が実際に記録された（= 本物の観測失敗が発生した）ことを
+  確認した上で、観測側のログには `edgeAdded`/`edgeRemoved` が一切
+  発生しないこと（エッジが一切ちらつかないこと）を確認した。これが
+  Issue #288 の再現条件そのものに対する解消確認である。
+- **恒久的な不調（`docker stop` で beacon2 を継続的に停止）**: 猶予
+  （3 tick、実測で停止から約 10 秒程度）を超えたところで
+  `edgeRemoved` が実際にログされ、エッジが消えることを確認した
+  （恒久的な不調が隠蔽されないことの確認）。
+- **回復**: `docker start` で beacon2 を再開すると、Beacon API の
+  ピア再接続後に `edgeAdded` が再びログされ、エッジが復活することを
+  確認した。
+- 検証後は隔離スタックを `docker compose down -v` で完全に破棄し、
+  検証用 collector プロセスも終了させた。既存の
+  `chainviz-ethereum`（issue-285）スタックとホスト上の公式
+  collector/frontend（ポート 4000/4001/5173）が検証前後で変化していない
+  こと（コンテナ一覧・リスニングポートとも）を確認済み。
+
+#### 最終確認
+
+- `pnpm --filter @chainviz/collector build` / `pnpm --filter
+  @chainviz/collector test` とも成功（49 テストファイル・1276 テスト
+  すべて green）。
+- `pnpm exec eslint`（変更ファイルのみ対象）でエラー無し。

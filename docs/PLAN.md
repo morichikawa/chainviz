@@ -672,6 +672,13 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       (EL側と対称なconsole.errorを追加。連続失敗時は間引いてログする。
       docs/worklog/issue-287.md参照)
       [#287](https://github.com/morichikawa/chainviz/issues/287)
+- [x] P2P接続エッジが1回のタイムアウトで即座に消え表示がちらつく
+      (PeerObservationCacheを新設し、CL側ピアポーリングの連続失敗が猶予
+      〔3 tick〕以内なら直前の成功観測を代用してエッジを維持するように
+      した。猶予超過時は従来どおりエッジが消える。#287の失敗カウントは
+      統合。実機検証で修正前の再現・修正後のヒステリシス動作（単発失敗で
+      維持・猶予超過で消滅・回復）を確認済み。docs/worklog/issue-288.md参照)
+      [#288](https://github.com/morichikawa/chainviz/issues/288)
 
 ## 運用ルール（全ステップ共通）
 
