@@ -94,14 +94,17 @@ export function useContractSettlementEffects(
 
     for (const event of events) {
       const kind: ContractFlashKind = event.failed ? "failed" : "success";
-      const base = presentWalletIds.has(event.fromAddress)
-        ? buildContractCallPulseEdge(
-            event.fromAddress,
-            event.contractAddress,
-            presentWalletIds,
-            presentContractIds,
-          )
-        : null;
+      // ウォレット・コントラクトの存在判定（大文字小文字を無視した照合を
+      // 含む）は buildContractCallPulseEdge 自身に委ねる（Issue #232:
+      // 以前はここで `presentWalletIds.has(event.fromAddress)` を単純な
+      // 文字列一致で事前判定しており、チェックサム表記と生の表記の食い違い
+      // で常にウォレット不在と誤判定していた）。
+      const base = buildContractCallPulseEdge(
+        event.fromAddress,
+        event.contractAddress,
+        presentWalletIds,
+        presentContractIds,
+      );
 
       if (!base) {
         // ウォレットが不在（またはビルド不能）→ パルスを省きフラッシュのみ。

@@ -28,4 +28,18 @@ describe("describeSyncStage", () => {
   it("returns undefined for an empty string", () => {
     expect(describeSyncStage("")).toBeUndefined();
   });
+
+  it("does not leak inherited Object.prototype members for prototype-pollution-like values", () => {
+    // 回帰テスト(Issue #258。nodeRoles.ts の describeNodeRole (Issue #215)と
+    // 同種の穴): SYNC_STAGE_LABELS はオブジェクトリテラルで Object.prototype
+    // を継承しているため、ブラケットアクセスだけだと "toString" 等の継承
+    // メンバ名を誤って真値として返してしまっていた。Object.hasOwn ガードで
+    // 未知値の undefined フォールバックが崩れないことを固定する。
+    expect(describeSyncStage("toString")).toBeUndefined();
+    expect(describeSyncStage("constructor")).toBeUndefined();
+    expect(describeSyncStage("__proto__")).toBeUndefined();
+    expect(describeSyncStage("valueOf")).toBeUndefined();
+    expect(describeSyncStage("hasOwnProperty")).toBeUndefined();
+    expect(describeSyncStage("isPrototypeOf")).toBeUndefined();
+  });
 });

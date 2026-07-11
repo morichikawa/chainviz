@@ -182,7 +182,16 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
                   ? "infra-card__operate nodrag infra-card__operate--pending"
                   : "infra-card__operate nodrag"
               }
-              aria-busy={operationPending}
+              // Issue #237: 上流（App.tsx の infraNodesWithHighlight）は、
+              // 対象ワークベンチが一度も保留(true)を経験していない間、また
+              // ブロック到達のたびに isSameInfraNode の判定でノードオブジェクト
+              // が差し替わった直後は operationPending を明示的に merge せず
+              // undefined のまま渡してくることがある。React は aria-*
+              // 属性に undefined/null を渡すと属性自体を DOM から省略する
+              // ため、ここで明示的に false へフォールバックし、DOM 上に
+              // 常に aria-busy が存在する状態を保証する（上流のメモ化
+              // 最適化そのものは変更しない）。
+              aria-busy={operationPending ?? false}
               onPointerDown={(event) => event.stopPropagation()}
               onClick={() => setOperationPanelOpen((current) => !current)}
               data-testid={`infra-card-operate-${entity.id}`}
