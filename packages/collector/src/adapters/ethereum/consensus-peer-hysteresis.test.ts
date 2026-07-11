@@ -96,6 +96,13 @@ const beacon1Edge = {
   networkId: "chainviz-ethereum-consensus",
 };
 
+const beacon1To3Edge = {
+  kind: "peer",
+  fromNodeId: "chainviz-ethereum/beacon1",
+  toNodeId: "chainviz-ethereum/beacon3",
+  networkId: "chainviz-ethereum-consensus",
+};
+
 describe("EthereumAdapter consensus peer observation hysteresis (Issue #288)", () => {
   it("keeps the edge unchanged after a single failed poll (grace absorbs a lone timeout)", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
@@ -193,6 +200,97 @@ describe("EthereumAdapter consensus peer observation hysteresis (Issue #288)", (
       expect(await adapter.pollPeersOnce()).toEqual([beacon1Edge]);
     }
     // 再度超過すれば消える。
+    expect(await adapter.pollPeersOnce()).toEqual([]);
+
+    vi.restoreAllMocks();
+  });
+
+  it("recovers the edge after it actually dropped, then re-absorbs a fresh lone failure", async () => {
+    // これまでの再アーム系テストは「猶予境界までしか失敗させずに成功」だが、
+    // ここでは一度エッジが実際に消えたあとに成功で復活し、その直後の単発失敗を
+    // また猶予で吸収できることを確認する（実運用の「恒久不調 → 回復 → 一時揺らぎ」
+    // の遷移）。lastGood の破棄/再構築が壊れていると復活後の吸収が効かない。
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const nodes = [
+      { service: "beacon1", ip: "172.28.9.1" },
+      { service: "beacon2", ip: "172.28.9.2" },
+    ];
+    const poller = new DockerPoller(multiBeaconClient(() => nodes));
+    let failingIps = new Set<string>();
+    const adapter = new EthereumAdapter(poller, {
+      httpClient: beaconHttp(
+        {
+          "172.28.9.1": { peerId: "peer-1", connected: ["peer-2"] },
+          "172.28.9.2": { peerId: "peer-2", connected: ["peer-1"] },
+        },
+        () => failingIps,
+      ),
+    });
+
+    await adapter.pollPeersOnce();
+
+    // 猶予を超えるまで失敗させ、エッジを実際に消す。
+    failingIps = new Set(["172.28.9.2"]);
+    for (let i = 1; i <= CONSENSUS_PEER_OBSERVATION_GRACE_TICKS + 1; i++) {
+      await adapter.pollPeersOnce();
+    }
+    expect(await adapter.pollPeersOnce()).toEqual([]);
+
+    // 成功でエッジが復活し lastGood が作り直される。
+    failingIps = new Set();
+    expect(await adapter.pollPeersOnce()).toEqual([beacon1Edge]);
+
+    // 復活直後の単発失敗は、再び新しい猶予窓で吸収される。
+    failingIps = new Set(["172.28.9.2"]);
+    expect(await adapter.pollPeersOnce()).toEqual([beacon1Edge]);
+
+    vi.restoreAllMocks();
+  });
+
+  it("keeps independent grace windows per node (one edge drops while another survives)", async () => {
+    // あるノードの猶予超過が他ノードの猶予窓に干渉しないことを確認する。
+    // beacon1 は常に成功し beacon2・beacon3 の両方に接続を報告する。beacon2 は
+    // 早くから失敗し続けて先に猶予超過（自分の peerId が解決不能になり
+    // beacon1-beacon2 エッジが消える）、beacon3 は遅れて失敗し始めるため、
+    // 同じ poll 時点でも beacon3 側はまだ猶予内でエッジが維持される。
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const nodes = [
+      { service: "beacon1", ip: "172.28.9.1" },
+      { service: "beacon2", ip: "172.28.9.2" },
+      { service: "beacon3", ip: "172.28.9.3" },
+    ];
+    const poller = new DockerPoller(multiBeaconClient(() => nodes));
+    let failingIps = new Set<string>();
+    const adapter = new EthereumAdapter(poller, {
+      httpClient: beaconHttp(
+        {
+          "172.28.9.1": { peerId: "peer-1", connected: ["peer-2", "peer-3"] },
+          "172.28.9.2": { peerId: "peer-2", connected: ["peer-1"] },
+          "172.28.9.3": { peerId: "peer-3", connected: ["peer-1"] },
+        },
+        () => failingIps,
+      ),
+    });
+
+    // tick 1: 全員成功。両エッジが張られる。
+    expect(await adapter.pollPeersOnce()).toEqual([beacon1Edge, beacon1To3Edge]);
+
+    // beacon2 を先に失敗させ始める（tick 2〜）。
+    failingIps = new Set(["172.28.9.2"]);
+    for (let i = 1; i <= CONSENSUS_PEER_OBSERVATION_GRACE_TICKS; i++) {
+      await adapter.pollPeersOnce();
+    }
+
+    // このあと beacon2 は 4 回目（超過）、beacon3 は 1 回目（猶予内）で失敗する。
+    // beacon2-エッジは消え、beacon3-エッジは維持される。
+    failingIps = new Set(["172.28.9.2", "172.28.9.3"]);
+    expect(await adapter.pollPeersOnce()).toEqual([beacon1To3Edge]);
+
+    // beacon3 も自分の猶予（この時点で残り 2 tick）を使い切ると消える。
+    // = beacon3 の窓は beacon2 の失敗履歴に引きずられず、自分の初回失敗から
+    //   数えられている。
+    expect(await adapter.pollPeersOnce()).toEqual([beacon1To3Edge]);
+    expect(await adapter.pollPeersOnce()).toEqual([beacon1To3Edge]);
     expect(await adapter.pollPeersOnce()).toEqual([]);
 
     vi.restoreAllMocks();

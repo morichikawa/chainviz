@@ -94,6 +94,62 @@ describe("PeerObservationCache", () => {
     expect(r.fallback).toBeUndefined();
   });
 
+  it("disables hysteresis entirely when graceTicks is 0 (lower boundary)", () => {
+    // graceTicks=0 は「猶予なし」を意味する。lastGood があっても最初の失敗で
+    // すぐに fallback を返さない（consecutiveFailures=1 <= 0 が偽）ことを確認する。
+    // 猶予境界の下側での off-by-one（0 でも 1 回だけ代用してしまう等）を検出する。
+    const cache = new PeerObservationCache(0);
+    const observed = nodePeers();
+    cache.recordSuccess("chainviz-ethereum/beacon1", observed);
+
+    const r = cache.recordFailure("chainviz-ethereum/beacon1");
+    expect(r.consecutiveFailures).toBe(1);
+    expect(r.fallback).toBeUndefined();
+  });
+
+  it("returns the exact stored observation reference as fallback (no defensive copy)", () => {
+    // fallback は toPeerEdges にそのまま渡され通常観測と同一に扱われる想定なので、
+    // 保存した参照をそのまま返すこと（余計なコピーやマスクをしていないこと）を
+    // 参照同一性で確認する。
+    const cache = new PeerObservationCache(3);
+    const observed = nodePeers();
+    cache.recordSuccess("chainviz-ethereum/beacon1", observed);
+
+    const r = cache.recordFailure("chainviz-ethereum/beacon1");
+    expect(r.fallback).toBe(observed);
+  });
+
+  it("keeps each node's lastGood and count isolated across interleaved operations", () => {
+    // 既存の independence テストは片方が未成功のケースのみ。ここでは両ノードが
+    // lastGood を持ち、片方を操作しても他方の lastGood・カウントが一切
+    // 汚染されないことを確認する（エントリの取り違えによる退行を検出）。
+    const cache = new PeerObservationCache(3);
+    const observedA = nodePeers({ stableId: "chainviz-ethereum/beacon1", peerId: "peer-1" });
+    const observedB = nodePeers({ stableId: "chainviz-ethereum/beacon2", peerId: "peer-2" });
+    cache.recordSuccess("chainviz-ethereum/beacon1", observedA);
+    cache.recordSuccess("chainviz-ethereum/beacon2", observedB);
+
+    // beacon2 だけを猶予超過まで失敗させる。
+    cache.recordFailure("chainviz-ethereum/beacon2");
+    cache.recordFailure("chainviz-ethereum/beacon2");
+    cache.recordFailure("chainviz-ethereum/beacon2");
+    const b2Exceeded = cache.recordFailure("chainviz-ethereum/beacon2");
+    expect(b2Exceeded.consecutiveFailures).toBe(4);
+    expect(b2Exceeded.fallback).toBeUndefined();
+
+    // beacon1 は一度も失敗していないので、最初の失敗は count=1・自分の lastGood を
+    // 返す（beacon2 の失敗連打に一切引きずられない）。
+    const b1First = cache.recordFailure("chainviz-ethereum/beacon1");
+    expect(b1First.consecutiveFailures).toBe(1);
+    expect(b1First.fallback).toBe(observedA);
+
+    // beacon2 が成功で復帰しても beacon1 のカウントは維持される。
+    cache.recordSuccess("chainviz-ethereum/beacon2", observedB);
+    const b1Second = cache.recordFailure("chainviz-ethereum/beacon1");
+    expect(b1Second.consecutiveFailures).toBe(2);
+    expect(b1Second.fallback).toBe(observedA);
+  });
+
   it("discards entries not present in the current target set (prune)", () => {
     const cache = new PeerObservationCache(3);
     const observed = nodePeers();
