@@ -472,11 +472,11 @@ describe("EthereumAdapter.pollInfra", () => {
     expect(node.p2pRole).toBe("peer");
   });
 
-  it("marks a validator client (VC) node as p2pRole 'none' (Issue #214)", async () => {
-    // lighthouse の validator1/validator2 は compose サービス名に "validator"
-    // を含み、libp2p の P2P ネットワークに参加しない（beacon へ Beacon API で
-    // 接続するのみ）。frontend が「接続確立中」エッジの対象から除外できる
-    // よう、p2pRole は "none" になる（isValidatorService の前提条件参照）。
+  it("marks a validator client (VC) node as p2pRole 'none' (Issue #214, judged via com.chainviz.role since Issue #246)", async () => {
+    // lighthouse の validator1/validator2 は com.chainviz.role ラベルが
+    // "validator" で、libp2p の P2P ネットワークに参加しない（beacon へ
+    // Beacon API で接続するのみ）。frontend が「接続確立中」エッジの対象から
+    // 除外できるよう、p2pRole は "none" になる（isValidatorService 参照）。
     const validatorFixture: Fixture = {
       summary: {
         Id: "id-validator1",
@@ -486,6 +486,7 @@ describe("EthereumAdapter.pollInfra", () => {
         Labels: {
           "com.docker.compose.project": "chainviz-ethereum",
           "com.docker.compose.service": "validator1",
+          "com.chainviz.role": "validator",
         },
         NetworkSettings: { Networks: { chain: { IPAddress: "172.28.0.3" } } },
       },
@@ -503,7 +504,45 @@ describe("EthereumAdapter.pollInfra", () => {
     expect(node.p2pRole).toBe("none");
   });
 
-  it("matches the validator compose service name case-insensitively (Issue #214)", async () => {
+  it("does not misclassify a service whose name contains 'validator' but whose role label is not 'validator' (regression test for Issue #246)", async () => {
+    // Issue #214 時点の実装は compose サービス名への部分一致で VC を判定して
+    // いたため、将来の別チェーンプロファイルで "validator" を含む execution
+    // ノードの service 名（例: "tx-validator1"）を誤って p2pRole: "none" に
+    // 分類しうる、という指摘が #246。ラベルベースの現在の実装ではこの
+    // 誤判定が起きないことを確認する。
+    const rethNamedLikeValidatorFixture: Fixture = {
+      summary: {
+        Id: "id-tx-validator1",
+        Names: ["/chainviz-ethereum-tx-validator1-1"],
+        Image: "ghcr.io/paradigmxyz/reth:latest",
+        State: "running",
+        Labels: {
+          "com.docker.compose.project": "chainviz-ethereum",
+          "com.docker.compose.service": "tx-validator1",
+          "com.chainviz.role": "execution",
+        },
+        Ports: [{ PrivatePort: 8545, PublicPort: 8545, Type: "tcp" }],
+        NetworkSettings: { Networks: { chain: { IPAddress: "172.28.1.9" } } },
+      },
+      top: {
+        Titles: ["PID", "CMD"],
+        Processes: [["1", "reth node"]],
+      },
+    };
+    const adapter = new EthereumAdapter(
+      new DockerPoller(clientFrom([rethNamedLikeValidatorFixture])),
+    );
+    const partial = await adapter.pollInfra();
+    const node = partial.entities?.[0] as NodeEntity;
+    expect(node.clientType).toBe("reth");
+    expect(node.p2pRole).toBe("peer");
+  });
+
+  it("does not normalize the role label's case; an uppercase 'VALIDATOR' value is not treated as a VC (Issue #246)", async () => {
+    // com.chainviz.role は collector が生成する値ではなく compose /
+    // node-lifecycle.ts が付与する固定値のみを想定するため、旧実装
+    // （compose サービス名への大文字小文字を無視した部分一致）にあった
+    // ゆらぎ吸収は引き継がない。
     const validatorFixture: Fixture = {
       summary: {
         Id: "id-validator-upper",
@@ -513,6 +552,7 @@ describe("EthereumAdapter.pollInfra", () => {
         Labels: {
           "com.docker.compose.project": "chainviz-ethereum",
           "com.docker.compose.service": "VALIDATOR2",
+          "com.chainviz.role": "VALIDATOR",
         },
         NetworkSettings: { Networks: { chain: { IPAddress: "172.28.0.4" } } },
       },
@@ -526,10 +566,10 @@ describe("EthereumAdapter.pollInfra", () => {
     );
     const partial = await adapter.pollInfra();
     const node = partial.entities?.[0] as NodeEntity;
-    expect(node.p2pRole).toBe("none");
+    expect(node.p2pRole).toBe("peer");
   });
 
-  it("prefers the bootnode label over the validator service name when both are present (Issue #214)", async () => {
+  it("prefers the bootnode label over the validator role label when both are present (Issue #214)", async () => {
     // 現行構成では起こり得ない組み合わせだが、優先順位（ラベル > VC判定）を
     // 契約として固定しておく。
     const validatorFixture: Fixture = {
@@ -541,6 +581,7 @@ describe("EthereumAdapter.pollInfra", () => {
         Labels: {
           "com.docker.compose.project": "chainviz-ethereum",
           "com.docker.compose.service": "validator1",
+          "com.chainviz.role": "validator",
           "com.chainviz.p2p-role": "bootnode",
         },
         NetworkSettings: { Networks: { chain: { IPAddress: "172.28.0.5" } } },
@@ -558,10 +599,10 @@ describe("EthereumAdapter.pollInfra", () => {
     expect(node.p2pRole).toBe("bootnode");
   });
 
-  it("keeps a beacon node's p2pRole as peer even though its service name shares the lighthouse client type with validators (Issue #214)", async () => {
-    // beacon も lighthouse クライアントだが compose サービス名は "beacon1" で
-    // "validator" を含まないため、通常どおり peer のままであることを確認する
-    // （VC 判定が誤って beacon にも波及しないことの回帰防止）。
+  it("keeps a beacon node's p2pRole as peer even though it shares the lighthouse client type with validators (Issue #214, #246)", async () => {
+    // beacon も lighthouse クライアントだが com.chainviz.role は "consensus"
+    // であり "validator" ではないため、通常どおり peer のままであることを
+    // 確認する（VC 判定が誤って beacon にも波及しないことの回帰防止）。
     const beaconFixture: Fixture = {
       summary: {
         Id: "id-beacon1",
@@ -571,6 +612,7 @@ describe("EthereumAdapter.pollInfra", () => {
         Labels: {
           "com.docker.compose.project": "chainviz-ethereum",
           "com.docker.compose.service": "beacon1",
+          "com.chainviz.role": "consensus",
         },
         NetworkSettings: { Networks: { chain: { IPAddress: "172.28.2.1" } } },
       },
@@ -581,6 +623,17 @@ describe("EthereumAdapter.pollInfra", () => {
     };
     const adapter = new EthereumAdapter(
       new DockerPoller(clientFrom([beaconFixture])),
+    );
+    const partial = await adapter.pollInfra();
+    const node = partial.entities?.[0] as NodeEntity;
+    expect(node.p2pRole).toBe("peer");
+  });
+
+  it("keeps a node's p2pRole as peer when it has no com.chainviz.role label at all (Issue #246)", async () => {
+    // rethFixture は com.chainviz.role ラベルを持たない。isValidatorService
+    // は「ラベルが無い場合は false」の流儀のため、通常どおり peer になる。
+    const adapter = new EthereumAdapter(
+      new DockerPoller(clientFrom([rethFixture])),
     );
     const partial = await adapter.pollInfra();
     const node = partial.entities?.[0] as NodeEntity;
