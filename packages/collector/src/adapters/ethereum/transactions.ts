@@ -135,6 +135,38 @@ export class TransactionLifecycleTracker {
     return this.txs.get(hash);
   }
 
+  /**
+   * 既に配信済みの tx の contractEvents を再復号結果で差し替える（Issue
+   * #244）。デプロイ tx のイベントログは、発行元コントラクトのカタログ登録
+   * （`registerContractDeployment`）が `handleBlockInclusion` より後着した
+   * 場合、ブロック取り込み時点では未照合のまま raw フォールバックで確定
+   * 配信されてしまう。呼び出し側（EthereumAdapter）は、その後カタログ登録が
+   * 「未知 → 既知」への昇格を起こした時点で生ログを再復号し、この
+   * メソッドで tx の contractEvents を更新して entityUpdated 相当を
+   * 再配信する（自己修復）。
+   *
+   * - hash が未追跡（evict 済み等）なら null（エラーではない正常系。呼び出し
+   *   側は何もしない）
+   * - contractEvents が空配列なら null（意味のない更新を配信しない。
+   *   recordInclusion の「空配列はフィールド省略」という扱いと整合させる。
+   *   このメソッドは元々イベントを持っていた tx の contractEvents を差し
+   *   替えるだけなので、既存の contractEvents を空へ後退させることはしない）
+   * - それ以外は contractEvents を差し替えたエンティティを最新扱いへ入れ
+   *   直して（`put`）返す。他のフィールド（status/blockHash/contractCall 等）
+   *   は変更しない
+   */
+  updateContractEvents(
+    hash: string,
+    contractEvents: ContractEvent[],
+  ): TransactionEntity | null {
+    if (contractEvents.length === 0) return null;
+    const existing = this.txs.get(hash);
+    if (!existing) return null;
+    const updated: TransactionEntity = { ...existing, contractEvents };
+    this.put(updated);
+    return updated;
+  }
+
   private put(entity: TransactionEntity): void {
     // Map は挿入順を保つので、更新時は一度消してから入れ直し最新扱いにする。
     this.txs.delete(entity.hash);

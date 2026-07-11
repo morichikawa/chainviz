@@ -31,7 +31,7 @@ import {
 import { BlockPropagationTracker } from "./blocks.js";
 import type { ContractCatalog } from "./catalog.js";
 import { classifyContainer } from "./classify.js";
-import { ContractTracker } from "./contracts.js";
+import { ContractTracker, normalizeAddress } from "./contracts.js";
 import { decodeContractCall, decodeContractEvent } from "./decode.js";
 import { MANAGED_LABEL, P2P_ROLE_LABEL, ROLE_LABEL } from "./labels.js";
 import {
@@ -182,10 +182,39 @@ export class EthereumAdapter implements ChainAdapter {
   // 呼ばれていない）場合は undefined で、ブロック取り込み処理内のコントラクト
   // デプロイ検知は追跡はするが配信はしない。
   private onContract?: (contract: ContractEntity) => void;
+  // subscribeTransactions で登録されたコールバック。onContract と同様に
+  // フィールドとして保持する（Issue #244）。handlePendingTx/
+  // handleBlockInclusion は購読開始時のクロージャ引数としても onTx を持つが、
+  // registerContractDeployment（購読とは別の呼び出し経路）からデプロイ tx の
+  // 再復号結果を配信するにはこのフィールド経由が必要になる。onTx 未登録
+  // （subscribeTransactions が呼ばれていない）場合でも txTracker の更新自体は
+  // 行う（detectContractDeployments の「onContract 未登録でも追跡する」流儀と
+  // 同じ）。
+  private onTx?: (tx: TransactionEntity) => void;
   // 同一ブロックを複数ノードが newHeads で通知するため、included 判定用の
   // ブロック取得を 1 ブロックにつき 1 回だけに絞る（重複した RPC を避ける）。
   private readonly processedBlocks = new Set<string>();
   private readonly maxProcessedBlocks = 500;
+  // デプロイ tx のうち、ブロック取り込み時点では発行元コントラクトがカタログ
+  // 未照合だった（`decodeReceiptLogs` が raw フォールバックになった）ものの
+  // 生ログを、カタログ登録の後着（Issue #244）に備えて一時保持する。キーは
+  // `normalizeAddress` で正規化したコントラクトアドレス。
+  // `registerContractDeployment` が「未知 → カタログ既知」への昇格を検知した
+  // 時点でここから引いて再復号し、削除する（後始末は catalog 照合の適用時に
+  // 行う。詳細は bufferUndecodedDeployLogs / redecodeBufferedDeployLogs の
+  // コメント参照）。
+  private readonly undecodedDeployLogs = new Map<
+    string,
+    { txHash: string; logs: RpcLog[] }
+  >();
+  // undecodedDeployLogs の上限（挿入順で古いものから evict）。前提: GUI の
+  // deployContract 操作は逐次実行されるため、カタログ登録が未照合のまま
+  // 同時に溜まるデプロイ tx は通常 1〜数件程度にとどまる。手動 forge create
+  // 等、永遠に登録が来ないデプロイが積み重なってメモリを無制限に消費しない
+  // ようにするための保険であり、実運用のワークベンチ数・操作頻度から見て
+  // この上限に達することは通常想定されない（processedBlocks/txTracker の
+  // maxTxs と同じ考え方）。
+  private readonly maxUndecodedDeployLogs = 200;
 
   // subscribeNodeInternals（D層）の周期ループ用状態。subscribePeers と同型
   // （ノード横断で使い回す RethMetricsTracker とは別に、ループの生死管理だけ
@@ -532,6 +561,10 @@ export class EthereumAdapter implements ChainAdapter {
   async subscribeTransactions(
     onTx: (tx: TransactionEntity) => void,
   ): Promise<void> {
+    // registerContractDeployment（購読とは別の呼び出し経路）からも tx の
+    // entityUpdated を配信できるよう、フィールドとしても保持する（Issue #244。
+    // onContract と同じ流儀）。
+    this.onTx = onTx;
     const observations = await this.poller.pollOnce();
     const targets = executionTargets(observations);
 
@@ -640,12 +673,11 @@ export class EthereumAdapter implements ChainAdapter {
    * デプロイ検知（`detectContractDeployments`）は receipt.logs の復号より
    * **先に**行う（Issue #244 原因1対策）。同一ブロック内でカタログキーの
    * 事前登録（`ContractTracker.pendingCatalogKeys`）が先着していたケースは、
-   * この順序でなければ復号に間に合わない（デプロイ検知の中で
-   * pendingCatalogKeys が適用されるのが `recordDeployment` の時点なので、
-   * それより後にログ復号すると間に合う）。それでもカタログ登録
+   * この順序でなければ復号に間に合わない。それでもカタログ登録
    * （`registerContractDeployment`）自体がブロック取り込みより後着する
-   * ケース（実測で支配的）はこの順序修正だけでは直らず、別途の対処を要する
-   * （docs/worklog/issue-244.md 参照）。
+   * ケース（実測で支配的）は、`bufferUndecodedDeployLogs` が生ログを保持し、
+   * 登録の後着時に `redecodeBufferedDeployLogs` が再復号・再配信する
+   * （原因2対策）。
    */
   private async handleBlockInclusion(
     rpcUrl: string,
@@ -681,6 +713,7 @@ export class EthereumAdapter implements ChainAdapter {
         })),
       );
       for (const entity of changed) onTx(entity);
+      this.bufferUndecodedDeployLogs(receipts);
     } catch (err) {
       // 取得に失敗した場合も処理済みマークを外し、後続ノードからの通知で
       // 再試行できるようにする（さもないと当該ブロックの tx が pending のまま固まる）。
@@ -728,10 +761,17 @@ export class EthereumAdapter implements ChainAdapter {
    * いない場合は登録だけを保留し、コールバックは呼ばない（後続の
    * handleBlockInclusion がデプロイを検知した時点で、保留されたカタログキーを
    * 適用した状態の entityAdded がそのまま配信される）。
+   *
+   * この「未知 → カタログ既知」への昇格が起きた場合、対応するデプロイ tx の
+   * 生ログが `bufferUndecodedDeployLogs` で保持されていれば併せて再復号し、
+   * tx の entityUpdated も再配信する（Issue #244 原因2対策。自己修復）。
+   * 配信順序はコントラクトの entityUpdated → tx の entityUpdated の順を保つ。
    */
   registerContractDeployment(address: string, contractKey: string): void {
     const updated = this.contractTracker.registerDeployment(address, contractKey);
-    if (updated) this.onContract?.(updated);
+    if (!updated) return;
+    this.onContract?.(updated);
+    this.redecodeBufferedDeployLogs(updated.address);
   }
 
   /**
@@ -776,6 +816,60 @@ export class EthereumAdapter implements ChainAdapter {
     return logs.map((log) =>
       decodeContractEvent(this.contractTracker.getCatalogEntry(log.address), log),
     );
+  }
+
+  /**
+   * デプロイ tx のうち、発行元コントラクト（receipt.contractAddress）が
+   * ブロック取り込みの時点でカタログ未照合だったものの生ログを保持する
+   * （Issue #244 原因2対策）。カタログ登録（`registerContractDeployment`）が
+   * ブロック取り込みより後着した場合、`decodeReceiptLogs` は raw
+   * フォールバックで確定配信されてしまう。ここで保持しておき、後着した登録が
+   * 「未知 → カタログ既知」への昇格を起こした時点で `redecodeBufferedDeployLogs`
+   * が再復号する。追加の RPC 呼び出しはしない（receipt.logs は既に手元に
+   * ある。Issue #86 の方針を維持）。
+   *
+   * カタログ照合済み（初回から復号できた）デプロイ tx や、ログを持たない tx
+   * は保持不要なので対象外（`getCatalogEntry` が値を返す = 既に復号済み）。
+   * 本メソッドは `detectContractDeployments` の後（デプロイ検知が終わり
+   * `pendingCatalogKeys` の先着適用が済んだ後）に呼ぶことを前提とする。
+   */
+  private bufferUndecodedDeployLogs(receipts: RpcTransactionReceipt[]): void {
+    for (const r of receipts) {
+      if (!r.contractAddress) continue;
+      if (r.logs.length === 0) continue;
+      if (this.contractTracker.getCatalogEntry(r.contractAddress)) continue;
+      const address = normalizeAddress(r.contractAddress);
+      this.undecodedDeployLogs.set(address, {
+        txHash: r.transactionHash,
+        logs: r.logs,
+      });
+      while (this.undecodedDeployLogs.size > this.maxUndecodedDeployLogs) {
+        const oldest = this.undecodedDeployLogs.keys().next().value;
+        if (oldest === undefined) break;
+        this.undecodedDeployLogs.delete(oldest);
+      }
+    }
+  }
+
+  /**
+   * `registerContractDeployment` で「未知 → カタログ既知」への昇格が起きた
+   * 際に呼ばれる。`address`（正規化済み。`ContractTracker.registerDeployment`
+   * が返す `ContractEntity.address`）に対応する生ログが
+   * `bufferUndecodedDeployLogs` で保持されていれば再復号し、
+   * `TransactionLifecycleTracker.updateContractEvents` で tx の
+   * contractEvents を差し替えたうえで onTx へ渡す（Issue #244 原因2対策。
+   * 自己修復）。保持していなければ何もしない。onTx 未登録
+   * （subscribeTransactions が呼ばれていない）場合でも txTracker の更新自体は
+   * 行う（detectContractDeployments の「onContract 未登録でも追跡する」流儀と
+   * 同じ）。適用したエントリはバッファから削除する（後始末）。
+   */
+  private redecodeBufferedDeployLogs(address: string): void {
+    const buffered = this.undecodedDeployLogs.get(address);
+    if (!buffered) return;
+    this.undecodedDeployLogs.delete(address);
+    const events = this.decodeReceiptLogs(buffered.logs);
+    const updatedTx = this.txTracker.updateContractEvents(buffered.txHash, events);
+    if (updatedTx) this.onTx?.(updatedTx);
   }
 
   // --- D 層: ノード内部（Issue #185/#186） ---
