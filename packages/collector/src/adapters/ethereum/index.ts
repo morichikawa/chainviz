@@ -636,6 +636,16 @@ export class EthereumAdapter implements ChainAdapter {
    * 反映する（Issue #162）。追加の RPC 呼び出しは発生しない（logs は既に
    * 呼んでいる eth_getBlockReceipts のレスポンスに含まれる。Issue #86 の
    * 方針を維持）。
+   *
+   * デプロイ検知（`detectContractDeployments`）は receipt.logs の復号より
+   * **先に**行う（Issue #244 原因1対策）。同一ブロック内でカタログキーの
+   * 事前登録（`ContractTracker.pendingCatalogKeys`）が先着していたケースは、
+   * この順序でなければ復号に間に合わない（デプロイ検知の中で
+   * pendingCatalogKeys が適用されるのが `recordDeployment` の時点なので、
+   * それより後にログ復号すると間に合う）。それでもカタログ登録
+   * （`registerContractDeployment`）自体がブロック取り込みより後着する
+   * ケース（実測で支配的）はこの順序修正だけでは直らず、別途の対処を要する
+   * （docs/worklog/issue-244.md 参照）。
    */
   private async handleBlockInclusion(
     rpcUrl: string,
@@ -652,6 +662,7 @@ export class EthereumAdapter implements ChainAdapter {
         this.processedBlocks.delete(blockHash);
         return;
       }
+      this.detectContractDeployments(receipts);
       const changed = this.txTracker.recordInclusion(
         blockHash,
         receipts.map((r) => ({
@@ -663,12 +674,13 @@ export class EthereumAdapter implements ChainAdapter {
           // createdContractAddress へマッピングされる（Issue #160）。
           contractAddress: r.contractAddress,
           // 発行元（log.address）ごとにカタログ照合を試み、可能なら ABI で
-          // 復号する（Issue #162）。
+          // 復号する（Issue #162）。デプロイ検知を先に済ませているため、
+          // カタログキーが事前登録済み（pendingCatalogKeys 先着）だった
+          // デプロイ tx はこの時点で復号できる（Issue #244 原因1対策）。
           contractEvents: this.decodeReceiptLogs(r.logs),
         })),
       );
       for (const entity of changed) onTx(entity);
-      this.detectContractDeployments(receipts);
     } catch (err) {
       // 取得に失敗した場合も処理済みマークを外し、後続ノードからの通知で
       // 再試行できるようにする（さもないと当該ブロックの tx が pending のまま固まる）。
