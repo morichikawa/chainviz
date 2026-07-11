@@ -50,4 +50,62 @@ describe("computePopoverPosition (Issue #245)", () => {
     );
     expect(position).toEqual({ top: -2, left: -30 });
   });
+
+  it("places the popover flush against the anchor when gapPx is 0", () => {
+    const position = computePopoverPosition(
+      { top: 10, left: 20, right: 120, bottom: 40 },
+      0,
+    );
+    expect(position).toEqual({ top: 40, left: 20 });
+  });
+
+  it("applies a negative gapPx verbatim (overlaps the anchor by |gapPx|)", () => {
+    // gapPx は既存 CSS の calc(100% + Npx) をそのまま移したもの。負値でも
+    // クランプせずそのまま加算する（呼び出し側の指定を尊重する純粋関数）。
+    const position = computePopoverPosition(
+      { top: 10, left: 20, right: 120, bottom: 40 },
+      -5,
+    );
+    expect(position).toEqual({ top: 35, left: 20 });
+  });
+
+  it("preserves sub-pixel (fractional) coordinates without rounding", () => {
+    // getBoundingClientRect はズーム時などに小数を返す。丸めずそのまま通す。
+    const position = computePopoverPosition(
+      { top: 10.4, left: 20.6, right: 120.6, bottom: 40.25 },
+      8.5,
+    );
+    expect(position).toEqual({ top: 48.75, left: 20.6 });
+  });
+
+  it(
+    "does NOT clamp to the viewport when the anchor sits near the right/bottom " +
+      "edge (characterization: overflow is left to the browser, matching the " +
+      "original position:absolute CSS which also did not clamp)",
+    () => {
+      // アンカーが画面右下端に近くても座標を折り返さない。従来の
+      // position:absolute; top: calc(100%); left: 0; もはみ出しを許容していた
+      // ため、挙動を変えないことを固定する（クランプが必要になったら別 Issue）。
+      const nearRightBottom = computePopoverPosition(
+        { top: 700, left: 1900, right: 2000, bottom: 740 },
+        8,
+      );
+      expect(nearRightBottom).toEqual({ top: 748, left: 1900 });
+    },
+  );
+
+  it("does not mutate the input anchor rect", () => {
+    const anchorRect = { top: 10, left: 20, right: 120, bottom: 40 };
+    const snapshot = { ...anchorRect };
+    computePopoverPosition(anchorRect, 8);
+    expect(anchorRect).toEqual(snapshot);
+  });
+
+  it("returns a fresh object each call (no shared/cached reference)", () => {
+    const rect = { top: 10, left: 20, right: 120, bottom: 40 } as const;
+    const a = computePopoverPosition(rect, 8);
+    const b = computePopoverPosition(rect, 8);
+    expect(a).toEqual(b);
+    expect(a).not.toBe(b);
+  });
 });
