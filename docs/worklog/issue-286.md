@@ -500,3 +500,69 @@ scratchpad 上の独立 compose プロジェクト(本物の `chainviz-ethereum`
     あるが、スクリプト側の `sample_window_sec=$(( 2 * ... ))` 付近の
     コメントには「なぜ 1 周期ではなく 2 周期か」までは書かれていない。
     次にこの箇所を触る際にコメントを一言足すとよい(挙動には影響しない)
+
+### 2026-07-11 Issue #286 QA 実機検証(qa)
+
+- 担当: qa
+- ブランチ: issue-286-genesis-reuse-guard
+- 判定: **合格**
+
+本物の `chainviz-ethereum` スタック(別 worktree で稼働中)には一切
+触れず、scratchpad 上に独立した compose プロジェクト(`name: qa286-eth`、
+サブネット `172.31.0.0/16`、静的 IP を `172.31.x.x` へ、公開ポートを
+`18545`/`15052` へ退避)をコピーして検証した。検証前後で
+`docker compose ls` の `chainviz-ethereum`(running(7))と稼働コンテナ数
+(動的ノード含め 10)に変化が無いことを確認済み。検証後は
+`docker compose down -v` で qa286-eth のコンテナ・ボリューム・ネットワークを
+完全に撤去した。
+
+環境: Docker 29.1.3 / Compose 2.40.3、20 vCPU。genesis 年齢を偽装する際は
+`/data/.genesis-timestamp` を直接書き換える手段を用いた(本番スクリプトへの
+検証用分岐の追加はしていない)。既定しきい値(MAX_REBUILD_GAP=600秒、
+LIVE_THRESHOLD=60秒、サンプリング窓 2×HEARTBEAT_INTERVAL=20秒)のまま実施。
+
+- **ベースライン(健全起動)**: 初回起動でチェーンが立ち上がり、
+  `eth_blockNumber` が 0xa→0x23、beacon `/eth/v1/node/syncing` の
+  `head_slot` が 14→39、`sync_distance` 0、`is_syncing` false で
+  進行し続けることを確認した。
+- **検証1(要求#1 = 回帰: 若い genesis の再起動で不要な再生成をしない)**:
+  genesis 年齢 129 秒の稼働中スタックを `docker compose down`(`-v` なし)→
+  `up -d`。genesis ログは `genesis 年齢 152秒 <= MAX_REBUILD_GAP(600秒)
+  ...再生成せずスキップする`(ステップ3 で即スキップ。停止直後で古い
+  ハートビートが残っていてもその新鮮さを判定入力にしない)。
+  `/data/.genesis-timestamp` が再起動前後で不変(1783779783)であること、
+  ノードが datadir を作り直して genesis から短時間で追いつき
+  `eth_blockNumber` が 0x7→0x16 と進行することを確認した。不要な再生成なし。
+- **検証2(要求#2 = #56 の回帰保護: genesis 年齢が古く見えてもノードが
+  実際に生きていれば再生成しない)**: 稼働中スタックの
+  `.genesis-timestamp` のみ 1 時間前(now-3600)に偽装して `up -d`。
+  ログは `genesis 年齢 3601秒 > MAX_REBUILD_GAP...最新ハートビートの経過
+  5秒 <= LIVE_THRESHOLD(60秒)...20秒 サンプリング...` →
+  `サンプリング中にハートビート mtime が前進した(1783780016 → 1783780036)
+  ...再生成をスキップする(Issue #56 の保護)`。genesis タイムスタンプが
+  偽装値のまま不変、`beacon1` の `State.StartedAt` が不変(コンテナ非再作成)、
+  `eth_blockNumber` が 0x29→0x38 と途切れず進行することを確認した。
+  誤って再生成しないこと(false positive なし)を実機で確認。
+- **検証3(要求#3 = #286 本命: genesis が古く、かつノードが実際に停止して
+  いれば再生成する)**: 上記の偽装した古い genesis のスタックを `down`
+  (全ノード停止)→ 直後に `up -d`。ログは `genesis 年齢 3663秒 >
+  MAX_REBUILD_GAP...ハートビート経過 7秒 <= LIVE_THRESHOLD...サンプリング...`
+  → `サンプリング中にハートビート mtime が前進しなかった
+  (1783780076 → 1783780076)...再生成する(...Issue #286 の本命ケース)`
+  → `前回の生成物を破棄` → `EL + CL genesis を生成` → `完了`。
+  `.genesis-timestamp` が現在時刻(age 19秒)に更新され、チェーンが
+  slot 0 から健全に立ち上がり `eth_blockNumber` 0x0→0xe、`head_slot`
+  0→14、`sync_distance` 0、beacon1 CPU 5.3% / reth1 CPU 2.6%(detective
+  が観測した約900%の恒久スピンは発生せず)であることを確認した。
+- **フォールバック(既存ボリューム対策の追加確認)**: `.genesis-timestamp`
+  を削除し `/data/.genesis-complete` の mtime を 700 秒前にした(本変更前に
+  生成されたボリュームを模擬)状態で `down`→`up -d`。ログに
+  `.genesis-timestamp が無い...完了マーカー...へフォールバックする` が
+  出力され、そこから算出した `genesis 年齢 712秒 > MAX_REBUILD_GAP` で
+  サンプリング→前進なし→再生成に至ること、再生成後は新しい
+  `.genesis-timestamp` が書き出され(以降は一次情報源に戻る)ことを確認した。
+
+要求された検証項目(#1 回帰なし、#2 誤再生成なし、#3 正しい再生成)と
+`docs/PLAN.md` の完了条件(修正後の解消・#56/#148 の既存保護の回帰なし)を
+実機で満たしていることを確認した。修正前の再現(高 CPU ハング)は
+node-env の V1 で確認済みであり、本 QA では修正後の解消を独立に再現した。
