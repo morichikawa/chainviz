@@ -605,7 +605,7 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       [#221](https://github.com/morichikawa/chainviz/issues/221)
 - [x] ノード/ワークベンチ削除中に進行中であることを示すフィードバックが無い
       [#222](https://github.com/morichikawa/chainviz/issues/222)
-- [ ] パッケージごとにREADME(設計情報)を用意し、タスクのたびに更新する
+- [x] パッケージごとにREADME(設計情報)を用意し、タスクのたびに更新する
       運用にしたい
       [#223](https://github.com/morichikawa/chainviz/issues/223)
 - [ ] docs/CONCEPT.md・docs/ARCHITECTURE.mdが文章のみで分かりにくいので
