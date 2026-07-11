@@ -82,3 +82,39 @@ describeブロックに、Issue #237のoperateボタン向けテスト
   同一パターンのoperateボタン側と挙動を揃える意味で厳密化する）。
 - `pnpm --filter @chainviz/frontend build` / `pnpm --filter @chainviz/frontend
   test`が全て通ることを確認した。
+
+#### テスト強化（tester）
+
+実装担当が追加した基本テスト（`InfraNodeCard.test.tsx`の削除ボタン
+aria-busyの`undefined`/`true`/`false`各値と`undefined → true → undefined`
+遷移）を土台に、以下の観点で追加・確認した。
+
+- 削除ボタン（Issue #263）と操作ボタン（Issue #237）が同一のワークベンチ
+  カード上に同時に存在する状態で、2つの`aria-busy`が相互に干渉しないこと
+  を横断的に検証する新規テストファイル
+  `packages/frontend/src/entities/InfraNodeCardPendingAria.test.tsx`を追加
+  した。個別ボタンのaria-busy挙動は既存の2ファイル（`InfraNodeCard.test.tsx`
+  ・`InfraNodeCardOperationButton.test.tsx`）がカバー済みのため、新ファイルは
+  「同一カード上での独立性」という関心事だけに絞った（1ファイル1責務）。
+  網羅した組み合わせ:
+  - 両方未指定（undefined/undefined）→ 両方 false
+  - removalPending=true / operationPending=undefined → 削除のみ true、操作は false
+  - removalPending=undefined / operationPending=true → 削除は false、操作のみ true
+  - 両方 true → 両方 true（排他ではなく独立）
+  - 両方 明示 false → 両方 false（`?? false`が明示falseを書き換えない）
+  - 明示 false / true の混在 → それぞれ独立に反映
+  - 片方だけが undefined ⇄ true と揺れる再レンダー列で、もう片方の
+    aria-busy が巻き添えで欠落・変化しないこと（上流のオブジェクト差し替えを
+    模した遷移テスト）
+- 追加した独立性テストが実際に元の欠落バグを検出できることを、
+  `InfraNodeCard.tsx`の削除ボタンを`aria-busy={removalPending ?? false}`から
+  `aria-busy={removalPending}`へ一時的に戻した状態で確認した（新ファイルの
+  8件中3件が失敗）。確認後に修正を元へ戻した。
+- 要件3（他のaria属性に同種の欠落パターンが残っていないか）の最終再走査を
+  行った。`InfraNodeCard.tsx`内の動的なaria属性は2つの`aria-busy`のみで、
+  いずれも今回・Issue #237で`?? false`済み。`aria-label`（削除ボタン）は
+  三項演算子で常に`t()`の文字列に解決されるため欠落しない。`aria-hidden`
+  （同期ドット・各スピナー）はすべて静的な文字列リテラルであり、undefined/null
+  になり得ない。したがって同種の属性欠落パターンは他に存在しない。
+- `pnpm --filter @chainviz/frontend test`（118ファイル・1829件）と
+  `pnpm --filter @chainviz/frontend build`がいずれも通ることを確認した。
