@@ -25,9 +25,11 @@ import type {
   ContainerProcess,
 } from "../../docker/types.js";
 import {
+  fetchBeaconSyncing,
   fetchConnectedPeerIds,
   fetchNodePeerId,
 } from "./beacon-api.js";
+import { BeaconSyncStatusCache, resolveBeaconSyncStatus } from "./beacon-sync-status.js";
 import { BlockPropagationTracker } from "./blocks.js";
 import type { ContractCatalog } from "./catalog.js";
 import { classifyContainer } from "./classify.js";
@@ -173,6 +175,12 @@ export class EthereumAdapter implements ChainAdapter {
   // 行う（docs/ARCHITECTURE.md §7.3「情報源はアダプタ内のキャッシュとし、
   // pollInfra がキャッシュから値を埋める」）。
   private readonly syncStatusCache = new NodeSyncStatusCache();
+  // D層観測（Beacon API の自己申告同期状態）から CL（beacon）ノードの
+  // NodeEntity.syncStatus/blockHeight を解決するためのキャッシュ
+  // （Issue #274）。syncStatusCache（EL 用）とは対象ノード集合が互いに素で
+  // 判定ロジックも異なるため別のキャッシュに分ける。書き込み・読み出しの
+  // タイミングは syncStatusCache と同じ。
+  private readonly beaconSyncStatusCache = new BeaconSyncStatusCache();
 
   private peerTimer?: ReturnType<typeof setTimeout>;
   private peerLoopRunning = false;
@@ -225,6 +233,10 @@ export class EthereumAdapter implements ChainAdapter {
   // 消えた（removeNode 等）場合に RethMetricsTracker.forgetNode() で前回値を
   // 破棄するために保持する（Issue #185 の申し送り）。
   private trackedNodeInternalsIds = new Set<string>();
+  // 前回 tick で観測できた beacon（CL）ノードの stableId 集合（Issue #274）。
+  // trackedNodeInternalsIds（EL 用）とは対象が互いに素なので別集合で追跡
+  // する（混ぜると forgetNode 先のキャッシュが曖昧になる）。
+  private trackedBeaconSyncIds = new Set<string>();
 
   constructor(
     private readonly poller: DockerPoller,
@@ -266,11 +278,12 @@ export class EthereumAdapter implements ChainAdapter {
    * 「独立した購読ではなく A 層のポーリングで毎回解決する」流儀。
    * docs/ARCHITECTURE.md §7.3）。
    *
-   * D層（Issue #187）: `NodeEntity.syncStatus`/`blockHeight` も、
+   * D層（Issue #187 / #274）: `NodeEntity.syncStatus`/`blockHeight` も、
    * subscribeNodeInternals（D層の周期ポーリング）が別途更新している
-   * `syncStatusCache`（reth の Finish checkpoint 由来）から `toEntity()` が
-   * 毎回埋める。書き手は本メソッド（applyInfra 経由）1 本のまま変わらない
-   * （docs/worklog/issue-187.md 参照）。
+   * `syncStatusCache`（EL、reth の Finish checkpoint 由来）/
+   * `beaconSyncStatusCache`（CL、Beacon API の自己申告同期状態由来）から
+   * `toEntity()` が毎回埋める。書き手は本メソッド（applyInfra 経由）1 本の
+   * まま変わらない（docs/worklog/issue-187.md・issue-274.md 参照）。
    */
   async pollInfra(): Promise<Partial<WorldStateSnapshot>> {
     const observations = await this.poller.pollOnce();
@@ -350,12 +363,18 @@ export class EthereumAdapter implements ChainAdapter {
       };
     }
 
-    // 同期状態・ブロック高は D層観測（reth の Finish checkpoint、Issue #187）
-    // のキャッシュから埋める。まだ観測が無い（CL ノード・観測前・reth の
-    // バージョン差で Finish メトリクス自体が無い等）場合は既存のプレースホルダ
-    // のまま（headBlockHash は本Issueのスコープ外で常に空文字列。
-    // docs/ARCHITECTURE.md §7.3、docs/worklog/issue-187.md 参照）。
-    const resolvedSync = this.syncStatusCache.resolve(obs.stableId);
+    // 同期状態・ブロック高は D層観測のキャッシュから埋める。EL ノードは
+    // reth の Finish checkpoint（syncStatusCache、Issue #187）、CL ノードは
+    // Beacon API の自己申告同期状態（beaconSyncStatusCache、Issue #274）。
+    // 両キャッシュの対象ノード集合は互いに素なので参照順に意味は無い。
+    // どちらにも観測が無い（観測前・reth のバージョン差で Finish メトリクス
+    // 自体が無い・lighthouse 以外の CL クライアントで is_syncing が読めない
+    // 等）場合は既存のプレースホルダのまま（headBlockHash は本Issueのスコープ
+    // 外で常に空文字列。docs/ARCHITECTURE.md §7.3、docs/worklog/issue-187.md・
+    // issue-274.md 参照）。
+    const resolvedSync =
+      this.syncStatusCache.resolve(obs.stableId) ??
+      this.beaconSyncStatusCache.resolve(obs.stableId);
     const roleLabel = obs.labels[ROLE_LABEL];
     return {
       ...infra,
@@ -927,6 +946,11 @@ export class EthereumAdapter implements ChainAdapter {
    * - `internals` が観測できた場合、`syncStatusCache`（Issue #187。
    *   `NodeEntity.syncStatus`/`blockHeight` の情報源）も同時に更新する。
    *   読み出しは pollInfra（A層）が別途行う。
+   *
+   * Issue #274: 同じ tick で、対象の beacon（CL）ノードごとに
+   * `pollOneBeaconSync` を並行に呼び、Beacon API の自己申告同期状態から
+   * `beaconSyncStatusCache` を更新する（EL 用の対象集合・追跡集合とは
+   * 独立。取得失敗はそのノードだけ落として前回値を保持する）。
    */
   private async pollNodeInternalsOnce(
     handlers: NodeInternalsHandlers,
@@ -946,11 +970,27 @@ export class EthereumAdapter implements ChainAdapter {
     }
     this.trackedNodeInternalsIds = currentIds;
 
-    await Promise.all(
-      targets.map((target) =>
+    // Issue #274: CL（beacon）側の同期観測も同じ D層ループに相乗りさせる
+    // （EL 側と同じ「書き込みは D層ループ、読み出しは toEntity」構造。
+    // beaconTargets は既存のピアポーリングでも使っている選別関数で、
+    // validator は対象に含まれない）。
+    const beaconSyncTargets = beaconTargets(observations);
+    const currentBeaconSyncIds = new Set(
+      beaconSyncTargets.map((t) => t.stableId),
+    );
+    for (const id of this.trackedBeaconSyncIds) {
+      if (!currentBeaconSyncIds.has(id)) {
+        this.beaconSyncStatusCache.forgetNode(id);
+      }
+    }
+    this.trackedBeaconSyncIds = currentBeaconSyncIds;
+
+    await Promise.all([
+      ...targets.map((target) =>
         this.pollOneNodeInternals(target, observations, obsByStableId, handlers),
       ),
-    );
+      ...beaconSyncTargets.map((target) => this.pollOneBeaconSync(target)),
+    ]);
   }
 
   /** 1 execution ノード分のノード内部メトリクス観測を処理する。 */
@@ -996,6 +1036,32 @@ export class EthereumAdapter implements ChainAdapter {
       calls: result.calls,
       observedAt: this.now(),
     });
+  }
+
+  /**
+   * 1 beacon（CL）ノード分の同期状態観測を処理する（Issue #274）。Beacon API
+   * の `/eth/v1/node/syncing` を取得し、`resolveBeaconSyncStatus` で
+   * `NodeEntity.syncStatus`/`blockHeight` へ変換して `beaconSyncStatusCache`
+   * を更新する。取得・パース失敗はそのノードだけ落として stableId と実際の
+   * エラー内容をログし、キャッシュは前回値を保持する（次周期で回復する
+   * 一時的な縮退。`pollOneNodeInternals` と同じ方針。ピアループ（B層）とは
+   * 独立しているため、同期観測の失敗がピア情報の取得を巻き込まない）。
+   */
+  private async pollOneBeaconSync(target: BeaconTarget): Promise<void> {
+    let snapshot;
+    try {
+      snapshot = await fetchBeaconSyncing(this.http, target.baseUrl);
+    } catch (err) {
+      console.error(
+        `[ethereum] beacon syncing poll failed for ${target.stableId}:`,
+        err,
+      );
+      return;
+    }
+    this.beaconSyncStatusCache.set(
+      target.stableId,
+      resolveBeaconSyncStatus(snapshot),
+    );
   }
 
   /**

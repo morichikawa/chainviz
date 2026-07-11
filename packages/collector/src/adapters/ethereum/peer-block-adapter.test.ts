@@ -7,6 +7,7 @@ import type {
   TransactionEntity,
 } from "@chainviz/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { BEACON_API_PORT } from "./beacon-api.js";
 import { DockerPoller } from "../../docker/poller.js";
 import type {
   DockerClient,
@@ -102,9 +103,30 @@ function gethFixture(service: string, ip: string): Fixture {
   };
 }
 
-/** baseUrl 単位に identity / peers レスポンスを差し込める HttpClient。 */
+/**
+ * baseUrl 単位に identity / peers / syncing レスポンスを差し込める
+ * HttpClient。`syncing` を省略したベースは `/eth/v1/node/syncing` に既定で
+ * 健全な同期済みレスポンス（is_syncing/is_optimistic/el_offline すべて
+ * false、head_slot 0）を返す（D層ループ（subscribeNodeInternals、
+ * Issue #274）が beacon ノードの同期状態も毎 tick 取得するため、identity/
+ * peers しか使わない既存のテストが実ネットワークへフォールバックしない
+ * ようにする既定値）。特定の同期状態を検証したいテストは `syncing` で
+ * 上書きする。
+ */
 function beaconHttp(
-  byBase: Record<string, { peerId: string; connected: string[] }>,
+  byBase: Record<
+    string,
+    {
+      peerId: string;
+      connected: string[];
+      syncing?: {
+        isSyncing?: boolean;
+        isOptimistic?: boolean;
+        elOffline?: boolean;
+        headSlot?: number | string;
+      };
+    }
+  >,
 ): HttpClient {
   return {
     getJson: vi.fn(async (url: string) => {
@@ -120,10 +142,35 @@ function beaconHttp(
             })),
           };
         }
+        if (url === `${base}/eth/v1/node/syncing`) {
+          const s = data.syncing ?? {};
+          return {
+            data: {
+              is_syncing: s.isSyncing ?? false,
+              is_optimistic: s.isOptimistic ?? false,
+              el_offline: s.elOffline ?? false,
+              head_slot: String(s.headSlot ?? 0),
+            },
+          };
+        }
       }
       throw new Error(`unexpected url ${url}`);
     }) as unknown as HttpClient["getJson"],
   };
+}
+
+/**
+ * subscribeNodeInternals（D層、Issue #186/#274）のテストで、beacon の同期
+ * 状態取得（`/eth/v1/node/syncing`）を実ネットワークにフォールバックさせない
+ * ための既定 HttpClient。identity/peers は使わない前提（peerId はダミー値）
+ * で、同期状態は `beaconHttp` の既定（健全・synced/head_slot 0）を返す。
+ */
+function defaultBeaconSyncHttp(...ips: string[]): HttpClient {
+  return beaconHttp(
+    Object.fromEntries(
+      ips.map((ip) => [`http://${ip}:${BEACON_API_PORT}`, { peerId: "peer", connected: [] }]),
+    ),
+  );
 }
 
 /**
@@ -1924,6 +1971,10 @@ describe("EthereumAdapter.subscribeNodeInternals (Issue #186)", () => {
     });
     const adapter = new EthereumAdapter(poller, {
       rethMetricsClient,
+      // Issue #274: 同じ D層 tick が beacon1 の同期状態も取得しにいくため、
+      // 実ネットワークへフォールバックしないようモック HttpClient を渡す
+      // （このテスト自体は同期状態の値を検証しないので既定の健全値でよい）。
+      httpClient: defaultBeaconSyncHttp("172.28.2.1"),
       nodeInternalsPollIntervalMs: 3000,
     });
     const onInternals = vi.fn<NodeInternalsHandlers["onInternals"]>();
@@ -1957,6 +2008,9 @@ describe("EthereumAdapter.subscribeNodeInternals (Issue #186)", () => {
     });
     const adapter = new EthereumAdapter(poller, {
       rethMetricsClient,
+      // Issue #274: 実ネットワークへフォールバックしないようモックする
+      // （このテストは beacon の同期状態そのものは検証しない）。
+      httpClient: defaultBeaconSyncHttp("172.28.2.1"),
       nodeInternalsPollIntervalMs: 3000,
       now: () => 999,
     });
@@ -2028,6 +2082,7 @@ describe("EthereumAdapter.subscribeNodeInternals (Issue #186)", () => {
     });
     const adapter = new EthereumAdapter(poller, {
       rethMetricsClient,
+      httpClient: defaultBeaconSyncHttp("172.28.2.1"),
       nodeInternalsPollIntervalMs: 3000,
     });
     const onInternals = vi.fn<NodeInternalsHandlers["onInternals"]>();
@@ -2058,6 +2113,7 @@ describe("EthereumAdapter.subscribeNodeInternals (Issue #186)", () => {
     });
     const adapter = new EthereumAdapter(poller, {
       rethMetricsClient,
+      httpClient: defaultBeaconSyncHttp("172.28.2.1"),
       nodeInternalsPollIntervalMs: 3000,
     });
 
@@ -2094,6 +2150,7 @@ describe("EthereumAdapter.subscribeNodeInternals (Issue #186)", () => {
     };
     const adapter = new EthereumAdapter(poller, {
       rethMetricsClient,
+      httpClient: defaultBeaconSyncHttp("172.28.2.1"),
       nodeInternalsPollIntervalMs: 3000,
     });
     const onInternals = vi.fn<NodeInternalsHandlers["onInternals"]>();
@@ -2175,6 +2232,7 @@ describe("EthereumAdapter.subscribeNodeInternals (Issue #186)", () => {
     });
     const adapter = new EthereumAdapter(poller, {
       rethMetricsClient,
+      httpClient: defaultBeaconSyncHttp("172.28.2.1", "172.28.2.2"),
       nodeInternalsPollIntervalMs: 3000,
       now: () => 999,
     });
@@ -2231,6 +2289,7 @@ describe("EthereumAdapter.subscribeNodeInternals (Issue #186)", () => {
     });
     const adapter = new EthereumAdapter(new DockerPoller(client), {
       rethMetricsClient,
+      httpClient: defaultBeaconSyncHttp("172.28.2.1"),
       nodeInternalsPollIntervalMs: 3000,
       now: () => 999,
     });
@@ -2426,11 +2485,13 @@ describe("EthereumAdapter syncStatus/blockHeight from D層 (Issue #187)", () => 
     adapter.dispose();
   });
 
-  it("keeps the syncing/0 placeholder for a CL (beacon) node that has no D層 metrics", async () => {
-    // 設計判断（docs/worklog/issue-187.md）: CL(beacon)ノードは D層メトリクス
-    // (internals)を持たないため、EL(reth)側が D層観測で埋まっても beacon は
-    // 既存のプレースホルダ（syncing/0）のまま残る。この分離が実装に正しく
-    // 反映されていることを保証する。
+  it("keeps the CL(beacon) placeholder when the Beacon API syncing fetch fails (Issue #274)", async () => {
+    // EL(reth)側は D層メトリクス（Finish checkpoint）で埋まる一方、CL(beacon)
+    // 側は Beacon API の /eth/v1/node/syncing 取得が失敗した場合（ここでは
+    // モック HttpClient が beacon1 のベース URL に応答を持たない）、
+    // beaconSyncStatusCache が更新されず既存のプレースホルダ（syncing/0）の
+    // まま残ることを固定する（成功時の値は下の describe ブロック（Issue #274）
+    // で検証する）。
     const poller = new DockerPoller(
       clientFrom([
         rethFixture("reth1", "172.28.1.1"),
@@ -2440,6 +2501,7 @@ describe("EthereumAdapter syncStatus/blockHeight from D層 (Issue #187)", () => 
     const rethMetricsClient = queuedRethMetricsClient({
       "http://172.28.1.1:9001/metrics": [rethMetricsTextWithFinish(1500)],
     });
+    vi.spyOn(console, "error").mockImplementation(() => {});
     const adapter = new EthereumAdapter(poller, {
       rethMetricsClient,
       httpClient: beaconHttp({}),
@@ -2459,11 +2521,314 @@ describe("EthereumAdapter syncStatus/blockHeight from D層 (Issue #187)", () => 
       syncStatus: "synced",
       blockHeight: 1500,
     });
-    // CL(beacon1)は D層メトリクスを持たないためプレースホルダのまま。
+    // CL(beacon1)は同期状態の取得に失敗したためプレースホルダのまま。
     expect(nodeById(entities, "chainviz-ethereum/beacon1")).toMatchObject({
       syncStatus: "syncing",
       blockHeight: 0,
     });
+    adapter.dispose();
+  });
+});
+
+describe("EthereumAdapter syncStatus/blockHeight for CL (beacon) via Beacon API (Issue #274)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  /** pollInfra の結果から指定 stableId の NodeEntity を取り出す。 */
+  function nodeById(
+    entities: (NodeEntity | { kind: string })[],
+    id: string,
+  ): NodeEntity {
+    const found = entities.find(
+      (e): e is NodeEntity => e.kind === "node" && (e as NodeEntity).id === id,
+    );
+    if (!found) throw new Error(`node ${id} not found`);
+    return found;
+  }
+
+  it("fills syncStatus/blockHeight from the Beacon API self-report once D層観測が届く", async () => {
+    const poller = new DockerPoller(
+      clientFrom([beaconFixture("beacon1", "172.28.2.1")]),
+    );
+    const adapter = new EthereumAdapter(poller, {
+      httpClient: beaconHttp({
+        "http://172.28.2.1:5052": {
+          peerId: "peer-beacon1",
+          connected: [],
+          syncing: { headSlot: 16587 },
+        },
+      }),
+      nodeInternalsPollIntervalMs: 3000,
+    });
+
+    // pollInfra 単体では D層観測がまだ無いため既存のプレースホルダのまま。
+    const before = await adapter.pollInfra();
+    expect(
+      nodeById(before.entities ?? [], "chainviz-ethereum/beacon1"),
+    ).toMatchObject({ syncStatus: "syncing", blockHeight: 0 });
+
+    await adapter.subscribeNodeInternals({
+      onInternals: vi.fn(),
+      onLinkActivity: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const after = await adapter.pollInfra();
+    expect(
+      nodeById(after.entities ?? [], "chainviz-ethereum/beacon1"),
+    ).toMatchObject({ syncStatus: "synced", blockHeight: 16587 });
+    adapter.dispose();
+  });
+
+  it("uses head_slot as blockHeight, not the paired EL node's block number (units differ)", async () => {
+    // 実測: head_slot 16587 に対し EL の eth_blockNumber は 16583（空スロット
+    // の分だけスロットの方が大きい）。CL/EL で単位が異なる値をそのまま入れ、
+    // 混同しないことを確認する。
+    const poller = new DockerPoller(
+      clientFrom([
+        rethFixture("reth1", "172.28.1.1"),
+        beaconFixture("beacon1", "172.28.2.1"),
+      ]),
+    );
+    const rethMetricsClient = queuedRethMetricsClient({
+      "http://172.28.1.1:9001/metrics": [rethMetricsTextWithFinish(16583)],
+    });
+    const adapter = new EthereumAdapter(poller, {
+      rethMetricsClient,
+      httpClient: beaconHttp({
+        "http://172.28.2.1:5052": {
+          peerId: "peer-beacon1",
+          connected: [],
+          syncing: { headSlot: 16587 },
+        },
+      }),
+      nodeInternalsPollIntervalMs: 3000,
+    });
+
+    await adapter.subscribeNodeInternals({
+      onInternals: vi.fn(),
+      onLinkActivity: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const partial = await adapter.pollInfra();
+    const entities = partial.entities ?? [];
+    expect(nodeById(entities, "chainviz-ethereum/reth1").blockHeight).toBe(
+      16583,
+    );
+    expect(nodeById(entities, "chainviz-ethereum/beacon1").blockHeight).toBe(
+      16587,
+    );
+    adapter.dispose();
+  });
+
+  it.each([
+    ["is_syncing", { isSyncing: true }],
+    ["el_offline", { elOffline: true }],
+    ["is_optimistic", { isOptimistic: true }],
+  ] as const)(
+    "marks the beacon as syncing when %s is true even though the others are false",
+    async (_label, flags) => {
+      const poller = new DockerPoller(
+        clientFrom([beaconFixture("beacon1", "172.28.2.1")]),
+      );
+      const adapter = new EthereumAdapter(poller, {
+        httpClient: beaconHttp({
+          "http://172.28.2.1:5052": {
+            peerId: "peer-beacon1",
+            connected: [],
+            syncing: { headSlot: 100, ...flags },
+          },
+        }),
+        nodeInternalsPollIntervalMs: 3000,
+      });
+
+      await adapter.subscribeNodeInternals({
+        onInternals: vi.fn(),
+        onLinkActivity: vi.fn(),
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      const partial = await adapter.pollInfra();
+      expect(
+        nodeById(partial.entities ?? [], "chainviz-ethereum/beacon1"),
+      ).toMatchObject({ syncStatus: "syncing", blockHeight: 100 });
+      adapter.dispose();
+    },
+  );
+
+  it("does not compare beacon nodes against each other (unlike the EL max-checkpoint comparison)", async () => {
+    // beacon はノード自身の自己申告で判定済みのため、他 beacon との
+    // head_slot の差では判定しない。1台が大きく遅れていても、それ自体の
+    // 自己申告が synced なら synced のままである。
+    const poller = new DockerPoller(
+      clientFrom([
+        beaconFixture("beacon1", "172.28.2.1"),
+        beaconFixture("beacon2", "172.28.2.2"),
+      ]),
+    );
+    const adapter = new EthereumAdapter(poller, {
+      httpClient: beaconHttp({
+        "http://172.28.2.1:5052": {
+          peerId: "peer-beacon1",
+          connected: [],
+          syncing: { headSlot: 9000 },
+        },
+        "http://172.28.2.2:5052": {
+          peerId: "peer-beacon2",
+          connected: [],
+          syncing: { headSlot: 10 },
+        },
+      }),
+      nodeInternalsPollIntervalMs: 3000,
+    });
+
+    await adapter.subscribeNodeInternals({
+      onInternals: vi.fn(),
+      onLinkActivity: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const partial = await adapter.pollInfra();
+    const entities = partial.entities ?? [];
+    expect(nodeById(entities, "chainviz-ethereum/beacon1")).toMatchObject({
+      syncStatus: "synced",
+      blockHeight: 9000,
+    });
+    expect(nodeById(entities, "chainviz-ethereum/beacon2")).toMatchObject({
+      syncStatus: "synced",
+      blockHeight: 10,
+    });
+    adapter.dispose();
+  });
+
+  it("keeps the previous value when a later syncing fetch fails (transient degradation)", async () => {
+    const poller = new DockerPoller(
+      clientFrom([beaconFixture("beacon1", "172.28.2.1")]),
+    );
+    const getJson = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: {
+          is_syncing: false,
+          is_optimistic: false,
+          el_offline: false,
+          head_slot: "500",
+        },
+      })
+      .mockRejectedValueOnce(new Error("beacon unreachable"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const adapter = new EthereumAdapter(poller, {
+      httpClient: { getJson } as unknown as HttpClient,
+      nodeInternalsPollIntervalMs: 3000,
+    });
+
+    await adapter.subscribeNodeInternals({
+      onInternals: vi.fn(),
+      onLinkActivity: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    let partial = await adapter.pollInfra();
+    expect(
+      nodeById(partial.entities ?? [], "chainviz-ethereum/beacon1"),
+    ).toMatchObject({ syncStatus: "synced", blockHeight: 500 });
+
+    // 次周期の取得が失敗しても、前回の観測値を保持する。
+    await vi.advanceTimersByTimeAsync(3000);
+    partial = await adapter.pollInfra();
+    expect(
+      nodeById(partial.entities ?? [], "chainviz-ethereum/beacon1"),
+    ).toMatchObject({ syncStatus: "synced", blockHeight: 500 });
+    adapter.dispose();
+  });
+
+  it("stops resolving a removed beacon once it disappears from observations (forgetNode)", async () => {
+    const beacon1 = beaconFixture("beacon1", "172.28.2.1");
+    let fixtures: Fixture[] = [beacon1];
+    const byId = new Map([beacon1].map((f) => [f.summary.Id, f] as const));
+    const client: DockerClient = {
+      listContainers: async () => fixtures.map((f) => f.summary),
+      getContainer: (id: string) => ({
+        top: async () =>
+          byId.get(id)?.top ?? { Titles: ["CMD"], Processes: [] },
+        stats: async () => zeroStats,
+      }),
+    };
+    const adapter = new EthereumAdapter(new DockerPoller(client), {
+      httpClient: beaconHttp({
+        "http://172.28.2.1:5052": {
+          peerId: "peer-beacon1",
+          connected: [],
+          syncing: { headSlot: 42 },
+        },
+      }),
+      nodeInternalsPollIntervalMs: 3000,
+    });
+
+    await adapter.subscribeNodeInternals({
+      onInternals: vi.fn(),
+      onLinkActivity: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    let partial = await adapter.pollInfra();
+    expect(
+      nodeById(partial.entities ?? [], "chainviz-ethereum/beacon1"),
+    ).toMatchObject({ syncStatus: "synced", blockHeight: 42 });
+
+    // beacon1 が削除され観測から消える。
+    fixtures = [];
+    await vi.advanceTimersByTimeAsync(3000);
+    partial = await adapter.pollInfra();
+    expect(
+      (partial.entities ?? []).some(
+        (e) => (e as NodeEntity).id === "chainviz-ethereum/beacon1",
+      ),
+    ).toBe(false);
+    adapter.dispose();
+  });
+
+  it("does not poll a validator's syncing endpoint (beaconTargets already excludes it)", async () => {
+    // validator は lighthouse イメージだが compose サービス名に "beacon" を
+    // 含まないため beaconTargets の対象外（既存の targets.ts の選別基準。
+    // pollPeersOnce の「excludes the validator from Beacon API polling」と
+    // 同じ前提）。pollOneBeaconSync が validator の Beacon API へ到達しようと
+    // しないことを HttpClient への到達 URL から確認する。
+    const poller = new DockerPoller(
+      clientFrom([
+        beaconFixture("beacon1", "172.28.2.1"),
+        beaconFixture("validator1", "172.28.2.9", "lighthouse vc"),
+      ]),
+    );
+    const getJson = vi.fn(async (url: string) => {
+      if (url === "http://172.28.2.1:5052/eth/v1/node/syncing") {
+        return {
+          data: {
+            is_syncing: false,
+            is_optimistic: false,
+            el_offline: false,
+            head_slot: "1",
+          },
+        };
+      }
+      throw new Error(`unexpected url ${url}`);
+    });
+    const adapter = new EthereumAdapter(poller, {
+      httpClient: { getJson } as unknown as HttpClient,
+      nodeInternalsPollIntervalMs: 3000,
+    });
+
+    await adapter.subscribeNodeInternals({
+      onInternals: vi.fn(),
+      onLinkActivity: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(getJson).not.toHaveBeenCalledWith(
+      "http://172.28.2.9:5052/eth/v1/node/syncing",
+    );
     adapter.dispose();
   });
 });
