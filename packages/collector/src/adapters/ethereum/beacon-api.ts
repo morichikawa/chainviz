@@ -74,16 +74,46 @@ export interface BeaconSyncingSnapshot {
 }
 
 /**
+ * `head_slot` が Beacon API 仕様（10進文字列エンコードの uint64）または
+ * それと等価な JSON 数値のいずれかに準拠しているときだけ数値化する
+ * （Issue #282）。`Number(...)` の緩い変換規則（空文字列/nullを0に、
+ * 16進表記・指数表記を受理する等）をそのまま通すと非準拠値を静かに
+ * 受理してしまうため、受理する形を明示的に絞る。
+ *
+ * 受理する形:
+ * 1. 10進整数文字列（`/^\d+$/`。前後の空白・符号・16進プレフィックス・
+ *    指数表記を含まない、1桁以上の数字のみ）
+ * 2. 非負整数の JSON 数値（Beacon API 仕様上は文字列だが、CL クライアント/
+ *    バージョンによっては数値で返ることがある。Issue #274 のテストで
+ *    「JSON数値の head_slot も受理する」挙動が既に固定されているため
+ *    維持する）
+ *
+ * 上記のどちらでもない場合（空文字列・空白のみ・null・欠落
+ * `undefined`・16進/指数表記の文字列・負数・小数・その他の型）は
+ * `undefined` を返す。欠落も不正値も同じ経路で `undefined` になるため、
+ * 呼び出し元でのエラー扱いが対称になる。
+ */
+function parseHeadSlot(value: unknown): number | undefined {
+  if (typeof value === "string") {
+    return /^\d+$/.test(value) ? Number(value) : undefined;
+  }
+  if (typeof value === "number") {
+    return Number.isInteger(value) && value >= 0 ? value : undefined;
+  }
+  return undefined;
+}
+
+/**
  * ビーコンノード自身の同期状態を取得する（Issue #274）。ピア取得
  * （`/eth/v1/node/identity` / `/eth/v1/node/peers`）と同じ Beacon API の
  * 別パスで、追加の観測経路は不要。
  *
- * `is_syncing` が boolean で読めない、または `head_slot` が数値として
- * パースできない場合は throw する（呼び出し側でログさせ、キャッシュは
- * 前回値を保持する想定。`sync-status.ts` の欠落時の扱いと同じ方針）。
- * `is_optimistic` / `el_offline` は欠落時に false 扱いとする（欠落した
- * 補助フラグを理由に不調表示へ倒さない。docs/worklog/issue-274.md
- * 決定事項 3）。
+ * `is_syncing` が boolean で読めない、または `head_slot` が
+ * `parseHeadSlot` で受理できる形でない場合は throw する（呼び出し側で
+ * ログさせ、キャッシュは前回値を保持する想定。`sync-status.ts` の
+ * 欠落時の扱いと同じ方針）。`is_optimistic` / `el_offline` は欠落時に
+ * false 扱いとする（欠落した補助フラグを理由に不調表示へ倒さない。
+ * docs/worklog/issue-274.md 決定事項 3）。
  */
 export async function fetchBeaconSyncing(
   http: HttpClient,
@@ -100,8 +130,8 @@ export async function fetchBeaconSyncing(
       )}`,
     );
   }
-  const headSlot = Number(data.head_slot);
-  if (!Number.isFinite(headSlot)) {
+  const headSlot = parseHeadSlot(data.head_slot);
+  if (headSlot === undefined) {
     throw new Error(
       `unexpected head_slot in /eth/v1/node/syncing response: ${JSON.stringify(
         data.head_slot,

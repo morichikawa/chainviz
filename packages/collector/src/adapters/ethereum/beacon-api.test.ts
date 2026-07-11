@@ -301,6 +301,48 @@ describe("fetchBeaconSyncing", () => {
     );
   });
 
+  // Issue #282: Number(...) の緩い変換規則（空文字列/nullを0に、16進・
+  // 指数表記を受理する等）に頼らず、10進整数文字列 または 非負整数の
+  // JSON 数値のみを受理する。それ以外は非準拠値として throw する。
+  it.each([
+    ["empty string", ""],
+    ["whitespace only", "   "],
+    ["null", null],
+    ["hex string", "0x10"],
+    ["exponential notation string", "1e3"],
+    ["leading/trailing whitespace around digits", " 10 "],
+    ["negative decimal string", "-5"],
+    ["decimal point string", "10.5"],
+    ["negative number", -5],
+    ["non-integer number", 3.5],
+    ["boolean true", true],
+    ["array", [16587]],
+    ["object", { value: 16587 }],
+  ])(
+    "throws for a non-conforming head_slot value: %s",
+    async (_label, headSlot) => {
+      const http = httpFrom({
+        [`${BASE}/eth/v1/node/syncing`]: {
+          data: { is_syncing: false, head_slot: headSlot },
+        },
+      });
+      await expect(fetchBeaconSyncing(http, BASE)).rejects.toThrow(
+        /head_slot/,
+      );
+    },
+  );
+
+  it("accepts a non-negative integer head_slot of 0 as a JSON number", async () => {
+    const http = httpFrom({
+      [`${BASE}/eth/v1/node/syncing`]: {
+        data: { is_syncing: true, head_slot: 0 },
+      },
+    });
+    await expect(fetchBeaconSyncing(http, BASE)).resolves.toMatchObject({
+      headSlot: 0,
+    });
+  });
+
   it("throws when the data field itself is missing", async () => {
     const http = httpFrom({
       [`${BASE}/eth/v1/node/syncing`]: {},
