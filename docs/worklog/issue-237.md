@@ -188,3 +188,61 @@ Issue #263 側で `aria-busy={removalPending ?? false}` への修正と回帰テ
     `toHaveAttribute("aria-busy", "false")` に厳密化できる。同じ箇所を
     触ることになる Issue #263 の対応時にコメント更新・厳密化を合わせて
     行うのが効率的(本ブランチの合否には影響しない)。
+
+### 2026-07-11 Issue #237 QA検証(実機・ブラウザ)
+
+- 担当: qa
+- ブランチ: issue-237-aria-busy-operate-button
+- 判定: 合格（完了条件を満たす）
+
+#### 検証環境・方法
+
+- worktree でフロントエンドを vite dev サーバ（モックモード。
+  `VITE_COLLECTOR_URL` 未設定で `createMockClient` が使われる）で起動し、
+  Playwright(chromium)で実際のブラウザ DOM 上の operate ボタン
+  （`infra-card-operate-workbench-alice`）の `aria-busy` 属性を観測した。
+- モックの既定は `commandLatencyMs=0`（コマンドが即時 resolve され保留窓が
+  マイクロタスク幅で肉眼・ポーリングで捉えられない）ため、保留中
+  （`operationPending=true`）の観測に限り、使い捨て worktree 上で
+  `main.tsx` を一時的に改変してモックへ `commandLatencyMs=2500` を注入した。
+  観測後に元へ復元し（`git status` クリーンを確認）、この改変はコミット
+  していない。`InfraNodeCard.tsx` 等の被検証コードには手を加えていない。
+
+#### 確認結果
+
+1. 静止時（対象ワークベンチが一度も保留を経験していない状態）で operate
+   ボタンの `aria-busy` が DOM 上に存在し値が `"false"` であること、および
+   ブロック進行（モック `intervalMs=3000`。`isSameInfraNode` によるノード
+   オブジェクトの作り直しが走る）を約8秒（複数 tick）またいでも
+   `["false","false","false","false","false"]` と一貫して `"false"` のまま
+   属性が欠落しない（`null` にならない）ことを確認した。これが Issue #237 の
+   核心（属性がブロック到達タイミング次第で欠落する）の解消にあたる。
+
+2. 送金（transfer）を送信して保留状態に入った際、operate ボタンの
+   `aria-busy` が `"false" → "true" → "false"` と遷移し、遷移中も終始
+   `null`（属性欠落）にならないことを確認した（`sawTrue=true`、
+   `backToFalse=true`、`everNull=false`）。操作完了後は明示的な `"false"` に
+   戻る（属性欠落ではない）。
+
+3. 回帰確認: デプロイ（Counter）・呼び出し（call。既存デプロイ済み
+   コントラクトの `increment()`）の通常フローも、いずれも
+   `aria-busy` が `"false" → "true" → "false"` と正しく遷移し、
+   `everNull=false`・ページエラー無しで完了することを確認した。operate
+   パネルの開閉・タブ切り替え・フォーム送信は従来どおり機能する。
+
+4. 修正の実効性の裏取り: 使い捨て worktree 上で `InfraNodeCard.tsx` の
+   該当行を修正前（`aria-busy={operationPending}`）へ一時的に戻して同じ
+   静止時の観測を行い、`aria-busy` が静止時・ブロック進行後ともに
+   `null`（属性欠落）を返すことを再現した。修正版に戻すと `"false"` が
+   常に存在することも再確認済み。この一時改変もコミットしていない。
+
+#### 記録
+
+- 完了条件「元の Issue（aria-busy 属性がタイミング次第で欠落する）が
+  実際に解消されていること」を、実機ブラウザで満たすことを確認した。
+- 使い捨て worktree のディレクトリが API 上限エラーによる中断中に消えて
+  いたため `git worktree add` で再作成してから検証した。ブランチ
+  （`issue-237-aria-busy-operate-button`、HEAD `b7a2d13`）は保持されて
+  いた。検証で使った一時改変（`main.tsx` へのレイテンシ注入・
+  `InfraNodeCard.tsx` の一時 revert）はいずれも復元済みで、worktree は
+  クリーン。
