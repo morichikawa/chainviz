@@ -673,7 +673,7 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       描くよう実装。ARCHITECTURE.md §7.6.11・docs/worklog/issue-285.md参照。
       collector側(beaconStableIdForValidator新設・resolveDrivesNodeIdの
       フォールスルー化)・frontend側(役割組ごとのポップオーバー文言切替・
-      InfraPopoverの駆動元行の一般化)とも実装完了、レビュー・QA待ち)
+      InfraPopoverの駆動元行の一般化)とも実装完了。レビュー・QAとも合格)
       [#285](https://github.com/morichikawa/chainviz/issues/285)
 
 ## 運用ルール（全ステップ共通）
