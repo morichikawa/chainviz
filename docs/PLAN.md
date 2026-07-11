@@ -640,6 +640,10 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
 - [x] describeSyncStageがObject.prototypeの継承メンバを漏らす可能性がある
       (describeNodeRoleと同種の穴)
       [#258](https://github.com/morichikawa/chainviz/issues/258)
+- [x] validator clientノードの同期状態が永久に「同期中」(blockHeight 0)と
+      表示される(調査の結果、#215のnodeRole/showsSyncStateで解消済みを
+      確認。コード変更なし)
+      [#243](https://github.com/morichikawa/chainviz/issues/243)
 
 ## 運用ルール（全ステップ共通）
 
