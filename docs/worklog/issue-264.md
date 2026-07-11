@@ -173,3 +173,39 @@
   無いが、次にこのファイルへ触れる際にコメントを「テストのモック等、
   外部から注入される glossary は `Object.prototype` を継承しうる」の
   趣旨へ直すとよい
+
+#### QA検証記録(chainviz-qa)
+
+- 担当: qa
+- ブランチ: issue-264-glossary-proto-guard
+- 判定: **合格**(完了条件を満たしている)
+- 主眼: 修正がUIの通常動作(用語解説機能)に悪影響を与えていないことの
+  正常系回帰確認。実際に実データ(`glossary/ethereum/terms/*.yaml` 全4
+  ファイル)を本物の `parse.ts`(`parseGlossaryYaml`/`mergeGlossaries`)と
+  `GlossaryProvider` の `lookup` 実装に流して、UI表示までの経路を実機で
+  確認した。
+- 実施内容と結果:
+  1. glossary関連の既存テスト一式(`parse.test.ts`/`parse.protoGuard.test.ts`/
+     `GlossaryProvider.test.tsx`/`GlossaryTerm.test.tsx`/
+     `GlossaryTerm.testid.test.tsx`)を実行し、51件全て合格。
+  2. 実データ end-to-end マージ+lookup確認(一時テストで実測、確認後削除):
+     4ファイルを `mergeGlossaries(parseGlossaryYaml(...))` でマージ。
+     マージ後の総用語数は33語(a-infra 7 + b-network 7 + c-transaction 15
+     + d-internal 4)で、各ファイルの用語がマージ後も1件も欠落しないこと、
+     全33語が `lookup` で解決し `name`/`definition` が ja/en 両言語とも
+     非空であることを確認。`Object.getPrototypeOf(merged)` が `null` の
+     まま保たれること(汚染なし)も確認。
+  3. 実データ注入のUI回帰(一時テストで実測、確認後削除):
+     実マージ済み glossary を `GlossaryProvider` に注入した状態で
+     `GlossaryTerm` をレンダリングし、既知の用語(先頭キー `container`)が
+     下線付き(`glossary-term--unknown` が付かない)で表示され、
+     `mouseEnter` でポップオーバーに用語名+定義(+関連語)が正しく
+     表示されることを確認。あわせて継承メンバ名 `toString` を termKey に
+     渡すと `glossary-term--unknown` 扱い(下線なし)になり、ガードが
+     通常表示を壊さず異常系だけを弾いていることを確認。
+  4. `packages/frontend` の `pnpm build`(tsc -b)が exit 0 で成功。
+     検証で作成した一時テストは全て削除し、`git status` がクリーンで
+     あることを確認済み。
+- 結論: 用語解説(GlossaryTerm ホバー表示)の通常動作は従来どおり正常で、
+  複数glossaryファイルのマージ・全用語のlookup解決に回帰は無い。
+  完了条件を満たす。
