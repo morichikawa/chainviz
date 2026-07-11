@@ -17,6 +17,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { serviceEntityId } from "./support/serviceIds.js";
+import { subtitleEndsWithClientType } from "./support/subtitle.js";
 
 /** collector の A 層ポーリング間隔(`POLL_INTERVAL_MS`, packages/collector/src/index.ts)
  * は 3000ms。初回反映を安全に待つため、その約6.5倍の 20 秒を待ち上限にする。 */
@@ -94,9 +95,14 @@ test("UI-A-01: compose の全ノードとワークベンチがカード表示さ
   await test.step(
     "reth のカードに実行クライアント、beacon/validator のカードに lighthouse のクライアント種別が表示される",
     async () => {
+      // subtitle は「{役割ラベル} · {clientType}」形式（Issue #215）。役割
+      // ラベルの文言を決め打ちで比較せず、末尾が clientType と一致するかで
+      // 判定する(Issue #270)。
       for (const { service, clientType } of COMPOSE_NODES) {
         const card = page.getByTestId(`infra-card-${serviceEntityId(service)}`);
-        await expect(card.locator(".infra-card__subtitle")).toHaveText(clientType);
+        await expect(card.locator(".infra-card__subtitle")).toHaveText(
+          subtitleEndsWithClientType(clientType),
+        );
       }
     },
   );
