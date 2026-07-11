@@ -819,6 +819,73 @@ describe("beaconStableIdForValidator (Issue #285)", () => {
   it("returns undefined when the observations list is empty", () => {
     expect(beaconStableIdForValidator(validator1, [])).toBeUndefined();
   });
+
+  it("pairs each validator with its own beacon when two full pairs coexist (no crosstalk)", () => {
+    // validator1↔beacon1 と validator2↔beacon2 が同時に存在する状況で、
+    // ノード群キー（"1"/"2"）で正しく分岐し、取り違えないことを固定する。
+    const beacon2 = obs({
+      stableId: "chainviz-ethereum/beacon2",
+      name: "chainviz-ethereum-beacon2-1",
+      labels: { "com.docker.compose.service": "beacon2" },
+      image: "sigp/lighthouse:latest",
+      ip: "172.28.2.2",
+      processes: [{ command: "lighthouse bn", name: "lighthouse" }],
+    });
+    const validator2 = obs({
+      stableId: "chainviz-ethereum/validator2",
+      name: "chainviz-ethereum-validator2-1",
+      labels: {
+        "com.docker.compose.service": "validator2",
+        [ROLE_LABEL]: "validator",
+      },
+      image: "sigp/lighthouse:latest",
+      ip: "172.28.0.4",
+      processes: [{ command: "lighthouse vc", name: "lighthouse" }],
+    });
+    const all = [beacon1, beacon2, validator1, validator2];
+    expect(beaconStableIdForValidator(validator1, all)).toBe(
+      "chainviz-ethereum/beacon1",
+    );
+    expect(beaconStableIdForValidator(validator2, all)).toBe(
+      "chainviz-ethereum/beacon2",
+    );
+  });
+
+  it("returns undefined for a validator-named container without the com.chainviz.role label (backward compatible with pre-#246 snapshots)", () => {
+    // com.chainviz.role ラベルが無い旧スナップショットでは、compose サービス名が
+    // "validator1" でも isValidatorService が false になり VC と見なさない。
+    // この場合 validator→beacon の内部リンクは張られない（既存の非-VC 判定を
+    // 壊さないための後方互換。ラベル導入前の観測に対して静かに誤リンクを
+    // 生やさない）。
+    const validatorNoRole = obs({
+      stableId: "chainviz-ethereum/validator1",
+      name: "chainviz-ethereum-validator1-1",
+      labels: { "com.docker.compose.service": "validator1" },
+      image: "sigp/lighthouse:latest",
+      ip: "172.28.0.3",
+      processes: [{ command: "lighthouse vc", name: "lighthouse" }],
+    });
+    expect(
+      beaconStableIdForValidator(validatorNoRole, [beacon1, validatorNoRole]),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when the same-key candidate is not a consensus beacon node (wrong client type)", () => {
+    // ノード群キー "1" は一致するが、beacon1 の位置にいるコンテナが consensus
+    // クライアントでない（reth プロセス）場合、isConsensusBeaconNode で弾かれ
+    // 対応付けない。キー一致だけでなく候補フィルタも効いていることを固定する。
+    const fakeBeacon = obs({
+      stableId: "chainviz-ethereum/beacon1",
+      name: "chainviz-ethereum-beacon1-1",
+      labels: { "com.docker.compose.service": "beacon1" },
+      image: "ghcr.io/paradigmxyz/reth:latest",
+      ip: "172.28.2.1",
+      processes: [{ command: "reth node", name: "reth" }],
+    });
+    expect(
+      beaconStableIdForValidator(validator1, [fakeBeacon, validator1]),
+    ).toBeUndefined();
+  });
 });
 
 describe("executionPeerTargets", () => {

@@ -1032,6 +1032,23 @@ const validatorWithRoleFixture: Fixture = {
   top: { Titles: ["CMD"], Processes: [["lighthouse vc"]] },
 };
 
+/** 2 組目の validator（役割ラベル付き。複数 VC の取り違え防止を検証）。 */
+const validator2WithRoleFixture: Fixture = {
+  summary: {
+    Id: "id-validator2-role",
+    Names: ["/chainviz-ethereum-validator2-1"],
+    Image: "sigp/lighthouse:latest",
+    State: "running",
+    Labels: {
+      "com.docker.compose.project": "chainviz-ethereum",
+      "com.docker.compose.service": "validator2",
+      "com.chainviz.role": "validator",
+    },
+    NetworkSettings: { Networks: { chain: { IPAddress: "172.28.0.4" } } },
+  },
+  top: { Titles: ["CMD"], Processes: [["lighthouse vc"]] },
+};
+
 describe("EthereumAdapter.pollInfra drivesNodeId resolution for validator→beacon (Issue #285)", () => {
   it("sets drivesNodeId on the validator node to the paired beacon node's id", async () => {
     const adapter = new EthereumAdapter(
@@ -1085,5 +1102,91 @@ describe("EthereumAdapter.pollInfra drivesNodeId resolution for validator→beac
       (e) => e.id === "chainviz-ethereum/validator1",
     );
     expect(validator?.drivesNodeId).toBeUndefined();
+  });
+
+  it("pairs each validator with its own beacon and each beacon with its own execution node (two full node groups, no crosstalk)", async () => {
+    // reth1/beacon1/validator1 と reth2/beacon2/validator2 が同時に存在する
+    // フルトポロジで、validator→beacon と beacon→execution の両解決が
+    // ノード群キーで正しく分岐し、1↔2 を取り違えないことを固定する。
+    const adapter = new EthereumAdapter(
+      new DockerPoller(
+        clientFrom([
+          rethFixture,
+          beaconFixture,
+          validatorWithRoleFixture,
+          reth2Fixture,
+          beacon2Fixture,
+          validator2WithRoleFixture,
+        ]),
+      ),
+    );
+    const partial = await adapter.pollInfra();
+    const entities = (partial.entities ?? []) as NodeEntity[];
+    const byId = (id: string) => entities.find((e) => e.id === id);
+    expect(byId("chainviz-ethereum/validator1")?.drivesNodeId).toBe(
+      "chainviz-ethereum/beacon1",
+    );
+    expect(byId("chainviz-ethereum/validator2")?.drivesNodeId).toBe(
+      "chainviz-ethereum/beacon2",
+    );
+    expect(byId("chainviz-ethereum/beacon1")?.drivesNodeId).toBe(
+      "chainviz-ethereum/reth1",
+    );
+    expect(byId("chainviz-ethereum/beacon2")?.drivesNodeId).toBe(
+      "chainviz-ethereum/reth2",
+    );
+    // execution ノード自身は駆動される側なので drivesNodeId を持たない。
+    expect(byId("chainviz-ethereum/reth1")?.drivesNodeId).toBeUndefined();
+    expect(byId("chainviz-ethereum/reth2")?.drivesNodeId).toBeUndefined();
+  });
+
+  it("does not attach any validator-driven link to an addNode follower pair (reth+beacon without a validator)", async () => {
+    // addNode で追加されるフォロワーは validator 無しの reth+beacon ペア。
+    // validator→beacon の解決がこのペアに誤って効かず、beacon→execution の
+    // 既存解決だけが張られることを固定する（設計メモ「addNode のフォロワーは
+    // validator 無し」の前提の回帰テスト）。
+    const managedBeaconFixture: Fixture = {
+      summary: {
+        Id: "id-beacon3",
+        Names: ["/chainviz-ethereum-beacon3"],
+        Image: "sigp/lighthouse:latest",
+        State: "running",
+        Labels: {
+          "com.docker.compose.project": "chainviz-ethereum",
+          "com.docker.compose.service": "beacon3",
+          "com.chainviz.managed": "true",
+          "com.chainviz.role": "consensus",
+        },
+        NetworkSettings: { Networks: { chain: { IPAddress: "172.28.2.3" } } },
+      },
+      top: { Titles: ["CMD"], Processes: [["lighthouse bn"]] },
+    };
+    const adapter = new EthereumAdapter(
+      new DockerPoller(
+        clientFrom([
+          rethFixture,
+          beaconFixture,
+          validatorWithRoleFixture,
+          managedRethFixture,
+          managedBeaconFixture,
+        ]),
+      ),
+    );
+    const partial = await adapter.pollInfra();
+    const entities = (partial.entities ?? []) as NodeEntity[];
+    const byId = (id: string) => entities.find((e) => e.id === id);
+    // フォロワーの beacon3 は execution の reth3 を駆動する（既存の
+    // beacon→execution 解決）。
+    expect(byId("chainviz-ethereum/beacon3")?.drivesNodeId).toBe(
+      "chainviz-ethereum/reth3",
+    );
+    // フォロワー側に validator3 は存在せず、beacon3/reth3 に validator を
+    // 起点とする誤リンクは生えない。
+    expect(byId("chainviz-ethereum/validator3")).toBeUndefined();
+    expect(byId("chainviz-ethereum/reth3")?.drivesNodeId).toBeUndefined();
+    // 静的 validator1↔beacon1 の解決はフォロワー追加後も維持される。
+    expect(byId("chainviz-ethereum/validator1")?.drivesNodeId).toBe(
+      "chainviz-ethereum/beacon1",
+    );
   });
 });
