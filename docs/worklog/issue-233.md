@@ -145,3 +145,65 @@ wallet-balance.spec.ts / token-balance.spec.ts は元々同じ実装で実 e2e
 - 新規: `docs/worklog/issue-233.md`(本ファイル)
 - 変更: `docs/WORKLOG.md`(索引追加)・`docs/PLAN.md`(チェックボックス
   更新)
+
+#### テスト強化(chainviz-tester)
+
+実装担当の `cleanup.unit.test.ts`(`removeCardIfPresent` の基本4分岐)を
+土台に、異常系・境界値・構造整合の観点でテストを追加した。既存の
+`*.edge.unit.test.ts` 命名慣習に合わせ、関心事ごとに3ファイルへ分割した
+(1ファイル1責務)。
+
+- 新規 `packages/e2e/src/ui/support/cleanup.edge.unit.test.ts`
+  (`removeCardIfPresent` の異常系・境界。6ケース):
+  - `waitForButton → click → waitForRemoved` の呼び出し順が厳密に1回ずつ
+    であること。
+  - エラー分類の境界: `waitForButton` が Error 以外の値(文字列・
+    `undefined`)で reject しても握りつぶす(空 catch が値の種類に依存
+    しない)。
+  - ボタンが一瞬出現した直後に消える競合(`waitForButton` は成功するが
+    続く `click` が element detached で失敗)は握りつぶさず伝播し、
+    `waitForRemoved` へ進まないこと。「握りつぶす経路」と「伝播する経路」の
+    境界がタイミングで誤判定されないことを固定する。
+  - 上記競合でもクリックが通り `waitForRemoved` が即 resolve するなら
+    エラーなく成功扱いになること。
+  - 連続呼び出しの独立性: 1回目がボタン不在で握りつぶされても2回目は
+    通常どおり削除まで進むこと。
+- 新規 `packages/e2e/src/ui/support/cleanup-orchestration.unit.test.ts`
+  (Playwright 配線層。9ケース。Browser/Page/Locator をフェイクし、
+  削除ボタンの `waitFor`/`click` の成否だけを制御して実 `expect` マッチャに
+  依存しない):
+  - `removeInfraCardIfPresent`: 正しい `infra-card-remove-<id>` を指定
+    timeout で待つこと、ボタン不在なら click しないこと、出現後は正しい
+    ボタンをクリックすること。
+  - `cleanupRemovableCards`: 0件・全空文字なら `browser.newPage` を開かず
+    即座に返る(成功パスで待ちを増やさない境界)、空文字混在時は有効な
+    entityId のみ対象にする、複数カードでもページを1回だけ開き
+    goto→各後始末→close を1度ずつ行う、`viewport` の有無で `newPage` 引数が
+    変わること。
+  - 複数カードの相互影響と finally 保証(不具合2相当): 途中のカードで削除が
+    失敗すると例外を伝播し以降のカードは処理されない一方、`page.close` は
+    finally で必ず呼ばれること。
+- 新規 `packages/e2e/src/ui/support/cleanup-consistency.unit.test.ts`
+  (4ファイルへの適用の一貫性。13ケース。この不具合の本質である「修正が
+  一部にしか行き渡らない」再発を検知する):
+  - `commands-node` / `commands-workbench` / `wallet-balance` /
+    `token-balance` の4 spec が全て `./support/cleanup.js` から
+    `cleanupRemovableCards` を import し、`afterAll` で
+    `cleanupRemovableCards(browser, ...)` を呼んでいること。
+  - 4 spec の `afterAll` が旧不具合の温床だった「削除ボタンの即時
+    `count()` 判定」インライン後始末を持たないこと。
+
+**回帰検出の確認**: consistency テストが実際に再発を検知できることを、
+`commands-node.spec.ts` の `afterAll` に旧アンチパターン
+(`infra-card-remove-<id>` の即時 `count()` 判定)を一時的に差し込んで確認
+した。該当ケースが期待どおり失敗し、差し戻すと再び green になることを
+確認済み。
+
+**確認**: `pnpm --filter @chainviz/e2e build`(tsc --noEmit)・`pnpm lint`・
+`pnpm --filter @chainviz/e2e test`(unit 129件、うち新規28件、すべて
+green)を確認した。docker を要する `test:e2e` / `test:e2e:ui` は今回の
+追加対象外(追加したのは docker 不要の `*.unit.test.ts` のみ)。
+
+**追加ファイル一覧**:
+- 新規: `packages/e2e/src/ui/support/cleanup.edge.unit.test.ts` /
+  `cleanup-orchestration.unit.test.ts` / `cleanup-consistency.unit.test.ts`
