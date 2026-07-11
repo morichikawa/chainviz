@@ -118,3 +118,78 @@ validator1/validator2 のみ。動的コンテナへの考慮は不要。
   別 Issue）
 - E2E（UI 層）シナリオの追加要否は実装時に `packages/e2e/SCENARIOS.md` の
   運用ルール（PLAN.md「運用ルール」参照）に従って判断する
+
+### 2026-07-11 Issue #285 collector 実装方針確認メモ
+
+- 担当: collector
+- ブランチ: issue-285-validator-beacon-link
+- 設計メモ・ARCHITECTURE.md §7.3 / §7.6.11 を読んだ上での実装方針（設計の
+  決定事項からの逸脱なし。範囲確認のみ）:
+  1. `targets.ts` に `beaconStableIdForValidator(validator, observations)` を
+     `executionStableIdForBeacon` の直後に追加する。実装は
+     `isValidatorService(validator)` でガードし、false なら即
+     `undefined`。本体は `findPairedStableId(validator, observations,
+     isConsensusBeaconNode)`（`isConsensusBeaconNode` は既存の非公開関数を
+     そのまま再利用でき、新設不要）
+  2. `index.ts` の `resolveDrivesNodeId` を
+     `executionStableIdForBeacon(obs, observations) ??
+     beaconStableIdForValidator(obs, observations)` のフォールスルーに変更。
+     両者の対象コンテナ集合は互いに素（beacon 役 vs validator 役）なので
+     判定順に意味は無く、片方が undefined を返したらもう片方を試すだけで
+     安全
+  3. `nodeLinkActivity` 側は変更しない（設計メモの決定どおり、validator 起点の
+     活動観測は存在しないため配信しない）
+  4. テストは `targets.test.ts` に `beaconStableIdForValidator` の
+     describe ブロックを `executionStableIdForBeacon` のブロックに倣って
+     追加する（validator1↔beacon1 の対応付け・対応する beacon が無い場合の
+     省略・validator 役でないコンテナへの即 undefined・プロジェクトスコープ
+     の分離を確認）。`index.test.ts` 側は `resolveDrivesNodeId` の既存
+     テストに、validator→beacon の解決が反映されるケースを追加する
+
+### 2026-07-11 Issue #285 collector 実装記録
+
+- 担当: collector
+- ブランチ: issue-285-validator-beacon-link
+- 実施内容: 上記の実装方針どおりに `packages/collector/src/adapters/ethereum/`
+  へ実装した。設計・実装方針からの逸脱は無い。
+  - `targets.ts`: `beaconStableIdForValidator(validator, observations)` を
+    `executionStableIdForBeacon` の直後に新設。`isValidatorService` で
+    ガードし、本体は既存の `findPairedStableId(validator, observations,
+    isConsensusBeaconNode)` を呼ぶだけの薄いラッパー（新規ロジック無し）
+  - `index.ts`: `resolveDrivesNodeId` の解決式を
+    `executionStableIdForBeacon(obs, observations) ??
+    beaconStableIdForValidator(obs, observations)` のフォールスルーに変更。
+    JSDoc コメントも Issue #285 を追記して更新
+  - テスト: `targets.test.ts` に `beaconStableIdForValidator` の
+    describe ブロック（6 件。validator1↔beacon1 の対応付け・ノード群の
+    取り違え防止・validator 役でないコンテナ（beacon/execution/workbench）
+    への即 undefined・プロジェクトスコープの分離・観測が空の場合）を追加。
+    `index.test.ts` にも `EthereumAdapter.pollInfra drivesNodeId resolution
+    for validator→beacon (Issue #285)` の describe ブロック（4 件。
+    pollInfra 経由での validator→beacon 解決・既存の beacon→execution
+    解決への非干渉・対応する beacon が無い場合の省略・
+    `com.chainviz.role` ラベルの無いフィクスチャでの後方互換確認）を追加。
+    既存の `validatorFixture`（ラベル無し）はそのまま残し、ラベル付きの
+    `validatorWithRoleFixture` を新設して使い分けた（既存テストの前提を
+    壊さないため）
+  - 回帰検出の確認: `resolveDrivesNodeId` のフォールスルーを一時的に
+    `executionStableIdForBeacon` のみに戻し、新設した
+    `index.test.ts` のテストが実際に失敗する（`expected undefined to be
+    'chainviz-ethereum/beacon1'`）ことを確認してから実装を元に戻した
+  - `pnpm --filter @chainviz/collector build && pnpm --filter
+    @chainviz/collector test` を実行し、46 ファイル 1265 テストすべて通過
+  - 実環境検証: `profiles/ethereum` で `docker compose up -d` してスタックを
+    起動し、collector（`CHAINVIZ_COLLECTOR_PORT=4100` で別ポート起動、
+    既存の別プロセスとの port 競合を避けた）の WebSocket スナップショットを
+    直接取得して確認した。`validator1.drivesNodeId ===
+    "chainviz-ethereum/beacon1"`、`validator2.drivesNodeId ===
+    "chainviz-ethereum/beacon2"` を確認。reth1/reth2（execution）は
+    drivesNodeId を持たない（駆動される側であり駆動する側ではないため）。
+    addNode で追加されたフォロワー（reth3/beacon3 ペア、他セッションの
+    検証作業による副産物）には validator が無く、既存の beacon3→reth3 の
+    解決のみが効いていて validator 関連の追加解決が無いことも確認できた
+    （設計メモどおり「addNode のフォロワーは validator 無し」の前提と一致）
+- 申し送り: frontend 側（`InternalLinkEdgeData` への `nodeRole` 追加・
+  `internalLinkKinds.ts` 新設・ポップオーバー文言切り替え・
+  `beacon-api` 用語新設）は別担当が引き続き対応する。collector 側の
+  `NodeEntity.drivesNodeId` 解決はこの実装で完結している

@@ -671,7 +671,9 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
 - [ ] validatorがbeaconと視覚的に関連付けられておらず「浮いて見える」
       (設計完了: 既存のdrivesNodeIdを再利用しvalidator→beaconにも
       内部リンクエッジを描く。ARCHITECTURE.md §7.6.11・
-      docs/worklog/issue-285.md参照。実装はcollector/frontendへ引き継ぐ)
+      docs/worklog/issue-285.md参照。collector側実装完了
+      (beaconStableIdForValidator新設・resolveDrivesNodeIdのフォールスルー化)。
+      frontend側実装は別途進行中)
       [#285](https://github.com/morichikawa/chainviz/issues/285)
 
 ## 運用ルール（全ステップ共通）
