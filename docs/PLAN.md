@@ -640,6 +640,8 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
 - [x] describeSyncStageがObject.prototypeの継承メンバを漏らす可能性がある
       (describeNodeRoleと同種の穴)
       [#258](https://github.com/morichikawa/chainviz/issues/258)
+- [x] 削除ボタンのaria-busy(removalPending)にも#237と同種の欠落バグがある
+      [#263](https://github.com/morichikawa/chainviz/issues/263)
 
 ## 運用ルール（全ステップ共通）
 
