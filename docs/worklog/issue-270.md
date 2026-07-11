@@ -112,3 +112,40 @@
   `pnpm --filter @chainviz/e2e test`（vitest unit）が通ることを確認
   （9ファイル・123テスト全て成功、うちsubtitle.unit.test.tsは15テスト）。
   実装ロジック（`subtitle.ts`）は変更していない。
+
+#### レビュー(reviewer)
+
+- 判定: 合格
+- 実装とsubtitle実形式の整合を確認した。`InfraNodeCard.tsx`のsubtitleは
+  `` `${役割ラベル} · ${clientType}` ``（区切りは「半角スペース+中点+
+  半角スペース」）または役割不明時の`clientType`単独で、ヘルパーの正規表現
+  `(?:^|\s)${escaped}$`は両形式に正しく一致する。DOM側は
+  `<div className="infra-card__subtitle">{subtitle}</div>`で余分な空白が
+  入らないため、`textContent()`（trimなし）との組み合わせでも問題ない。
+- テストの質: 正規表現の`(?:^|\s)`プレフィックスを外すと"eth" vs "reth"の
+  末尾部分一致テストが、エスケープを外すと`+`/`$`/`.`のテストがそれぞれ
+  落ちる構成になっており、壊れた実装を検出できる意味のあるテスト。
+  空文字clientTypeの縮退挙動も「実運用で到達しない」旨のコメント付きで
+  固定されている。
+- 横断確認の裏取り: `packages/e2e/src/`全体をgrepし、DOM文字列と
+  clientTypeの完全一致比較が他に残っていないことを確認した
+  （`commands.test.ts`はワールドステートのエンティティ直接参照、
+  `wallet-balance.spec.ts`は残高・nonceの別形式検証で対象外、という
+  worklogの記述どおり）。
+- UI-A-02/UI-A-05のスコープ外判定: 両テストはホバー起点のポップオーバー/
+  用語解説の検証で、今回の変更（UI-A-01のsubtitle比較のみ）とは独立して
+  いる。修正前後どちらでも失敗することを`git stash`で確認したという
+  手順も記録されており、スコープ外として妥当。実環境での最終確認はQAに
+  委ねる。
+- エラー握りつぶし: `if (!subtitle) continue;`はsubtitleがnullのカードを
+  スキップするが、その場合は直後の`expect(addedRethId).toBeTruthy()`が
+  明確なメッセージで失敗するため、失敗が隠れることはない。
+- ビルド・lint・テスト: リポジトリ全体で`pnpm build`・`pnpm lint`・
+  `pnpm test`が全て成功（shared 62 / collector 1167 / frontend 1817 /
+  e2e 123テスト）。
+- コミット粒度: `fix(e2e)`（ヘルパー新設+2 spec修正+基本ユニットテスト）、
+  `docs`（worklog/PLAN/WORKLOG）、`test(e2e)`（tester強化）、`docs`
+  （tester記録）の4コミットで、1変更1コミット・Conventional Commits準拠。
+- docs整合: worklogの記述はコード実態と一致。PLAN.mdのチェック+Issue
+  リンク、WORKLOG.md索引行も確認した。`docs/ARCHITECTURE.md`への影響は
+  ない（e2eテスト内部の判定方法の変更のみ）。
