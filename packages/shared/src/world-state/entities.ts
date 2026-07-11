@@ -124,11 +124,17 @@ export interface NodeEntity extends InfraEntity {
   nodeRole?: string;
   /**
    * D層: このノードが内部 API で駆動する相手ノード（同じ論理ノードを構成する
-   * 相方クライアント）のエンティティ id。Ethereum プロファイルでは
-   * beacon（CL）ノードに入り、対になる Execution（EL）ノードを Engine API で
-   * 駆動する関係を表す（Engine API というチェーン固有の語彙はスキーマに
-   * 持ち込まず、「駆動する側 → される側」という一般関係だけを載せる）。
-   * collector（ChainAdapter）がインフラ観測から毎回解決する
+   * 相方クライアント）のエンティティ id。「駆動する側 → される側」という
+   * 一般関係だけを載せ、Engine API のようなチェーン固有の語彙はスキーマに
+   * 持ち込まない。Ethereum プロファイルでは 2 種類の関係に入る:
+   * beacon（CL）ノードが対になる Execution（EL）ノードを Engine API で
+   * 駆動する関係（Issue #186）と、validator client が対になる beacon ノードへ
+   * Beacon API で接続してブロック提案・証明の職務を果たす関係（Issue #285。
+   * validator → beacon → reth という「チェーンを動かす因果の連なり」を
+   * 同じ仕組みで表現する）。どの役割の組にどんな意味づけ・文言を与えるかは、
+   * 端点の nodeRole を見てフロントのチェーンプロファイル表現セットが決める
+   * （nodeRole と同じ「チェーン固有語彙の解釈はフロント表現セットの責務」の
+   * 流儀）。collector（ChainAdapter）がインフラ観測から毎回解決する
    * （WorkbenchEntity.rpcTargetNodeId と同じ考え方）。
    * 駆動関係を持たないノード・解決できない場合・旧スナップショットでは省略
    * （省略 = 無し/不明。フロントは内部リンクの表示を出さない側に倒す）。
