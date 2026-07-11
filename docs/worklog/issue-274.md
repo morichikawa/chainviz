@@ -578,3 +578,59 @@
 - 確認事項: `packages/frontend/src/glossary/parse.ts` を確認し、
   `en`/`ja` の文字数上限などのバリデーションが無いことを確認した
   （定義文の長さがビルド・テストに影響しない）。
+
+### 2026-07-11 Issue #274 QA検証記録（実機）
+
+- 担当: qa
+- ブランチ: issue-274-beacon-sync-display
+- 判定: **合格**（完了条件を満たす。差し戻しなし）
+
+#### 検証環境
+
+- 稼働中の docker compose スタック（beacon1/beacon2/reth1/reth2/
+  validator1/validator2/workbench、いずれも Up）に対して実施。
+- collector を本ブランチのソースからビルドして実際に起動
+  （`node dist/index.js`、WS 4000 / proxy 4001）。
+- frontend を `VITE_COLLECTOR_URL=ws://localhost:4000` で vite dev server
+  として起動し、実 collector に接続。Playwright(chromium headless)で
+  実際に描画・ポップオーバー操作を行って画面を確認した。
+
+#### 確認内容と結果
+
+1. Beacon API 情報源: ホスト公開の beacon1:5052 の
+   `GET /eth/v1/node/syncing` が
+   `{"is_syncing":false,"is_optimistic":false,"el_offline":false,
+   "head_slot":"18058","sync_distance":"0"}` を返すことを確認
+   （数値は10進文字列）。
+2. collector → ワールドステート（WS スナップショット+diff を結合して確認）:
+   - beacon1/beacon2（consensus）: `syncStatus:"synced"`,
+     `blockHeight:18110`（head_slot）。以前の「syncing / 0 固定」から
+     解消されている。
+   - reth1/reth2（execution）: `syncStatus:"synced"`,
+     `blockHeight:18101/18099`（EL のブロック高）。head_slot(18110) が
+     EL ブロック高より大きく、空スロット分の乖離が実データで確認できた。
+   - validator1/validator2（validator）: `syncStatus:"syncing"`,
+     `blockHeight:0` のプレースホルダのまま（`beaconTargets` 選別で対象外。
+     フロントでは非表示。非退行）。
+   - collector 起動中のログにエラー出力ゼロ（beacon ポーリングが毎 tick
+     成功し、握りつぶし・fetch 失敗が発生していないこと）。
+3. frontend 実描画（Playwright）:
+   - beacon1 ポップオーバー: 「同期状態: 同期済み」「ヘッドスロット:
+     18223」を表示（元 Issue の再現手順で「同期中 / ブロック高 0」だった
+     箇所が解消）。
+   - reth1 ポップオーバー: 「同期状態: 同期済み」「ブロック高: 18224」+
+     同期ステージ一覧を従来どおり表示（回帰なし）。
+   - validator1 ポップオーバー: 同期状態・高さ行がともに非表示
+     （`showsSyncState:false`、#215 の挙動が維持されている。回帰なし）。
+   - コンソールエラーなし。
+4. 「ヘッドスロット」ラベルの GlossaryTerm: ホバーで用語「スロット」の
+   解説ポップオーバーが開き、「メインネットでは1スロット=12秒／chainviz
+   の開発環境では2秒に短縮」という区別（i18n レビューでの修正内容）と、
+   空スロット分だけ head_slot が EL のブロック高より大きくなり得る旨、
+   relatedTerms（block, cl-client）が正しく表示されることを確認した。
+
+#### 結論
+
+元 Issue（beacon ノードの同期状態が永久に「同期中 / blockHeight 0」と
+表示され、健全なのに不調に見える）が実機で解消されていることを確認した。
+reth の従来表示・validator の非表示挙動にも回帰は無い。完了条件を満たす。
