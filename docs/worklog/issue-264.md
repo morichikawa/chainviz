@@ -99,3 +99,34 @@
 - Issue #258 のレビューで申し送りのあった2箇所(`GlossaryProvider.tsx`と
   `parse.ts`)にはこれで対応済み。`chain-profiles/ethereum` 配下の他ファイル
   は #258 の時点で確認済み(該当なし)のため、本Issueでは再確認していない
+
+#### テスト強化(異常系・境界値)
+
+実装担当が書いた基本テストに対し、以下の観点でケースを追加した。
+
+- `GlossaryProvider.test.tsx`(lookup の読み取り側):
+  - `Object.prototype` の全メンバ名を総当たりで lookup し、いずれも
+    `undefined` を返すことを固定(`toString`/`constructor` 等の代表例だけ
+    でなく、`Object.getOwnPropertyNames(Object.prototype)` + `__proto__` を
+    網羅。将来 lookup が個別キーの名指しブラックリストに退化しても検知
+    できるようにする)
+  - ガードが過剰に弾かないことの確認: `Object.create(null)` ベースの
+    glossary に正当な own property として `__proto__` キーの用語を格納した
+    場合、lookup がそれを(undefined ではなく)返すこと。継承メンバの漏れ
+    防止と、正当な own property の解決を両立していることを固定
+- `parse.protoGuard.test.ts`(書き込み側・マージ・下流互換):
+  - `mergeGlossaries` で `__proto__` キーの用語が後勝ちの own property
+    上書きになること、上書き後も列挙に1回だけ現れることを固定
+  - `Object.create(null)` 化が通常マージを壊していないこと: 先行 part の
+    エントリ保持、3 part 以上での後勝ち、空 glossary を挟んでも他が消えない
+    こと、Object.assign による浅いコピー(結果を破壊しても元 part に波及
+    しない)、単一 part のマージ
+  - `Object.create(null)` 化の下流互換(継承メソッドが無いことで既存
+    コードを壊していないか): 実データをマージした glossary が
+    `Object.entries`/`Object.keys`/`Object.values`/`for...in`/
+    `JSON.stringify`/オブジェクトスプレッドで正しく扱えること
+- 追加した回帰テストは、実装を修正前(素の `{}` ベース・ガード無し)に
+  一時的に戻すと失敗することを確認済み(8件が失敗し、元の不具合を実際に
+  検出できることを裏取り。確認後に実装を修正版へ復元)
+- `packages/frontend` の `pnpm build`・`pnpm test`(119ファイル1837件)が
+  全て通ることを確認済み
