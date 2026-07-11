@@ -130,3 +130,46 @@
   検出できることを裏取り。確認後に実装を修正版へ復元)
 - `packages/frontend` の `pnpm build`・`pnpm test`(119ファイル1837件)が
   全て通ることを確認済み
+
+#### レビュー(chainviz-reviewer)
+
+- 担当: reviewer
+- ブランチ: issue-264-glossary-proto-guard
+- 判定: **合格**
+- 確認内容:
+  - `Object.create(null)` 化の下流影響の横断確認: `parseGlossaryYaml`/
+    `mergeGlossaries` の戻り値を使うのは `data.ts`(モジュールレベルの
+    マージ)と `App.tsx`(GlossaryProvider へのプロップ渡し)のみで、
+    glossary オブジェクトに対する `instanceof` チェックや
+    `glossary.hasOwnProperty(...)` のような継承メソッドの直接呼び出しは
+    frontend 全体に存在しないことを grep で確認した。`index.ts` で
+    parse.js が再エクスポートされているが、他パッケージ
+    (collector/shared/e2e)からの利用は無い。lookup 経由の消費者は
+    `GlossaryTerm.tsx` のみ
+  - 2方針の使い分けの妥当性: 読み取り側(`lookup`)は #215/#258 と同じ
+    `Object.hasOwn` ガード、書き込み側(`parse.ts`)は `Object.create(null)`。
+    書き込み側は動的キーの代入時に `__proto__` アクセサ経由の
+    `[[Prototype]]` 書き換えを防ぐ必要があり、読み取りガードでは
+    防げないため、この使い分けは妥当。読み取り側を parse 修正後も
+    残す理由(glossary プロップは外部から任意のオブジェクトを注入
+    できる)も worklog に明記されており妥当
+  - テストが元の不具合を検出できることの裏取り: `parse.ts` と
+    `GlossaryProvider.tsx` を一時的に main 版へ戻して新規テスト2ファイルを
+    実行したところ、worklog の記述どおり8件が失敗することを確認した
+    (確認後に完全復元、`git status` クリーンを確認)
+  - リポジトリ全体で `pnpm build`(exit 0)・`pnpm lint`(exit 0)・
+    `pnpm test`(exit 0、shared 62 / e2e 108 / collector 1167 /
+    frontend 1837 件すべて合格)を確認した
+  - コミット粒度: 読み取り側修正・書き込み側修正・テスト強化・docs で
+    計5コミットに分かれており、いずれも Conventional Commits 準拠。
+    各 fix コミットに対応するテストが同じコミットに含まれている
+  - docs: `docs/PLAN.md` のバックログ項目チェック+Issueリンク、
+    `docs/WORKLOG.md` 索引の1行追加、本ファイルの記録が実装と一致
+- 軽微な指摘(差し戻しはしない): `GlossaryProvider.tsx` のコメント
+  「App.tsx の既定値・テストのモックともに `Object.prototype` を継承する」
+  は、同ブランチ内の parse.ts 修正後は前半が事実と異なる(App.tsx の
+  既定値 = `data.ts` の `mergeGlossaries` 出力は現在プロトタイプが null)。
+  ガードの必要性(プロップは外部注入可能)は変わらないため動作上の問題は
+  無いが、次にこのファイルへ触れる際にコメントを「テストのモック等、
+  外部から注入される glossary は `Object.prototype` を継承しうる」の
+  趣旨へ直すとよい
