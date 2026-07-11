@@ -106,8 +106,10 @@ interface NodeEntity extends InfraEntity {
   // PeerEdge は決して観測されない）。bootnode はチェーン非依存の P2P
   // 一般語彙として使う（Bitcoin の seed node 等も同系概念）。collector は
   // Docker ラベル `com.chainviz.p2p-role`（値 "bootnode" のときのみ
-  // bootnode）と ChainAdapter 内の分類（Ethereum アダプタは compose
-  // サービス名に "validator" を含むコンテナを "none" と判定）から導出し、
+  // bootnode）と ChainAdapter 内の分類（Ethereum アダプタは
+  // `com.chainviz.role` ラベルの値が厳密に "validator" と一致するコンテナを
+  // "none" と判定。Issue #246。旧実装は compose サービス名への "validator"
+  // 部分一致だった＝Issue #214）から導出し、
   // どちらにも該当しなければ peer とする（Issue #65 の「ラベルを単一の
   // 真実の情報源とする」方針。Ethereum プロファイルでは compose で
   // reth1/beacon1 にラベルを付与する）。省略時は「不明」（旧スナップ
