@@ -3,7 +3,6 @@ import { ReactFlowProvider } from "@xyflow/react";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CommandActionsProvider } from "../commands/CommandActionsContext.js";
-import type { CommandActions } from "../commands/useCommands.js";
 import { GlossaryProvider } from "../glossary/GlossaryProvider.js";
 import { LanguageProvider } from "../i18n/LanguageProvider.js";
 import { OperationDataProvider } from "../operations/OperationDataContext.js";

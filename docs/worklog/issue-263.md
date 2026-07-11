@@ -118,6 +118,9 @@ aria-busyの`undefined`/`true`/`false`各値と`undefined → true → undefined
   になり得ない。したがって同種の属性欠落パターンは他に存在しない。
 - `pnpm --filter @chainviz/frontend test`（118ファイル・1829件）と
   `pnpm --filter @chainviz/frontend build`がいずれも通ることを確認した。
+- レビュー指摘対応: 新規テストファイルの未使用import
+  （`import type { CommandActions }`）を削除し、`pnpm lint`（eslint）が
+  通ることを確認した。
 
 #### レビュー（reviewer）
 
