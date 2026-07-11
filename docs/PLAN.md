@@ -608,7 +608,7 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
 - [ ] パッケージごとにREADME(設計情報)を用意し、タスクのたびに更新する
       運用にしたい
       [#223](https://github.com/morichikawa/chainviz/issues/223)
-- [ ] docs/CONCEPT.md・docs/ARCHITECTURE.mdが文章のみで分かりにくいので
+- [x] docs/CONCEPT.md・docs/ARCHITECTURE.mdが文章のみで分かりにくいので
       図解(Mermaid等)を増やしたい
       [#224](https://github.com/morichikawa/chainviz/issues/224)
 - [x] 確定時のコントラクトへのパルス/フラッシュがアドレス表記の
