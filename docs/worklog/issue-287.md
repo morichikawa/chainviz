@@ -249,3 +249,55 @@ test`（1263件全件成功。failure-log テストは3→9件に増加）を実
   理論上ある（`afterEach` に寄せる方が安全）。既存の
   peer-block-adapter.test.ts も同じ形式であり、本 Issue の範囲では
   問題にならないため指摘のみに留める。
+
+#### QA 検証（chainviz-qa）
+
+- 担当: qa
+- ブランチ: issue-287-peer-poll-error-log
+- 判定: **合格**
+
+修正版 collector を worktree でビルドし、実際に稼働中の chainviz-ethereum
+スタック（beacon1/2/3・reth1/2/3 ほか、全 beacon が Beacon API 200 応答の
+健全状態）に対して、実 `DockerPoller` + 実 `EthereumAdapter` +
+実 fetch（`createFetchHttpClient` の HTTP タイムアウト 700ms、
+`peerPollIntervalMs` 300ms）で `subscribePeers` を回す検証ハーネスを
+`packages/collector` 配下に一時作成して実行した（検証後にハーネスファイルは
+削除、リポジトリには残していない）。CL ピアポーリング失敗の実挙動を
+`console.error` の出力で観測した。
+
+**確認結果**
+
+- 正常時（ノイズ無し）: 全 beacon が健全な間、`consensus peer poll failed`
+  ログは 1 件も出ず、ピアエッジ配信（6 エッジ）は継続した。正常時に
+  ログノイズを出さないことを確認。
+- 失敗時のログ出力: `docker pause chainviz-ethereum-beacon1-1` で beacon1 の
+  Beacon API を応答不能にすると、初回失敗の tick で即座に
+  `[ethereum] consensus peer poll failed for chainviz-ethereum/beacon1:`
+  が出力された（連続失敗回数サフィックス無し = 1 回目）。第 2 引数に実際の
+  エラーオブジェクト（タイムアウトの AbortError）がそのまま渡っており、
+  汎用メッセージへのすり替えや握りつぶしは無い。
+- ログ間引き（20 回に 1 回）: 失敗を継続させると、失敗 #2〜#19 の tick では
+  beacon1 のログは一切出ず、失敗 #20 の tick で
+  `... for chainviz-ethereum/beacon1 (20 consecutive failures):` が
+  再度 1 回だけ出力された。beacon1 に対する失敗ログは全期間で「初回」と
+  「20 回目」の 2 件のみで、無限にログが出続けないこと・ちょうど 20 回に
+  1 回へ間引かれることを実機で確認。
+- ノード単位の独立性（副次確認）: 検証中に別スタック
+  chainviz-eth-issue286v が起動し、その beacon1（172.41.2.1:5052）が
+  ECONNREFUSED で初回失敗を 1 回ログした。stableId ごとに独立して失敗が
+  記録される（実 ECONNREFUSED 原因が cause として保持される）ことも
+  実地で確認できた。
+- 復旧時のカウントリセット: `docker unpause` で beacon1 を復旧させ、成功
+  ポーリングでカウントが削除された後、再び `docker pause` すると、再度
+  サフィックス無しの `... for chainviz-ethereum/beacon1:`（1 回目扱い）が
+  出力された。復旧後にカウントが正しくリセットされることを確認。
+- 完了条件（PLAN.md #287）: EL 側と対称な `console.error` 追加・連続失敗時の
+  間引きログという完了条件を満たす。該当チェックボックスは実装時点で既に
+  チェック済み。
+
+**環境の復元**
+
+- 破壊的操作（`docker pause`）は都度 `docker unpause` で復元した。最終状態は
+  beacon1 が running・非 paused、chainviz-ethereum の全 beacon が Beacon API
+  200 応答、reth1 のブロック番号が進行（0x1d7 → 0x1d8）を確認済み。検証用
+  ハーネスファイルは削除し、`git status` がクリーンであることを確認した。
