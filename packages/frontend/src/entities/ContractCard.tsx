@@ -1,7 +1,9 @@
 import { Handle, type NodeProps, Position } from "@xyflow/react";
+import { useRef } from "react";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { useHoverPopover } from "../interaction/useHoverPopover.js";
+import { PopoverPortal } from "../interaction/PopoverPortal.js";
 import type { ContractActivityChip } from "./contractActivity.js";
 import { ContractPopover } from "./ContractPopover.js";
 import type { ContractFlowNode } from "./contractNode.js";
@@ -17,9 +19,13 @@ function ActivityChip({ chip }: { chip: ContractActivityChip }) {
   // Issue #221: 隙間を通過する一瞬の mouseleave で消えないよう遅延クローズ。
   const { isOpen: hovered, onMouseEnter, onMouseLeave } = useHoverPopover();
   const hasDetail = chip.decoded ? chip.args.length > 0 : true;
+  // Issue #245: 隣接カードの下に隠れないよう body 直下へ portal 描画する。
+  // 位置合わせの基準はこのチップ自体（アンカー）。
+  const chipRef = useRef<HTMLSpanElement>(null);
 
   return (
     <span
+      ref={chipRef}
       className={[
         "contract-activity-chip",
         `contract-activity-chip--${chip.kind}`,
@@ -36,7 +42,12 @@ function ActivityChip({ chip }: { chip: ContractActivityChip }) {
       {chip.kind === "event" ? "◆ " : ""}
       {chip.label}
       {hovered && hasDetail && (
-        <span className="contract-activity-chip__popover" role="tooltip">
+        <PopoverPortal
+          anchorRef={chipRef}
+          gapPx={6}
+          className="contract-activity-chip__popover"
+          role="tooltip"
+        >
           {chip.decoded ? (
             chip.args.map((arg, index) => (
               <span
@@ -49,7 +60,7 @@ function ActivityChip({ chip }: { chip: ContractActivityChip }) {
           ) : (
             <GlossaryTerm termKey="abi">{t("contract.chip.undecoded")}</GlossaryTerm>
           )}
-        </span>
+        </PopoverPortal>
       )}
     </span>
   );
@@ -76,6 +87,8 @@ export function ContractCard({ data }: NodeProps<ContractFlowNode>) {
   const { t } = useLanguage();
   // Issue #221: 隙間を通過する一瞬の mouseleave で消えないよう遅延クローズ。
   const { isOpen: hovered, onMouseEnter, onMouseLeave } = useHoverPopover();
+  // Issue #245: カード本体を ContractPopover の位置合わせの基準にする。
+  const cardRef = useRef<HTMLDivElement>(null);
 
   const isUncataloged = entity.name === undefined;
   const name = entity.name ?? t("contract.unknown");
@@ -92,6 +105,7 @@ export function ContractCard({ data }: NodeProps<ContractFlowNode>) {
 
   return (
     <div
+      ref={cardRef}
       className={className}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
@@ -162,7 +176,7 @@ export function ContractCard({ data }: NodeProps<ContractFlowNode>) {
           )}
         </div>
       </div>
-      {hovered && <ContractPopover entity={entity} />}
+      {hovered && <ContractPopover anchorRef={cardRef} entity={entity} />}
     </div>
   );
 }

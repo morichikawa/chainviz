@@ -19,6 +19,16 @@ const rpcEndpointGlossary: Glossary = {
 
 afterEach(cleanup);
 
+/**
+ * PopoverPortal（Issue #245）の必須 prop `anchorRef` 用に、位置決めの基準に
+ * なる適当な detached 要素への ref を作る。このテストではポップオーバーの
+ * 表示内容（フィールドの有無・文言）のみを検証するため、実際の画面上の
+ * 位置は関心の対象外。
+ */
+function createAnchorRef(): { current: HTMLElement | null } {
+  return { current: document.createElement("div") };
+}
+
 const node: NodeEntity = {
   kind: "node",
   id: "reth-follower-1",
@@ -59,6 +69,7 @@ function renderPopover(
     <LanguageProvider initialLanguage={lang}>
       <GlossaryProvider glossary={{}}>
         <InfraPopover
+          anchorRef={createAnchorRef()}
           entity={entity}
           drivesNodeContainerName={drivesNodeContainerName}
           maxElBlockHeight={maxElBlockHeight}
@@ -341,6 +352,7 @@ describe("InfraPopover workbench RPC target field glossary anchor (Issue #215)",
       <LanguageProvider initialLanguage="ja">
         <GlossaryProvider glossary={rpcEndpointGlossary}>
           <InfraPopover
+            anchorRef={createAnchorRef()}
             entity={workbench}
             rpcTargetContainerName="chainviz-reth-1"
           />
@@ -356,7 +368,7 @@ describe("InfraPopover workbench RPC target field glossary anchor (Issue #215)",
     render(
       <LanguageProvider initialLanguage="ja">
         <GlossaryProvider glossary={{}}>
-          <InfraPopover entity={workbench} />
+          <InfraPopover anchorRef={createAnchorRef()} entity={workbench} />
         </GlossaryProvider>
       </LanguageProvider>,
     );
@@ -432,14 +444,16 @@ describe("InfraPopover sync stages section (ARCHITECTURE.md §7.6.5, Issue #189)
   });
 
   it("falls back to targetHeight 0 (no bars) when maxElBlockHeight prop is omitted", () => {
-    const { container } = renderPopover(syncingNode);
+    renderPopover(syncingNode);
     // 見出しとステージ行自体は出るが、分母0なのでバーは1本も出ない。
+    // PopoverPortal(Issue #245)で body 直下に描画されるため、RTL の
+    // container ではなく document.body を検索範囲にする。
     expect(screen.getByText("同期ステージ")).toBeTruthy();
-    expect(container.querySelectorAll(".sync-progress-bar")).toHaveLength(0);
+    expect(document.body.querySelectorAll(".sync-progress-bar")).toHaveLength(0);
   });
 
   it("renders one progress bar per stage when maxElBlockHeight is provided", () => {
-    const { container } = renderPopover(syncingNode, "ja", undefined, 128);
-    expect(container.querySelectorAll(".sync-progress-bar")).toHaveLength(2);
+    renderPopover(syncingNode, "ja", undefined, 128);
+    expect(document.body.querySelectorAll(".sync-progress-bar")).toHaveLength(2);
   });
 });
