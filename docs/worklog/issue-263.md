@@ -118,3 +118,43 @@ aria-busyの`undefined`/`true`/`false`各値と`undefined → true → undefined
   になり得ない。したがって同種の属性欠落パターンは他に存在しない。
 - `pnpm --filter @chainviz/frontend test`（118ファイル・1829件）と
   `pnpm --filter @chainviz/frontend build`がいずれも通ることを確認した。
+
+#### レビュー（reviewer）
+
+差し戻し。指摘は1件のみで、それ以外の観点は全て問題なし。
+
+- **[要修正] `pnpm lint` が失敗する**。テスト強化で追加された
+  `packages/frontend/src/entities/InfraNodeCardPendingAria.test.tsx` の
+  6行目 `import type { CommandActions } from "../commands/useCommands.js";`
+  が未使用（`@typescript-eslint/no-unused-vars`）。このファイルでは
+  `CommandActionsProvider` の `actions` をインラインで渡しており型注釈に
+  使っていないため、import を削除すればよい。`.githooks/pre-push` は
+  `pnpm lint && pnpm build && pnpm test` を実行するため、このままでは
+  push 自体が失敗する。
+
+以下は確認済みで問題なし。
+
+- `pnpm build`（全パッケージ）と `pnpm test`（frontend 118ファイル・
+  1829件を含む）は通る。失敗は lint のみ。
+- 修正は Issue #237 の operate ボタン（`aria-busy={operationPending ?? false}`）
+  と完全に同型で、上流（App.tsx のメモ化）に手を入れない判断・説明コメント
+  の書き方も一貫している。undefined フォールバックの理由コメントが
+  コード上に明記されており、「なぜ ?? false か」が後から読んで分かる。
+- `InfraNodeCard.test.tsx` の追加テストは undefined / true / 明示 false の
+  境界値と undefined → true → undefined の遷移（元バグの核心）をカバー。
+  worklog に「修正前にテストが実際に失敗する（null を返す）ことを確認した」
+  記録があり、意味のあるテストであることが担保されている。
+- `InfraNodeCardPendingAria.test.tsx`（独立性テスト8件）は「同一カード上の
+  2つの aria-busy が干渉しないか」という関心事に絞られており、1ファイル
+  1責務の原則に沿う。両方 true（排他でないこと）、明示 false 混在、片方
+  だけが揺れる再レンダー列など組み合わせが妥当。壊した状態で 8件中3件が
+  失敗することの確認記録もある。
+- UI-ERR-03 のアサーション厳密化（`not.toHaveAttribute("aria-busy", "true")`
+  → `toHaveAttribute("aria-busy", "false")`）は、「フォーム不正時に送信を
+  試みても操作が保留状態にならない」という元の検証意図を保ったまま、
+  #237 修正後は属性欠落が起こらなくなった実態に合わせて強くしたもので、
+  意図を損なっていない。コメントの更新内容も実装と一致する。
+- コミット粒度は fix / e2e アサーション厳密化 / 独立性テスト追加 / docs
+  で分かれており、Conventional Commits 準拠。
+- `docs/PLAN.md` のチェックボックス・Issue リンク、`docs/WORKLOG.md` の
+  索引1行、worklog 本文とも実装内容と齟齬なし。
