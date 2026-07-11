@@ -191,3 +191,61 @@
 `pnpm --filter @chainviz/collector build` と `pnpm --filter @chainviz/collector
 test`（1263件全件成功。failure-log テストは3→9件に増加）を実行して通過を
 確認した。
+
+#### レビュー（chainviz-reviewer）
+
+- 担当: reviewer
+- ブランチ: issue-287-peer-poll-error-log
+- 判定: **合格**
+
+**確認内容**
+
+- 間引きロジックの設計: `logConsensusPeerPollFailure` は「1回目は必ず
+  ログ、以降は `CONSENSUS_PEER_POLL_FAILURE_LOG_INTERVAL`（20）回に1回」
+  という連続失敗回数ベースの間引きで、`peerPollIntervalMs` の設定値に
+  依存しない（時間ベースにすると間隔変更で成立しなくなる、という判断は
+  妥当）。EL 側（`fetchExecutionPeerNodes`）に間引きを遡って入れなかった
+  判断も、対称化の対象を「ログの有無」に限定するスコープ管理として妥当。
+  EL 側でも同様のログ量問題が起きたら別 Issue とする旨が worklog に
+  明記されている。
+- Map 肥大化防止: `pruneConsensusPeerFailureCounts` は
+  `fetchConsensusPeerNodes` の冒頭（= `pollPeersOnce` 経由で毎 tick）で
+  呼ばれ、その時点の Docker 観測由来 `targets` に含まれない stableId を
+  削除する。成功時も `delete` されるため、Map のサイズは常に「現在失敗中
+  の対象ノード数」以下に抑えられる。既存の `trackedNodeInternalsIds` と
+  同じ方式で一貫している。
+- 固定値（20）の前提条件: 定数の doc コメント（index.ts 90〜103行）に
+  「回数ベースにした理由（間隔設定に依存しない相対頻度）」が、worklog に
+  「既定 3000ms + タイムアウト 3000ms のもとで数分に1回程度のリマインド
+  になる」という絶対頻度の前提が、それぞれ明記されている。CLAUDE.md
+  「観測できる状態に依存した固定値を埋め込まない」の要件を満たす。
+- エラーの握りつぶし: 本 Issue の主眼どおり `catch { return null }` が
+  解消され、stableId・元のエラーオブジェクトがそのまま `console.error` に
+  渡る。汎用メッセージへのすり替えなし。
+- テストの質: 新規 `consensus-peer-poll-failure-log.test.ts`（9件）は
+  間引き境界を2周期ぶん（1・INTERVAL・2*INTERVAL のみログ、INTERVAL±1 は
+  沈黙）、ノード間のカウント独立性（同時失敗・後発失敗の2パターン）、
+  成功リセット境界（1回失敗直後の成功）、ログ内容の有用性（stableId・
+  元の Error・連続失敗回数サフィックス）をカバーしており、tester が
+  実装を意図的に壊して各テストが失敗することを確認済み（「意味のない
+  テスト」ではないことを担保）。既存テスト2件の console.error モック化も
+  EL 側の既存パターンと対称で問題なし。
+- 境界の遵守: 変更は `packages/collector` と docs のみ。shared/frontend
+  への波及なし。チェーン固有語彙の漏出なし。
+- ビルド・lint・テスト: リポジトリ全体で `pnpm build` / `pnpm lint` /
+  `pnpm test` を実行し全件通過（collector 1263件、frontend 1884件）。
+- コミット粒度: `fix(collector)`（実装+基本テスト）→ `docs`（記録）→
+  `test`（テスト強化）の3コミットで、1変更1コミット・Conventional
+  Commits に準拠。
+- docs との齟齬: `docs/PLAN.md` のチェック・Issue リンク、
+  `docs/WORKLOG.md` 索引行、本ファイルの記録がいずれも実装内容と一致。
+  ログ間引きは collector 内部の運用ログの話であり
+  `docs/ARCHITECTURE.md` / `docs/CONCEPT.md` に矛盾する記述はない。
+
+**軽微な所見（差し戻し対象外）**
+
+- 各テストが `vi.restoreAllMocks()` をテスト末尾で呼ぶ形式のため、
+  アサーション失敗時にモックが復元されず後続テストへ漏れる可能性が
+  理論上ある（`afterEach` に寄せる方が安全）。既存の
+  peer-block-adapter.test.ts も同じ形式であり、本 Issue の範囲では
+  問題にならないため指摘のみに留める。
