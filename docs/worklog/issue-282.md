@@ -224,3 +224,52 @@ undefined を含む**）は `parseHeadSlot` が `undefined` を返し、
   あり、既に許容した precision 欠落よりさらに遠い理論上の話のため、
   差し戻し対象とはしない。将来 `parseHeadSlot` を汎用化する際に
   思い出すこと。
+
+### 2026-07-11 QA検証記録
+
+- 担当: qa
+- ブランチ: issue-282-head-slot-parse-strict
+- 判定: **合格**
+
+#### 検証の狙い
+
+Issue #282 の head_slot パース厳格化が、Issue #274 で実装した beacon
+（consensus 役割）ノードの同期状態表示（同期済み/ヘッドスロット）の正常
+動作を壊していないことを、稼働中の実 Ethereum スタックの実データで確認する
+（回帰確認）。
+
+#### 実施環境
+
+- 稼働中の `chainviz-ethereum` スタック（reth1/2・beacon1/2・validator1/2・
+  workbench。beacon1 が `localhost:5052`、reth1 が `localhost:8545` を公開）
+- 本ブランチの collector を `pnpm --filter @chainviz/collector build` で
+  ビルドし、`CHAINVIZ_ETHEREUM_PROFILE_DIR` を profiles/ethereum に向けて
+  `node dist/index.js` で起動
+
+#### 実施内容と結果
+
+1. **実 Beacon API レスポンスの形の確認**: `GET
+   http://localhost:5052/eth/v1/node/syncing` は
+   `head_slot":"18847"` のように head_slot を10進整数文字列で返す。これは
+   `parseHeadSlot` の受理形式（`/^\d+$/`）に合致する。数秒間隔で観測すると
+   head_slot が 18852 → 18854 → 18855 と進行しており、チェーンが稼働中で
+   あることも確認。
+2. **collector 経由の同期状態表示（WebSocket 疎通）**: WebSocket
+   （`ws://localhost:4000`）に接続し、snapshot と diff を受信して consensus
+   役割（beacon）ノードの `syncStatus` / `blockHeight`（=head_slot）を約30秒
+   追跡した。beacon1/beacon2 とも一貫して `syncStatus="synced"` を示し、
+   `blockHeight` は 18913 → 18915 → 18918 → 18920 → 18923 → 18925 と実際の
+   head_slot 進行に追従して更新され続けた。厳格化したパースが実データの
+   10進整数文字列 head_slot を正しく受理し、同期状態表示が正常に機能する
+   ことを確認。
+3. **collector ログのエラー確認**: 起動から検証終了まで collector の標準
+   出力・標準エラーに error / unexpected / head_slot / throw / fail /
+   warn のいずれの語も出力されなかった（WebSocket・ロギングプロキシの
+   listen ログのみ）。厳格化により正常レスポンスが誤って弾かれてログを
+   汚すようなことは起きていない。
+
+#### 完了条件との対応
+
+- 「Issue #282 の修正が Issue #274 の beacon 同期状態表示の正常動作を
+  壊していないこと」: 満たしている。実データで beacon の同期済み表示と
+  head_slot 追従更新が正常動作し、collector にエラーも出ていない。
