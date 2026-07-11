@@ -60,19 +60,19 @@ test.describe("UI-ERR 定型操作フォームのバリデーション", () => {
         // 「実行を試みる」というシナリオの意図を明示的に確認する。
         await submitButton.click({ force: true }).catch(() => {});
 
-        // 「保留中でない」ことの確認は aria-busy が厳密に "false" 文字列で
-        // あることではなく "true" でないこと（≒属性が無い場合も含む）で
-        // 判定する。App.tsx の infraNodesWithHighlight はブロック高が進む
-        // たびにノードを作り直す際、operationPending を一度も切り替えて
-        // いないワークベンチには aria-busy 属性自体を付けない実装になって
-        // おり（entitiesToFlowNodes は operationPending を持たず、値が
-        // false のままなら明示的な merge が走らない）、稼働中のチェーンでは
-        // ブロック到達のタイミング次第で "false" 明示 / 属性欠落のどちらも
-        // 起こりうる（実装時に発覚。Issue #237として別途起票、この属性欠落
-        // 自体はaria-busyの意味論上「busyでない」と等価なため実害は無い）。
+        // 「保留中でない」ことは aria-busy="false" が厳密に存在することで
+        // 判定する。以前は App.tsx の infraNodesWithHighlight がブロック高
+        // の進行のたびにノードを作り直す際、operationPending を一度も
+        // 切り替えていないワークベンチには aria-busy 属性自体を付けない
+        // 実装になっており、稼働中のチェーンではブロック到達のタイミング
+        // 次第で属性欠落が起こり得た(Issue #237)。InfraNodeCard.tsx 側で
+        // `aria-busy={operationPending ?? false}` に修正し、この属性は
+        // 常に "false" / "true" のいずれかとして存在するようになった
+        // (削除ボタンの removalPending についても同種の欠落を Issue #263
+        // で修正済み)。
         await expect(
           page.getByTestId(`infra-card-operate-${STATIC_WORKBENCH_ID}`),
-        ).not.toHaveAttribute("aria-busy", "true");
+        ).toHaveAttribute("aria-busy", "false");
         await expect(page.locator('[data-testid^="toast-"]')).toHaveCount(0);
       },
     );

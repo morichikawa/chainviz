@@ -10,6 +10,7 @@
 
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { cleanupRemovableCards } from "./support/cleanup.js";
 import {
   ENTITY_APPEAR_TIMEOUT_MS,
   submitAddWorkbench,
@@ -28,26 +29,14 @@ test.describe("UI-MULTI 複数クライアント・再接続シナリオ", () =>
   const addedWorkbenchIds: string[] = [];
 
   test.afterAll(async ({ browser }) => {
-    if (addedWorkbenchIds.length === 0) return;
-    const page = await browser.newPage();
-    try {
-      await page.goto("/");
-      // スナップショット反映前に `count()` を同期的に読むと「まだカードが
-      // 届いていないだけ」を「既に削除済み」と誤判定し、後片付けを
-      // 静かにスキップしてしまう(commands-node.spec.ts/commands-workbench.spec.ts
-      // にも同型の即時 count() チェックがあり、同じ race の可能性がある。
-      // 既存ファイルへの手当ては本Issueの範囲を超えるため、この点は
-      // Issue #238 に追記して別途フォローアップする)。ここでは
-      // `.click()` 自体にPlaywrightの自動待機(タイムアウト付き)を
-      // 任せ、最初から存在しない(=既に削除済み)場合だけタイムアウトを
-      // 握りつぶす。
-      for (const workbenchId of addedWorkbenchIds) {
-        const removeButton = page.getByTestId(`infra-card-remove-${workbenchId}`);
-        await removeButton.click({ timeout: ENTITY_APPEAR_TIMEOUT_MS }).catch(() => {});
-      }
-    } finally {
-      await page.close();
-    }
+    // 途中失敗時の後始末を共有ヘルパーに委ねる(commands-node.spec.ts /
+    // commands-workbench.spec.ts / wallet-balance.spec.ts /
+    // token-balance.spec.ts と同じ安全網パターン。Issue #233 で1箇所に
+    // 集約した。goto直後のスナップショット未反映による誤判定・削除完了を
+    // 待たない page.close の2つの競合状態はここで解消済み)。
+    await cleanupRemovableCards(browser, addedWorkbenchIds, {
+      timeoutMs: ENTITY_APPEAR_TIMEOUT_MS,
+    });
   });
 
   test("UI-MULTI-01: 一方の操作がもう一方のブラウザにも反映される", async ({

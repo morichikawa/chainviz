@@ -614,7 +614,7 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
 - [x] 確定時のコントラクトへのパルス/フラッシュがアドレス表記の
       食い違いで発火しない
       [#232](https://github.com/morichikawa/chainviz/issues/232)
-- [ ] UI-CMD系PlaywrightテストのafterAllクリーンアップが競合状態で
+- [x] UI-CMD系PlaywrightテストのafterAllクリーンアップが競合状態で
       無効化されうる
       [#233](https://github.com/morichikawa/chainviz/issues/233)
 - [x] dev collector稼働中はpnpm test:e2eが起動不能(proxyポート衝突が
@@ -640,6 +640,11 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
 - [x] describeSyncStageがObject.prototypeの継承メンバを漏らす可能性がある
       (describeNodeRoleと同種の穴)
       [#258](https://github.com/morichikawa/chainviz/issues/258)
+- [x] 削除ボタンのaria-busy(removalPending)にも#237と同種の欠落バグがある
+      [#263](https://github.com/morichikawa/chainviz/issues/263)
+- [x] UI-CMD-01のaddNode成功判定が#215のsubtitle形式変更に追従しておらず
+      常に失敗する
+      [#270](https://github.com/morichikawa/chainviz/issues/270)
 
 ## 運用ルール（全ステップ共通）
 

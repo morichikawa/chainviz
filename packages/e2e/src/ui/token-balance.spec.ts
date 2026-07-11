@@ -11,6 +11,7 @@
 
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { cleanupRemovableCards } from "./support/cleanup.js";
 import {
   ENTITY_APPEAR_TIMEOUT_MS,
   OPERATION_EFFECT_TIMEOUT_MS,
@@ -49,34 +50,16 @@ test.afterAll(async ({ browser }) => {
   // (wallet-balance.spec.ts の afterAll と同じ考え方。残すとキャンバス上の
   // グリッド位置が右・下へずれ続け、操作パネルのビューポート越境
   // (OPERATION_PANEL_VIEWPORT 参照)が再発しやすくなる)。
-  if (!recipientWorkbenchId) return;
   // browser.newPage() は test.use({ viewport }) を引き継がないため、
   // 明示的に同じビューポートを指定する(既定のDesktop Chromeプリセット
   // だとカードが表示範囲外になり削除ボタンをクリックできないことがある)。
-  const page = await browser.newPage({ viewport: OPERATION_PANEL_VIEWPORT });
-  try {
-    await page.goto("/");
-    const removeButton = page.getByTestId(`infra-card-remove-${recipientWorkbenchId}`);
-    // goto直後はスナップショット反映前でcount()が0のままなことがあるため、
-    // 単純なcount()判定ではなくwaitForで出現を待つ(見つからなければ既に
-    // 削除済みとみなして無視する)。
-    try {
-      await removeButton.waitFor({ timeout: ENTITY_APPEAR_TIMEOUT_MS });
-      await removeButton.click();
-      // クリックはコマンド送信のみで完了を待たない。docker停止・削除は
-      // 非同期(数秒かかりうる)なので、実際にカードが消えるまで待たずに
-      // ページを閉じてしまうと、globalTeardownでcollectorが停止した際に
-      // 削除処理が完遂しないままコンテナが残ってしまう(実機で確認済みの
-      // 不具合)。
-      await expect(
-        page.getByTestId(`infra-card-${recipientWorkbenchId}`),
-      ).toHaveCount(0, { timeout: ENTITY_APPEAR_TIMEOUT_MS });
-    } catch {
-      // 既に削除済み等でボタンが見つからない場合は何もしない。
-    }
-  } finally {
-    await page.close();
-  }
+  // 削除ボタンの出現待ち・クリック後の消滅待ちのロジックは
+  // support/cleanup.ts に集約している(Issue #233。競合状態で後始末が
+  // 無効化されうる問題への対応)。
+  await cleanupRemovableCards(browser, [recipientWorkbenchId], {
+    timeoutMs: ENTITY_APPEAR_TIMEOUT_MS,
+    viewport: OPERATION_PANEL_VIEWPORT,
+  });
 });
 
 test("UI-C-05: トークン残高の表示と変化が見える", async ({ page }) => {
