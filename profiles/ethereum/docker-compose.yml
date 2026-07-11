@@ -9,10 +9,10 @@
 #
 # genesis は初回起動時に genesis サービスが現在時刻で生成し、共有ボリュームに
 # 残す(詳細は README.md「genesis の扱い」)。以降の起動では既存の genesis を
-# 再利用し、通常は再生成しない(冪等)。ただし全ノードが一定時間(既定 10 分)
-# 以上停止していたことをハートビート(`heartbeat` ボリューム)から検知した
-# 場合は、genesis を現在時刻で自動再生成する(README.md「長時間停止後の
-# 再起動と weak subjectivity」、Issue #148)。まっさらな chain で始めたい
+# 再利用し、通常は再生成しない(冪等)。ただし genesis 生成時刻からの経過時間
+# (genesis 年齢)が一定(既定 10 分)を超えた状態で全ノード停止が確定・実測
+# された場合は、genesis を現在時刻で自動再生成する(README.md「長時間停止後
+# の再起動と自動リセット」、Issue #148 / #286)。まっさらな chain で始めたい
 # ときは `docker compose down -v` でボリュームごと破棄する。
 
 name: chainviz-ethereum
@@ -47,7 +47,11 @@ services:
       # composeのenvironment:に列挙しないとシェル前置き(VAR=... docker
       # compose up)だけではコンテナ内に渡らないため、既定値付きで明示する。
       GENESIS_LIVE_THRESHOLD_SEC: ${GENESIS_LIVE_THRESHOLD_SEC:-60}
-      GENESIS_DOWNTIME_RESET_SEC: ${GENESIS_DOWNTIME_RESET_SEC:-600}
+      GENESIS_MAX_REBUILD_GAP_SEC: ${GENESIS_MAX_REBUILD_GAP_SEC:-600}
+      # サンプリング窓(2 × この値)の導出に使う(Issue #286)。ノード側の
+      # ハートビート間隔と同じ既定値。ノード側を上書きする場合は同名変数
+      # なのでシェル前置き(VAR=... docker compose up)で自動的に揃う。
+      HEARTBEAT_INTERVAL_SEC: ${HEARTBEAT_INTERVAL_SEC:-10}
     volumes:
       - genesis:/data
       # 再生成時に down -v 相当のクリーンさにするため rw でマウントし、
