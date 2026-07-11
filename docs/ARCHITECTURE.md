@@ -26,48 +26,30 @@ chainviz/
     services.yaml
     sources.yaml
     cross-chain.yaml
+  scripts/             # 開発用の一括起動・停止スクリプト（dev-up.sh / dev-down.sh）
   docs/
 ```
 
 各パッケージ内部は技術レイヤーではなくドメイン単位でモジュールを切る
 （CLAUDE.md の方針）。
 
-```
-packages/shared/src/
-  world-state/         # エンティティ型（node, workbench, wallet, peer, block, tx, contract…）
-  events/              # 差分イベント型
-  protocol/            # WebSocket メッセージ envelope 型（snapshot/diff/command）
-  chain-profile/       # ChainAdapter・ChainProfile のインターフェース型
+**各パッケージ内部のモジュール構成（ディレクトリ単位の責務一覧）は、
+各パッケージ直下の README.md を正とし、本ドキュメントでは繰り返さない**
+（Issue #223。コードから遠い場所に詳細を重複して置くと乖離するため。実際に
+本節にあった旧記載は frontend の `operations/` 追加を反映できておらず、
+実在しない `adapters/chain-adapter.ts` を載せたままになっていた）:
 
-packages/collector/src/
-  docker/              # Docker Engine API（dockerode）のポーリング
-  adapters/
-    chain-adapter.ts    # ChainAdapter インターフェース
-    ethereum/           # EthereumAdapter（JSON-RPC / Engine API / Prometheus）
-  proxy/               # ワークベンチ RPC 観測用ロギングプロキシ
-  world-state/         # インメモリのワールドステート store + 差分計算
-  commands/            # フロントからの操作コマンド処理（ノード/ワークベンチ追加・削除）
-  server/              # WebSocket サーバー
-  index.ts
+- [`packages/shared/README.md`](../packages/shared/README.md)
+- [`packages/collector/README.md`](../packages/collector/README.md)
+- [`packages/frontend/README.md`](../packages/frontend/README.md)
+- [`packages/e2e/README.md`](../packages/e2e/README.md)
+- [`profiles/ethereum/README.md`](../profiles/ethereum/README.md)
 
-packages/frontend/src/
-  app/                 # アプリのルート組み立て（App コンポーネント・依存の初期化）
-  canvas/              # React Flow の土台（ズーム/パン/ドラッグ）・操作ツールバー
-  commands/            # 操作コマンドの発行・保留追跡・失敗通知の配線
-  entities/            # ノード/ワークベンチ/ウォレットのカード表示コンポーネント
-  glossary/            # インライン解説・用語集パネル
-  i18n/                # ja/en 切り替え
-  interaction/         # カード種別を跨ぐ汎用の操作性ロジック（ホバーポップオーバーの
-                       # 開閉遅延・React Flow ノードの外（document.body）へ
-                       # portal 描画する位置追従など。特定のドメインに属さない
-                       # 横断的なフック・コンポーネント）
-  layout/              # レイアウトの localStorage 永続化
-  notifications/       # トースト通知（コマンド失敗のエラー表示など）
-  platform/            # ブラウザ API のラッパー（localStorage などの薄い抽象）
-  websocket/           # collector への接続・スナップショット/差分メッセージの受信
-  world-state/         # 受信したスナップショット/差分を畳み込むクライアント側ストア
-  chain-profiles/      # チェーンプロファイルごとのフロント表現セット
-```
+ドキュメントの役割分担: `docs/CONCEPT.md` = 決定事項と「なぜ」（原典）、
+本ドキュメント = パッケージ間の契約（スキーマ・プロトコル・チェーン
+プロファイル 3 点セット・E2E 構成）と横断的な設計判断、パッケージ README =
+そのパッケージの「今どうなっているか」（役割・境界・モジュール構成・
+実行方法）、`docs/worklog/` = 作業の経緯。
 
 ## 2. ワールドステートのスキーマ
 
