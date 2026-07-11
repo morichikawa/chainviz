@@ -491,3 +491,111 @@ describe("TransactionLifecycleTracker eviction", () => {
     expect(tracker.get("0xt3")).toBeDefined();
   });
 });
+
+describe("TransactionLifecycleTracker.updateContractEvents (Issue #244)", () => {
+  it("returns null and does nothing for an untracked hash", () => {
+    const tracker = new TransactionLifecycleTracker();
+    const result = tracker.updateContractEvents("0xghost", [
+      { contractAddress: "0xc", eventName: "Transfer", args: [] },
+    ]);
+    expect(result).toBeNull();
+    expect(tracker.get("0xghost")).toBeUndefined();
+  });
+
+  it("returns null and leaves the tracked tx untouched when given an empty array", () => {
+    const tracker = new TransactionLifecycleTracker();
+    tracker.recordInclusion("0xblock", [
+      {
+        hash: "0xt1",
+        from: "0xa",
+        to: null,
+        status: "included",
+        contractAddress: "0xc",
+        contractEvents: [{ contractAddress: "0xc", rawEventId: "0xtopic0" }],
+      },
+    ]);
+    const result = tracker.updateContractEvents("0xt1", []);
+    expect(result).toBeNull();
+    // 既存の contractEvents（raw フォールバック）を空へ後退させない。
+    expect(tracker.get("0xt1")?.contractEvents).toEqual([
+      { contractAddress: "0xc", rawEventId: "0xtopic0" },
+    ]);
+  });
+
+  it("replaces contractEvents on a tracked tx and returns the updated entity", () => {
+    const tracker = new TransactionLifecycleTracker();
+    tracker.recordInclusion("0xblock", [
+      {
+        hash: "0xt1",
+        from: "0xa",
+        to: null,
+        status: "included",
+        contractAddress: "0xc",
+        contractEvents: [{ contractAddress: "0xc", rawEventId: "0xtopic0" }],
+      },
+    ]);
+    const updated = tracker.updateContractEvents("0xt1", [
+      {
+        contractAddress: "0xc",
+        eventName: "Transfer",
+        args: [{ name: "value", value: "1000" }],
+      },
+    ]);
+    expect(updated).toEqual<TransactionEntity>({
+      kind: "transaction",
+      hash: "0xt1",
+      from: "0xa",
+      to: null,
+      status: "included",
+      blockHash: "0xblock",
+      createdContractAddress: "0xc",
+      contractEvents: [
+        {
+          contractAddress: "0xc",
+          eventName: "Transfer",
+          args: [{ name: "value", value: "1000" }],
+        },
+      ],
+    });
+    expect(tracker.get("0xt1")).toEqual(updated);
+  });
+
+  it("does not change other fields (status/blockHash/createdContractAddress) when replacing contractEvents", () => {
+    const tracker = new TransactionLifecycleTracker();
+    tracker.recordInclusion("0xblockA", [
+      {
+        hash: "0xt1",
+        from: "0xa",
+        to: null,
+        status: "failed",
+        contractAddress: "0xc",
+        contractEvents: [{ contractAddress: "0xc", rawEventId: "0xtopic0" }],
+      },
+    ]);
+    const updated = tracker.updateContractEvents("0xt1", [
+      { contractAddress: "0xc", eventName: "Transfer", args: [] },
+    ]);
+    expect(updated?.status).toBe("failed");
+    expect(updated?.blockHash).toBe("0xblockA");
+    expect(updated?.createdContractAddress).toBe("0xc");
+  });
+
+  it("re-inserts the updated tx as the newest entry (survives eviction ahead of older entries)", () => {
+    const tracker = new TransactionLifecycleTracker(2);
+    tracker.recordInclusion("0xblock", [
+      { hash: "0xt1", from: "0xa", to: null, status: "included", contractAddress: "0xc" },
+    ]);
+    tracker.recordPending({ hash: "0xt2", from: "0xa", to: "0xb" });
+    // t1 を最新扱いへ入れ直す。
+    tracker.updateContractEvents("0xt1", [
+      { contractAddress: "0xc", eventName: "Transfer", args: [] },
+    ]);
+    // maxTxs(2) を超える3件目が入ると、最古(t2)ではなく本来 t1 より後に
+    // 追加された t2 が最古扱いのままなら t2 が押し出されるはず、という
+    // 直感に反し、直近 updateContractEvents で入れ直された t1 は生き残る。
+    tracker.recordPending({ hash: "0xt3", from: "0xa", to: "0xb" });
+    expect(tracker.get("0xt1")).toBeDefined();
+    expect(tracker.get("0xt2")).toBeUndefined();
+    expect(tracker.get("0xt3")).toBeDefined();
+  });
+});
