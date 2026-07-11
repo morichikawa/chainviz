@@ -1009,3 +1009,81 @@ describe("EthereumAdapter.pollInfra drivesNodeId resolution (Issue #186)", () =>
     expect(reth?.drivesNodeId).toBeUndefined();
   });
 });
+
+/**
+ * validator（VC）が Beacon API ラベルで beacon 役と識別されるフィクスチャ。
+ * 上の `validatorFixture`（`com.chainviz.role` 無し）とは別に用意する
+ * （既存の「omits drivesNodeId on a validator node」テストの前提を壊さない
+ * ため。Issue #285）。
+ */
+const validatorWithRoleFixture: Fixture = {
+  summary: {
+    Id: "id-validator1-role",
+    Names: ["/chainviz-ethereum-validator1-1"],
+    Image: "sigp/lighthouse:latest",
+    State: "running",
+    Labels: {
+      "com.docker.compose.project": "chainviz-ethereum",
+      "com.docker.compose.service": "validator1",
+      "com.chainviz.role": "validator",
+    },
+    NetworkSettings: { Networks: { chain: { IPAddress: "172.28.0.3" } } },
+  },
+  top: { Titles: ["CMD"], Processes: [["lighthouse vc"]] },
+};
+
+describe("EthereumAdapter.pollInfra drivesNodeId resolution for validator→beacon (Issue #285)", () => {
+  it("sets drivesNodeId on the validator node to the paired beacon node's id", async () => {
+    const adapter = new EthereumAdapter(
+      new DockerPoller(
+        clientFrom([rethFixture, beaconFixture, validatorWithRoleFixture]),
+      ),
+    );
+    const partial = await adapter.pollInfra();
+    const entities = (partial.entities ?? []) as NodeEntity[];
+    const validator = entities.find(
+      (e) => e.id === "chainviz-ethereum/validator1",
+    );
+    const beacon = entities.find((e) => e.id === "chainviz-ethereum/beacon1");
+    expect(validator?.drivesNodeId).toBe(beacon?.id);
+  });
+
+  it("does not overwrite the beacon node's drivesNodeId (which still points at execution)", async () => {
+    // beacon→reth の既存の対応付けは validator→beacon の解決を追加しても
+    // 変わらない（フォールスルーは同じ NodeEntity に対して両方成立する
+    // ことは無い＝候補集合が互いに素、という設計どおりであることの確認）。
+    const adapter = new EthereumAdapter(
+      new DockerPoller(
+        clientFrom([rethFixture, beaconFixture, validatorWithRoleFixture]),
+      ),
+    );
+    const partial = await adapter.pollInfra();
+    const entities = (partial.entities ?? []) as NodeEntity[];
+    const beacon = entities.find((e) => e.id === "chainviz-ethereum/beacon1");
+    const reth = entities.find((e) => e.id === "chainviz-ethereum/reth1");
+    expect(beacon?.drivesNodeId).toBe(reth?.id);
+  });
+
+  it("omits drivesNodeId when the validator has no paired beacon node observed", async () => {
+    const adapter = new EthereumAdapter(
+      new DockerPoller(clientFrom([validatorWithRoleFixture])),
+    );
+    const partial = await adapter.pollInfra();
+    const validator = partial.entities?.[0] as NodeEntity;
+    expect(validator.drivesNodeId).toBeUndefined();
+  });
+
+  it("still omits drivesNodeId on a validator node without the role label (backward-compatible with pre-#285 fixtures)", async () => {
+    const adapter = new EthereumAdapter(
+      new DockerPoller(
+        clientFrom([rethFixture, beaconFixture, validatorFixture]),
+      ),
+    );
+    const partial = await adapter.pollInfra();
+    const entities = (partial.entities ?? []) as NodeEntity[];
+    const validator = entities.find(
+      (e) => e.id === "chainviz-ethereum/validator1",
+    );
+    expect(validator?.drivesNodeId).toBeUndefined();
+  });
+});

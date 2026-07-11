@@ -4,6 +4,7 @@ import { ROLE_LABEL } from "./labels.js";
 import { EXECUTION_METRICS_PORT } from "./reth-metrics-client.js";
 import {
   beaconStableIdForExecution,
+  beaconStableIdForValidator,
   beaconTargets,
   EXECUTION_RPC_PORT,
   EXECUTION_WS_PORT,
@@ -739,6 +740,84 @@ describe("executionStableIdForBeacon (Issue #186)", () => {
 
   it("returns undefined when the observations list is empty", () => {
     expect(executionStableIdForBeacon(beacon1, [])).toBeUndefined();
+  });
+});
+
+describe("beaconStableIdForValidator (Issue #285)", () => {
+  it("maps a validator container to the beacon node in the same logical node", () => {
+    expect(
+      beaconStableIdForValidator(validator1, [obs(), beacon1, validator1]),
+    ).toBe("chainviz-ethereum/beacon1");
+  });
+
+  it("does not confuse different node groups", () => {
+    const validator2 = obs({
+      stableId: "chainviz-ethereum/validator2",
+      name: "chainviz-ethereum-validator2-1",
+      labels: {
+        "com.docker.compose.service": "validator2",
+        [ROLE_LABEL]: "validator",
+      },
+      image: "sigp/lighthouse:latest",
+      ip: "172.28.0.4",
+      processes: [{ command: "lighthouse vc", name: "lighthouse" }],
+    });
+    // validator2 に対応する beacon2 は無いので、beacon1 に誤って対応付けない。
+    expect(
+      beaconStableIdForValidator(validator2, [obs(), beacon1, validator2]),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when called with a beacon container (not a validator)", () => {
+    // beacon1 は isValidatorService が false になるため、
+    // 「そもそも validator 役ではない」経路で undefined を返す。
+    expect(
+      beaconStableIdForValidator(beacon1, [obs(), beacon1, validator1]),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when called with an execution container (not a validator)", () => {
+    // pollInfra は全 NodeEntity に対して機械的に呼ぶため、reth 自身に対して
+    // 呼んでも自己参照や無関係な対応付けを返さない自己防衛を確認する。
+    expect(
+      beaconStableIdForValidator(obs(), [obs(), beacon1, validator1]),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when called with a workbench container (not a validator)", () => {
+    expect(
+      beaconStableIdForValidator(workbench, [obs(), beacon1, workbench]),
+    ).toBeUndefined();
+  });
+
+  it("does not map a validator to a beacon node in a different compose project", () => {
+    // ノード群キー "1" は一致するが projectOf が異なる（projA ≠ projB）ため
+    // findPairedStableId のプロジェクトスコープにより対応付けない
+    // （executionStableIdForBeacon と同じ Issue #153 の観点）。
+    const validatorProjA = obs({
+      stableId: "projA/validator1",
+      labels: {
+        "com.docker.compose.service": "validator1",
+        [ROLE_LABEL]: "validator",
+      },
+      image: "sigp/lighthouse:latest",
+      ip: "172.28.20.3",
+      processes: [{ command: "lighthouse vc", name: "lighthouse" }],
+    });
+    const beaconProjB = obs({
+      stableId: "projB/beacon1",
+      labels: { "com.docker.compose.service": "beacon1" },
+      image: "sigp/lighthouse:latest",
+      ip: "172.28.20.1",
+      processes: [{ command: "lighthouse bn", name: "lighthouse" }],
+    });
+    expect(
+      beaconStableIdForValidator(validatorProjA, [validatorProjA, beaconProjB]),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when the observations list is empty", () => {
+    expect(beaconStableIdForValidator(validator1, [])).toBeUndefined();
   });
 });
 
