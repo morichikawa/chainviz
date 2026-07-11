@@ -343,6 +343,65 @@ describe("fetchBeaconSyncing", () => {
     });
   });
 
+  // Issue #282: 受理する 10進整数の境界値。10進整数文字列（`/^\d+$/`）
+  // または非負整数の JSON 数値である限り受理する（precision の限界を
+  // 超える巨大値の扱いも含めて現挙動を固定する）。
+  it.each([
+    // 先頭ゼロ付きの 10進文字列は数字のみなので受理し、10進として解釈する
+    // （8進などとは解釈しない。`Number("007") === 7`）。
+    ["leading zeros in a decimal string", "007", 7],
+    ["genesis 0 as a decimal string", "0", 0],
+    // Number.MAX_SAFE_INTEGER 相当までは正確に保持される。
+    ["MAX_SAFE_INTEGER decimal string", "9007199254740991", 9007199254740991],
+    ["MAX_SAFE_INTEGER JSON number", Number.MAX_SAFE_INTEGER, 9007199254740991],
+    // MAX_SAFE_INTEGER を超える 10進文字列も「10進整数文字列」の形は満たす
+    // ため受理する。ただし JS の Number は倍精度浮動小数なので precision が
+    // 失われる（`Number("9007199254740993") === 9007199254740992`）。head_slot
+    // は表示・比較用の観測値でありこの桁数の slot は現実的に到達しないため、
+    // ここではパース段階で弾かず現挙動（精度欠落を伴う受理）を固定する。
+    [
+      "decimal string beyond MAX_SAFE_INTEGER (precision is lost, still accepted)",
+      "9007199254740993",
+      9007199254740992,
+    ],
+  ])(
+    "accepts a boundary head_slot value: %s",
+    async (_label, headSlot, expected) => {
+      const http = httpFrom({
+        [`${BASE}/eth/v1/node/syncing`]: {
+          data: { is_syncing: false, head_slot: headSlot },
+        },
+      });
+      await expect(fetchBeaconSyncing(http, BASE)).resolves.toMatchObject({
+        headSlot: expected,
+      });
+    },
+  );
+
+  // Issue #282: ASCII の 10進数字（U+0030..U+0039）以外の「数字に見える」
+  // 文字列や符号付き文字列は非準拠として throw する。`/^\d+$/` の `\d` は
+  // Unicode フラグ無しでは ASCII 数字のみに一致するため、全角数字や
+  // Arabic-Indic 数字は弾かれる。JSON 数値でも Infinity/NaN のような
+  // 非整数は Number.isInteger で弾かれる（JSON.parse では通常現れないが、
+  // 直接オブジェクトを渡す経路での防御）。
+  it.each([
+    ["full-width digits", "１２３"],
+    ["arabic-indic digits", "٣"],
+    ["plus-signed decimal string", "+5"],
+    ["Infinity number", Number.POSITIVE_INFINITY],
+    ["NaN number", Number.NaN],
+  ])(
+    "throws for a boundary non-conforming head_slot value: %s",
+    async (_label, headSlot) => {
+      const http = httpFrom({
+        [`${BASE}/eth/v1/node/syncing`]: {
+          data: { is_syncing: false, head_slot: headSlot },
+        },
+      });
+      await expect(fetchBeaconSyncing(http, BASE)).rejects.toThrow(/head_slot/);
+    },
+  );
+
   it("throws when the data field itself is missing", async () => {
     const http = httpFrom({
       [`${BASE}/eth/v1/node/syncing`]: {},
