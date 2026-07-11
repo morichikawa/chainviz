@@ -640,6 +640,9 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
 - [x] describeSyncStageがObject.prototypeの継承メンバを漏らす可能性がある
       (describeNodeRoleと同種の穴)
       [#258](https://github.com/morichikawa/chainviz/issues/258)
+- [x] UI-CMD-01のaddNode成功判定が#215のsubtitle形式変更に追従しておらず
+      常に失敗する
+      [#270](https://github.com/morichikawa/chainviz/issues/270)
 
 ## 運用ルール（全ステップ共通）
 
