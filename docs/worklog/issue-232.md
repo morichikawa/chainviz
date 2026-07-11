@@ -190,3 +190,54 @@ chainviz-reviewer による静的レビュー。判定: **合格**。
 言及がない(テストのコメントにのみある)。将来この2関数の挙動を揃えたく
 なった際の判断材料として、docstring にも一言あるとよい。差し戻し理由
 にはしない。
+
+#### QA検証記録(2026-07-11)
+
+chainviz-qa による実機検証。判定: **合格**。
+
+**検証環境**: ブランチ `issue-232-flash-address-match`
+(worktree `wt-issue-232`)。
+
+**実施内容**:
+
+- ビルド確認: `pnpm --filter @chainviz/frontend build`(tsc -b)・
+  `build:web`(vite本番ビルド)ともエラーなし。`preview` サーバを起動し
+  `http://localhost:4319/` が HTTP 200 でアプリ(title=chainviz、
+  `id="root"`)を配信することを確認した。
+- 既存テスト全数: `pnpm --filter @chainviz/frontend test` が
+  113ファイル / 1759件すべて green。
+- 独立検証(既存テストの再実行ではなく、QAが別に用意したシナリオで
+  実ランタイムの `useContractSettlementEffects` フックを jsdom 上で駆動):
+  本番に近い実アドレス対(present側ウォレット=EIP-55チェックサム表記
+  `0xA0Cf7988...251e`、tx.from=同一アドレスの全小文字)で、
+  ウォレット→コントラクト呼び出しtxが pending→included に確定した際に
+  パルスエッジが1本描かれること、その端点 source が present 側の表記
+  (チェックサム)で解決されること(React Flowがノードを解決できる表記)、
+  パルス完了後にコントラクトへ success フラッシュが当たり
+  `TX_SETTLE_FLASH_MS` 後に消えることを確認した。修正前の単純な
+  `Set.has(tx.from)` ではこのウォレット集合が一致しない
+  (=元Issueの再現条件が成立している)ことも同じテストで確認した。
+  検証後、この一時テストファイルは削除済み(リポジトリに残していない)。
+- 回帰確認: ウォレット表記が一致するケース(present側・tx.from とも
+  全小文字)でも従来どおりパルス+フラッシュが発火することを確認した。
+
+**確認した本番のデータフロー**: `TransactionEntity.from` は JSON-RPC
+由来(全小文字)、`ContractEntity.address` と `contractCall.contractAddress`
+は collector 側で lowercase 正規化される(`adapters/ethereum/contracts.ts`
+の `normalizeAddress`)一方、`WalletEntity.address` は
+`wallet-tracker.ts` の viem 導出でチェックサム表記になりうる。つまり本番で
+表記が食い違うのはウォレット側のみで、Issue #232 の想定と一致する。
+コントラクト側は両端とも小文字で一貫するため食い違わない。
+
+**補足(範囲外の観察、差し戻し理由ではない)**: 検証過程で、コントラクト
+アドレスの表記を人為的に食い違わせると `contractSettlement.ts` の
+`resolveContractSettlementEvent` 内の `knownContractAddresses.has()` が
+case-sensitive のためイベント自体がドロップされる(パルスもフラッシュも
+出ない)ことを確認した。ただし上記のとおり本番ではコントラクト側の表記は
+一貫して小文字であり、この経路が実データで発火することはない。将来
+アダプタがチェックサム表記のコントラクトアドレスを出すようになった場合に
+備え、この照合も `addressCasing.ts` に寄せる余地がある(Issue #232 の
+範囲外)。
+
+**結論**: 元Issue(アドレス表記の食い違いでコントラクトへのパルス/
+フラッシュが発火しない)は解消されている。完了条件を満たす。
