@@ -1,5 +1,9 @@
 import type { RefObject } from "react";
 import {
+  describeDrivenByField,
+  describeDrivesField,
+} from "../chain-profiles/ethereum/internalLinkKinds.js";
+import {
   describeHeightField,
   describeNodeRole,
   nodeShowsSyncState,
@@ -39,11 +43,18 @@ function Field({ label, value }: { label: string; value: string }) {
  * 自体のポップオーバーは `EdgeLabelRenderer` が `pointerEvents: "none"` の
  * ため用語ホバーが実質できず、この欄に置くのが唯一の到達点になる）。
  *
- * `drivesNodeContainerName` は node（CL 側）が `drivesNodeId` を解決できた
- * 場合に「駆動する実行ノード」欄を追加する（ARCHITECTURE.md §7.6.3。
- * Issue #188）。逆方向は `drivenByContainerName`（EL 側が「駆動元（合意
- * ノード）」欄を出す。Issue #215 で §7.6.3 の「逆方向の行は追加しない」
- * 決定を更新した）。
+ * `drivesNodeContainerName` は node（CL/validator 側）が `drivesNodeId` を
+ * 解決できた場合に「駆動する◯◯ノード」欄を追加する（ARCHITECTURE.md
+ * §7.6.3。Issue #188）。逆方向は `drivenByContainerName`（EL/CL 側が
+ * 「駆動元（◯◯ノード）」欄を出す。Issue #215 で §7.6.3 の「逆方向の行は
+ * 追加しない」決定を更新した）。ラベル・GlossaryTerm キーは
+ * `describeDrivesField`/`describeDrivenByField`（Issue #285）が端点の
+ * `nodeRole` から選ぶ。consensus→execution（既存）は「駆動する実行ノード」/
+ * 「駆動元（合意ノード）」、validator→consensus（新設）は「接続先の
+ * beacon ノード」/「接続元のバリデーター」に切り替わる。役割が不明な
+ * 場合は consensus→execution 側の既定表現にフォールバックする（相手の
+ * role まで揃わないと行ごと消える設計にはしない。詳細は
+ * `internalLinkKinds.ts` のコメント参照）。
  *
  * `maxElBlockHeight` はキャンバス上の全 EL ノードの blockHeight 最大値
  * （同期ステージのミニバーの分母。ARCHITECTURE.md §7.6.5。Issue #189）。
@@ -75,6 +86,7 @@ export function InfraPopover({
   rpcTargetContainerName,
   drivesNodeContainerName,
   drivenByContainerName,
+  drivenByNodeRole,
   maxElBlockHeight,
 }: {
   anchorRef: RefObject<HTMLElement | null>;
@@ -82,10 +94,15 @@ export function InfraPopover({
   rpcTargetContainerName?: string;
   drivesNodeContainerName?: string;
   drivenByContainerName?: string;
+  drivenByNodeRole?: string;
   maxElBlockHeight?: number;
 }) {
   const { t, lang } = useLanguage();
   const ports = entity.ports.length > 0 ? entity.ports.join(", ") : "-";
+  const drivesFieldDescriptor = describeDrivesField(
+    entity.kind === "node" ? entity.nodeRole : undefined,
+  );
+  const drivenByFieldDescriptor = describeDrivenByField(drivenByNodeRole);
   const process =
     entity.process.name +
     (entity.process.version ? ` (${entity.process.version})` : "");
@@ -175,8 +192,8 @@ export function InfraPopover({
           {drivesNodeContainerName && (
             <div className="infra-field">
               <span className="infra-field__label">
-                <GlossaryTerm termKey="engine-api">
-                  {t("field.drivesNode")}
+                <GlossaryTerm termKey={drivesFieldDescriptor.glossaryKey}>
+                  {t(drivesFieldDescriptor.labelKey)}
                 </GlossaryTerm>
               </span>
               <span className="infra-field__value">{drivesNodeContainerName}</span>
@@ -185,8 +202,8 @@ export function InfraPopover({
           {drivenByContainerName && (
             <div className="infra-field">
               <span className="infra-field__label">
-                <GlossaryTerm termKey="engine-api">
-                  {t("field.drivenBy")}
+                <GlossaryTerm termKey={drivenByFieldDescriptor.glossaryKey}>
+                  {t(drivenByFieldDescriptor.labelKey)}
                 </GlossaryTerm>
               </span>
               <span className="infra-field__value">{drivenByContainerName}</span>

@@ -348,6 +348,40 @@ describe("entitiesToFlowNodes", () => {
     ).toBeUndefined();
   });
 
+  // --- drivenByNodeRole（駆動元の nodeRole。Issue #285） ---
+
+  it("resolves drivenByNodeRole to the driving node's nodeRole alongside drivenByContainerName", () => {
+    const validator: NodeEntity = {
+      ...node("validator-1", "chainviz-validator-1"),
+      nodeRole: "validator",
+      drivesNodeId: "beacon-1",
+    };
+    const beaconNode = { ...node("beacon-1", "chainviz-lighthouse-1"), nodeRole: "consensus" };
+    const nodes = entitiesToFlowNodes([validator, beaconNode], {});
+    const resolved = nodes.find((n) => n.id === "beacon-1");
+    expect(resolved?.data.drivenByContainerName).toBe("chainviz-validator-1");
+    expect(resolved?.data.drivenByNodeRole).toBe("validator");
+  });
+
+  it("omits drivenByNodeRole when no other node drives this one (no drivenByContainerName either)", () => {
+    const nodes = entitiesToFlowNodes([node("reth-1")], {});
+    expect(nodes[0].data.drivenByNodeRole).toBeUndefined();
+  });
+
+  it("leaves drivenByNodeRole undefined when the driving node has no nodeRole set (legacy snapshot)", () => {
+    const beacon: NodeEntity = { ...node("beacon-1", "chainviz-lighthouse-1"), drivesNodeId: "reth-1" };
+    const reth = node("reth-1", "chainviz-reth-1");
+    const nodes = entitiesToFlowNodes([beacon, reth], {});
+    const rethNode = nodes.find((n) => n.id === "reth-1");
+    expect(rethNode?.data.drivenByContainerName).toBe("chainviz-lighthouse-1");
+    expect(rethNode?.data.drivenByNodeRole).toBeUndefined();
+  });
+
+  it("does not set drivenByNodeRole on a workbench", () => {
+    const nodes = entitiesToFlowNodes([workbench], {});
+    expect(nodes[0].data.drivenByNodeRole).toBeUndefined();
+  });
+
   // --- D層: maxElBlockHeight（ARCHITECTURE.md §7.6.5。Issue #189） ---
 
   it("puts the max EL blockHeight (from syncStages-reporting nodes) on every card's data", () => {
