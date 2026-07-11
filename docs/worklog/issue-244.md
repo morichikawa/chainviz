@@ -163,6 +163,111 @@ WebSocket ペイロードがそのまま Issue の症状（`◆ 0xddf252…b3ef`
   - 回帰テストが元の不具合を検出できることを、修正前のコードで一度
     確認してから修正を入れること（品質ゲート「直したはずで済ませない」）
 
+## 実装（2026-07-11、collector 担当）
+
+- 担当: collector
+- ブランチ: issue-244-deploy-event-decode
+
+### 実装前の設計メモ
+
+designer の設計方針（上記）どおり (A)(B) の2点を実装する。実装ファイル・
+関数構成は以下のとおり：
+
+- `packages/collector/src/adapters/ethereum/contracts.ts`: 既存の
+  private 関数 `normalizeAddress` を export する（`EthereumAdapter` が
+  生ログのバッファキーを同じ表記で正規化するために必要。ロジックを2箇所に
+  複製しない）
+- `packages/collector/src/adapters/ethereum/transactions.ts`:
+  `TransactionLifecycleTracker.updateContractEvents(hash, contractEvents)`
+  を新設。未追跡 hash・空配列はどちらも null（recordInclusion の
+  「空配列はフィールド省略」という既存の扱いと整合させる）。それ以外は
+  `contractEvents` を差し替えて `put`（最新扱いへ入れ直し）し、更新後の
+  エンティティを返す
+- `packages/collector/src/adapters/ethereum/index.ts`:
+  - `handleBlockInclusion` 内で `detectContractDeployments(receipts)` の
+    呼び出しを `decodeReceiptLogs` を使う `recordInclusion` の入力組み立てより
+    前に移動（原因1対策）
+  - 新規フィールド `undecodedDeployLogs: Map<string, { txHash, logs }>`
+    （挿入順 evict、上限 `maxUndecodedDeployLogs = 200`）を追加。
+    `bufferUndecodedDeployLogs(receipts)` が、デプロイ検知後もカタログ未照合
+    だった（`getCatalogEntry` が undefined）デプロイ tx の生ログを保持する
+  - 新規フィールド `onTx` を追加し、`subscribeTransactions` で保持する
+    （`onContract` と同じ流儀。`registerContractDeployment` という別の呼び出し
+    経路から tx の entityUpdated を配信するために必要）
+  - `registerContractDeployment` が「未知 → カタログ既知」への昇格を検知した
+    場合、新設の `redecodeBufferedDeployLogs(address)` を呼ぶ。バッファに
+    ヒットすれば `decodeReceiptLogs` で再復号し、
+    `txTracker.updateContractEvents` で tx を更新して `onTx` へ渡す
+    （配信順序: コントラクトの entityUpdated → tx の entityUpdated）
+
+### 実施内容
+
+1. 修正前の実機再現: `profiles/ethereum` の既存 Docker スタック
+   （実測 chainType=ethereum、7 コンテナ）に対し `pnpm build` 済みの
+   collector（修正前コード）を `CHAINVIZ_COLLECTOR_PORT=4123` で起動し、
+   `ws` で直接 WebSocket 接続して `runWorkbenchOperation(deployContract,
+   ChainvizToken, initialSupply=1000e18)` を送信し diff を観測した。
+   designer の実機診断（docs/worklog/issue-244.md 冒頭）と一致する結果を
+   確認: デプロイ tx の `entityUpdated` で `contractEvents:
+   [{contractAddress, rawEventId: "0xddf252ad..."}]`（Transfer の topic0 生値、
+   `eventName` なし）が確定配信され、56ms 後にコントラクトの
+   `entityUpdated`（`catalogKey`/`name`/`token` が付与）が届いた後も
+   tx の `contractEvents` は二度と更新されないことを確認した
+2. 上記の設計どおり実装した
+3. 単体テスト:
+   - `transactions.test.ts` に `updateContractEvents` の単体テストを追加
+     （未追跡 hash → null、空配列 → null かつ既存値を後退させない、正常更新で
+     `contractEvents` 差し替え・他フィールド不変、evict 済み tx との整合、
+     `put` による最新扱いへの入れ直し）
+   - 新規ファイル `deploy-event-redecode.test.ts`
+     （1ファイル1責務。`contract-decode.test.ts`・
+     `contract-deploy-wiring.test.ts` と同じ「モック WS/RPC を購読経路へ
+     流し込む」統合テストの道具立てを使う）に、デプロイ tx 自身の
+     receipt.logs の復号に特化した回帰テストを追加:
+     - 順序 A（カタログ登録が先着。`pendingCatalogKeys` 経由）: デプロイ tx の
+       `contractEvents` が最初から復号されること（原因1対策の確認）
+     - 順序 B（登録が後着。実測で支配的なケース）: 一度 raw で確定配信された
+       tx の `contractEvents` が、後着したカタログ登録をきっかけに
+       entityUpdated で再配信され `eventName` 付きになること（原因2対策の
+       確認。Issue の症状そのもの）
+     - バッファ対象外（ログを持たないデプロイ）にカタログ登録が届いても
+       何も起きない（onTx が余計に呼ばれない）こと
+     - `undecodedDeployLogs` の上限（200 件）を超えた場合、最古のエントリが
+       evict され再復号できなくなる一方、直近のエントリは引き続き再復号
+       できること
+   - 回帰テストが実際に元の不具合を検出できることを確認するため、
+     `git stash` で実装変更（`index.ts`/`transactions.ts`/`contracts.ts`）だけを
+     一時的に戻し、新規テストのうち3件（順序A・順序B・上限evict）が期待どおり
+     失敗することを確認してから `git stash pop` で修正を復元した
+4. `pnpm --filter @chainviz/collector build`（tsc）・
+   `pnpm --filter @chainviz/collector test`（vitest、1176 件）・
+   `pnpm exec eslint`（対象ファイル）がいずれも成功することを確認した
+5. 修正後の実機再検証: 同じ手順（deployContract、initialSupply=1000e18）で
+   再度 collector を起動し直して確認した。デプロイ tx の
+   `contractEvents` はブロック取り込み直後は raw フォールバック
+   （`rawEventId`）のまま確定配信されるが（原因2の後着ケースなので、順序修正
+   （原因1対策）だけでは直らない実測どおりの挙動）、コントラクトの
+   `entityUpdated`（`catalogKey` 付与）が届いた **1ms 後** に tx の
+   `entityUpdated` が届き、`contractEvents` が
+   `eventName: "Transfer"` + 復号済み引数（`from`/`to`/`value`）に
+   置き換わることを確認した（自己修復が実機で機能している）
+
+### 申し送り
+
+- `packages/shared` の型変更・フロントのコード変更は行っていない（設計どおり
+  不要。tx の entityUpdated パッチが `contractEvents` を含めば、フロントの
+  `contractActivity.ts`（純関数、既存実装のまま）が自動的に復号済みチップへ
+  再導出する）
+- ホバー文言（`contract.chip.undecoded`）も変更していない（設計どおり。
+  修正後に残る未復号チップは「カタログに定義が無い」という文言と事実が
+  一致するケースのみになる）
+- `undecodedDeployLogs` の上限 200 は「GUI の deployContract 操作は逐次実行
+  されるため、カタログ登録が未照合のまま同時に溜まるデプロイ tx は通常
+  1〜数件程度」という前提に基づく固定値。前提が崩れる状況（大量の手動
+  `forge create` を短時間に連打する等）では古いエントリから evict され、
+  以後カタログ登録が届いても再復号されないまま残る可能性がある（tx 自体は
+  引き続き可視化される。再複号だけが効かなくなる）
+
 ## 検証環境についての注意（次の担当向け）
 
 - 検証時、既存の Docker スタックが**削除済みの別 worktree**
