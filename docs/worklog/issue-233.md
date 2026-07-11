@@ -207,3 +207,70 @@ green)を確認した。docker を要する `test:e2e` / `test:e2e:ui` は今回
 **追加ファイル一覧**:
 - 新規: `packages/e2e/src/ui/support/cleanup.edge.unit.test.ts` /
   `cleanup-orchestration.unit.test.ts` / `cleanup-consistency.unit.test.ts`
+
+#### レビュー(chainviz-reviewer)
+
+**判定: 差し戻し**(下記の指摘2件の対応後に再レビュー)。
+
+確認して問題なかった点:
+
+- `removeCardIfPresent` のエラー分類は設計として妥当。握りつぶすのは
+  `waitForButton` の失敗(=既に削除済みの通常ケース)のみで、`click` /
+  `waitForRemoved` の失敗は素通しで伝播する。意図的な握りつぶしには
+  理由コメントが付いており、CLAUDE.md「エラーを握りつぶすコードを
+  見逃さない」に適合。Issue #201 レビューの残課題(catch範囲が広すぎる)
+  も対象4ファイルでは解消されている。
+- 対象4ファイル(commands-node / commands-workbench / wallet-balance /
+  token-balance)の共有ヘルパーへの移行は一貫している。旧インライン実装の
+  残骸なし。
+- `pnpm build` / `pnpm lint` / `pnpm test` をリポジトリ全体で実行し
+  すべて green(e2e 129件・shared/collector/frontend 含む)。
+- コミット粒度は「1変更1コミット」を満たし(feat→fix→refactor→docs→
+  test→docs の6コミット)、Conventional Commits 準拠。
+- `docs/PLAN.md`(チェック+Issueリンク)・`docs/WORKLOG.md`(索引)・
+  本worklogの記述は実装と一致。
+- タイムアウト値(30秒等)は既存テストの実績値を根拠とするコメントが
+  付いており、決め打ち定数の禁止ルールに抵触しない。
+
+指摘1: `multi-client.spec.ts` の afterAll が旧パターンのまま取り残されている。
+
+- 同ファイル(main のコミット beff94c で追加。本ブランチの merge-base に
+  含まれる)の `afterAll` は
+  `removeButton.click({ timeout }).catch(() => {})` というインライン実装で、
+  (a) 本Issueの不具合2(クリック後、カードが実際に消えるまで待たずに
+  `page.close()` する)がそのまま残っており、(b) `.catch(() => {})` が
+  クリックの全失敗を無差別に握りつぶす(Issue #201 レビュー指摘と同型)。
+  Issue #238 の本文にも、このファイルの後片付け漏れコンテナ
+  (`chainviz-ethereum-e2e-ui-multi-02-2`)が実際に残留した観測記録がある。
+- 本worklogの設計メモ自身が「修正が一部にしか行き渡らない再発を防ぐため
+  1箇所へ集約する」ことを本Issueの目的として掲げている以上、同一ツリーに
+  同型の未移行 afterAll を残したままでは目的を達成したといえない。
+  `cleanupRemovableCards(browser, addedWorkbenchIds, { timeoutMs })` への
+  移行は小さな変更で済むため、本ブランチで移行すること(移行しない判断を
+  とる場合は、その理由を本worklogに明記し別Issueを立てること。ただし
+  指摘2の修正と両立しない点に注意)。
+- なお `multi-client.spec.ts` 内のコメントは「Issue #238 に追記して別途
+  フォローアップする」と書いているが、実際のフォローアップは本Issue #233
+  であり、参照がずれている。移行時にこのコメントも整理すること。
+
+指摘2: `cleanup-consistency.unit.test.ts` の第4ケースが看板倒れになっている。
+
+- テスト名・コメントは「4ファイル以外に後始末ファイルが増えていないかを
+  検知し、リストの更新を促す」と謳っているが、実装はリスト内4ファイルを
+  再読するだけで、リスト外のファイルを一切走査していない(第1ケースの
+  重複でしかない)。現に `multi-client.spec.ts` という「リスト外で
+  afterAll 後始末を行うファイル」が存在するのにこのテストは green の
+  ままであり、「壊れた状態でも通ってしまう意味のないテスト」に該当する。
+- `src/ui/` 配下の `*.spec.ts` を実際に列挙し、「afterAll でカード削除の
+  後始末を行うファイル(例: `afterAll` と `infra-card-remove-` クリックを
+  併せ持つもの、あるいは `cleanupRemovableCards` を使うもの)」の集合が
+  `CLEANUP_SPEC_FILES` と一致することを確認する実装に改めること。
+
+QA(chainviz-qa)への申し送り:
+
+- `pnpm test:e2e:ui` による実ブラウザ・実docker環境での確認は本ブランチ
+  では未実施(実装担当・テスト担当とも docker 不要のユニットテストのみ
+  実行)。QA では UI 層 E2E を実行し、特に UI-CMD 系・UI-C 系の完走後に
+  `docker ps -a` で e2e 由来の残存コンテナが無いことを確認すること。
+- 競合状態そのもの(goto直後の未反映タイミング)は意図的な再現手段が
+  無いため、QA での確認は「後始末が正常系で完遂すること」の確認となる。
