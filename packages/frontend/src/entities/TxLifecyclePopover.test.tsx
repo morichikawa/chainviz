@@ -19,10 +19,12 @@ function tx(overrides: Partial<TransactionEntity> = {}): TransactionEntity {
 }
 
 function wrap(t: TransactionEntity) {
+  // PopoverPortal(Issue #245)の必須 prop anchorRef 用の detached 要素。
+  const anchorRef = { current: document.createElement("div") };
   return render(
     <LanguageProvider initialLanguage="ja">
       <GlossaryProvider glossary={{}}>
-        <TxLifecyclePopover tx={t} />
+        <TxLifecyclePopover anchorRef={anchorRef} tx={t} />
       </GlossaryProvider>
     </LanguageProvider>,
   );
@@ -174,10 +176,11 @@ describe("TxLifecyclePopover header status badge", () => {
 
   it("carries the status in the badge className so CSS can color it", () => {
     const t = tx({ status: "failed" });
-    const { container } = wrap(t);
-    expect(
-      container.querySelector(".wallet-tx-chip--failed"),
-    ).toBeTruthy();
+    wrap(t);
+    // PopoverPortal(Issue #245)で body 直下に描画されるため、RTL の
+    // container ではなく取得済みのポップオーバー要素から検索する。
+    const popover = screen.getByTestId(`tx-lifecycle-popover-${t.hash}`);
+    expect(popover.querySelector(".wallet-tx-chip--failed")).toBeTruthy();
   });
 });
 
@@ -204,6 +207,7 @@ describe("TxLifecyclePopover hash rendering boundaries", () => {
 describe("TxLifecyclePopover 'sent' stage glossary anchor (Issue #215)", () => {
   it("anchors the 'sent' stage label to the rpc-endpoint term (now that it exists)", () => {
     const t = tx({ status: "included" });
+    const anchorRef = { current: document.createElement("div") };
     render(
       <LanguageProvider initialLanguage="ja">
         <GlossaryProvider
@@ -217,7 +221,7 @@ describe("TxLifecyclePopover 'sent' stage glossary anchor (Issue #215)", () => {
             },
           }}
         >
-          <TxLifecyclePopover tx={t} />
+          <TxLifecyclePopover anchorRef={anchorRef} tx={t} />
         </GlossaryProvider>
       </LanguageProvider>,
     );

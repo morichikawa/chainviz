@@ -626,6 +626,8 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
 - [x] collector停止中に送信したaddNode/addWorkbenchはゴースト消滅のみで
       エラートーストが出ない
       [#235](https://github.com/morichikawa/chainviz/issues/235)
+- [x] カードのホバーポップオーバーが隣接カードの下に描画され読めない
+      [#245](https://github.com/morichikawa/chainviz/issues/245)
 - [x] isValidatorServiceがサービス名のみで判定しており将来の別チェーン
       プロファイルで誤検出しうる
       [#246](https://github.com/morichikawa/chainviz/issues/246)

@@ -34,10 +34,13 @@ function wrap(
   transactions: TransactionEntity[],
   contractsByAddress?: ReadonlyMap<string, ContractEntity>,
 ) {
+  // PopoverPortal(Issue #245)の必須 prop anchorRef 用の detached 要素。
+  const anchorRef = { current: document.createElement("div") };
   return render(
     <LanguageProvider initialLanguage="ja">
       <GlossaryProvider glossary={{}}>
         <WalletPopover
+          anchorRef={anchorRef}
           entity={wallet()}
           transactions={transactions}
           contractsByAddress={contractsByAddress}
@@ -164,10 +167,12 @@ describe("WalletPopover token balances (ARCHITECTURE.md §6.7)", () => {
     tokenBalances: WalletEntity["tokenBalances"],
     contractsByAddress?: ReadonlyMap<string, ContractEntity>,
   ) {
+    const anchorRef = { current: document.createElement("div") };
     return render(
       <LanguageProvider initialLanguage="ja">
         <GlossaryProvider glossary={{}}>
           <WalletPopover
+            anchorRef={anchorRef}
             entity={wallet({ tokenBalances })}
             transactions={[]}
             contractsByAddress={contractsByAddress}

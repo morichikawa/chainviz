@@ -43,11 +43,20 @@ const workbench: WorkbenchEntity = {
   removable: true,
 };
 
+/**
+ * PopoverPortal（Issue #245）の必須 prop `anchorRef` 用に、位置決めの基準に
+ * なる適当な detached 要素への ref を作る。このテストの関心は testid の
+ * 出入り・一意性であり、実際の画面上の位置は対象外。
+ */
+function createAnchorRef(): { current: HTMLElement | null } {
+  return { current: document.createElement("div") };
+}
+
 function wrap(entity: InfraEntity) {
   return (
     <LanguageProvider initialLanguage="ja">
       <GlossaryProvider glossary={{}}>
-        <InfraPopover entity={entity} />
+        <InfraPopover anchorRef={createAnchorRef()} entity={entity} />
       </GlossaryProvider>
     </LanguageProvider>
   );
@@ -80,8 +89,8 @@ describe("InfraPopover testid uniqueness across entities (Issue #198)", () => {
     render(
       <LanguageProvider initialLanguage="ja">
         <GlossaryProvider glossary={{}}>
-          <InfraPopover entity={node} />
-          <InfraPopover entity={workbench} />
+          <InfraPopover anchorRef={createAnchorRef()} entity={node} />
+          <InfraPopover anchorRef={createAnchorRef()} entity={workbench} />
         </GlossaryProvider>
       </LanguageProvider>,
     );

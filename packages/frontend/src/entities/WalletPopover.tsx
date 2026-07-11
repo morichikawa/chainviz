@@ -1,7 +1,10 @@
 import type { ContractEntity, TransactionEntity, WalletEntity } from "@chainviz/shared";
+import type { RefObject } from "react";
+import { useRef } from "react";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { useHoverPopover } from "../interaction/useHoverPopover.js";
+import { PopoverPortal } from "../interaction/PopoverPortal.js";
 import { shortHex, TX_STATUS_MESSAGE_KEY } from "./transaction.js";
 import { deriveTxCallPreview } from "./txCallPreview.js";
 import { TxLifecyclePopover } from "./TxLifecyclePopover.js";
@@ -63,9 +66,13 @@ function WalletPopoverTxItem({
   // Issue #221: 隙間を通過する一瞬の mouseleave で消えないよう遅延クローズ。
   const { isOpen: hovered, onMouseEnter, onMouseLeave, onFocus, onBlur } =
     useHoverPopover();
+  // Issue #245: 隣接カードの下に隠れないよう body 直下へ portal 描画する。
+  // 位置合わせの基準はこの行自体（アンカー）。
+  const itemRef = useRef<HTMLLIElement>(null);
 
   return (
     <li
+      ref={itemRef}
       className="wallet-popover__tx-item"
       tabIndex={0}
       onMouseEnter={onMouseEnter}
@@ -78,7 +85,7 @@ function WalletPopoverTxItem({
         {t(TX_STATUS_MESSAGE_KEY[tx.status])}
       </span>
       <TxCallPreviewLine tx={tx} contractsByAddress={contractsByAddress} />
-      {hovered && <TxLifecyclePopover tx={tx} />}
+      {hovered && <TxLifecyclePopover anchorRef={itemRef} tx={tx} />}
     </li>
   );
 }
@@ -94,12 +101,19 @@ function WalletPopoverTxItem({
  * 列挙する（ARCHITECTURE.md §6.7、Issue #168）。同名のトークンコントラクトが
  * 複数デプロイされていても短縮アドレスで区別できる（Issue #218 派生。
  * `formatTokenContractLabel` 参照）。
+ *
+ * `anchorRef` はこのポップオーバーを開いたカード本体への ref（Issue #245）。
+ * React Flow のノードはそれぞれ独立したスタッキングコンテキストを持つため、
+ * `PopoverPortal` でこのカードを基準位置に body 直下へ描画し、隣接カードの
+ * 下に隠れないようにする。
  */
 export function WalletPopover({
+  anchorRef,
   entity,
   transactions,
   contractsByAddress = new Map(),
 }: {
+  anchorRef: RefObject<HTMLElement | null>;
   entity: WalletEntity;
   transactions: TransactionEntity[];
   contractsByAddress?: ReadonlyMap<string, ContractEntity>;
@@ -111,7 +125,7 @@ export function WalletPopover({
   );
 
   return (
-    <div className="infra-popover" role="tooltip">
+    <PopoverPortal anchorRef={anchorRef} gapPx={8} className="infra-popover" role="tooltip">
       <div className="infra-field">
         <span className="infra-field__label">{t("field.address")}</span>
         <span className="infra-field__value">{shortHex(entity.address, 10, 6)}</span>
@@ -177,6 +191,6 @@ export function WalletPopover({
           </ul>
         )}
       </div>
-    </div>
+    </PopoverPortal>
   );
 }

@@ -58,7 +58,9 @@ packages/frontend/src/
   glossary/            # インライン解説・用語集パネル
   i18n/                # ja/en 切り替え
   interaction/         # カード種別を跨ぐ汎用の操作性ロジック（ホバーポップオーバーの
-                       # 開閉遅延など。特定のドメインに属さない横断的なフック）
+                       # 開閉遅延・React Flow ノードの外（document.body）へ
+                       # portal 描画する位置追従など。特定のドメインに属さない
+                       # 横断的なフック・コンポーネント）
   layout/              # レイアウトの localStorage 永続化
   notifications/       # トースト通知（コマンド失敗のエラー表示など）
   platform/            # ブラウザ API のラッパー（localStorage などの薄い抽象）

@@ -1,5 +1,5 @@
 import { Handle, type NodeProps, Position } from "@xyflow/react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ActionHint } from "../canvas/ActionHint.js";
 import { describeNodeRole, nodeShowsSyncState } from "../chain-profiles/ethereum/nodeRoles.js";
 import { useCommandActions } from "../commands/CommandActionsContext.js";
@@ -50,6 +50,10 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
   // ありで行う（Issue #221。詳細は interaction/useHoverPopover.ts 参照）。
   const { isOpen: hovered, onMouseEnter, onMouseLeave } = useHoverPopover();
   const [operationPanelOpen, setOperationPanelOpen] = useState(false);
+  // Issue #245: カード本体を InfraPopover の位置合わせの基準（アンカー）にする。
+  // React Flow のノードはそれぞれ独立したスタッキングコンテキストを持つため、
+  // ポップオーバー自体は body 直下へ portal 描画する（InfraPopover 参照）。
+  const cardRef = useRef<HTMLDivElement>(null);
 
   const kindLabel = entity.kind === "node" ? t("card.node") : t("card.workbench");
   // ノードの役割（execution/consensus/validator）が分かれば
@@ -98,6 +102,7 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
 
   return (
     <div
+      ref={cardRef}
       className={className}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
@@ -207,6 +212,7 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
       )}
       {hovered && (
         <InfraPopover
+          anchorRef={cardRef}
           entity={entity}
           rpcTargetContainerName={rpcTargetContainerName}
           drivesNodeContainerName={drivesNodeContainerName}
