@@ -467,3 +467,60 @@ frontend `packages/frontend/src/chain-profiles/ethereum/internalLinkKinds.test.t
 3. `docs/PLAN.md` の #285 注記に「レビュー・QA待ち」とあるが、マージ時点
    では古くなる文言なので、気になるならマージ前に整理してよい（必須では
    ない）
+
+### 2026-07-11 QA検証結果（合格）
+
+- 担当: qa
+- 対象: `issue-285-validator-beacon-link` ブランチ（worktree で検証）
+- 判定: **合格**（差し戻し事項なし。完了条件を満たしている）
+
+検証環境:
+
+- 稼働中の `chainviz-ethereum` Docker スタック（reth1/2/3・beacon1/2/3・
+  validator1/2・workbench 等）を対象に、本ブランチのビルドで collector を
+  別ポート（WebSocket 4150 / ロギングプロキシ 4151）で起動し、frontend の
+  vite dev サーバー（5273）を `VITE_COLLECTOR_URL=ws://127.0.0.1:4150` で
+  実 collector に接続して検証した（モックデータではない）。ブラウザ相当の
+  確認は Playwright（chromium）で実施。
+- チェーンは検証中も進行し続けていた（reth の同期ヘッダが 942→951→... と
+  増加、beacon のヘッドスロット 2096 を確認）。
+
+確認した項目と結果:
+
+1. collector の WebSocket スナップショットで validator→beacon の
+   `drivesNodeId` が静的解決されている。`validator1.drivesNodeId =
+   chainviz-ethereum/beacon1`、`validator2.drivesNodeId =
+   chainviz-ethereum/beacon2` を確認。execution（reth1/2/3）は
+   `drivesNodeId` を持たない。既存の beacon→reth（`beacon1→reth1` 等）も
+   維持。addNode フォロワー（validator 無しの beacon3→reth3）には validator
+   起点の誤リンクが生えていないことも確認（設計メモの前提と一致）。
+2. 無限キャンバス上に validator1→beacon1・validator2→beacon2 の内部リンク
+   エッジ（`internal-link-...=>...` の data-id）が実際に描画される。既存の
+   beacon→reth の内部リンクエッジ（beacon1→reth1・beacon2→reth2・
+   beacon3→reth3）も描画され、退行なし。
+3. validator1→beacon1 エッジのホバーで出るポップオーバーは、見出し
+   「内部リンク（Beacon API）」・端点「chainviz-ethereum-validator1-1 →
+   chainviz-ethereum-beacon1-1」・validator 専用の説明文（「このバリデーター
+   は、この beacon ノードに Beacon API で接続し…」）を表示し、活動セクション
+   （「直近の呼び出し」）は非表示。consensus→execution 用の「駆動する実行
+   ノード」「Engine API」等の既存文言は誤って出ていない。
+4. beacon1→reth1 エッジのホバーでは、見出し「内部リンク（Engine API）」・
+   Engine API 表現の説明文・活動セクション（今回は観測が無いため「最近の
+   呼び出しはありません」）を表示。役割の組による出し分けが正しく機能して
+   おり退行なし。
+5. validator1 カードのホバーで出る InfraPopover に「接続先の beacon ノード:
+   chainviz-ethereum-beacon1-1」行が表示される。beacon1 カードには「駆動する
+   実行ノード: chainviz-ethereum-reth1-1」（既存）に加えて「接続元の
+   バリデーター: chainviz-ethereum-validator1-1」（新規）の 2 行が表示され、
+   設計どおり。
+6. `docs/PLAN.md` の #285 項目の完了条件（validator→beacon にも内部リンク
+   エッジを描く／役割組ごとのポップオーバー文言切替／InfraPopover の駆動元
+   行の一般化）を満たしている。
+
+補足:
+
+- collector をバックグラウンドで別ポート起動して実 Docker を観測する構成で
+  検証した。既存の別セッションの collector（4000）・frontend（5173）には
+  手を触れていない。
+- push・PR 作成・マージ・Issue クローズは統括が実施するため、QA では
+  行っていない。
