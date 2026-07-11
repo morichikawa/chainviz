@@ -328,3 +328,87 @@
   まま大きめの値（head_slot）が表示される暫定状態になる（既存の
   ラベル文言を変更しない限りの制約であり、機能追加前提の一時的な見え方）。
 
+### 2026-07-11 frontend 実装方針（着手前メモ）
+
+- 担当: frontend
+- ブランチ: `issue-274-beacon-sync-display-frontend`（`git worktree` の制約上、
+  collector 担当が同じブランチ名 `issue-274-beacon-sync-display` を別
+  worktree で使用中のため、同一コミットから分岐した別名ブランチを新規に
+  切って作業する。マージ時の合流調整は統括が行う）
+- `NodeRoleDescriptor`（`nodeRoles.ts`）に optional な `heightField?:
+  { label: Localized; glossaryKey: string }` を追加し、`consensus` にのみ
+  `{ label: { ja: "ヘッドスロット", en: "Head slot" }, glossaryKey: "slot" }`
+  を設定する。**既定値（「ブロック高」+ `block`）はここに複製しない**。
+  i18n messages.ts の `field.blockHeight` を単一の情報源に保ち、
+  `InfraPopover.tsx` 側で override が無いときにそちらへフォールバックする
+  （デフォルトを2箇所に持つとラベル文言のドリフトを招くため）。
+  併せて `describeHeightField(nodeRole)` を新設し、override 取得ロジックを
+  `nodeShowsSyncState` と同じ「未知値/undefined は undefined（＝デフォルト
+  適用）」の形で切り出してユニットテスト可能にする。
+- `InfraPopover.tsx` の高さ行を `nodeRoleDescriptor?.heightField` の有無で
+  ラベル・`GlossaryTerm` の `termKey` を出し分ける。値自体
+  （`entity.blockHeight`）はそのまま表示する（意味づけの変更のみで値の
+  変換はしない。ヘッドスロット/ブロック高のどちらであってもワールド
+  ステート側の `blockHeight` フィールドをそのまま使う設計はドキュメント
+  コメントレベルで既に決定済み）。
+- `glossary/ethereum/terms/a-infra.yaml` に `slot` を新設する（`cl-client`
+  の直後）。日本語定義文は設計メモの「3拍子（定義→なぜ必要か→chainviz
+  でどう見えるか）」に従い、head_slot が EL のブロック高よりわずかに
+  大きくなり得る理由（空スロットの存在）を含める。英語定義はプレース
+  ホルダとして日本語の直訳を置き、chainviz-i18n のレビュー対象とする
+  （設計メモの指示どおり）。`relatedTerms` は `block` / `cl-client`。
+- テストは `nodeRoles.test.ts`（`heightField` の記述子形状・
+  `describeHeightField` の分岐）と `InfraPopover.test.tsx`（consensus で
+  「ヘッドスロット」+ `slot` アンカー、execution/undefined/未知値で従来の
+  「ブロック高」+ `block` に留まること、英語ローカライズ）に追加する。
+
+### 2026-07-11 frontend 実装完了
+
+- 担当: frontend
+- 実施内容:
+  1. `packages/frontend/src/chain-profiles/ethereum/nodeRoles.ts`:
+     `NodeRoleDescriptor` に optional な `heightField?: { label: Localized;
+     glossaryKey: string }` を追加し、`consensus` にのみ
+     `{ label: { ja: "ヘッドスロット", en: "Head slot" }, glossaryKey: "slot" }`
+     を設定した。取得用に `describeHeightField(nodeRole)` を新設し、
+     override が無い場合（execution・validator・未知値・undefined）は
+     `undefined` を返す（既存の `describeNodeRole`/`nodeShowsSyncState` と
+     同じフォールバック方針）。
+  2. `packages/frontend/src/entities/InfraPopover.tsx`: 高さ行のラベル・
+     `GlossaryTerm` の `termKey` を `describeHeightField` の結果で出し分ける
+     ように変更。override が無いときは従来どおり `t("field.blockHeight")` +
+     `block` を使う（既定値を `nodeRoles.ts` 側に複製せず、i18n
+     messages.ts を単一の情報源に保った）。表示する値自体
+     （`entity.blockHeight`）は変換せずそのまま出す。
+  3. `glossary/ethereum/terms/a-infra.yaml` に用語 `slot` を新設（`cl-client`
+     の直後）。3拍子（定義→なぜ必要か→chainvizでの見え方）の構成で、
+     ヘッドスロットが空スロットの分だけ EL のブロック高よりわずかに
+     大きくなり得ることを含めた。英語定義は日本語の直訳ベースの
+     プレースホルダで、chainviz-i18n のレビュー対象として残す。
+     `relatedTerms: [block, cl-client]`。
+  4. テスト: `nodeRoles.test.ts` に `heightField` の記述子形状・
+     `describeHeightField` の分岐（consensus/execution/validator/未知値/
+     undefined）を追加。`InfraPopover.test.tsx` に consensus ノードで
+     「ヘッドスロット」表示・`slot` glossary アンカー・値がそのまま出る
+     こと、execution/undefined/未知値ロールで従来の「ブロック高」+
+     `block` のままであること、英語ローカライズ（"Head slot"）を追加。
+  5. `i18n/messages.ts` は変更なし（既存 `field.blockHeight` を既定
+     フォールバックとして再利用したため。設計メモどおり）。
+- 確認: `pnpm build` / `pnpm test`（frontend、121 ファイル・1882 テスト
+  すべて成功）/ `pnpm lint`（ルート、エラーなし）を実行し、いずれも
+  通ることを確認した。
+- 触れていないもの: collector 側（`beacon-api.ts` / `beacon-sync-status.ts`
+  / `index.ts`）は別 worktree で並行実装中のため一切変更していない。
+- 注意点（次の担当・統括向け）:
+  - **ブランチ名の乖離**: `git worktree` はブランチを2箇所で同時に
+    checkout できないため、`issue-274-beacon-sync-display` は collector
+    側の worktree が使用中だった。本作業は同じコミット
+    （`docs: Issue #274 の設計メモを記録しバックログ・索引を更新`）から
+    分岐した `issue-274-beacon-sync-display-frontend` というブランチ名で
+    行った。マージ時は collector 側のコミットとこのブランチのコミットを
+    1本の PR（`issue-274-beacon-sync-display` へ統合するか、いずれかの
+    ブランチへ cherry-pick/rebase する）にまとめる調整が必要。
+  - `docs/PLAN.md` の該当チェックボックス（「CLノード(beacon)の同期状態が
+    永久に『同期中』」）は、issue 全体が collector 実装込みで完了する
+    までチェックを付けていない（本チェックボックスは1 Issue = collector +
+    frontend 両方の実装を含む粒度のため）。
