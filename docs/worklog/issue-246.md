@@ -274,3 +274,53 @@ Issue #246 で旧実装（compose サービス名への部分一致、Issue #214
 
 以上により Issue #246 のレビューは合格。push / PR 作成 / マージは
 統括の判断に委ねる。
+
+### 2026-07-11 Issue #246 QA検証記録
+
+- 担当: qa
+- ブランチ: issue-246-validator-service-detection（先端 ca14dc8 時点）
+- 判定: **合格（完了条件を満たしている）**
+
+実際に Docker で Ethereum スタックを起動し、collector を実機で動かして
+`isValidatorService` のラベルベース判定が既存動作（Issue #214 由来の
+validator 除外）を壊していないことを確認した。
+
+#### 手順
+
+1. `profiles/ethereum` を `docker compose up -d` で起動（reth1/2・
+   beacon1/2・validator1/2・workbench）。
+2. 各コンテナの `com.chainviz.role` ラベルを `docker inspect` で確認。
+   validator1/validator2 = `validator`、reth1/reth2 = `execution`
+   （reth1 は `com.chainviz.p2p-role: bootnode`）、beacon1/beacon2 =
+   `consensus`（beacon1 は bootnode）で、compose 定義どおり実行時に
+   ラベルが付与されていることを確認した。
+3. collector をビルドして起動し、WebSocket（ws://localhost:4000）へ
+   クライアントで接続してスナップショットの NodeEntity を検査した。
+
+#### 結果（スナップショットの p2pRole / nodeRole）
+
+- validator1・validator2: `nodeRole="validator"`, `p2pRole="none"`
+- reth1: `nodeRole="execution"`, `p2pRole="bootnode"`
+- reth2: `nodeRole="execution"`, `p2pRole="peer"`
+- beacon1: `nodeRole="consensus"`, `p2pRole="bootnode"`
+- beacon2: `nodeRole="consensus"`, `p2pRole="peer"`
+- PeerEdge は beacon1↔beacon2（consensus）・reth1↔reth2（execution）の
+  2 本のみで、validator ノードはどのエッジの端点にもならない。
+
+これは修正前（サービス名 `/validator/i` 部分一致）と同一の分類結果であり、
+validator が P2P 接続確立中エッジの対象から除外される Issue #214 の挙動が
+維持されている。通常ノード（reth/beacon）は validator と誤判定されず
+（peer/bootnode）、回帰も無い。現行 Ethereum プロファイルでは validator の
+サービス名が `validatorN` で新旧ロジックの結果が一致するため実機挙動は
+不変であることを、名前ではなくロールラベルを判定材料に変えた後も確認した。
+
+#### 補足
+
+- チェーンは稼働・進行を継続（ホスト RPC `eth_blockNumber` が
+  0x3d→0x3f と約 2 秒ごとに進行）。両 validator が実際にブロック提案を
+  行っており、validator コンテナが validator として機能している。
+- collector のログにエラー・uncaughtException は無し。
+- 検証後 `docker compose down -v` でスタックとボリュームを破棄し、
+  collector プロセスも停止（ポート 4000/4001 解放）。
+
+push / PR 作成 / マージ / Issue のクローズは統括の判断に委ねる。
