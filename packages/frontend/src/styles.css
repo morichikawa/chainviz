@@ -229,6 +229,18 @@ body {
   line-height: 1.5;
 }
 
+/* ノード追加ボタンのみ2段構成（Issue #251）。各段を block 要素にして改行し、
+   2段目（「なぜペアか」）を1段目から視覚的に区切る。 */
+.action-hint__line {
+  display: block;
+}
+
+.action-hint__line--secondary {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--divider);
+}
+
 /* --- インフラカード --- */
 .infra-card {
   position: relative;

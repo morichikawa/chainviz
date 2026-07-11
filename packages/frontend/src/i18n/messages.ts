@@ -135,6 +135,23 @@ export const messages = {
     ja: "フォロワーノード(reth + beacon のペア、カード2枚)を起動し、既存ネットワークのブートノードを入口に参加させます",
     en: "Starts a follower node (a reth + beacon pair; two cards) and joins it to the existing network through its bootnodes.",
   },
+  // ノード追加ツールチップの2段目（Issue #251）: 1段目（上記2つ）が「何が
+  // 起きるか」を説明するのに対し、こちらは「なぜペアなのか」を補う静的な
+  // 文言で、ブートノードの解決有無に関わらず常に追加する。文中に
+  // GlossaryTerm(el-cl-separation) を埋め込む必要があるため、
+  // `internalEdge.pair.prefix/term/suffix` と同じ3分割の手法を使う。
+  "action.addNode.hint.pair.prefix": {
+    ja: "2枚で1つのノードです。実行(EL)と合意(CL)を別々のクライアントが担うのは The Merge 以降の Ethereum の標準構成(",
+    en: "The two cards form one node — running execution (EL) and consensus (CL) as separate clients has been the standard shape of an Ethereum node since The Merge (",
+  },
+  "action.addNode.hint.pair.term": {
+    ja: "EL/CL分離",
+    en: "EL/CL separation",
+  },
+  "action.addNode.hint.pair.suffix": {
+    ja: ")です",
+    en: ").",
+  },
   "action.addWorkbench.hint": {
     ja: "Foundry(cast / forge)入りの操作用マシンを起動します。RPC 呼び出しは {rpcTarget} に送られ、専用のウォレット(鍵)が1つ割り当てられます",
     en: "Starts an operator machine with Foundry (cast / forge). Its RPC calls go to {rpcTarget}, and it gets a dedicated wallet (key).",

@@ -1,53 +1,12 @@
-import type { NodeEntity } from "@chainviz/shared";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CommandActionsProvider } from "../commands/CommandActionsContext.js";
-import type { CommandActions } from "../commands/useCommands.js";
-import { LanguageProvider } from "../i18n/LanguageProvider.js";
 import { HOVER_POPOVER_CLOSE_DELAY_MS } from "../interaction/useHoverPopover.js";
-import { CanvasToolbar, type CanvasToolbarProps } from "./CanvasToolbar.js";
+import { node, renderToolbar } from "./canvasToolbarHarness.js";
 
-function node(overrides: Partial<NodeEntity> = {}): NodeEntity {
-  return {
-    kind: "node",
-    id: "reth-1",
-    containerName: "chainviz-reth-1",
-    ip: "172.20.0.2",
-    ports: [8545],
-    resources: { cpuPercent: 1, memMB: 100 },
-    process: { name: "reth node" },
-    chainType: "ethereum",
-    clientType: "reth",
-    syncStatus: "synced",
-    blockHeight: 1,
-    headBlockHash: "0x0",
-    ...overrides,
-  };
-}
+// Issue #251 のノード追加ボタン「なぜペアか」2段目ヒント（GlossaryTerm 埋め込み）
+// に関する検証は、関心事ごとの分割のため CanvasToolbarPairHint.test.tsx に分けた。
 
 afterEach(cleanup);
-
-function renderToolbar(
-  actions: Partial<CommandActions> = {},
-  props: CanvasToolbarProps = {},
-) {
-  const full: CommandActions = {
-    addNode: vi.fn(),
-    addWorkbench: vi.fn(),
-    removeNode: vi.fn(),
-    removeWorkbench: vi.fn(),
-    runWorkbenchOperation: vi.fn(),
-    ...actions,
-  };
-  render(
-    <LanguageProvider initialLanguage="ja">
-      <CommandActionsProvider actions={full}>
-        <CanvasToolbar {...props} />
-      </CommandActionsProvider>
-    </LanguageProvider>,
-  );
-  return full;
-}
 
 describe("CanvasToolbar", () => {
   it("calls addNode when the add-node button is clicked", () => {
@@ -216,7 +175,9 @@ describe("CanvasToolbar", () => {
       renderToolbar();
       const addNodeButton = screen.getByRole("button", { name: /ノードを追加/ });
       fireEvent.mouseEnter(addNodeButton.parentElement as HTMLElement);
-      expect(screen.getByRole("tooltip").textContent).toBe(
+      // Issue #251: 1段目（何が起きるか）は generic 文言のまま。2段目
+      // （なぜペアか）は下の describe ブロックで別途検証する。
+      expect(screen.getByRole("tooltip").textContent).toContain(
         "フォロワーノード(reth + beacon のペア、カード2枚)を起動し、既存ネットワークのブートノードを入口に参加させます",
       );
     });

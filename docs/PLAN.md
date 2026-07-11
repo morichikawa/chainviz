@@ -592,6 +592,9 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       [#215](https://github.com/morichikawa/chainviz/issues/215)
 - [ ] beacon/rethを1個ずつペアでしか追加できない制約についての疑問
       [#216](https://github.com/morichikawa/chainviz/issues/216)
+- [x] ノード追加ボタン付近に「reth+beaconのペアで追加される」ことの説明を
+      添える（実装完了。詳細は docs/worklog/issue-251.md 参照）
+      [#251](https://github.com/morichikawa/chainviz/issues/251)
 - [x] エラー時のトースト通知が長文で右下のポップアップが崩れる
       [#217](https://github.com/morichikawa/chainviz/issues/217)
 - [x] デプロイ済みのスマートコントラクト一覧を見れるようにしてほしい
@@ -605,16 +608,16 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       [#221](https://github.com/morichikawa/chainviz/issues/221)
 - [x] ノード/ワークベンチ削除中に進行中であることを示すフィードバックが無い
       [#222](https://github.com/morichikawa/chainviz/issues/222)
-- [ ] パッケージごとにREADME(設計情報)を用意し、タスクのたびに更新する
+- [x] パッケージごとにREADME(設計情報)を用意し、タスクのたびに更新する
       運用にしたい
       [#223](https://github.com/morichikawa/chainviz/issues/223)
-- [ ] docs/CONCEPT.md・docs/ARCHITECTURE.mdが文章のみで分かりにくいので
+- [x] docs/CONCEPT.md・docs/ARCHITECTURE.mdが文章のみで分かりにくいので
       図解(Mermaid等)を増やしたい
       [#224](https://github.com/morichikawa/chainviz/issues/224)
 - [x] 確定時のコントラクトへのパルス/フラッシュがアドレス表記の
       食い違いで発火しない
       [#232](https://github.com/morichikawa/chainviz/issues/232)
-- [ ] UI-CMD系PlaywrightテストのafterAllクリーンアップが競合状態で
+- [x] UI-CMD系PlaywrightテストのafterAllクリーンアップが競合状態で
       無効化されうる
       [#233](https://github.com/morichikawa/chainviz/issues/233)
 - [x] dev collector稼働中はpnpm test:e2eが起動不能(proxyポート衝突が
@@ -643,6 +646,18 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
 - [x] デプロイtxで発生したイベント(mintのTransfer等)が復号されず生チップ
       表示になる
       [#244](https://github.com/morichikawa/chainviz/issues/244)
+- [x] glossaryのlookup/parseにプロトタイプ汚染的なガード漏れの可能性
+      (describeNodeRole/describeSyncStageと同種)
+      [#264](https://github.com/morichikawa/chainviz/issues/264)
+- [x] validator clientノードの同期状態が永久に「同期中」(blockHeight 0)と
+      表示される(調査の結果、#215のnodeRole/showsSyncStateで解消済みを
+      確認。コード変更なし)
+      [#243](https://github.com/morichikawa/chainviz/issues/243)
+- [x] 削除ボタンのaria-busy(removalPending)にも#237と同種の欠落バグがある
+      [#263](https://github.com/morichikawa/chainviz/issues/263)
+- [x] UI-CMD-01のaddNode成功判定が#215のsubtitle形式変更に追従しておらず
+      常に失敗する
+      [#270](https://github.com/morichikawa/chainviz/issues/270)
 
 ## 運用ルール（全ステップ共通）
 

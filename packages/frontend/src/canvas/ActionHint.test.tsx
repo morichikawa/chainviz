@@ -82,4 +82,98 @@ describe("ActionHint", () => {
     expect(() => fireEvent.mouseEnter(wrapper)).not.toThrow();
     expect(screen.getByRole("tooltip").textContent).toBe("");
   });
+
+  it("renders a nullish ReactNode hint without crashing (still opens an empty tooltip)", () => {
+    // ReactNode は null / undefined / false を許容する。呼び出し側が条件付きで
+    // hint を組み立てて空になるケースでも落ちないことの確認。
+    render(
+      <ActionHint hint={null}>
+        <button type="button">Click me</button>
+      </ActionHint>,
+    );
+    const wrapper = screen.getByRole("button").parentElement as HTMLElement;
+    expect(() => fireEvent.mouseEnter(wrapper)).not.toThrow();
+    expect(screen.getByRole("tooltip").textContent).toBe("");
+  });
+
+  it("renders a numeric ReactNode hint (0 is shown, not dropped as falsy)", () => {
+    // number も ReactNode。0 のような falsy な数値でも文字列化して表示される。
+    render(
+      <ActionHint hint={0}>
+        <button type="button">Click me</button>
+      </ActionHint>,
+    );
+    const wrapper = screen.getByRole("button").parentElement as HTMLElement;
+    fireEvent.mouseEnter(wrapper);
+    expect(screen.getByRole("tooltip").textContent).toBe("0");
+  });
+
+  it("reopens the tooltip on a subsequent hover after it has closed", () => {
+    // ホバー→離脱→再ホバーのサイクルで毎回開き直せること（開閉状態が
+    // 一度きりにならない回帰確認）。
+    render(
+      <ActionHint hint="cycle">
+        <button type="button">Click me</button>
+      </ActionHint>,
+    );
+    const wrapper = screen.getByRole("button").parentElement as HTMLElement;
+    fireEvent.mouseEnter(wrapper);
+    expect(screen.getByRole("tooltip")).toBeTruthy();
+    fireEvent.mouseLeave(wrapper);
+    act(() => {
+      vi.advanceTimersByTime(HOVER_POPOVER_CLOSE_DELAY_MS);
+    });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    fireEvent.mouseEnter(wrapper);
+    expect(screen.getByRole("tooltip").textContent).toBe("cycle");
+  });
+
+  it("keeps the tooltip open while an interactive element inside the hint is hovered (nested hover)", () => {
+    // Issue #251 / #221: hint 内に置いた別の要素（GlossaryTerm 等）へマウスを
+    // 移してもツールチップが閉じないこと。ポップオーバーはアンカーの子として
+    // 描画されるため、内側要素への mouseenter で外側の mouseleave は発火しない。
+    render(
+      <ActionHint
+        hint={
+          <span data-testid="nested-interactive">
+            <button type="button">inner</button>
+          </span>
+        }
+      >
+        <button type="button">Click me</button>
+      </ActionHint>,
+    );
+    const wrapper = screen.getByRole("button", { name: "Click me" })
+      .parentElement as HTMLElement;
+    fireEvent.mouseEnter(wrapper);
+    expect(screen.getByRole("tooltip")).toBeTruthy();
+    fireEvent.mouseEnter(screen.getByTestId("nested-interactive"));
+    // 内側要素をホバーしても外側のツールチップは開いたまま。
+    expect(screen.getByRole("tooltip")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "inner" })).toBeTruthy();
+  });
+
+  it(
+    "accepts a ReactNode hint (not just a plain string), e.g. multi-line " +
+      "markup with a nested element (Issue #251)",
+    () => {
+      render(
+        <ActionHint
+          hint={
+            <>
+              <span>line one</span>
+              <span data-testid="hint-nested">line two</span>
+            </>
+          }
+        >
+          <button type="button">Click me</button>
+        </ActionHint>,
+      );
+      const wrapper = screen.getByRole("button").parentElement as HTMLElement;
+      fireEvent.mouseEnter(wrapper);
+      const tooltip = screen.getByRole("tooltip");
+      expect(tooltip.textContent).toBe("line oneline two");
+      expect(tooltip.querySelector('[data-testid="hint-nested"]')).toBeTruthy();
+    },
+  );
 });
