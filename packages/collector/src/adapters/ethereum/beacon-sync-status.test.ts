@@ -66,6 +66,30 @@ describe("resolveBeaconSyncStatus", () => {
       blockHeight: 0,
     });
   });
+
+  // 3 フラグ（is_syncing / is_optimistic / el_offline）の全 8 組み合わせを
+  // 網羅する真理値表。「すべて false のときだけ synced、1 つでも true なら
+  // syncing」という OR 判定を、5 件の個別 it では抜けていた FTT / TFT / TTF を
+  // 含めて明示的に固定する（決定事項 3）。
+  it.each([
+    [false, false, false, "synced"],
+    [true, false, false, "syncing"],
+    [false, true, false, "syncing"],
+    [false, false, true, "syncing"],
+    [true, true, false, "syncing"],
+    [true, false, true, "syncing"],
+    [false, true, true, "syncing"],
+    [true, true, true, "syncing"],
+  ] as const)(
+    "resolves is_syncing=%s is_optimistic=%s el_offline=%s to %s",
+    (isSyncing, isOptimistic, elOffline, expected) => {
+      expect(
+        resolveBeaconSyncStatus(
+          snapshot({ isSyncing, isOptimistic, elOffline }),
+        ).syncStatus,
+      ).toBe(expected);
+    },
+  );
 });
 
 describe("BeaconSyncStatusCache", () => {
@@ -135,5 +159,27 @@ describe("BeaconSyncStatusCache", () => {
       cache.forgetNode("chainviz-ethereum/never-seen"),
     ).not.toThrow();
     expect(cache.resolve("chainviz-ethereum/beacon1")?.blockHeight).toBe(5);
+  });
+
+  it("re-observes a node after forgetNode without leaking the stale value (removeNode → addNode with the same stableId)", () => {
+    // 同じ stableId のコンテナが一度消えて（removeNode → forgetNode）から
+    // 再び現れた（addNode）場合、前回の値が残らず、次の観測で改めて埋まる
+    // ことを固定する。set は前回値の有無に関わらず上書きするため素直に
+    // 動くが、forget → resolve undefined → set の一連の遷移を明示しておく。
+    const cache = new BeaconSyncStatusCache();
+    cache.set("chainviz-ethereum/beacon1", {
+      syncStatus: "syncing",
+      blockHeight: 100,
+    });
+    cache.forgetNode("chainviz-ethereum/beacon1");
+    expect(cache.resolve("chainviz-ethereum/beacon1")).toBeUndefined();
+    cache.set("chainviz-ethereum/beacon1", {
+      syncStatus: "synced",
+      blockHeight: 250,
+    });
+    expect(cache.resolve("chainviz-ethereum/beacon1")).toEqual({
+      syncStatus: "synced",
+      blockHeight: 250,
+    });
   });
 });

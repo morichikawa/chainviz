@@ -2705,6 +2705,54 @@ describe("EthereumAdapter syncStatus/blockHeight for CL (beacon) via Beacon API 
     adapter.dispose();
   });
 
+  it("resolves the beacon sync status even when the EL metrics fetch fails in the same tick (independent caches)", async () => {
+    // Issue #274 item 4: pollOneBeaconSync（CL）と pollOneNodeInternals（EL）は
+    // 同じ D層 tick で並行に走るが、対象集合・キャッシュが互いに素で独立して
+    // いる。片方（EL の /metrics 取得）が失敗しても、もう片方（beacon の
+    // /eth/v1/node/syncing）は影響を受けずに解決される。逆向き（beacon 失敗時に
+    // EL が埋まる）は上の "keeps the CL(beacon) placeholder ..." が既にカバー。
+    const poller = new DockerPoller(
+      clientFrom([
+        rethFixture("reth1", "172.28.1.1"),
+        beaconFixture("beacon1", "172.28.2.1"),
+      ]),
+    );
+    // reth の /metrics キューを空にして getText を throw させる（EL 側失敗）。
+    const rethMetricsClient = queuedRethMetricsClient({});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const adapter = new EthereumAdapter(poller, {
+      rethMetricsClient,
+      httpClient: beaconHttp({
+        "http://172.28.2.1:5052": {
+          peerId: "peer-beacon1",
+          connected: [],
+          syncing: { headSlot: 4242 },
+        },
+      }),
+      nodeInternalsPollIntervalMs: 3000,
+    });
+
+    await adapter.subscribeNodeInternals({
+      onInternals: vi.fn(),
+      onLinkActivity: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const partial = await adapter.pollInfra();
+    const entities = partial.entities ?? [];
+    // EL 側は取得に失敗したためプレースホルダのまま。
+    expect(nodeById(entities, "chainviz-ethereum/reth1")).toMatchObject({
+      syncStatus: "syncing",
+      blockHeight: 0,
+    });
+    // CL 側は EL の失敗に巻き込まれず解決される。
+    expect(nodeById(entities, "chainviz-ethereum/beacon1")).toMatchObject({
+      syncStatus: "synced",
+      blockHeight: 4242,
+    });
+    adapter.dispose();
+  });
+
   it("keeps the previous value when a later syncing fetch fails (transient degradation)", async () => {
     const poller = new DockerPoller(
       clientFrom([beaconFixture("beacon1", "172.28.2.1")]),
