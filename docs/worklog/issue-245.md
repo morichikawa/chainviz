@@ -250,3 +250,60 @@ mouseEnter/mouseLeave→遅延クローズの開閉を検証しており（porta
 `pnpm --filter frontend build`（`tsc -b`）・`pnpm --filter frontend test`
 （vitest、115ファイル/1764件、テスト強化で +21 件）・上記3ファイルへの
 `eslint` はいずれも成功。
+
+#### レビュー（reviewer）
+
+コードは変更せず、静的レビューとビルド・lint・テストの確認のみ実施した。
+判定は**合格**。
+
+確認した内容:
+
+- **境界の遵守**: 変更は frontend 内に閉じており、Docker/ノードへの直接
+  アクセスやチェーン固有語彙の漏れは無い。`packages/shared` の型変更も無い。
+- **設計の妥当性**: `createPortal` で `document.body` 直下へ描画する方式は、
+  React Flow の各ノードが `position` + `zIndex` で独立したスタッキング
+  コンテキストを作る問題への正攻法。座標計算（`popoverPosition.ts`、純粋
+  関数）と DOM 追従（`PopoverPortal.tsx`）の分離も 1 ファイル 1 責務に
+  沿っている。8箇所すべてで `PopoverPortal` がイベントハンドラを持つ要素の
+  **React ツリー上の子**として描画されていることを確認した。React の
+  合成イベント（onMouseEnter/onMouseLeave）は DOM ツリーではなく React
+  ツリーで伝播するため、portal 先（body 直下）へカーソルを移してもアンカーの
+  onMouseLeave は発火せず、Issue #221 の `useHoverPopover`（遅延クローズ）
+  との相互作用は保たれる（ポップオーバー内のリンク操作や入れ子の
+  GlossaryTerm も成立する構造）。
+- **rAF 常時ループの負荷**: ループが回るのはポップオーバー表示中のみ
+  （`{open && <PopoverPortal/>}` の条件付きマウント）。毎フレームの処理は
+  `getBoundingClientRect` 1回 + 座標比較のみで、位置不変時は `setState` を
+  スキップして再レンダーを避けている。キャンバスのパン/ズームは CSS
+  transform で行われ scroll/resize イベントが飛ばないため、
+  IntersectionObserver/ResizeObserver では追従できず、rAF ポーリングは
+  この用途の標準的な手段（Floating UI の autoUpdate animationFrame と同型）。
+  許容範囲と判断した。
+- **ビューポート非クランプの判断**: 従来の CSS も折り返し・クランプを
+  していなかったため、バグ修正の範囲で挙動を変えない characterization は
+  妥当。なお portal 化により、従来は `.react-flow`（overflow: hidden）で
+  クリップされていたキャンバス端のポップオーバーが画面端まで表示される
+  ようになる（読める方向への変化）。端で読みにくいケースが QA/実利用で
+  見つかればクランプは別 Issue とする方針に同意する。
+- **z-index の整合**: body 直下に出るポップオーバー（20/25/30）は
+  トースト（40）より下、ツールバー（10）より上で、意図した順序。
+  `.operation-panel`（25、ノード内のまま）が対象外である旨も worklog に
+  明記されている。
+- **テストの質**: 純粋関数の境界値（gap 0/負値/小数/負座標/入力非破壊）、
+  rAF のライフサイクル（クリーンアップ・リーク・追従開始/停止）、および
+  8箇所横断の「portal し忘れ」退行検出テストが揃っており、実装の詳細を
+  なぞるだけの無意味なテストは見当たらない。エラー握りつぶし・環境状態
+  依存の固定値も無し（gapPx 6/8px は CSS 由来のデザイン定数であり
+  環境依存値ではない）。
+- **ビルド・lint・テスト**: リポジトリ全体で `pnpm build` / `pnpm lint` /
+  `pnpm test`（frontend 115ファイル/1764件を含む）すべて成功。
+- **コミット粒度**: feat（PopoverPortal 新設）→ fix（8箇所への適用 +
+  既存テスト追随 + CSS 整理）→ docs → test×3 の6コミットで、
+  Conventional Commits 準拠・1変更1コミットの粒度も問題なし。
+
+QA への申し送り: jsdom では実ブラウザのマウス移動に伴う enter/leave の
+伝播（portal をまたぐカーソル移動）を完全には再現できないため、実機で
+「カード → ポップオーバー内へカーソルを移動してもポップオーバーが
+閉じず、内部のリンク（例: InfraPopover の駆動する実行ノード）や入れ子の
+GlossaryTerm を操作できること」「パン/ズーム/ドラッグ中の追従」を確認
+してほしい。
