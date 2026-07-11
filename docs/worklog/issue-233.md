@@ -479,3 +479,45 @@ wallet-balance / token-balance / multi-client)に対して実行した。
 除去済み。ベースの compose スタックは再利用のため稼働継続。事前から存在
 した停止コンテナ reth3/beacon3(2026-07-09 生成、本セッション作成物では
 ない)は残置している。
+
+#### QA再検証記録(chainviz-qa)
+
+**判定: 完了条件を満たしている(PASS)。**
+
+前回QA(差し戻し)の根本原因はIssue #233の`cleanup.ts`ではなく、Issue #215の
+subtitle形式変更にUI-CMD-01のaddNode成功判定が追従していなかったリグレッション
+だった。これはIssue #270として別途修正・マージ済みで、本ブランチにmainマージで
+取り込まれている(`subtitleEndsWithClientType`ヘルパーへの置き換えを確認)。その
+状態で前回と同じ手順で再検証した。
+
+**環境**: 既存のdocker compose Ethereumスタック(base compose: validator1/2 ·
+reth1/2 · beacon1/2 · workbench · genesis)を利用。globalSetupの`ensureChainRunning`
+がこれを再利用してcollector(UI層専用ポート4125)とvite dev(5275)を起動。
+Playwrightのchromiumが要するシステムライブラリ(libnspr4/libnss3/libnssutil3/
+libsmime3/libasound)は本環境では未インストールのため、前回同様scratchpadに展開済み
+だった同ライブラリ群を`LD_LIBRARY_PATH`で参照させて実ブラウザを起動した。
+
+**手順・結果**:
+
+1. `pnpm test:e2e:ui`を対象5ファイル(commands-node / commands-workbench /
+   wallet-balance / token-balance / multi-client)に対して実行 →
+   **13 passed / 0 failed(所要2.5分)**。前回失敗した UI-CMD-01(reth+beacon
+   ペア追加)・UI-MULTI-01/02・UI-C-05 も含め全件green。UI-CMD-01が通ったことで
+   #270の修正によりaddNode成功判定(subtitleの末尾一致)が機能し、動的ノード
+   reth4/beacon4が実際に生成されたことも確認できる。
+2. テスト完走後 `docker ps -a` を実行し、実行前に取得したコンテナ集合と比較 →
+   **追加されたコンテナ・削除されたコンテナともに0件**。動的追加された
+   reth4/beacon4・追加ワークベンチはいずれも残存せず、base composeスタックと
+   事前から存在した停止コンテナ reth3/beacon3(26時間前生成の別セッション残骸)
+   のみが残った。前回残存した reth4/beacon4 は今回発生していない。
+3. 元Issue(afterAllクリーンアップが競合状態で無効化されコンテナが残る)の解消
+   確認: UI-CMD-01で動的ノードが生成され、後片付け(テスト本体のUI-CMD-03削除+
+   afterAllの`cleanupRemovableCards`安全網)を経て残存ゼロで完走したことにより、
+   afterAllによる後片付けが正しく完遂していることを確認した。
+
+**結論**: UI層E2Eテスト完走後、追加した動的コンテナが正しく後片付けされている
+という完了条件を満たしている。
+
+**環境後始末**: 本検証では動的コンテナは残存しなかったため追加の削除は不要。
+base composeスタックは再利用のため稼働継続。事前から存在した停止コンテナ
+reth3/beacon3は本検証の作成物ではないため残置している。
