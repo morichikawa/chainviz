@@ -274,3 +274,65 @@ QA(chainviz-qa)への申し送り:
   `docker ps -a` で e2e 由来の残存コンテナが無いことを確認すること。
 - 競合状態そのもの(goto直後の未反映タイミング)は意図的な再現手段が
   無いため、QA での確認は「後始末が正常系で完遂すること」の確認となる。
+
+#### レビュー差し戻し対応(指摘1・指摘2)
+
+レビューで指摘された2件に対応した。
+
+**指摘1: `multi-client.spec.ts` の移行漏れ**
+
+`multi-client.spec.ts` の `afterAll` を、他4ファイルと同じ
+`cleanupRemovableCards(browser, addedWorkbenchIds, { timeoutMs: ... })`
+呼び出しに置き換えた。これにより、この Issue が対象とする2つの不具合
+(スナップショット未反映時の誤判定・削除完了を待たない `page.close`)が
+このファイルでも解消され、`.catch(() => {})` によるクリック全失敗の
+無差別な握りつぶしも無くなった。あわせて、ずれていた参照コメント
+(「Issue #238 に追記して別途フォローアップする」)も削除した(実際の
+フォローアップ先は本 Issue #233 であり、`cleanupRemovableCards` への
+移行そのものがそのフォローアップにあたるため)。
+
+対象5ファイル(commands-node / commands-workbench / multi-client /
+wallet-balance / token-balance)がすべて共有ヘルパー経由になったことを
+確認した。
+
+**指摘2: `cleanup-consistency.unit.test.ts` 第4ケースの看板倒れ**
+
+第4ケースを、`src/ui/` 直下を `readdirSync` で実走査し、各 `*.spec.ts`
+ファイルの `test.afterAll` 本体を波括弧の対応関係で切り出した上で
+`cleanupRemovableCards` 呼び出しまたは `infra-card-remove-` への直接
+参照(旧インライン後始末パターンへの逆戻り)の有無を判定する実装に
+改めた。検出結果の集合を `CLEANUP_SPEC_FILES` と突き合わせることで、
+「共有ヘルパー未移行のファイルが存在する」状態を実際に検知できるように
+した(単純な正規表現で `test.afterAll(...)` の終端 `}` を決め打つと、
+本体内の `if`/`for`/`try` が持つ入れ子の `}` に引きずられて誤検知する
+恐れがあるため、開き括弧からの深さを辿って対応する閉じ括弧を探す
+方式にした)。
+
+**回帰検出の確認(指摘1・2の両方)**: 修正前に問題が実際に存在し、
+修正後に解消することを以下の手順で確認した。
+
+1. `git stash` で本対応の2ファイルの変更を退避し、レビュー差し戻し時点
+   (`multi-client.spec.ts` が旧インライン実装のまま、
+   `cleanup-consistency.unit.test.ts` が看板倒れの第4ケースのまま)の
+   状態で `pnpm --filter @chainviz/e2e test` を実行したところ、指摘どおり
+   全13件 green のまま(=移行漏れを検知できない)であることを確認した。
+2. `cleanup-consistency.unit.test.ts` の修正のみを復元し
+   (`multi-client.spec.ts` は旧実装のまま)再実行したところ、新しい
+   第4ケースが期待どおり失敗し
+   (`multi-client.spec.ts` は共有ヘルパーを呼んでいない)、移行漏れを
+   実際に検知できることを確認した。
+3. `multi-client.spec.ts` の修正も復元し、再実行したところ全16件
+   (5ファイル×3ケース+新第4ケース)が green になることを確認した。
+
+**最終確認**: `pnpm build`(shared/collector/e2e/frontend)・`pnpm lint`・
+`pnpm test`(shared 62件・e2e 132件・collector 1154件・frontend 1732件、
+すべて green)を確認した。`pnpm test:e2e:ui` は今回も docker 環境を要する
+ため未実施(引き続き `chainviz-qa` での実機検証に委ねる)。
+
+**変更ファイル一覧(差し戻し対応分)**:
+- 変更: `packages/e2e/src/ui/multi-client.spec.ts`(afterAll を
+  `cleanupRemovableCards` 呼び出しに置き換え。ずれた参照コメントを整理)
+- 変更: `packages/e2e/src/ui/support/cleanup-consistency.unit.test.ts`
+  (第4ケースを `src/ui/` の実走査ベースの実装に置き換え、
+  `CLEANUP_SPEC_FILES` に `multi-client.spec.ts` を追加)
+- 変更: `docs/worklog/issue-233.md`(本追記)
