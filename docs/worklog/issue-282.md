@@ -172,3 +172,55 @@ undefined を含む**）は `parseHeadSlot` が `undefined` を返し、
 - なし。追加した境界値・異常系はいずれも現実装の意図どおりに振る舞う
   （非準拠値は例外なく throw され、`pollOneBeaconSync` がノード単位で
   握って他ノードに波及させない）。実装ロジックへの変更は行っていない。
+
+### 2026-07-11 レビュー記録
+
+- 担当: reviewer
+- ブランチ: issue-282-head-slot-parse-strict
+- 判定: **合格**
+
+#### 確認した内容
+
+1. **MAX_SAFE_INTEGER 超過値の precision 欠落を伴う受理の許容可否**:
+   許容できると判断。slot は 12 秒間隔で進むため 2^53 (約 9.007e15) に
+   到達するには約 34 億年かかり、実運用で到達する可能性は事実上ゼロ。
+   仮に非準拠クライアントが桁あふれした値を返しても、head_slot は
+   表示・比較用の観測値であり、誤差 1〜2 の表示ズレに留まる（syncStatus
+   判定はフラグのみで決まるため波及しない）。この前提はテストコードの
+   コメントに明記されており、「固定値の前提条件をコメントに残す」運用
+   ルールも満たしている。
+2. **エラー経路**: `fetchBeaconSyncing` の throw は
+   `pollOneBeaconSync`（`index.ts`）の catch で stableId と実際の
+   エラーオブジェクトごと `console.error` に出力され、握りつぶしなし。
+   ノード単位で return するため `Promise.all` の D層ループ全体・他ノード
+   には波及しない。この両面（握りつぶさない/適切に閉じ込める）が
+   `peer-block-adapter.test.ts` の新規テスト 2 件で実際に検証されている。
+3. **欠落時の非対称性の解消**: 欠落 `undefined` は `parseHeadSlot` の
+   最終 `return undefined`（非 string・非 number の経路）を通り、空文字列
+   /null 等の不正値と同一の throw 経路に統一された。Issue #274 時点の
+   「欠落は throw、空文字列/null は 0 受理」という非対称は解消。
+4. **ビルド・テスト**: リポジトリ全体で `pnpm build` / `pnpm lint` /
+   `pnpm test` すべて成功（shared 62 / collector 1254 / frontend 1884 /
+   e2e 158 件）。
+5. **テストの質**: 修正前実装に戻して新規テスト 12 件が失敗することを
+   実装担当が確認済み（ミューテーション確認）で、「壊れたコードでも通る
+   無意味なテスト」ではない。境界値（先頭ゼロ・全角/Arabic-Indic 数字・
+   符号付き・Infinity/NaN・MAX_SAFE_INTEGER 前後）と結合異常系（sibling
+   非汚染・次周期回復）の両面をカバー。
+6. **コミット粒度**: 5 コミット（fix 1・test 2・docs 2）でいずれも
+   単一の関心事。Conventional Commits 準拠。
+7. **境界の遵守**: `parseHeadSlot` は `adapters/ethereum/beacon-api.ts`
+   内に閉じており、shared 型・frontend への波及なし。docs
+   （PLAN.md のチェック+Issue リンク、WORKLOG.md 索引、本ファイル）も
+   実装と一致。`docs/ARCHITECTURE.md` §7.3 は仕組みの説明として既存の
+   記述で足りており追記不要という実装担当の判断も妥当。
+
+#### 非ブロッキングの所見（対応不要、記録のみ）
+
+- `parseHeadSlot` の文字列経路は `/^\d+$/` 通過後の `Number(...)` 結果に
+  有限性チェックを持たないため、理論上 309 桁以上の数字列は `Infinity`
+  として受理される（JSON 数値経路の `Infinity` は `Number.isInteger` で
+  弾かれるのと対照的）。ただし Beacon API 仕様の uint64 は最大 20 桁で
+  あり、既に許容した precision 欠落よりさらに遠い理論上の話のため、
+  差し戻し対象とはしない。将来 `parseHeadSlot` を汎用化する際に
+  思い出すこと。
