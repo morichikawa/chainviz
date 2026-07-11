@@ -491,3 +491,168 @@ describe("TransactionLifecycleTracker eviction", () => {
     expect(tracker.get("0xt3")).toBeDefined();
   });
 });
+
+describe("TransactionLifecycleTracker.updateContractEvents (Issue #244)", () => {
+  it("returns null and does nothing for an untracked hash", () => {
+    const tracker = new TransactionLifecycleTracker();
+    const result = tracker.updateContractEvents("0xghost", [
+      { contractAddress: "0xc", eventName: "Transfer", args: [] },
+    ]);
+    expect(result).toBeNull();
+    expect(tracker.get("0xghost")).toBeUndefined();
+  });
+
+  it("returns null and leaves the tracked tx untouched when given an empty array", () => {
+    const tracker = new TransactionLifecycleTracker();
+    tracker.recordInclusion("0xblock", [
+      {
+        hash: "0xt1",
+        from: "0xa",
+        to: null,
+        status: "included",
+        contractAddress: "0xc",
+        contractEvents: [{ contractAddress: "0xc", rawEventId: "0xtopic0" }],
+      },
+    ]);
+    const result = tracker.updateContractEvents("0xt1", []);
+    expect(result).toBeNull();
+    // 既存の contractEvents（raw フォールバック）を空へ後退させない。
+    expect(tracker.get("0xt1")?.contractEvents).toEqual([
+      { contractAddress: "0xc", rawEventId: "0xtopic0" },
+    ]);
+  });
+
+  it("replaces contractEvents on a tracked tx and returns the updated entity", () => {
+    const tracker = new TransactionLifecycleTracker();
+    tracker.recordInclusion("0xblock", [
+      {
+        hash: "0xt1",
+        from: "0xa",
+        to: null,
+        status: "included",
+        contractAddress: "0xc",
+        contractEvents: [{ contractAddress: "0xc", rawEventId: "0xtopic0" }],
+      },
+    ]);
+    const updated = tracker.updateContractEvents("0xt1", [
+      {
+        contractAddress: "0xc",
+        eventName: "Transfer",
+        args: [{ name: "value", value: "1000" }],
+      },
+    ]);
+    expect(updated).toEqual<TransactionEntity>({
+      kind: "transaction",
+      hash: "0xt1",
+      from: "0xa",
+      to: null,
+      status: "included",
+      blockHash: "0xblock",
+      createdContractAddress: "0xc",
+      contractEvents: [
+        {
+          contractAddress: "0xc",
+          eventName: "Transfer",
+          args: [{ name: "value", value: "1000" }],
+        },
+      ],
+    });
+    expect(tracker.get("0xt1")).toEqual(updated);
+  });
+
+  it("does not change other fields (status/blockHash/createdContractAddress) when replacing contractEvents", () => {
+    const tracker = new TransactionLifecycleTracker();
+    tracker.recordInclusion("0xblockA", [
+      {
+        hash: "0xt1",
+        from: "0xa",
+        to: null,
+        status: "failed",
+        contractAddress: "0xc",
+        contractEvents: [{ contractAddress: "0xc", rawEventId: "0xtopic0" }],
+      },
+    ]);
+    const updated = tracker.updateContractEvents("0xt1", [
+      { contractAddress: "0xc", eventName: "Transfer", args: [] },
+    ]);
+    expect(updated?.status).toBe("failed");
+    expect(updated?.blockHash).toBe("0xblockA");
+    expect(updated?.createdContractAddress).toBe("0xc");
+  });
+
+  it("re-inserts the updated tx as the newest entry (survives eviction ahead of older entries)", () => {
+    const tracker = new TransactionLifecycleTracker(2);
+    tracker.recordInclusion("0xblock", [
+      { hash: "0xt1", from: "0xa", to: null, status: "included", contractAddress: "0xc" },
+    ]);
+    tracker.recordPending({ hash: "0xt2", from: "0xa", to: "0xb" });
+    // t1 を最新扱いへ入れ直す。
+    tracker.updateContractEvents("0xt1", [
+      { contractAddress: "0xc", eventName: "Transfer", args: [] },
+    ]);
+    // maxTxs(2) を超える3件目が入ると、最古(t2)ではなく本来 t1 より後に
+    // 追加された t2 が最古扱いのままなら t2 が押し出されるはず、という
+    // 直感に反し、直近 updateContractEvents で入れ直された t1 は生き残る。
+    tracker.recordPending({ hash: "0xt3", from: "0xa", to: "0xb" });
+    expect(tracker.get("0xt1")).toBeDefined();
+    expect(tracker.get("0xt2")).toBeUndefined();
+    expect(tracker.get("0xt3")).toBeDefined();
+  });
+
+  it("returns null (does not resurrect) for a tx that was tracked but has since been evicted", () => {
+    // Issue #244 の自己修復では、生ログを保持するバッファ
+    // （undecodedDeployLogs、上限200）が tx ライフサイクル（maxTxs）より
+    // 長生きし得る。カタログ登録が届いた時点で対象の tx が既に evict 済み
+    // だった場合でも、updateContractEvents は null を返すだけで新たな
+    // エンティティを作り直さない（redecodeBufferedDeployLogs が onTx を
+    // 呼ばずに済むための前提）。
+    const tracker = new TransactionLifecycleTracker(1);
+    tracker.recordInclusion("0xblock", [
+      {
+        hash: "0xdeploytx",
+        from: "0xa",
+        to: null,
+        status: "included",
+        contractAddress: "0xc",
+        contractEvents: [{ contractAddress: "0xc", rawEventId: "0xtopic0" }],
+      },
+    ]);
+    // maxTxs(1) を超える別 tx が入り、デプロイ tx は evict される。
+    tracker.recordPending({ hash: "0xother", from: "0xa", to: "0xb" });
+    expect(tracker.get("0xdeploytx")).toBeUndefined();
+
+    const result = tracker.updateContractEvents("0xdeploytx", [
+      { contractAddress: "0xc", eventName: "Transfer", args: [] },
+    ]);
+    expect(result).toBeNull();
+    // 生き残っている別 tx を巻き込んで作り直したりしない。
+    expect(tracker.get("0xdeploytx")).toBeUndefined();
+    expect(tracker.get("0xother")).toBeDefined();
+  });
+
+  it("returns a fresh object without mutating the previously stored entity", () => {
+    // put は差し替え用の新オブジェクトを保持するが、呼び出し側が更新前に
+    // 取得済みだった参照（entityUpdated 前のスナップショット等）を後から
+    // 書き換えないことを特性化する。
+    const tracker = new TransactionLifecycleTracker();
+    tracker.recordInclusion("0xblock", [
+      {
+        hash: "0xt1",
+        from: "0xa",
+        to: null,
+        status: "included",
+        contractAddress: "0xc",
+        contractEvents: [{ contractAddress: "0xc", rawEventId: "0xtopic0" }],
+      },
+    ]);
+    const before = tracker.get("0xt1");
+    const updated = tracker.updateContractEvents("0xt1", [
+      { contractAddress: "0xc", eventName: "Transfer", args: [] },
+    ]);
+    expect(updated).not.toBe(before);
+    // 以前の参照は raw フォールバックのまま。
+    expect(before?.contractEvents).toEqual([
+      { contractAddress: "0xc", rawEventId: "0xtopic0" },
+    ]);
+  });
+});

@@ -32,8 +32,12 @@ export interface ContractDeployment {
  * ContractEntity.address として扱う表記をここで一本化する。tx.to 等の
  * RPC 由来アドレスも同様に小文字表記であるため、フロント側で他のアドレス
  * フィールドと突き合わせる際の表記もこれで揃う。
+ *
+ * EthereumAdapter（Issue #244）もカタログ未照合デプロイ tx の生ログを
+ * アドレスで索引するために同じ正規化を要するため、ここから export する
+ * （表記の一本化ロジックを2箇所に複製しない）。
  */
-function normalizeAddress(address: string): string {
+export function normalizeAddress(address: string): string {
   return address.toLowerCase();
 }
 
