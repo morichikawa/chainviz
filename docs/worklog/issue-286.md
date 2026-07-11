@@ -264,3 +264,191 @@ compose の挙動変更 / README / docs)に分けること。
 - サンプリングの実装詳細(before/after 比較の関数化、ログ文言)
 - 判定関数の分割(`should_regenerate` が肥大化するなら genesis 年齢取得・
   サンプリングを関数に切り出す)
+
+## 9. 実装方針の確認メモ(node-env)
+
+設計メモ §6〜§8 を前提に、以下の方針で実装する(§8 の実装裁量に対する
+自分の選択):
+
+- `GENESIS_TIMESTAMP_FILE=/data/.genesis-timestamp` を `DONE_MARKER` と
+  同じ場所(スクリプト冒頭の定数群)に追加する。
+- 書き出しタイミングは `export GENESIS_TIMESTAMP=...` の直後
+  (`/work/entrypoint.sh all` を呼ぶ前)。理由: 生成が途中で失敗しても
+  `DONE_MARKER` が書かれないため、次回起動は「初回生成として扱う」分岐で
+  必ず前回生成物(`.genesis-timestamp` 含む)を `rm -rf` してから作り直す。
+  つまり書き出しタイミングを遅らせて完了マーカーと同時にする必要はない
+  (半端な `.genesis-timestamp` が生き残ることはない)。
+- genesis 年齢の取得はコマンド置換 `$(...)` を使う関数にしない。POSIX
+  sh(dash)の `$(...)` はサブシェルで実行されるため、その中でログ用の
+  `echo`(標準出力)を混ぜると呼び出し側が値としてキャプチャしてしまい
+  壊れる。かわりに `compute_genesis_age()` を「戻り値ではなく副作用
+  (グローバル変数 `GENESIS_AGE_SEC` への代入)で結果を渡す通常の関数
+  呼び出し」として実装し、フォールバック時のログはその関数内で直接
+  `echo`(標準出力)してよいようにする。
+- `should_regenerate()` の分岐順序は設計メモ 3-2 の疑似コードのとおり
+  (①マーカー無し→②poison→③genesis_age<=MAX_REBUILD_GAP→④ hb 判定/
+  サンプリング)。既存の変数名 `age_sec`/`age_desc`(ハートビート経過)は
+  `hb_age`/`hb_age_desc` に改名し、`genesis_age` と紛れないようにする。
+- サンプリングの前後比較は「前(before)のタイムスタンプより後(after)が
+  大きいか」で判定する(before が空 = ハートビート無しから始まって
+  after が生じたケースも「前進」として扱う。理論上は poison
+  マーカー・LIVE_THRESHOLD 判定を経ているのでこのケースはほぼ
+  発生しないが、堅牢性のため考慮する)。
+- 変更点は関心事ごとに分けてコミットする: (1)
+  `generate-genesis.sh` のロジック本体、(2) `docker-compose.yml` の
+  環境変数改名・追加、(3) `README.md` の記述更新、(4) `docs/PLAN.md` /
+  `docs/WORKLOG.md` の記録。実装順序に依存は無いが、コミット順序は
+  この並びにする(スクリプト→compose→README→docs)。
+
+## 10. 実装記録(node-env)
+
+- 担当: node-env
+- ブランチ: issue-286-genesis-reuse-guard
+
+### 実装内容
+
+設計メモ §3 のとおり実装した。
+
+- `profiles/ethereum/scripts/generate-genesis.sh`:
+  - `GENESIS_TIMESTAMP_FILE=/data/.genesis-timestamp` を追加。生成時に
+    `export GENESIS_TIMESTAMP=...` の直後で書き出し、次回生成物の
+    `rm -rf` 対象にも含めた。
+  - genesis 年齢の取得を `compute_genesis_age()` として切り出した。
+    `$(...)` コマンド置換のサブシェル化を避けるため、戻り値ではなく
+    グローバル変数 `GENESIS_AGE_SEC` への代入で結果を渡す通常の関数
+    呼び出しにした(コマンド置換内で `echo` するとログ出力が値として
+    キャプチャされて壊れるため)。フォールバック(`.genesis-timestamp`
+    が無い場合に `DONE_MARKER` の mtime を使う)もここに実装した。
+  - `should_regenerate()` を設計メモ 3-2 の判定順序どおりに書き換えた:
+    ①マーカー無し→再生成、②poison マーカー(変更なし)、③genesis 年齢
+    <= `MAX_REBUILD_GAP_SEC` なら常にスキップ、④それ以外は最新ハート
+    ビートの経過で「全停止確定」または「サンプリング」に分岐する。
+    サンプリングは `2 × HEARTBEAT_INTERVAL_SEC` 秒待ってハートビート
+    mtime が前進したかを見る。
+  - しきい値変数を `GENESIS_DOWNTIME_RESET_SEC` から
+    `GENESIS_MAX_REBUILD_GAP_SEC` に改名(互換エイリアス無し)。
+    `HEARTBEAT_INTERVAL_SEC` を新規に読むようにした(サンプリング窓の
+    導出用)。
+- `profiles/ethereum/docker-compose.yml`: genesis サービスの
+  `environment:` を `GENESIS_DOWNTIME_RESET_SEC` →
+  `GENESIS_MAX_REBUILD_GAP_SEC` に改名し、`HEARTBEAT_INTERVAL_SEC` を
+  追加。冒頭のコメントも新しい判定基準に合わせて更新した。
+- `profiles/ethereum/README.md`: 「冪等性と、稼働中かどうかの判定」
+  「長時間停止後の再起動と自動リセット」の各節を新しい判定基準(genesis
+  年齢 + 生存サンプリング)に合わせて書き換え、変数名の改名・意図的な
+  挙動変更・動的ノードの取り残され頻度が上がる点を明記した。
+
+### 実機検証
+
+scratchpad 上の独立 compose プロジェクト(本物の `chainviz-ethereum`
+スタックには一切触れていない。検証前後で `docker compose ls` に変化が
+無いことを確認済み)で、設計メモの V1〜V8 をすべて実施した。genesis を
+「古い」状態にする手段は、`TEST_GENESIS_TIMESTAMP_OFFSET_SEC` 環境変数
+分岐(#139/#148 と同じ手法。本番コードには入れていない、検証用コピー
+限定)と、`/data/.genesis-timestamp` を直接書き換える手段(稼働中の
+ボリュームに対して genesis 年齢だけを偽装したいケース)を使い分けた。
+
+- **V1(本命。修正前後の再現)**:
+  - 修正前(この Issue 着手前の `generate-genesis.sh` を検証用に
+    コピーし、`TEST_GENESIS_TIMESTAMP_OFFSET_SEC=14400` で genesis を
+    4 時間前に固定して起動): 初回起動の時点で `head_slot` が 0 のまま
+    `current_slot` だけ進み、beacon が `Producing block at incorrect
+    slot` / `Timed out waiting for fork choice before proposal` を
+    繰り返して CPU 653〜704% でハングし、`eth_blockNumber` が `0x0` の
+    まま停止することを確認(#139 の現象の再現)。この状態で
+    `docker compose down`(11 秒)→ 8 秒後に `up -d` すると、genesis
+    ログに `最新ハートビートの経過14秒 <= LIVE_THRESHOLD(60秒)。生存
+    ノードありとみなし再生成をスキップする` が出力され、古い genesis が
+    再利用されたまま `eth_blockNumber` が `0x0`・CPU 650%超のハングが
+    継続することを確認した(#286 のバグそのものを再現)。
+  - 修正後(同じ手順): 初回起動時は同様にハングするが、`down`(11 秒)→
+    `up -d`(23 秒。うち約 20 秒はサンプリング待ち)で、genesis ログに
+    `genesis 年齢14449秒 > MAX_REBUILD_GAP(600秒)だが最新ハートビートの
+    経過8秒 <= LIVE_THRESHOLD(60秒)。...20秒 サンプリングして...` →
+    `サンプリング中にハートビート mtime が前進しなかった...再生成する`
+    が出力され、genesis が現在時刻で再生成された。以降 15 秒で
+    `eth_blockNumber` が `0x0` → `0x6` へ進行し、CPU が 650%超 → 32%に
+    下がることを確認した。
+- **V2(Issue #56 の回帰・最重要)**:
+  - (i) genesis 若い状態で稼働中のスタックに `up -d` を再実行:
+    サンプリングを経ずに `genesis 年齢43秒 <= MAX_REBUILD_GAP(600秒)。
+    ...再生成せずスキップする` が即時出力され、コンテナの起動時刻
+    (`State.StartedAt`)が不変、`eth_blockNumber` が `0x12` の
+    ままブロックが途切れず進行することを確認。
+  - (ii) 稼働中スタックの `.genesis-timestamp` だけを 1 時間前に偽装
+    (実際には全ノードは生き続けている状態): `up -d` で `genesis 年齢
+    3608秒 > MAX_REBUILD_GAP(600秒)だが...サンプリングして...` →
+    `サンプリング中にハートビート mtime が前進した...稼働中とみなし
+    再生成をスキップする` が出力され、コンテナが再作成されず
+    (`State.StartedAt` 不変)、`eth_blockNumber` が `0x12` → `0x2b` へ
+    途切れず進行することを確認した(genesis が古くても実際に生きて
+    いれば #56 の保護が効くことの確認)。
+- **V3(#148 R3 の回帰)**: genesis 若い状態(生成から 43 秒)で
+  `docker compose stop`(全コンテナ停止)し 168 秒後に `up -d`。
+  ログに `genesis 年齢192秒 <= MAX_REBUILD_GAP(600秒)。...再生成せず
+  スキップする` が出力され(ハートビート経過秒を見ずに即時スキップ)、
+  genesis は再利用されたまま `eth_blockNumber` が 15 秒で `0xa` まで
+  進行(ギャップを再構築して追いつく)ことを確認した。
+- **V4(#148 R4 の回帰)**: `HEARTBEAT_INTERVAL_SEC=3` /
+  `GENESIS_SUSPEND_DETECT_SEC=15` でスタックを起動し、
+  `docker compose pause` で全ノードを 40 秒間凍結後 unpause。ログに
+  `[reth-heartbeat] 40秒の空白を検知(閾値15秒)。サスペンドと判断し
+  自ノードを停止する` が出力され `suspend-detected` マーカーが作成
+  →全 6 コンテナが exit code 0 で終了することを確認。この状態で
+  `up -d` すると `サスペンド検知マーカー(...)を検出。最新ハートビート
+  の経過73秒 > LIVE_THRESHOLD(60秒)。全ノード停止とみなし再生成する`
+  が出力されて genesis が再生成され、poison マーカーも一掃され、
+  15 秒で `eth_blockNumber` が `0xf` まで進行することを確認した
+  (poison マーカー経路(3-4)は本 Issue で変更していないことの確認)。
+- **V5(#148 R5 の回帰)**: V3 後の稼働中スタックに
+  `./scripts/restart-node.sh 1` を実行。`reth1`/`beacon1`/`validator1`
+  のみ再起動され、genesis コンテナの `State.StartedAt` が不変
+  (=genesis サービスは走っていない)ことを確認。35 秒後
+  `eth_blockNumber` が `0x9` → `0x10` へ進行することを確認した。
+- **V6(#148 R6 の回帰)**: `/heartbeat` をマウントしない
+  `reth-node.sh` を単体 `docker run` で起動(collector の `addNode` が
+  作る動的ノードの構成を模擬)。ログに `[reth-heartbeat] /heartbeat が
+  無い/書き込めない(動的追加ノード等)ためハートビート/watchdogを
+  スキップする` が出力され、`set -e` で落ちずにコンテナが起動し続ける
+  こと、`heartbeat` ボリュームにこのノード由来のファイルが作られず
+  判定を撹乱しないことを確認した。
+- **V7(フォールバック)**: `generate-genesis.sh` を単体
+  `docker run`(compose を介さず)で、`.genesis-complete` のみ存在し
+  `.genesis-timestamp` が無いボリュームに対して実行。マーカー mtime を
+  700 秒前にした場合は `.../.genesis-timestamp が無い...完了マーカー
+  の更新時刻...へフォールバックする` → `genesis 年齢718秒 >
+  MAX_REBUILD_GAP(600秒)...再生成する`、30 秒前にした場合は
+  `genesis 年齢31秒 <= MAX_REBUILD_GAP(600秒)...スキップする` と、
+  フォールバックが両方向で正しく機能することを確認した。
+- **V8(一斉 Recreate、issue-211 の境界事例)**: 稼働中スタックの
+  `.genesis-timestamp` を 3000 秒前に偽装した状態で
+  `docker compose up -d --force-recreate` を実行(全 6 ノードコンテナを
+  同時に作り直す)。ログに `genesis 年齢3036秒 > MAX_REBUILD_GAP(600秒)
+  だが最新ハートビートの経過13秒 <= LIVE_THRESHOLD(60秒)。...6秒
+  サンプリングして...` → `サンプリング中にハートビート mtime が
+  前進しなかった...再生成する` が出力され(新しいコンテナは
+  `depends_on` で止められているため mtime が前進しなかった)、
+  genesis が再生成されて 15 秒で `eth_blockNumber` が `0x5` まで正常に
+  進行することを確認した(issue-211 の回避策
+  `GENESIS_DOWNTIME_RESET_SEC=0` が不要になったことの確認)。
+- 仕上げに `pnpm lint && pnpm build && pnpm test` を実行し、全て成功
+  することを確認した(TypeScript の変更は無い)。
+
+### 次の担当が知っておくべきこと
+
+- しきい値・サンプリング窓の前提は `generate-genesis.sh` のコメント
+  (定数定義部)と本ファイル §3-3 に明記済み。特に
+  `GENESIS_MAX_REBUILD_GAP_SEC`(既定 600 秒)は「#139 の実測ハング点
+  (3200 slot 以上)の 1/10 以下」という安全側の導出であり、特定環境の
+  実測値ぎりぎりに合わせたものではない。CPU 性能が大きく異なる環境では
+  環境変数で調整すること。
+- `GENESIS_DOWNTIME_RESET_SEC` を使っていた過去の運用回避策(例:
+  `docs/worklog/issue-211.md` の `GENESIS_DOWNTIME_RESET_SEC=0`)は、
+  今後は `GENESIS_MAX_REBUILD_GAP_SEC=0` に読み替える必要がある(過去の
+  worklog 自体は歴史記録として書き換えていない)。
+- §7 に記載したとおり、稼働し続けている動的ノード(addNode)が古い
+  genesis のまま取り残される頻度は本変更で上がる(compose ノードの
+  down→up が再生成になるケースが増えるため)。README にも明記した。
+- `docs/ARCHITECTURE.md` はプロファイル内スクリプトの挙動を扱わないため
+  変更していない(#139/#148 と同じ整理)。shared/collector/frontend への
+  変更も無い。
