@@ -358,6 +358,32 @@ export const messages = {
     ja: "駆動元（合意ノード）",
     en: "Driven by (consensus node)",
   },
+  // --- D層: validator→beacon の内部リンク（ARCHITECTURE.md §7.6.11。
+  // Issue #285） ---
+  "edge.internalLinkValidator": {
+    ja: "内部リンク（Beacon API）",
+    en: "Internal link (Beacon API)",
+  },
+  // 端点の nodeRole の組がマッピングに無い（役割不明の旧スナップショット等）
+  // 場合のフォールバック見出し。GlossaryTerm のアンカーは付けない。
+  "edge.internalLinkGeneric": { ja: "内部リンク", en: "Internal link" },
+  "internalEdge.validatorPair": {
+    ja: "このバリデーターは、この beacon ノードに Beacon API で接続し、担当スロットでのブロック提案・証明を行います。チェーンを前に進める起点です",
+    en: "This validator connects to this beacon node over the Beacon API to propose blocks and attest in its assigned slots — the starting point that moves the chain forward.",
+  },
+  // フォールバック用の汎用説明文（役割不明の組向け）。
+  "internalEdge.genericPair": {
+    ja: "この2つのコンテナは内部リンクで接続されています。",
+    en: "These two containers are connected by an internal link.",
+  },
+  "field.connectsToBeacon": {
+    ja: "接続先の beacon ノード",
+    en: "Connected beacon node",
+  },
+  "field.validatorClient": {
+    ja: "接続元のバリデーター",
+    en: "Connected validator",
+  },
   // --- D層: 同期ステージ・txpool内訳（ARCHITECTURE.md §7.6.5/§7.6.6。
   // Issue #189） ---
   "field.syncStages": { ja: "同期ステージ", en: "Sync stages" },

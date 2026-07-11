@@ -28,7 +28,33 @@ engine-api:
       in this observation interval," not one pulse per call; the breakdown
       (method names and counts) is available by hovering the cord.
   layer: d-internal
-  relatedTerms: [el-cl-separation, el-client, cl-client]
+  relatedTerms: [el-cl-separation, el-client, cl-client, beacon-api]
+
+beacon-api:
+  name:
+    ja: Beacon API
+    en: Beacon API
+  definition:
+    ja: >-
+      バリデータークライアント（VC）と合意クライアント（beacon ノード）を
+      繋ぐ HTTP API。VC はこの API で担当の職務（どのスロットでブロック
+      提案・証明するか）を問い合わせ、署名した結果を提出する。鍵を預かる
+      VC と P2P ネットワークに参加する beacon を別プロセスに分けることで、
+      鍵の管理と外部との通信を分離できる。chainviz では validator カード
+      から beacon カードへ引かれる内部リンクの紐として見える（Engine API
+      のリンクと違い呼び出しの観測経路が無いため、パルスは流れない）。
+    en: >-
+      The HTTP API that connects the validator client (VC) to the
+      consensus client (the beacon node). The VC uses this API to ask
+      which duties it has been assigned (which slot to propose a block or
+      attest in) and to submit its signed results. Splitting the VC, which
+      holds signing keys, from the beacon node, which participates in the
+      P2P network, keeps key management separate from external
+      communication. chainviz shows this as the internal link cord from a
+      validator card to its beacon card (unlike the Engine API link, there
+      is no observed call activity, so no pulses flow along it).
+  layer: d-internal
+  relatedTerms: [validator, cl-client, engine-api]
 
 el-cl-separation:
   name:

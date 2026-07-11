@@ -55,6 +55,8 @@ export function InternalLinkEdge({
   const pulses = data?.pulses ?? [];
   const drivingContainerName = data?.drivingContainerName ?? "";
   const drivenContainerName = data?.drivenContainerName ?? "";
+  const drivingNodeRole = data?.drivingNodeRole;
+  const drivenNodeRole = data?.drivenNodeRole;
   const lastActivity = data?.lastActivity;
 
   const sheathStyle = hovered
@@ -104,6 +106,8 @@ export function InternalLinkEdge({
             <InternalLinkEdgePopover
               drivingContainerName={drivingContainerName}
               drivenContainerName={drivenContainerName}
+              drivingNodeRole={drivingNodeRole}
+              drivenNodeRole={drivenNodeRole}
               lastActivity={lastActivity}
             />
           </div>

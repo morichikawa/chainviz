@@ -64,6 +64,7 @@ function renderPopover(
   drivesNodeContainerName?: string,
   maxElBlockHeight?: number,
   drivenByContainerName?: string,
+  drivenByNodeRole?: string,
 ) {
   return render(
     <LanguageProvider initialLanguage={lang}>
@@ -74,6 +75,7 @@ function renderPopover(
           drivesNodeContainerName={drivesNodeContainerName}
           maxElBlockHeight={maxElBlockHeight}
           drivenByContainerName={drivenByContainerName}
+          drivenByNodeRole={drivenByNodeRole}
         />
       </GlossaryProvider>
     </LanguageProvider>,
@@ -438,6 +440,69 @@ describe("InfraPopover drivesNode row (ARCHITECTURE.md §7.6.3, Issue #188)", ()
     renderPopover({ ...node, syncStatus: "syncing" }, "ja", "chainviz-reth-1");
     expect(screen.getByText("同期中")).toBeTruthy();
     expect(screen.getByText("駆動する実行ノード")).toBeTruthy();
+  });
+});
+
+describe("InfraPopover validator<->beacon field labels (ARCHITECTURE.md §7.6.11, Issue #285)", () => {
+  it("shows the connectsToBeacon label (not drivesNode) for a validator's drivesNode row", () => {
+    renderPopover(
+      { ...node, nodeRole: "validator" },
+      "ja",
+      "chainviz-lighthouse-1",
+    );
+    expect(screen.getByText("接続先の beacon ノード")).toBeTruthy();
+    expect(screen.getByText("chainviz-lighthouse-1")).toBeTruthy();
+    expect(screen.queryByText("駆動する実行ノード")).toBeNull();
+  });
+
+  it("localizes the connectsToBeacon label to English", () => {
+    renderPopover(
+      { ...node, nodeRole: "validator" },
+      "en",
+      "chainviz-lighthouse-1",
+    );
+    expect(screen.getByText("Connected beacon node")).toBeTruthy();
+  });
+
+  it("shows the validatorClient label (not drivenBy) when driven by a validator", () => {
+    renderPopover(node, "ja", undefined, undefined, "chainviz-validator-1", "validator");
+    expect(screen.getByText("接続元のバリデーター")).toBeTruthy();
+    expect(screen.getByText("chainviz-validator-1")).toBeTruthy();
+    expect(screen.queryByText("駆動元（合意ノード）")).toBeNull();
+  });
+
+  it("localizes the validatorClient label to English", () => {
+    renderPopover(node, "en", undefined, undefined, "chainviz-validator-1", "validator");
+    expect(screen.getByText("Connected validator")).toBeTruthy();
+  });
+
+  it("keeps the default drivenBy label when driven by a consensus node (unchanged behavior)", () => {
+    renderPopover(node, "ja", undefined, undefined, "chainviz-lighthouse-1", "consensus");
+    expect(screen.getByText("駆動元（合意ノード）")).toBeTruthy();
+    expect(screen.queryByText("接続元のバリデーター")).toBeNull();
+  });
+
+  it("keeps the default drivenBy label when the driving node's role is unknown (does not hide the field)", () => {
+    renderPopover(node, "ja", undefined, undefined, "chainviz-lighthouse-1");
+    expect(screen.getByText("駆動元（合意ノード）")).toBeTruthy();
+  });
+
+  it("shows a beacon card's two relation rows together (driving reth, driven by a validator)", () => {
+    // beacon カードは reth を駆動しつつ validator に駆動される側でもあるため、
+    // 「駆動する実行ノード」「接続元のバリデーター」の2行が共存する
+    // （ARCHITECTURE.md §7.6.11「beacon は関連行が2行になる」）。
+    renderPopover(
+      { ...node, clientType: "lighthouse", nodeRole: "consensus" },
+      "ja",
+      "chainviz-reth-1",
+      undefined,
+      "chainviz-validator-1",
+      "validator",
+    );
+    expect(screen.getByText("駆動する実行ノード")).toBeTruthy();
+    expect(screen.getByText("chainviz-reth-1")).toBeTruthy();
+    expect(screen.getByText("接続元のバリデーター")).toBeTruthy();
+    expect(screen.getByText("chainviz-validator-1")).toBeTruthy();
   });
 });
 
