@@ -307,3 +307,65 @@ QA への申し送り: jsdom では実ブラウザのマウス移動に伴う en
 閉じず、内部のリンク（例: InfraPopover の駆動する実行ノード）や入れ子の
 GlossaryTerm を操作できること」「パン/ズーム/ドラッグ中の追従」を確認
 してほしい。
+
+#### QA検証記録（qa）
+
+コードは変更していない。実機（実ブラウザ）で動かして検証した。判定は**合格**。
+
+検証環境:
+
+- frontend を `vite dev`（`VITE_COLLECTOR_URL` 未設定 = モッククライアント）で
+  ポート5199に起動。
+- 実ブラウザは headless Chromium（Playwright キャッシュの
+  `chromium-1228/chrome-linux64/chrome`、Chrome for Testing 149）。起動に
+  必要な共有ライブラリ（libnspr4 / libnss3 / libasound2t64）が
+  サンドボックスに無かったため `apt-get download` + `dpkg -x` で
+  ユーザーディレクトリに展開し `LD_LIBRARY_PATH` で読ませた。操作は
+  リポジトリ同梱の playwright-core 1.61.1 経由。
+
+実施内容と結果:
+
+1. 元Issueの再現手順（隣接カードの下に隠れないこと）:
+   `chainviz-reth-1`（infra-card-reth-node-1）を `chainviz-lighthouse-1`
+   の直下へドラッグしてほぼ隙間なく隣接させ（実測 A.bottom≈169 /
+   B.top≈179、左端ズレ約35px）、上側カードにホバーして InfraPopover を
+   開いた。ポップオーバーと下側カードが物理的に重なる点
+   （実測 (729,204)）で `document.elementsFromPoint()` を取得したところ、
+   スタック順は上から `infra-field__label` → `infra-field` →
+   `infra-popover`（index 0〜2）→ 下側カードの `infra-card` /
+   `react-flow__node`（index 3〜5）で、ポップオーバーが下側カードより
+   確実に前面にあることを実測で確認した（両者が同一点で重なっている
+   ことも `elementsFromPoint` の両方の出現で確認済み。修正前はこの
+   react-flow ノードのスタッキングコンテキストが勝ってポップオーバーが
+   隠れていた）。スクリーンショットでも、IP・ポート・プロセス・CPU・
+   メモリ・クライアント・役割・P2Pでの役割・同期状態・ブロック高・
+   駆動元・同期ステージ各行・txpool の全フィールドが隣接カード
+   （workbench-alice / EOA カード）の手前に読める状態を視覚確認した。
+
+2. レビューア申し送り3点:
+   - ポップオーバー内へカーソルを移しても閉じない（Issue #221 の遅延
+     クローズが機能）: カードからポップオーバー内部へカーソル移動後
+     600ms 待っても InfraPopover が開いたままであることを確認。
+   - 入れ子の GlossaryTerm を操作できる: ポップオーバー内の
+     `.glossary-term` にホバーすると `.glossary-popover` が開き、その
+     用語ポップオーバー自身が最前面に描画される（`elementFromPoint` が
+     `.glossary-popover` を返す）ことを確認。
+   - パン/ズーム/ドラッグ中の追従: 上側カードをドラッグ中もポップ
+     オーバーがアンカー（カード）に追従し、`pop.left - card.left ≈ 0`・
+     `pop.top - card.bottom ≈ 8px`（gapPx）を維持することを実測で確認。
+     パン/ズームも同一の `requestAnimationFrame` によるアンカー
+     追従コードパスを通るため、ドラッグ追従の確認をもって同等と判断。
+
+3. 8箇所のうち代表的な5箇所を実機で確認:
+   InfraPopover（上記1）、GlossaryTerm（上記2）に加え、ContractCard の
+   活動チップ（`.contract-activity-chip__popover`）、WalletCard の tx
+   チップ（`.tx-lifecycle-popover`）、ActionHint（`.action-hint__popover`）
+   のいずれも、開いたポップオーバーの親要素が `document.body` 直下
+   （portal 済み）であり、かつ `elementFromPoint` で最前面に描画される
+   ことを確認した。残る ContractPopover / WalletPopover /
+   WalletPopover の TxItem も同一の `PopoverPortal` 機構を共有しており、
+   reviewer の横断テスト（`popoverPortalConsistency.test.tsx`）で
+   portal されることが固定済み。
+
+完了条件（ポップオーバーが隣接カードの下に描画され読めない、が解消
+されていること）を満たしていることを実機で確認した。
