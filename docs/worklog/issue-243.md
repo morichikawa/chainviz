@@ -113,3 +113,48 @@ CL ノード（beacon1/beacon2、`nodeRole: "consensus"`）も
   項目を追加し、調査完了としてチェックを付けた
 - Issue のクローズは統括の判断に委ねる（コード変更が無いため PR の
   `Closes #243` による自動クローズか、手動クローズかは統括が選択する）
+
+### 2026-07-11 Issue #243 レビュー（chainviz-reviewer）
+
+- 担当: reviewer
+- ブランチ: issue-243-validator-sync-display
+- 内容: 「Issue #215 で解消済み・コード変更不要」という調査結論の妥当性を
+  静的にレビューした。**判定: 合格**
+- 確認した内容:
+  - 静的確認の再検証: `InfraPopover.tsx`（`showsSyncState` が false のとき
+    同期状態/ブロック高の2行を出さない）、`InfraNodeCard.tsx`（同条件で
+    `infra-card__status` ドットを描画しない）、
+    `chain-profiles/ethereum/nodeRoles.ts`（`validator` は
+    `showsSyncState: false`）を実コードで確認。worklog の記述と一致する
+  - 表示経路の網羅性: frontend で `syncStatus`/`blockHeight` に触れる
+    ソースは上記2ファイルのほか `InfraNodeCardSyncProgress`（
+    `syncStatus === "syncing"` かつ `internals.syncStages` が条件）と
+    `syncProgress.ts` の `computeMaxSyncTargetHeight`（`internals.syncStages`
+    を持つノードのみ集計）のみで、validator の値が漏れる経路が無いことを
+    grep で確認。worklog の主張どおり
+  - テストカバレッジ: `InfraPopover.test.tsx` / `InfraNodeCard.test.tsx` に
+    本 Issue の症状ケース（syncing の validator でドット・行が出ない、
+    synced の実データを持っていても role-driven で隠す）が実在することを確認
+  - collector 側の記述: `adapters/ethereum/index.ts` の `toEntity` が
+    キャッシュ未命中時に `syncStatus: "syncing"` / `blockHeight: 0` を
+    与えることを確認（worklog の前提と一致）。プレースホルダを変更しない
+    設計判断は、shared 型（必須フィールド）への波及の大きさ、#215 が
+    確立した「collector は生ラベルの転記のみ・意味づけはフロントの
+    チェーンプロファイル表現セット」という ChainAdapter 境界の整理と
+    整合しており妥当
+  - Issue #274 への切り分け: `docs/ARCHITECTURE.md` §7.3 に beacon の
+    syncStatus/blockHeight が既知ギャップであることが明記済みであること、
+    #274 の Issue 本文が「beacon はチェーンを追う係なので表示を消す対処は
+    不適切」という validator との差異を正しく記述していることを確認。
+    切り分けは妥当
+  - docs: `docs/PLAN.md` のバックログ項目追加＋チェック、`docs/WORKLOG.md`
+    索引の1行追加を確認。齟齬なし
+  - ビルド・テスト: worktree で `pnpm lint` / `pnpm build` / `pnpm test`
+    がすべて通ることを確認（frontend 1817件含む全パッケージ成功）
+  - コミット粒度: `main..HEAD` は1コミット（調査記録の追加という単一の
+    関心事）で、Conventional Commits 形式（`docs:`）に準拠
+- 軽微な指摘（差し戻し不要）: 本ファイルの調査記録が `### 2026-07-11 ...`
+  のエントリ見出しの下に `## 判定の根拠` などより上位レベルの見出しを
+  置いており、`docs/WORKLOG.md` の記入フォーマット（エントリ = `###`、
+  下位は `####`）と見出し階層が逆転している。追記型のファイルなので
+  次回以降のエントリ追加時に構造が崩れやすい点にのみ留意されたい
