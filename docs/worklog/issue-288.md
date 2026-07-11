@@ -385,3 +385,64 @@ export class PeerObservationCache {
   ファイル・1283 テスト green）。`pnpm exec eslint`（追加ファイル対象）
   エラー無し。既存 `consensus-peer-poll-failure-log.test.ts`（#287 回帰）は
   無変更のまま通過。
+
+#### レビュー（chainviz-reviewer）
+
+判定: **合格**。差し戻し事項なし。
+
+確認内容:
+
+- **設計メモからの逸脱なし**: 4つの決定事項（collector側で吸収・
+  ノード単位の観測キャッシュ方式・`packages/shared`の型変更なし・
+  #287の`consensusPeerFailureCounts`をPeerObservationCacheへ置き換えて
+  統合）すべて実装と一致。`git diff main...HEAD`でshared/frontend/
+  profilesに差分が無いこと、旧シンボル（`consensusPeerFailureCounts`・
+  `pruneConsensusPeerFailureCounts`）が完全に除去され併存していないことを
+  grepで確認した。
+- **#287ログ挙動の回帰なし**: `consensus-peer-poll-failure-log.test.ts`は
+  無変更（mainとの差分ゼロ）のまま通過。ログ判定条件（初回必ず・20回に
+  1回）・文言（`consecutive failures`サフィックス含む）はdiff上も同一。
+  成功時のリセット意味論も等価（旧: Mapからdelete→次の失敗が1回目、
+  新: recordSuccessでcount=0→次の失敗が1回目）。
+- **固定値の前提条件の明記**: `CONSENSUS_PEER_OBSERVATION_GRACE_TICKS = 3`
+  に、回数ベースを選んだ理由（間隔変更に対する相対頻度の維持）と実時間
+  換算の前提（既定間隔3000ms + HTTPタイムアウト3000ms → 約10〜20秒）が
+  コードコメント・本worklog（設計判断3）の両方に記載されている。
+  CLAUDE.mdの運用ルールを満たす。
+- **removeNode時のゾンビエッジ防止**: `fetchConsensusPeerNodes`冒頭で
+  毎tick、`beaconTargets(observations)`（Dockerの現在観測から導出）由来の
+  stableId集合で`prune`を呼ぶ構造を確認。観測対象から外れたノードの
+  キャッシュは次tickで破棄される。結合テスト（re-add時にlastGoodが
+  復活しないこと）も存在する。
+- **恒久不調の隠蔽なし**: fallbackは`consecutiveFailures <= graceTicks`の
+  場合のみ返るため、#286型の恒久ハングでは4tick目以降エッジが消え、
+  接続確立中表示＋#287の連続失敗ログが持続する。境界値テスト
+  （graceTicks回目まで維持・+1回目で消える）と実機検証記録の両方で
+  裏付けられている。
+- **エラー握りつぶしなし**: catch節は#287のログ間引き（設計済みの挙動）を
+  経由して必ずconsole.errorに到達する経路を維持。fallback代用時も失敗
+  自体はログされる。
+- **テストの質**: 単体（境界値graceTicks=0/超過・参照同一性・ノード間
+  独立性・prune）・結合（フラッピング解消・境界・再アーム・復活後の
+  再吸収・ノード別猶予窓の独立・未成功ノードの即時脱落・ゾンビエッジ）・
+  カウンタ交差（#287周期と#288猶予の非干渉・成功時の同時リセット）と
+  関心事別に3ファイルへ分割されており、tester記録に「実装を意図的に
+  壊して検出できることを確認した」旨がある。counter-interactionテストが
+  `GRACE < LOG_INTERVAL`の前提を冒頭でアサートしている点も、定数変更時に
+  テスト自体が無意味化するのを防いでおり適切。
+- **ビルド・lint・テスト**: リポジトリ全体で`pnpm build`（全パッケージ
+  成功）・`pnpm lint`（指摘なし）・`pnpm test`（shared 62 / collector
+  1283 / e2e 158 / frontend 1884、すべてpass）を確認。
+- **コミット粒度**: `git log main..HEAD`の8コミットはいずれも単一の
+  関心事（設計docs / 実装方針メモ / クラス追加 / 配線fix / 実装記録docs /
+  mainマージ / テスト強化 / テスト記録docs）でConventional Commits準拠。
+- **docs整合**: `docs/ARCHITECTURE.md`のsubscribePeers節に追記された
+  ヒステリシスの段落は実装（回数ベース猶予・恒久不調時の脱落・prune・
+  EL側未配線）と一致。`docs/PLAN.md`のチェックボックス・Issueリンク、
+  `docs/WORKLOG.md`索引の1行も確認した。
+
+軽微な所見（差し戻し対象ではない）: `consensus-peer-hysteresis.test.ts`と
+`consensus-peer-counter-interaction.test.ts`でモックヘルパー
+（`beaconSummary`・`multiBeaconClient`・`beaconHttp`）が重複している。
+1ファイル1責務の分割を優先した結果として妥当だが、同種のテストが今後
+さらに増えるならヘルパーの共有化を検討してよい。
