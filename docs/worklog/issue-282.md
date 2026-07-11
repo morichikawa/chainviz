@@ -123,3 +123,52 @@ undefined を含む**）は `parseHeadSlot` が `undefined` を返し、
 - `docs/ARCHITECTURE.md` §7.3 などの記述は Issue #274 で既に
   「Beacon API から head_slot を観測する」という仕組みの説明として
   確定済みであり、本 Issue はそのパースの厳格化のみのため追記していない。
+
+### 2026-07-11 テスト強化記録
+
+- 担当: tester
+- ブランチ: issue-282-head-slot-parse-strict
+
+#### 追加した観点
+
+実装担当の基本テスト（受理系の回帰・主要な非準拠値の throw）を土台に、
+`parseHeadSlot` の境界値と D層ループでの結合的な異常系を追加した。
+
+1. `beacon-api.test.ts` の `fetchBeaconSyncing` に、`parseHeadSlot` の
+   境界値ケースを追加（`parseHeadSlot` はモジュール内非公開関数のため
+   `fetchBeaconSyncing` 経由で検証）。
+   - 受理される境界値（`it.each`）: 先頭ゼロ付き 10進文字列 `"007"` →
+     10進解釈で 7、genesis `"0"` → 0、`Number.MAX_SAFE_INTEGER` 相当の
+     文字列 `"9007199254740991"` と JSON 数値、`MAX_SAFE_INTEGER` を
+     超える 10進文字列 `"9007199254740993"`（`/^\d+$/` の形は満たすため
+     受理するが JS の倍精度で precision が失われ 9007199254740992 になる、
+     という現挙動を明示的に固定）。
+   - throw される境界値（`it.each`）: 全角数字 `"１２３"`・Arabic-Indic
+     数字 `"٣"`（`\d` は Unicode フラグ無しで ASCII 数字のみに一致する
+     ことの確認）、符号付き文字列 `"+5"`、JSON 数値の `Infinity` / `NaN`
+     （`Number.isInteger` で弾かれる非整数の防御）。
+2. `resolveBeaconSyncStatus` / `BeaconSyncStatusCache` は既存テストで
+   真理値表 8 通り・genesis 0・forgetNode・再観測などを網羅済みのため、
+   パース厳格化に伴う追加は不要と判断（既存 21 件が引き続き通ることを確認）。
+3. `peer-block-adapter.test.ts` の Beacon API 由来の syncStatus describe
+   （Issue #274）に、D層ループでの結合的な異常系を 2 件追加。
+   - 片方の beacon が非準拠 `head_slot`（16進文字列 `"0x10"`。旧実装が
+     静かに 16 として受理していた値）を返しても、`pollOneBeaconSync` が
+     ノード単位で握って（stableId と head_slot をログして）返すため D層
+     ループがクラッシュせず、健全な sibling beacon（`head_slot` 4242）は
+     巻き添えにならず解決されること。`console.error` に失敗ノードの
+     stableId と head_slot が残る（握りつぶさない）ことも確認。
+   - 非準拠値は一時的な縮退として扱い、次周期で準拠値（`"512"`）に戻れば
+     解決へ回復すること（旧実装のように誤った値で埋めたまま固まらない）。
+
+#### 確認コマンド
+
+- `pnpm --filter @chainviz/collector build`: 成功。
+- `pnpm --filter @chainviz/collector test`: 46 ファイル / 1254 件すべて
+  成功（テスト強化前 1242 件から +12）。
+
+#### 実装バグの疑い
+
+- なし。追加した境界値・異常系はいずれも現実装の意図どおりに振る舞う
+  （非準拠値は例外なく throw され、`pollOneBeaconSync` がノード単位で
+  握って他ノードに波及させない）。実装ロジックへの変更は行っていない。
