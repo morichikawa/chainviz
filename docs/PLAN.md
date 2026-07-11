@@ -675,6 +675,16 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       フォールスルー化)・frontend側(役割組ごとのポップオーバー文言切替・
       InfraPopoverの駆動元行の一般化)とも実装完了。レビュー・QAとも合格)
       [#285](https://github.com/morichikawa/chainviz/issues/285)
+- [x] 長時間稼働スタックの短時間再起動でgenesisが古いまま再利用され
+      beaconが追いつき不能になる(再生成判定を「停止時間」から「genesis
+      年齢+生存サンプリング」に置き換えて対応。実機検証で修正前の再現・
+      修正後の解消、および#56/#148の既存保護の回帰無しを確認済み。
+      docs/worklog/issue-286.md参照)
+      [#286](https://github.com/morichikawa/chainviz/issues/286)
+- [x] fetchConsensusPeerNodesが失敗ノードをログ無しで無言除外している
+      (EL側と対称なconsole.errorを追加。連続失敗時は間引いてログする。
+      docs/worklog/issue-287.md参照)
+      [#287](https://github.com/morichikawa/chainviz/issues/287)
 
 ## 運用ルール（全ステップ共通）
 
