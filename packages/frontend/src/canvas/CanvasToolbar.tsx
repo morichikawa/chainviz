@@ -5,6 +5,7 @@ import {
   resolveAddNodeHint,
   resolveAddWorkbenchHint,
 } from "../commands/commandMessages.js";
+import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { ActionHint } from "./ActionHint.js";
 
@@ -52,8 +53,27 @@ export function CanvasToolbar({
 
   // 押下前の予告ツールチップ（Issue #123 UX設計 §4-1）。接続先を解決できなければ
   // resolveAddNodeHint / resolveAddWorkbenchHint 自身が generic な文言へ倒す。
-  const addNodeHint = resolveAddNodeHint(entities, t);
+  const addNodeHintLine1 = resolveAddNodeHint(entities, t);
   const addWorkbenchHint = resolveAddWorkbenchHint(entities, t);
+
+  // ノード追加ボタンのみ2段構成にする（Issue #251 UX設計 docs/worklog/issue-251.md
+  // §4）。1段目は既存の「何が起きるか」の文言（上記）、2段目は「なぜ2枚1組
+  // なのか」を説明する静的な文言で、ブートノードの解決可否に関わらず常に
+  // 付く。2段目の文中にある「EL/CL分離」を GlossaryTerm でくるむために、
+  // `internalEdge.pair.prefix/term/suffix`（InternalLinkEdgePopover.tsx）と
+  // 同じ3分割パターンを踏襲する。ワークベンチ追加ボタンの hint は対象外。
+  const addNodeHint = (
+    <>
+      <span className="action-hint__line">{addNodeHintLine1}</span>
+      <span className="action-hint__line action-hint__line--secondary">
+        {t("action.addNode.hint.pair.prefix")}
+        <GlossaryTerm termKey="el-cl-separation">
+          {t("action.addNode.hint.pair.term")}
+        </GlossaryTerm>
+        {t("action.addNode.hint.pair.suffix")}
+      </span>
+    </>
+  );
 
   return (
     <div className="canvas-toolbar">

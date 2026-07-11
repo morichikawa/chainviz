@@ -592,6 +592,9 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       [#215](https://github.com/morichikawa/chainviz/issues/215)
 - [ ] beacon/rethを1個ずつペアでしか追加できない制約についての疑問
       [#216](https://github.com/morichikawa/chainviz/issues/216)
+- [x] ノード追加ボタン付近に「reth+beaconのペアで追加される」ことの説明を
+      添える（実装完了。詳細は docs/worklog/issue-251.md 参照）
+      [#251](https://github.com/morichikawa/chainviz/issues/251)
 - [x] エラー時のトースト通知が長文で右下のポップアップが崩れる
       [#217](https://github.com/morichikawa/chainviz/issues/217)
 - [x] デプロイ済みのスマートコントラクト一覧を見れるようにしてほしい
