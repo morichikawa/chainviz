@@ -2753,6 +2753,118 @@ describe("EthereumAdapter syncStatus/blockHeight for CL (beacon) via Beacon API 
     adapter.dispose();
   });
 
+  it("keeps the CL placeholder for a beacon whose head_slot is non-conforming while still resolving a sibling beacon (Issue #282)", async () => {
+    // Issue #282: 片方の beacon が非準拠な head_slot（ここでは 16進表記の
+    // 文字列 "0x10"。旧実装は Number() で静かに 16 として受理していた）を
+    // 返すと fetchBeaconSyncing が throw するが、pollOneBeaconSync がノード
+    // 単位で握って（ログのみ）返すため、D層ループ全体はクラッシュしない。
+    // もう一方の健全な beacon2 の解決には影響しない（他ノードのポーリングと
+    // キャッシュ更新が巻き添えにならない）。
+    const poller = new DockerPoller(
+      clientFrom([
+        beaconFixture("beacon1", "172.28.2.1"),
+        beaconFixture("beacon2", "172.28.2.2"),
+      ]),
+    );
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const adapter = new EthereumAdapter(poller, {
+      httpClient: beaconHttp({
+        "http://172.28.2.1:5052": {
+          peerId: "peer-beacon1",
+          connected: [],
+          syncing: { headSlot: "0x10" },
+        },
+        "http://172.28.2.2:5052": {
+          peerId: "peer-beacon2",
+          connected: [],
+          syncing: { headSlot: 4242 },
+        },
+      }),
+      nodeInternalsPollIntervalMs: 3000,
+    });
+
+    await adapter.subscribeNodeInternals({
+      onInternals: vi.fn(),
+      onLinkActivity: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const partial = await adapter.pollInfra();
+    const entities = partial.entities ?? [];
+    // 非準拠値を返した beacon1 は解決されずプレースホルダのまま。
+    expect(nodeById(entities, "chainviz-ethereum/beacon1")).toMatchObject({
+      syncStatus: "syncing",
+      blockHeight: 0,
+    });
+    // 健全な beacon2 は巻き添えにならず解決される。
+    expect(nodeById(entities, "chainviz-ethereum/beacon2")).toMatchObject({
+      syncStatus: "synced",
+      blockHeight: 4242,
+    });
+    // 失敗した beacon1 の stableId と head_slot がログに残る（握りつぶさない）。
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "beacon syncing poll failed for chainviz-ethereum/beacon1",
+      ),
+      expect.objectContaining({ message: expect.stringContaining("head_slot") }),
+    );
+    adapter.dispose();
+  });
+
+  it("recovers a beacon's sync status on a later tick once its head_slot becomes conforming again (Issue #282)", async () => {
+    // 非準拠 head_slot は一時的な縮退として扱い、次周期で準拠値に戻れば
+    // 回復する（transient。旧実装のように誤った値で埋めたまま固まらない）。
+    const poller = new DockerPoller(
+      clientFrom([beaconFixture("beacon1", "172.28.2.1")]),
+    );
+    const getJson = vi
+      .fn()
+      // 1 tick 目: 非準拠な head_slot（空文字列）→ fetchBeaconSyncing が throw。
+      .mockResolvedValueOnce({
+        data: {
+          is_syncing: false,
+          is_optimistic: false,
+          el_offline: false,
+          head_slot: "",
+        },
+      })
+      // 2 tick 目: 準拠した 10進文字列に回復。
+      .mockResolvedValueOnce({
+        data: {
+          is_syncing: false,
+          is_optimistic: false,
+          el_offline: false,
+          head_slot: "512",
+        },
+      });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const adapter = new EthereumAdapter(poller, {
+      httpClient: { getJson } as unknown as HttpClient,
+      nodeInternalsPollIntervalMs: 3000,
+    });
+
+    await adapter.subscribeNodeInternals({
+      onInternals: vi.fn(),
+      onLinkActivity: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    let partial = await adapter.pollInfra();
+    // 1 tick 目は非準拠値のためプレースホルダのまま。
+    expect(
+      nodeById(partial.entities ?? [], "chainviz-ethereum/beacon1"),
+    ).toMatchObject({ syncStatus: "syncing", blockHeight: 0 });
+
+    await vi.advanceTimersByTimeAsync(3000);
+    partial = await adapter.pollInfra();
+    // 2 tick 目で準拠値に戻り、解決される。
+    expect(
+      nodeById(partial.entities ?? [], "chainviz-ethereum/beacon1"),
+    ).toMatchObject({ syncStatus: "synced", blockHeight: 512 });
+    adapter.dispose();
+  });
+
   it("keeps the previous value when a later syncing fetch fails (transient degradation)", async () => {
     const poller = new DockerPoller(
       clientFrom([beaconFixture("beacon1", "172.28.2.1")]),

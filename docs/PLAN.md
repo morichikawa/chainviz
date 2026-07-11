@@ -663,6 +663,11 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       syncStatus/blockHeight(=head_slot)を埋め、consensus役割の高さ行を
       「ヘッドスロット」表示に切り替えた。docs/worklog/issue-274.md参照)
       [#274](https://github.com/morichikawa/chainviz/issues/274)
+- [x] fetchBeaconSyncingのhead_slotパースが非準拠値(空文字/null等)を
+      静かに0として受理する(10進整数文字列または非負整数のJSON数値のみ
+      受理するparseHeadSlotを新設し、それ以外はthrowするよう統一。
+      docs/worklog/issue-282.md参照)
+      [#282](https://github.com/morichikawa/chainviz/issues/282)
 
 ## 運用ルール（全ステップ共通）
 
