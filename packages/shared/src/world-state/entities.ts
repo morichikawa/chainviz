@@ -60,7 +60,22 @@ export interface NodeEntity extends InfraEntity {
   kind: "node";
   chainType: ChainType;
   clientType: string;
+  /**
+   * チェーン先端への追従状態。"synced" = 先端に追いついている、
+   * "syncing" = 追いつく途中（または観測がまだ得られていない既定値）。
+   * 判定方法はチェーン・役割ごとに ChainAdapter が決める（例: Ethereum
+   * プロファイルの EL は他ノードとの同期チェックポイント比較、CL は
+   * ノード自身の自己申告。Issue #187 / #274）。
+   */
   syncStatus: "syncing" | "synced";
+  /**
+   * チェーン先端への追従の進み具合を表す高さ（単調増加のカウンタ）。
+   * 単位・意味づけはノードの役割に応じてチェーンプロファイルが決める
+   * （例: Ethereum プロファイルの EL はブロック高、CL はヘッドスロット。
+   * Issue #274）。したがって役割の異なるノード間でこの値を直接比較・
+   * 集計してはならない（フロントの表示ラベルもチェーンプロファイル表現
+   * セットが役割に応じて選ぶ）。観測がまだ無い間は 0（プレースホルダ）。
+   */
   blockHeight: number;
   headBlockHash: string;
   /**
