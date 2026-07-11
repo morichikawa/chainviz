@@ -40,14 +40,16 @@ const workbench: WorkbenchEntity = {
   removable: true,
 };
 
+type ExtraData = {
+  rpcTargetContainerName?: string;
+  isNew?: boolean;
+  removalPending?: boolean;
+};
+
 function renderCard(
   entity: InfraEntity,
   actions: Partial<CommandActions> = {},
-  extraData: {
-    rpcTargetContainerName?: string;
-    isNew?: boolean;
-    removalPending?: boolean;
-  } = {},
+  extraData: ExtraData = {},
 ) {
   const full: CommandActions = {
     addNode: vi.fn(),
@@ -57,21 +59,33 @@ function renderCard(
     runWorkbenchOperation: vi.fn(),
     ...actions,
   };
-  const props = { data: { entity, ...extraData } } as unknown as Parameters<
-    typeof InfraNodeCard
-  >[0];
-  render(
+  const buildProps = (data: ExtraData) =>
+    ({ data: { entity, ...data } }) as unknown as Parameters<
+      typeof InfraNodeCard
+    >[0];
+  const renderTree = (data: ExtraData) => (
     <ReactFlowProvider>
       <LanguageProvider initialLanguage="ja">
         <GlossaryProvider glossary={{}}>
           <CommandActionsProvider actions={full}>
-            <InfraNodeCard {...props} />
+            <InfraNodeCard {...buildProps(data)} />
           </CommandActionsProvider>
         </GlossaryProvider>
       </LanguageProvider>
-    </ReactFlowProvider>,
+    </ReactFlowProvider>
   );
-  return full;
+  const { rerender } = render(renderTree(extraData));
+  return {
+    ...full,
+    // 上流（App.tsx）が data オブジェクトを差し替えて再レンダーする状況を
+    // 再現するための薄いラッパ（Issue #263。InfraNodeCardOperationButton.test.tsx
+    // の rerenderWith と同型）。既存の戻り値（CommandActions のモック）は
+    // スプレッドで維持しているため、`actions.removeNode` 等の既存の呼び出し側
+    // には影響しない非破壊な拡張。
+    rerenderWith(next: ExtraData) {
+      rerender(renderTree(next));
+    },
+  };
 }
 
 const removeButton = (id: string) => screen.getByTestId(`infra-card-remove-${id}`);
@@ -448,6 +462,62 @@ describe("InfraNodeCard removal-pending feedback (Issue #222)", () => {
     ).toContain("infra-card--removing");
     const button = removeButton("workbench-1") as HTMLButtonElement;
     expect(button.disabled).toBe(true);
+  });
+
+  // Issue #263: App.tsx の infraNodesWithHighlight は、対象ノード/ワーク
+  // ベンチが一度も削除保留(true)を経験していない間、removalPending
+  // フィールドを明示的に merge しないため data.removalPending が undefined
+  // のまま渡ってくることがある（ブロック到達のたびに isSameInfraNode の
+  // 判定でノードオブジェクトが差し替わり、一度 true/false を経験していても
+  // 再び undefined に戻り得る）。React は aria-* 属性に undefined/null を
+  // 渡すと属性自体を DOM から省略するため、`aria-busy={removalPending}`
+  // のままだと属性の有無がタイミング依存でフレーキーになる（Issue #237の
+  // operateボタンと全く同じパターン）。ここではその undefined 渡しを直接
+  // シミュレートし、DOM 上に常に明示的な aria-busy="false" が出ることを
+  // 確認する。
+  it("always renders an explicit aria-busy attribute even when data.removalPending is undefined (Issue #263)", () => {
+    renderCard(node, {}, { removalPending: undefined });
+    const button = removeButton("reth-follower-1");
+    expect(button.getAttribute("aria-busy")).toBe("false");
+  });
+
+  it("renders aria-busy=true while data.removalPending is true", () => {
+    renderCard(node, {}, { removalPending: true });
+    const button = removeButton("reth-follower-1");
+    expect(button.getAttribute("aria-busy")).toBe("true");
+  });
+
+  // Issue #263 の境界値: undefined / true だけでなく、明示的な false が
+  // 渡された場合も aria-busy="false" になる（`?? false` フォールバックが
+  // 明示 false を書き換えて消してしまわないこと）を確認する。
+  it("renders aria-busy=false when data.removalPending is explicitly false", () => {
+    renderCard(node, {}, { removalPending: false });
+    const button = removeButton("reth-follower-1");
+    expect(button.getAttribute("aria-busy")).toBe("false");
+  });
+
+  // Issue #263 の核心である「タイミング依存の欠落」を、上流の再レンダー列
+  // として直接再現する（Issue #237 の operate ボタン向けテストと同型）。
+  // undefined → true → undefined という遷移を通じて、aria-busy 属性が常に
+  // DOM 上に存在し（null にならず）、値だけが正しく切り替わることを確認
+  // する（修正前はこの列の 1 番目と 3 番目で属性自体が欠落した）。
+  it("keeps aria-busy present across undefined → true → undefined transitions (Issue #263 object-swap timing)", () => {
+    const { rerenderWith } = renderCard(node, {}, { removalPending: undefined });
+    const readAriaBusy = () =>
+      removeButton("reth-follower-1").getAttribute("aria-busy");
+
+    // 一度も削除保留を経験していない状態（undefined 渡し）。
+    expect(readAriaBusy()).toBe("false");
+
+    // 削除コマンドを送信して保留（true）になる。
+    rerenderWith({ removalPending: true });
+    expect(readAriaBusy()).toBe("true");
+
+    // ブロック到達でノードオブジェクトが差し替わり removalPending が
+    // undefined に戻る。ここで属性が欠落しない（null にならない）ことが
+    // Issue #263 の回帰防止点。
+    rerenderWith({ removalPending: undefined });
+    expect(readAriaBusy()).toBe("false");
   });
 });
 

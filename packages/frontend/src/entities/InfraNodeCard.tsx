@@ -153,7 +153,17 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
             className="infra-card__remove nodrag"
             aria-label={removalPending ? t("action.remove.pending") : t("action.remove")}
             title={removalPending ? t("action.remove.pending") : t("action.remove")}
-            aria-busy={removalPending}
+            // Issue #263: 上流（App.tsx の infraNodesWithHighlight）は、
+            // 対象ノード/ワークベンチが一度も削除保留(true)を経験していない
+            // 間、またブロック到達のたびに isSameInfraNode の判定でノード
+            // オブジェクトが差し替わった直後は removalPending を明示的に
+            // merge せず undefined のまま渡してくることがある（Issue #237の
+            // operationPending と全く同じパターン）。React は aria-* 属性に
+            // undefined/null を渡すと属性自体を DOM から省略するため、ここで
+            // 明示的に false へフォールバックし、DOM 上に常に aria-busy が
+            // 存在する状態を保証する（上流のメモ化最適化そのものは変更
+            // しない）。
+            aria-busy={removalPending ?? false}
             disabled={removalPending}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={onRemove}
