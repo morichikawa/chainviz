@@ -149,3 +149,30 @@
 - docs整合: worklogの記述はコード実態と一致。PLAN.mdのチェック+Issue
   リンク、WORKLOG.md索引行も確認した。`docs/ARCHITECTURE.md`への影響は
   ない（e2eテスト内部の判定方法の変更のみ）。
+
+#### QA検証記録(qa)
+
+- 判定: 合格。元Issue(UI-CMD-01が常に失敗し動的追加コンテナが後片付け
+  されない)が実機で解消されていることを確認した。
+- 検証環境: 稼働中の Ethereum スタック(chainviz-ethereum、reth1/reth2/
+  beacon1/beacon2/validator1/validator2/workbench が起動済み)を
+  globalSetup が再利用。Playwright は worklog記載と同じく
+  `LD_LIBRARY_PATH=/home/zoe/chrome-deps/root/usr/lib/x86_64-linux-gnu`
+  を付与して実行(共有ライブラリ不足の回避策のみ。Playwright本体・依存は
+  未変更)。
+- 完了条件1(UI-CMD-01・UI-A-01が成功する): 対象2specを実機で実行し
+  5テスト全て成功(UI-CMD-01〜04、UI-A-01)。UI-CMD-01は
+  「ノード追加ボタン押下→ゴースト2枚→実体のreth/beaconカード出現→
+  subtitle末尾一致(subtitleEndsWithClientType)で判定→addedRethId/
+  addedBeaconIdを捕捉」まで通過しており、修正前は失敗していた
+  `added reth card must be identified`を通過することを確認した。
+  UI-A-01も subtitle 末尾一致での比較で成功。
+- 完了条件2(動的追加コンテナの後片付け): テスト実行前後で
+  `docker ps -a --filter label=com.docker.compose.project=chainviz-ethereum`
+  を比較し、UI-CMD-01で追加された reth/beacon の残存が無いことを確認した
+  (UI-CMD-03の削除ボタン操作で後片付けされる)。実行前から存在した
+  26時間前の exited `reth3`/`beacon3` は本テスト以前の別セッションの遺物で、
+  今回の実行では増減していない(今回のスコープ外)。
+- 補足: 前回worklog記載のとおり UI-A-02/UI-A-05(ホバー起点ポップオーバー)は
+  本検証環境固有の事象でありIssue #270のスコープ外のため、対象2specに
+  絞って検証した。
