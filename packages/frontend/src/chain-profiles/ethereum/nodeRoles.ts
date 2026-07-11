@@ -21,6 +21,21 @@ export interface NodeRoleDescriptor {
   label: Localized;
   glossaryKey: string;
   showsSyncState: boolean;
+  /**
+   * 「同期状態」行の下に出す高さ行のラベル・用語解説キーの上書き（Issue #274）。
+   * 省略時、呼び出し側（InfraPopover）は既定表示（`field.blockHeight`「ブロック
+   * 高」+ 用語解説 `block`）にフォールバックする。既定値そのものはこの表に
+   * 複製せず i18n messages.ts の `field.blockHeight` を単一の情報源に保つ
+   * （2箇所に持つとラベル文言がドリフトする）。
+   *
+   * consensus（beacon）は `NodeEntity.blockHeight` にブロック高ではなく
+   * ヘッドスロット（`head_slot`）を入れる（collector 側、ARCHITECTURE.md
+   * §2 の docstring 参照）。スロットは 2 秒ごとの提案機会で空スロットも
+   * あるため、EL のブロック高よりわずかに大きくなり得る。同じ「ブロック高」
+   * ラベルのまま出すと reth カードとの数値の食い違いが「壊れている」誤解を
+   * 招くため、ラベルを「ヘッドスロット」に切り替える。
+   */
+  heightField?: { label: Localized; glossaryKey: string };
 }
 
 export const NODE_ROLE_DESCRIPTORS: Readonly<Record<string, NodeRoleDescriptor>> = {
@@ -33,6 +48,10 @@ export const NODE_ROLE_DESCRIPTORS: Readonly<Record<string, NodeRoleDescriptor>>
     label: { ja: "コンセンサスクライアント", en: "Consensus client" },
     glossaryKey: "cl-client",
     showsSyncState: true,
+    heightField: {
+      label: { ja: "ヘッドスロット", en: "Head slot" },
+      glossaryKey: "slot",
+    },
   },
   validator: {
     label: { ja: "バリデーター", en: "Validator" },
@@ -70,4 +89,17 @@ export function describeNodeRole(
  */
 export function nodeShowsSyncState(nodeRole: string | undefined): boolean {
   return describeNodeRole(nodeRole)?.showsSyncState ?? true;
+}
+
+/**
+ * 高さ行（同期状態行の下）のラベル・用語解説キーの上書きを返す（Issue #274）。
+ * descriptor が引けない（nodeRole 省略・未知値）場合、また override 自体を
+ * 持たない役割（execution・validator）では `undefined` を返す。呼び出し側は
+ * `undefined` のとき既定表示（`field.blockHeight`「ブロック高」+ 用語解説
+ * `block`）にフォールバックする。
+ */
+export function describeHeightField(
+  nodeRole: string | undefined,
+): { label: Localized; glossaryKey: string } | undefined {
+  return describeNodeRole(nodeRole)?.heightField;
 }

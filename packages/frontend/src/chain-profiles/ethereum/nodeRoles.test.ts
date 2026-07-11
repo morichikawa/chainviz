@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   NODE_ROLE_DESCRIPTORS,
+  describeHeightField,
   describeNodeRole,
   nodeShowsSyncState,
 } from "./nodeRoles.js";
@@ -14,11 +15,15 @@ describe("describeNodeRole", () => {
     });
   });
 
-  it("resolves consensus to a CL client descriptor with sync state shown", () => {
+  it("resolves consensus to a CL client descriptor with sync state shown and a head-slot height override (Issue #274)", () => {
     expect(describeNodeRole("consensus")).toEqual({
       label: { ja: "コンセンサスクライアント", en: "Consensus client" },
       glossaryKey: "cl-client",
       showsSyncState: true,
+      heightField: {
+        label: { ja: "ヘッドスロット", en: "Head slot" },
+        glossaryKey: "slot",
+      },
     });
   });
 
@@ -117,5 +122,49 @@ describe("nodeShowsSyncState", () => {
 
   it("defaults to true for an empty string (falls back to sync display)", () => {
     expect(nodeShowsSyncState("")).toBe(true);
+  });
+});
+
+describe("heightField overrides (Issue #274)", () => {
+  it("execution has no heightField override (falls back to the default blockHeight display)", () => {
+    expect(NODE_ROLE_DESCRIPTORS.execution.heightField).toBeUndefined();
+  });
+
+  it("validator has no heightField override (its height row is hidden entirely by showsSyncState)", () => {
+    expect(NODE_ROLE_DESCRIPTORS.validator.heightField).toBeUndefined();
+  });
+
+  it("keeps the heightField override to consensus only among the mapped roles", () => {
+    // 真実の情報源はこの表。将来ロールを増やしたとき、この前提が意図せず
+    // 崩れたら気付けるようにしておく（showsSyncState の同種テストと対）。
+    const rolesWithHeightOverride = Object.entries(NODE_ROLE_DESCRIPTORS)
+      .filter(([, d]) => d.heightField !== undefined)
+      .map(([role]) => role);
+    expect(rolesWithHeightOverride).toEqual(["consensus"]);
+  });
+});
+
+describe("describeHeightField", () => {
+  it("returns the head-slot override for consensus", () => {
+    expect(describeHeightField("consensus")).toEqual({
+      label: { ja: "ヘッドスロット", en: "Head slot" },
+      glossaryKey: "slot",
+    });
+  });
+
+  it("returns undefined for execution (default blockHeight display applies)", () => {
+    expect(describeHeightField("execution")).toBeUndefined();
+  });
+
+  it("returns undefined for validator (sync/height rows are hidden entirely)", () => {
+    expect(describeHeightField("validator")).toBeUndefined();
+  });
+
+  it("returns undefined for an unmapped value (future/unknown chain profile value)", () => {
+    expect(describeHeightField("sequencer")).toBeUndefined();
+  });
+
+  it("returns undefined for undefined (unlabeled container, legacy snapshot)", () => {
+    expect(describeHeightField(undefined)).toBeUndefined();
   });
 });
