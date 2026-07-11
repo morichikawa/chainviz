@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { fetchConnectedPeerIds, fetchNodePeerId } from "./beacon-api.js";
+import {
+  fetchBeaconSyncing,
+  fetchConnectedPeerIds,
+  fetchNodePeerId,
+} from "./beacon-api.js";
 import type { HttpClient } from "./http-client.js";
 
 function httpFrom(responses: Record<string, unknown>): HttpClient {
@@ -132,6 +136,136 @@ describe("fetchConnectedPeerIds", () => {
       }) as HttpClient["getJson"],
     };
     await expect(fetchConnectedPeerIds(http, BASE)).rejects.toThrow(
+      "beacon unreachable",
+    );
+  });
+});
+
+describe("fetchBeaconSyncing", () => {
+  it("parses the string-encoded head_slot and all three flags (実測レスポンス形状)", async () => {
+    const http = httpFrom({
+      [`${BASE}/eth/v1/node/syncing`]: {
+        data: {
+          is_syncing: false,
+          is_optimistic: false,
+          el_offline: false,
+          head_slot: "16587",
+          sync_distance: "0",
+        },
+      },
+    });
+    await expect(fetchBeaconSyncing(http, BASE)).resolves.toEqual({
+      isSyncing: false,
+      isOptimistic: false,
+      elOffline: false,
+      headSlot: 16587,
+    });
+  });
+
+  it("parses is_syncing/is_optimistic/el_offline true", async () => {
+    const http = httpFrom({
+      [`${BASE}/eth/v1/node/syncing`]: {
+        data: {
+          is_syncing: true,
+          is_optimistic: true,
+          el_offline: true,
+          head_slot: "42",
+        },
+      },
+    });
+    await expect(fetchBeaconSyncing(http, BASE)).resolves.toEqual({
+      isSyncing: true,
+      isOptimistic: true,
+      elOffline: true,
+      headSlot: 42,
+    });
+  });
+
+  it("treats a missing is_optimistic / el_offline as false (older CL client / version gap)", async () => {
+    const http = httpFrom({
+      [`${BASE}/eth/v1/node/syncing`]: {
+        data: { is_syncing: false, head_slot: "100" },
+      },
+    });
+    await expect(fetchBeaconSyncing(http, BASE)).resolves.toEqual({
+      isSyncing: false,
+      isOptimistic: false,
+      elOffline: false,
+      headSlot: 100,
+    });
+  });
+
+  it("parses head_slot of 0 (genesis) as 0, not a parse failure", async () => {
+    const http = httpFrom({
+      [`${BASE}/eth/v1/node/syncing`]: {
+        data: { is_syncing: true, head_slot: "0" },
+      },
+    });
+    await expect(fetchBeaconSyncing(http, BASE)).resolves.toMatchObject({
+      headSlot: 0,
+    });
+  });
+
+  it("throws when is_syncing is missing or not a boolean", async () => {
+    const http = httpFrom({
+      [`${BASE}/eth/v1/node/syncing`]: {
+        data: { head_slot: "10" },
+      },
+    });
+    await expect(fetchBeaconSyncing(http, BASE)).rejects.toThrow(
+      /is_syncing/,
+    );
+  });
+
+  it("throws when is_syncing is a non-boolean value (e.g. a string)", async () => {
+    const http = httpFrom({
+      [`${BASE}/eth/v1/node/syncing`]: {
+        data: { is_syncing: "false", head_slot: "10" },
+      },
+    });
+    await expect(fetchBeaconSyncing(http, BASE)).rejects.toThrow(
+      /is_syncing/,
+    );
+  });
+
+  it("throws when head_slot cannot be parsed as a number", async () => {
+    const http = httpFrom({
+      [`${BASE}/eth/v1/node/syncing`]: {
+        data: { is_syncing: false, head_slot: "not-a-number" },
+      },
+    });
+    await expect(fetchBeaconSyncing(http, BASE)).rejects.toThrow(
+      /head_slot/,
+    );
+  });
+
+  it("throws when head_slot is missing entirely", async () => {
+    const http = httpFrom({
+      [`${BASE}/eth/v1/node/syncing`]: {
+        data: { is_syncing: false },
+      },
+    });
+    await expect(fetchBeaconSyncing(http, BASE)).rejects.toThrow(
+      /head_slot/,
+    );
+  });
+
+  it("throws when the data field itself is missing", async () => {
+    const http = httpFrom({
+      [`${BASE}/eth/v1/node/syncing`]: {},
+    });
+    await expect(fetchBeaconSyncing(http, BASE)).rejects.toThrow(
+      /is_syncing/,
+    );
+  });
+
+  it("propagates errors from the http client", async () => {
+    const http: HttpClient = {
+      getJson: (async () => {
+        throw new Error("beacon unreachable");
+      }) as HttpClient["getJson"],
+    };
+    await expect(fetchBeaconSyncing(http, BASE)).rejects.toThrow(
       "beacon unreachable",
     );
   });
