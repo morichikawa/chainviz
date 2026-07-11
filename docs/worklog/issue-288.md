@@ -212,3 +212,55 @@ export class PeerObservationCache {
   ヒステリシス（Issue #288）」の段落を追加済み（本設計と同内容）。
 - `docs/CONCEPT.md` は変更不要（PeerEdge を「永続的な接続状態」とする
   既存の決定と本設計は整合する。矛盾する記述なし）。
+
+#### 実装方針メモ（collector・着手前）
+
+- 担当: collector
+- 設計メモどおりに進める。未決定事項の判断:
+  - **lastGood の保持/破棄**: 猶予超過後も `lastGood` は破棄せず保持する
+    実装にする（`recordFailure` は `consecutiveFailures` を増やすだけで
+    `lastGood` フィールドには触れない）。理由: 破棄する分岐を追加しても
+    外形挙動は変わらず、むしろ「その後また 1〜graceTicks 回だけ成功する」
+    ような揺らぎが起きた場合に無駄に fallback を失う経路が増えるだけ。
+    実装がシンプルな「保持し続ける」を採用する（prune で有界性は担保）。
+  - **ジェネリクス化**: しない。設計メモどおり `NodePeers` 固定。
+  - **結合テストのファイル名**: `consensus-peer-hysteresis.test.ts`
+    （設計メモの推奨どおり）。単体テストは
+    `peer-observation-cache.test.ts`。
+- 実装手順:
+  1. 新規 `packages/collector/src/adapters/ethereum/peer-observation-cache.ts`
+     に `PeerObservationCache` を実装（`recordSuccess` /
+     `recordFailure` / `prune`、状態は `Map<string, { consecutiveFailures:
+     number; lastGood?: NodePeers }>`）。
+  2. `index.ts`:
+     - 定数 `CONSENSUS_PEER_OBSERVATION_GRACE_TICKS = 3` を
+       `CONSENSUS_PEER_POLL_FAILURE_LOG_INTERVAL` の隣に export で追加
+       （前提条件のコメント必須）。
+     - フィールド `consensusPeerFailureCounts`（`Map<string, number>`）を
+       `consensusPeerObservations: PeerObservationCache` に置き換える。
+     - `fetchConsensusPeerNodes`: 冒頭の prune 呼び出しを
+       `this.consensusPeerObservations.prune(...)` に、成功時は
+       `recordSuccess`、失敗時は `recordFailure` の戻り値
+       （`consecutiveFailures`・`fallback`）を使い、ログ判定は
+       `logConsensusPeerPollFailure` に `consecutiveFailures` を渡す形へ
+       変更、返り値は `fallback ?? null`。
+     - `pruneConsensusPeerFailureCounts` は削除（cache.prune に統合）。
+     - `logConsensusPeerPollFailure` は count を自前計算せず引数で受け取る
+       形に変更（ログ判定・文言は不変）。
+  3. テスト:
+     - `peer-observation-cache.test.ts`: 新クラス単体（成功時のリセット・
+       猶予内外の fallback 有無・lastGood 無し時は fallback しない・
+       prune）。
+     - `consensus-peer-hysteresis.test.ts`: `pollPeersOnce` 経由の結合
+       挙動（1 回の失敗でエッジ不変・graceTicks 回まで維持・
+       graceTicks+1 回目で消える・失敗→成功→失敗でカウントリセット・
+       未成功ノードは即座に落ちる・targets から外れたら即破棄）。
+     - 既存 `consensus-peer-poll-failure-log.test.ts` は無変更のまま実行し、
+       回帰が無いことを確認する（このテストは常に失敗し続ける
+       `alwaysFailingBeaconHttp` を使うため lastGood が一度も作られず、
+       fallback は常に undefined になるはずで、ログ回数・文言は今回の
+       変更の影響を受けない設計）。
+  4. 修正前後の比較: 修正前のコード（このコミット前の HEAD）で
+     `pollPeersOnce` を 1 回失敗させて即座にエッジが消えることを一時的に
+     確認してから、修正後に 1〜graceTicks 回の失敗ではエッジが維持され、
+     超過後に消えることを確認する。
