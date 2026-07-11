@@ -87,6 +87,21 @@ import {
 /** ピアポーリングの既定間隔。 */
 export const PEER_POLL_INTERVAL_MS = 3000;
 
+/**
+ * CL（Beacon API）側ピアポーリングの失敗ログを間引く周期（連続失敗回数
+ * ベース。Issue #287）。Beacon API がハングし続ける状況では
+ * `fetchConsensusPeerNodes` が `subscribePeers` のループ間隔
+ * （`peerPollIntervalMs`、既定は上記の 3000ms だがコンストラクタ引数で
+ * 変更可能）ごとに同一ノードへ問い合わせては失敗する。これを毎回ログすると
+ * 長時間のハング中に大量の同内容ログが出続けるため、1 回目の失敗は必ず
+ * ログしつつ、以降はこの回数に 1 回だけ「まだ失敗し続けている」ことが
+ * わかる頻度でログする。時間ベース（○○秒に1回）ではなく回数ベースなのは、
+ * `peerPollIntervalMs` を変えても間引きの相対頻度（何 tick に 1 回か）が
+ * 変わらないようにするため（CLAUDE.md「今この瞬間に観測できる状態に依存
+ * した固定値をロジックに埋め込まない」）。
+ */
+export const CONSENSUS_PEER_POLL_FAILURE_LOG_INTERVAL = 20;
+
 /** EthereumAdapter に差し込める依存（テストでモックへ差し替えるため）。 */
 export interface EthereumAdapterDeps {
   httpClient?: HttpClient;
@@ -237,6 +252,14 @@ export class EthereumAdapter implements ChainAdapter {
   // trackedNodeInternalsIds（EL 用）とは対象が互いに素なので別集合で追跡
   // する（混ぜると forgetNode 先のキャッシュが曖昧になる）。
   private trackedBeaconSyncIds = new Set<string>();
+  // CL（Beacon API）側ピアポーリングの連続失敗回数（stableId ごと。
+  // Issue #287）。fetchConsensusPeerNodes の catch 節でのログ間引きに使う。
+  // 成功したエントリは削除し（次に失敗したときまた「1 回目」として扱う）、
+  // 対象ノード集合から外れた stableId は fetchConsensusPeerNodes の呼び出し
+  // 冒頭で捨てる（Map が無制限に肥大化しないようにする。
+  // trackedNodeInternalsIds と同じ「毎 tick 現在の対象集合と突き合わせる」
+  // 方式）。
+  private readonly consensusPeerFailureCounts = new Map<string, number>();
 
   constructor(
     private readonly poller: DockerPoller,
@@ -447,11 +470,17 @@ export class EthereumAdapter implements ChainAdapter {
 
   /**
    * CL 側（Beacon API）のピア情報を対象ノードぶん並行に取得する。個々の
-   * ノードへの問い合わせが失敗してもそのノードだけ落として継続する。
+   * ノードへの問い合わせが失敗してもそのノードだけ落として継続する
+   * （`admin` API 相当が届かない/タイムアウトするノードを想定。EL 側の
+   * `fetchExecutionPeerNodes` と対称に、失敗ノードの stableId と実際の
+   * エラー内容をログして原因を追えるようにする。ただし同一ノードが
+   * 連続して失敗し続ける状況ではログ間引きを行う。詳細は
+   * `logConsensusPeerPollFailure` 参照。Issue #287）。
    */
   private async fetchConsensusPeerNodes(
     targets: BeaconTarget[],
   ): Promise<NodePeers[]> {
+    this.pruneConsensusPeerFailureCounts(targets);
     const results = await Promise.all(
       targets.map(async (target): Promise<NodePeers | null> => {
         try {
@@ -459,18 +488,53 @@ export class EthereumAdapter implements ChainAdapter {
             fetchNodePeerId(this.http, target.baseUrl),
             fetchConnectedPeerIds(this.http, target.baseUrl),
           ]);
+          this.consensusPeerFailureCounts.delete(target.stableId);
           return {
             stableId: target.stableId,
             peerId,
             networkId: target.networkId,
             connectedPeerIds,
           };
-        } catch {
+        } catch (err) {
+          this.logConsensusPeerPollFailure(target.stableId, err);
           return null;
         }
       }),
     );
     return results.filter((n): n is NodePeers => n !== null);
+  }
+
+  /**
+   * `consensusPeerFailureCounts` から、今回の `targets` に含まれなくなった
+   * stableId のエントリを取り除く（ノード削除等で観測から消えたノードの
+   * 連続失敗回数が Map に残り続けないようにする。Issue #287）。
+   */
+  private pruneConsensusPeerFailureCounts(targets: BeaconTarget[]): void {
+    const currentIds = new Set(targets.map((t) => t.stableId));
+    for (const id of this.consensusPeerFailureCounts.keys()) {
+      if (!currentIds.has(id)) this.consensusPeerFailureCounts.delete(id);
+    }
+  }
+
+  /**
+   * CL 側ピアポーリングの失敗を、連続失敗回数に応じて間引いてログする
+   * （Issue #287）。1 回目（直前は成功していた、または初回の失敗）は
+   * 必ずログし、以降は `CONSENSUS_PEER_POLL_FAILURE_LOG_INTERVAL` 回に
+   * 1 回だけ「まだ失敗し続けている」ことがわかる頻度でログする。
+   */
+  private logConsensusPeerPollFailure(stableId: string, err: unknown): void {
+    const count = (this.consensusPeerFailureCounts.get(stableId) ?? 0) + 1;
+    this.consensusPeerFailureCounts.set(stableId, count);
+    if (
+      count === 1 ||
+      count % CONSENSUS_PEER_POLL_FAILURE_LOG_INTERVAL === 0
+    ) {
+      const suffix = count > 1 ? ` (${count} consecutive failures)` : "";
+      console.error(
+        `[ethereum] consensus peer poll failed for ${stableId}${suffix}:`,
+        err,
+      );
+    }
   }
 
   /**
