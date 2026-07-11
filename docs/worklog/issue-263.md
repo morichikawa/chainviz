@@ -161,3 +161,20 @@ aria-busyの`undefined`/`true`/`false`各値と`undefined → true → undefined
   で分かれており、Conventional Commits 準拠。
 - `docs/PLAN.md` のチェックボックス・Issue リンク、`docs/WORKLOG.md` の
   索引1行、worklog 本文とも実装内容と齟齬なし。
+
+#### 再レビュー（reviewer）
+
+合格。前回の差し戻し指摘（1件）への対応を確認した。
+
+- コミット `f0bd1fe` の差分は、指摘どおり
+  `InfraNodeCardPendingAria.test.tsx` の未使用 import
+  （`import type { CommandActions }`）の削除1行と、worklog への対応記録の
+  追記のみ。指摘範囲を過不足なく反映しており、他のコードへの変更はない。
+- リポジトリ全体で `pnpm lint` が通ることを確認した（前回の失敗はこの
+  1件のみだったため解消）。
+- 削除対象ファイルのテスト
+  （`pnpm --filter @chainviz/frontend exec vitest run
+  src/entities/InfraNodeCardPendingAria.test.tsx`）が8件すべて通ることも
+  確認した。
+- その他の観点（build/test・修正内容・テストの質・コミット粒度・docs
+  整合）は前回レビューで確認済みのため再確認は差分のみとした。
