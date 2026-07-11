@@ -474,3 +474,80 @@
   妨げるため）。より厳格にするなら 10進整数文字列の形（例: `/^\d+$/`）で
   検証してから `Number` に渡す選択肢がある。実装を変えるかは collector
   担当の判断に委ねる。
+
+### 2026-07-11 Issue #274 レビュー（静的整合性・テスト品質）
+
+- 担当: reviewer
+- ブランチ: issue-274-beacon-sync-display
+- 判定: **合格**（差し戻しなし。軽微な申し送り2点あり、下記）
+
+#### 確認内容
+
+- 設計原則との整合:
+  - 境界の遵守: 追加の観測経路は collector 内の Beacon API 呼び出しのみで、
+    frontend は `NodeEntity.blockHeight` / `nodeRole` を読むだけ。Beacon API の
+    パス・レスポンス形状は `beacon-api.ts`（ChainAdapter 実装の内側）に
+    閉じている。「ヘッドスロット」ラベル・用語 `slot` は
+    `chain-profiles/ethereum/nodeRoles.ts`（チェーンプロファイル表現セット）に
+    置かれ、`InfraPopover.tsx` 本体は記述子を読むだけの汎用実装のまま。
+    shared は型変更なし（ドキュメントコメント追記のみ）で、コメント中の
+    EL/CL への言及は例示であり、スキーマにチェーン固有語彙は入っていない。
+  - Issue #215 / #243 との一貫性: validator は「同期する係ではない」ため
+    表示自体を消す（`showsSyncState: false`）、beacon は「チェーンを追う係」
+    のため情報源を作って値を埋める、という対処の違いが `nodeRoles.ts` の
+    コメントと設計メモの両方から読み取れる。`describeHeightField` は
+    `describeNodeRole` 経由のため #215 の `Object.hasOwn` ガードも効いている
+    （テストで固定済み）。
+  - 固定値の埋め込みなし: 判定はノード自己申告の3フラグのみで、閾値・
+    タイムアウトの新設なし。ポーリングも既存の3秒周期に相乗り。
+  - エラーの握りつぶしなし: `pollOneBeaconSync` の catch は stableId と
+    実際のエラー内容を `console.error` に出し、前回値保持（一時的縮退）の
+    意図がコメントで明示されている。
+- 追加 RPC の確認: 差分に現れる新規エンドポイントは
+  `GET /eth/v1/node/syncing` のみ（コード・テスト全体を grep で確認）。
+  Issue #86 の「RPC を増やさない」方針と両立している。
+- cherry-pick 合流の確認: frontend 4コミット（nodeRoles override /
+  InfraPopover / glossary / worklog）が本ブランチに欠落・重複なく取り込まれて
+  いる（worklog の frontend 実装完了メモに記載の変更・テストと差分が一致。
+  分岐元ブランチ `issue-274-beacon-sync-display-frontend` は削除済み）。
+- ビルド・テスト: リポジトリ全体で `pnpm lint` / `pnpm build` / `pnpm test`
+  すべて成功（shared 62 / collector 1228 / frontend 1884 件）。
+- テスト品質: `resolveBeaconSyncStatus` は3フラグ全8組み合わせの真理値表、
+  `fetchBeaconSyncing` は実測形状・フラグ欠落・genesis の head_slot=0・
+  不正値 throw・HTTP 例外伝播、キャッシュは forget→再観測のライフサイクル、
+  結合テストは EL 失敗時の CL 非干渉・前回値保持・validator 対象外まで
+  カバーしており、ハッピーパスの写経に留まっていない。
+- コミット粒度: 14コミットすべて Conventional Commits 準拠で、
+  設計 docs / shared コメント / collector 3分割 / frontend 3分割 /
+  テスト強化 / worklog が関心事ごとに分かれている。
+- docs: `docs/ARCHITECTURE.md` §2・§7.3 が「既知のギャップ」の記述を解消後の
+  実装に更新済み。`docs/PLAN.md` チェック済み + Issue リンクあり。
+  `docs/WORKLOG.md` 索引に1行追加済み。
+
+#### head_slot パース厳格化の判断（テスト強化担当からの申し送りへの回答）
+
+**差し戻しはせず、別 Issue 起票を推奨**とする。理由:
+
+- Beacon API 仕様上 `head_slot` は10進文字列エンコードの uint64 であり、
+  本プロファイルで使う lighthouse は常に準拠した値を返す。`""`/`null` が
+  0 に化けるのは「`is_syncing` は正しい boolean を返すのに `head_slot` だけ
+  壊れた値を返す非準拠クライアント」という狭い前提でのみ起こる。
+- 起きた場合の影響も表示上の値（ヘッドスロット 0）に限られ、他ノードへの
+  汚染や syncStatus 誤判定には波及しない（syncStatus はフラグのみで決まる）。
+- 一方で厳格化には設計判断が要る（テスト強化で「JSON 数値の head_slot も
+  受理する」ことが固定されたため、単純な `/^\d+$/` 文字列検査だけでは
+  そのテストと矛盾する。「10進整数文字列 または 非負整数の JSON 数値」を
+  受理する形にする必要がある）。この判断を本 Issue のマージ後に急いで
+  混ぜ込むより、独立した小 Issue として扱うのが適切。
+
+#### 軽微な申し送り（非ブロッキング）
+
+1. 上記のとおり `fetchBeaconSyncing` の `head_slot` パース厳格化を別 Issue と
+   して起票することを推奨（統括判断）。
+2. 用語 `slot` の定義文が「Proof of Stake で 2 秒ごとに割り当てられる」と、
+   2秒を PoS 一般の事実のように書いている。2秒は本環境の短縮設定
+   （`profiles/ethereum/values.env` の `SLOT_DURATION_IN_SECONDS="2"`）で
+   あり、Ethereum メインネットは12秒。学習支援アプリの用語集としては
+   「この環境では2秒（メインネットは12秒）」のように区別した方が誤解が無い。
+   英語定義は元々 chainviz-i18n のレビュー対象（プレースホルダ）なので、
+   その際に日本語側も併せて直すのが低コスト。
