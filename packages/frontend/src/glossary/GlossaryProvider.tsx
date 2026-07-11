@@ -17,7 +17,18 @@ export interface GlossaryProviderProps {
 
 export function GlossaryProvider({ children, glossary }: GlossaryProviderProps) {
   const value = useMemo<GlossaryContextValue>(
-    () => ({ glossary, lookup: (key) => glossary[key] }),
+    () => ({
+      glossary,
+      // `glossary` はオブジェクトリテラル相当（App.tsx の既定値・テストの
+      // モックともに `Object.prototype` を継承する）のため、ガード無しの
+      // ブラケットアクセスだと `key` が "toString" / "constructor" /
+      // "__proto__" のような継承メンバ名のとき、その継承メンバ（関数など）
+      // を誤って真値として返してしまう（`nodeRoles.ts` の
+      // `describeNodeRole`、`syncStageLabels.ts` の `describeSyncStage` と
+      // 同種の穴、Issue #215/#258/#264）。`Object.hasOwn` で自身の列挙可能
+      // プロパティかどうかを確認してから引くことでこれを防ぐ。
+      lookup: (key) => (Object.hasOwn(glossary, key) ? glossary[key] : undefined),
+    }),
     [glossary],
   );
   return (
