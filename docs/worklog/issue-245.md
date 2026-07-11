@@ -209,3 +209,44 @@ build:web`（`vite build`）・`pnpm --filter frontend test`（vitest、
 - `PopoverPortal` は `requestAnimationFrame` でアンカー位置を継続的に追従
   するため、キャンバスのパン/ズーム・ノードのドラッグ中でもポップオーバーが
   正しい位置に追従する（個別の scroll/resize イベントには依存しない）。
+
+#### テスト強化（tester）
+
+実装担当が書いた基本テスト（ハッピーパス中心）に対し、異常系・境界値の
+観点で以下を追加した。実装コードは変更していない（テスト追加のみ）。
+
+- `interaction/popoverPosition.test.ts` に境界値ケースを追加:
+  gapPx が 0 の場合（アンカー下端に密着）、負の gapPx（クランプせず
+  そのまま重ねる）、小数座標（`getBoundingClientRect` がズーム時に返す
+  サブピクセル値を丸めず保持）、ビューポート右下端付近でも折り返さない
+  こと（従来の `position: absolute` CSS もはみ出しを許容していたため挙動を
+  変えないことの characterization。クランプが必要になった場合は別 Issue）、
+  入力の `AnchorRect` を破壊しないこと、呼び出しごとに新しいオブジェクトを
+  返すこと。
+- `interaction/PopoverPortal.test.tsx` にエッジケースを追加:
+  gapPx 省略時に既定値 8px が使われること、マウント時に `anchorRef.current`
+  が null なら何も描画しないこと、マウント後にアンカーが割り当てられたら
+  次フレームで追従を開始すること、gapPx prop 変更で位置が再計算される
+  こと、表示中は毎フレーム `requestAnimationFrame` を予約し続けること、
+  アンマウント時に `cancelAnimationFrame` が呼ばれ rAF ループがリーク
+  しないこと、アンカー位置が変わらない間は子を再レンダーしないこと
+  （無駄な再描画を避ける最適化）。
+- `interaction/popoverPortalConsistency.test.tsx` を新設:
+  対象8箇所（ActionHint / GlossaryTerm / InfraPopover / ContractPopover /
+  WalletPopover / TxLifecyclePopover / ContractCard の活動チップ /
+  WalletCard の tx チップ）すべてで、開いたポップオーバーが RTL の描画
+  コンテナ（各カード/要素のローカルなサブツリー）の外にあり、かつ
+  `document.body` 配下に portal されていることを横断的に固定する。将来
+  ポップオーバーを追加/変更した際に「portal し忘れて隣接カードの下に
+  隠れる」退行を検出する目的。
+
+Issue #221 の遅延クローズ（`useHoverPopover`）と portal 化の相互作用は、
+既存の `ActionHint.test.tsx`・`GlossaryTerm.test.tsx`・
+`txLifecyclePopoverHover.test.tsx` が portal 化後の DOM に対して
+mouseEnter/mouseLeave→遅延クローズの開閉を検証しており（portal 先の
+`document.body` を `screen` が探索するため成立）、追加の重複ケースは
+設けなかった。
+
+`pnpm --filter frontend build`（`tsc -b`）・`pnpm --filter frontend test`
+（vitest、115ファイル/1764件、テスト強化で +21 件）・上記3ファイルへの
+`eslint` はいずれも成功。
