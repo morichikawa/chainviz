@@ -107,6 +107,19 @@ describe("internalLinkEdgesToFlowEdges", () => {
     expect(edges).toHaveLength(0);
   });
 
+  it("carries the driving/driven nodeRole through onto the edge data (Issue #285)", () => {
+    const nodes = [beacon({ nodeRole: "consensus" }), reth({ nodeRole: "execution" })];
+    const edges = internalLinkEdgesToFlowEdges(nodes, ["beacon-1", "reth-1"]);
+    expect(edges[0].data?.drivingNodeRole).toBe("consensus");
+    expect(edges[0].data?.drivenNodeRole).toBe("execution");
+  });
+
+  it("omits the nodeRole fields when the driving/driven nodes have no nodeRole set (legacy snapshot)", () => {
+    const edges = internalLinkEdgesToFlowEdges([beacon(), reth()], ["beacon-1", "reth-1"]);
+    expect(edges[0].data?.drivingNodeRole).toBeUndefined();
+    expect(edges[0].data?.drivenNodeRole).toBeUndefined();
+  });
+
   it("accepts presentNodeIds as a plain iterable, not only a Set", () => {
     const nodes = [beacon(), reth()];
     const edges = internalLinkEdgesToFlowEdges(nodes, ["beacon-1", "reth-1"]);
