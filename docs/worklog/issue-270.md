@@ -81,3 +81,34 @@
   実際のcollector経由のUI操作（該当entity idの削除ボタンをPlaywright
   から明示的にクリック）で後片付けした。docker CLIで直接コンテナを
   操作することはしていない。
+
+#### テスト強化（tester）
+
+- `subtitle.unit.test.ts`に`subtitleEndsWithClientType`の異常系・境界値
+  ケースを追加した（5ケース→15ケース）。関心事ごとにdescribeで整理:
+  - format matching: 新形式・レガシー単独形式の一致、別clientTypeの不一致
+  - token boundary: 末尾トークンの「先頭」部分一致(rethink)に加え、
+    最も取り違えやすい「末尾」部分一致(clientType "eth" vs トークン
+    "reth")を誤検出しないこと、役割ラベル側に同一トークンが現れても
+    末尾一致で判定できること、末尾に余分な空白があると一致しないこと
+    （呼び出し側のtrim前提を固定）
+  - case sensitivity: 大文字小文字を区別すること（"Reth" vs "reth"）
+  - regex special characters: `.` `+` `$` `(` `)` `\` を含むclientTypeで
+    エスケープが効いていること（将来別チェーンプロファイルで特殊文字を
+    含むclientType名が来ても誤動作しないことの確認）。特に`+`が量指定子
+    として解釈されず"ggg"に誤マッチしないこと、`$`がアンカーとして解釈
+    されず"ab"に誤マッチしないことを固定
+  - degenerate input: clientTypeが空文字列のときの縮退挙動
+    （`(?:^|\s)$`となり空subtitle・末尾空白に一致する）を実挙動として
+    固定。実運用ではCOMPOSE_NODES/ワールドステート由来で常に非空のため
+    到達しないが、想定外挙動に気付けるようにドキュメント目的で明記
+- 横断確認: `packages/e2e/src/`全体を再grepし、DOM文字列とclientType/
+  役割ラベルを完全一致で比較している箇所が他に残っていないことを確認
+  した。`commands.test.ts`の`e.clientType === "reth"`はワールドステートの
+  エンティティを直接見ておりDOM文字列ではないため対象外、
+  `wallet-balance.spec.ts`のsubtitleは別形式（残高・nonce）でformat検証
+  しておりclientType完全一致ではない。実装担当の見落としはなかった。
+- `pnpm --filter @chainviz/e2e build`（tsc --noEmit）と
+  `pnpm --filter @chainviz/e2e test`（vitest unit）が通ることを確認
+  （9ファイル・123テスト全て成功、うちsubtitle.unit.test.tsは15テスト）。
+  実装ロジック（`subtitle.ts`）は変更していない。
