@@ -452,3 +452,51 @@ scratchpad 上の独立 compose プロジェクト(本物の `chainviz-ethereum`
 - `docs/ARCHITECTURE.md` はプロファイル内スクリプトの挙動を扱わないため
   変更していない(#139/#148 と同じ整理)。shared/collector/frontend への
   変更も無い。
+
+### 2026-07-11 Issue #286 静的レビュー(reviewer)
+
+- 担当: reviewer
+- ブランチ: issue-286-genesis-reuse-guard
+- 判定: **合格**
+- 確認内容:
+  - `should_regenerate()` の判定順序(①マーカー無し→②poison→
+    ③genesis年齢<=MAX_REBUILD_GAP→④停止確定/サンプリング)が設計メモ
+    §3-2 の疑似コードと一致することを確認した。従来の再生成ケースが
+    すべて維持される根拠(genesis_age >= hb_age)と、意図的な挙動変更
+    2点(§3-2 末尾)が README にも明記されていることを確認した
+  - Issue #56/#148 の既存保護との整合: 稼働中スタックへの `up -d` は
+    「genesis 若い→即スキップ」「genesis 古い→サンプリングで前進検知→
+    スキップ」の両経路で守られる。poison マーカー経路(#148 3-4)は
+    無変更であることを diff で確認した
+  - サンプリングの正しさの根拠(`depends_on:
+    service_completed_successfully` により判定中は compose 側ノードが
+    起動できない)がスクリプトコメントに明記されていることを確認した
+    (設計メモの「実装時に明記すること」の指示どおり)。vc1/vc2 は
+    beacon 経由の推移的依存で同様に起動が止まることを compose で確認した
+  - 固定値の前提明記(CLAUDE.md): `GENESIS_MAX_REBUILD_GAP_SEC`(600秒)
+    の導出(#139 実測ハング点の 1/10 以下、CPU 性能依存で上書き可能)が
+    スクリプトの定数定義コメントと本ファイル §3-3 の両方にあることを
+    確認した。`HEARTBEAT_INTERVAL_SEC` の既定値(10秒)はノード側
+    スクリプト・compose 全サービスと一致
+  - 環境変数改名の取り残し: `GENESIS_DOWNTIME_RESET_SEC` の残存箇所は
+    歴史記録である過去の worklog(issue-148/211)と「旧名から改名した」
+    という説明文のみで、動作に関わる参照は無いことを grep で確認した
+  - エラー握りつぶし: 新規コードに catch して無視する箇所は無し。
+    全分岐が理由をログに出す。フォールバック時もログを出す。
+    `.genesis-timestamp` が空/壊れている場合は算術式が `set -e` で
+    大きな音を立てて落ちる(静かに誤動作しない)
+  - シェルスクリプトの安全性: `sh -n` で構文 OK。`hb_age` 空文字の
+    ガード(`[ -z ]` 先行判定)、サンプリング before 空の堅牢性対応、
+    生成途中失敗時の `.genesis-timestamp` 残骸が次回の初回生成分岐で
+    必ず一掃される冪等性を確認した。`docker compose config -q` も通過
+  - `pnpm lint && pnpm build && pnpm test` 全通過(TypeScript 変更なし、
+    frontend 1884 テスト含む全パッケージ成功)
+  - コミット粒度: 5 コミット(設計 docs / スクリプト / compose /
+    README / 記録 docs)が関心事ごとに分かれており、Conventional
+    Commits 準拠であることを確認した
+- 軽微な指摘(差し戻し不要):
+  - サンプリング窓の係数「2」の根拠(生存ノードは間隔ごとに必ず touch
+    するため 2 周期観測すれば mtime が必ず前進する)は本ファイル §3-3 に
+    あるが、スクリプト側の `sample_window_sec=$(( 2 * ... ))` 付近の
+    コメントには「なぜ 1 周期ではなく 2 周期か」までは書かれていない。
+    次にこの箇所を触る際にコメントを一言足すとよい(挙動には影響しない)
