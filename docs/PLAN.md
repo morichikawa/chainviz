@@ -668,6 +668,11 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       受理するparseHeadSlotを新設し、それ以外はthrowするよう統一。
       docs/worklog/issue-282.md参照)
       [#282](https://github.com/morichikawa/chainviz/issues/282)
+- [ ] 長時間稼働スタックの短時間再起動でgenesisが古いまま再利用され
+      beaconが追いつき不能になる(設計完了: 再生成判定を「停止時間」から
+      「genesis年齢+生存サンプリング」に置き換える方針。
+      docs/worklog/issue-286.md参照。実装はchainviz-node-envへ引き継ぎ)
+      [#286](https://github.com/morichikawa/chainviz/issues/286)
 
 ## 運用ルール（全ステップ共通）
 
