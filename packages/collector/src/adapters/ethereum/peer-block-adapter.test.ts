@@ -424,7 +424,8 @@ describe("EthereumAdapter.pollPeersOnce", () => {
     ]);
   });
 
-  it("keeps other beacon nodes when one fails to respond", async () => {
+  it("keeps other beacon nodes when one fails to respond, and logs the failure (Issue #287)", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
     const poller = new DockerPoller(
       clientFrom([
         beaconFixture("beacon1", "172.28.2.1"),
@@ -462,6 +463,16 @@ describe("EthereumAdapter.pollPeersOnce", () => {
         networkId: "chainviz-ethereum-consensus",
       },
     ]);
+    // Issue #287: 失敗ノード（stableId・実際のエラー）が EL 側
+    // （fetchExecutionPeerNodes）と対称にログされる。以前は catch で
+    // 無言除外していた。
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "[ethereum] consensus peer poll failed for chainviz-ethereum/beacon2",
+      ),
+      expect.any(Error),
+    );
+    vi.restoreAllMocks();
   });
 
   it("returns no edges when there are no beacon nodes and the lone execution node has no peers", async () => {
@@ -650,6 +661,7 @@ describe("EthereumAdapter.pollPeersOnce (EL / reth admin_peers)", () => {
 
   it("still delivers EL edges when every CL Beacon API call fails (layer isolation)", async () => {
     // 逆方向: CL 側が全滅しても EL 側の reth エッジは配信される。
+    vi.spyOn(console, "error").mockImplementation(() => {});
     const poller = new DockerPoller(
       clientFrom([
         rethFixture("reth1", "172.28.1.1"),
@@ -688,6 +700,7 @@ describe("EthereumAdapter.pollPeersOnce (EL / reth admin_peers)", () => {
         networkId: "chainviz-ethereum-execution",
       },
     ]);
+    vi.restoreAllMocks();
   });
 });
 

@@ -668,6 +668,10 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       受理するparseHeadSlotを新設し、それ以外はthrowするよう統一。
       docs/worklog/issue-282.md参照)
       [#282](https://github.com/morichikawa/chainviz/issues/282)
+- [x] fetchConsensusPeerNodesが失敗ノードをログ無しで無言除外している
+      (EL側と対称なconsole.errorを追加。連続失敗時は間引いてログする。
+      docs/worklog/issue-287.md参照)
+      [#287](https://github.com/morichikawa/chainviz/issues/287)
 
 ## 運用ルール（全ステップ共通）
 
