@@ -151,3 +151,95 @@ prefix / term / suffix の3分割で新規キーを追加する:
 - Issue #251 本文の「説明はツールバー付近に無い」という前提は §1 のとおり
   半分だけ正しい（事実の説明はあるが理由の説明が無い）。実装時は「文言の
   新規追加」ではなく「既存ツールチップへの2段目追記」である点に注意
+
+### 2026-07-11 Issue #251 実装（chainviz-frontend）
+
+- 担当: frontend
+- ブランチ: issue-251-addnode-pair-hint
+
+#### 実装方針の確認メモ（着手前）
+
+UX設計メモ §5 の要件をそのまま採用する。技術的な補足のみ以下に残す。
+
+- `ActionHint` の `hint` プロパティは既存の呼び出し元（addWorkbench側）が
+  文字列を渡し続けるため、`string` から `ReactNode` への型拡張は非破壊的
+  （文字列も `ReactNode` のサブセット）。`ActionHint` 自体の開閉ロジック・
+  `useHoverPopover` は変更不要
+- 2段目のみを持つ理由の文言は `CanvasToolbar` 内でノード追加ボタン用にのみ
+  組み立てる。`resolveAddNodeHint` 自体（`commands/commandMessages.ts`）は
+  1段目の文言のみを返す既存のまま変更しない。2段構成への組み立ては
+  `CanvasToolbar.tsx` 側の責務とする（UX設計メモの実装要件どおり）
+- `GlossaryTerm` は `useGlossary()` を無条件に呼ぶため、`CanvasToolbar` が
+  レンダーされる時点で `GlossaryProvider` が必須になる。実アプリ
+  （`App.tsx`）は既に `GlossaryProvider` で `AppShell`（`CanvasToolbar` を
+  含む）をラップ済みなので実害はないが、`CanvasToolbar.test.tsx` は
+  `GlossaryProvider` 無しでレンダーしていたため、テスト側の `renderToolbar`
+  ヘルパーに `GlossaryProvider`（テスト用の最小 glossary データ）を追加する
+  必要がある
+- 各段を block 要素にする指定は、`span` に `display: block` を当てる
+  `.action-hint__line` クラスを新設して満たす（`.action-hint__popover` 自体は
+  既存の幅・line-height をそのまま使う）。2段目には区切り線
+  （`.action-hint__line--secondary`）を追加し、視覚的に「予告」と「補足」を
+  分ける
+
+#### 実装内容
+
+- `packages/frontend/src/canvas/ActionHint.tsx`: `hint` プロパティの型を
+  `string` から `ReactNode` に拡張した。開閉ロジック・`PopoverPortal` への
+  渡し方は変更していない
+- `packages/frontend/src/canvas/CanvasToolbar.tsx`: ノード追加ボタンの hint
+  のみ、1段目（既存の `resolveAddNodeHint` の結果）+ 2段目（新規の
+  `action.addNode.hint.pair.*` 3キー + `GlossaryTerm termKey="el-cl-separation"`）
+  の2段構成に組み立てるよう変更した。ワークベンチ追加ボタンの hint
+  （`resolveAddWorkbenchHint`）は変更していない
+- `packages/frontend/src/i18n/messages.ts`: `action.addNode.hint.pair.prefix` /
+  `.term` / `.suffix` の3キーを ja/en で追加した（設計メモ §4 の文言のまま）。
+  `internalEdge.pair.*` と同じ3分割パターンである旨をコメントに残した
+- `packages/frontend/src/styles.css`: `.action-hint__line`（各段を block 化）
+  と `.action-hint__line--secondary`（2段目の区切り線）を追加した
+- テスト:
+  - `packages/frontend/src/canvas/ActionHint.test.tsx`: `hint` に
+    `ReactNode`（ネストした要素を含むフラグメント）を渡した場合でも
+    正しくレンダーされることを確認するケースを追加した
+  - `packages/frontend/src/canvas/CanvasToolbar.test.tsx`: `renderToolbar`
+    ヘルパーに `GlossaryProvider`（テスト用の `el-cl-separation` エントリ
+    のみを持つ最小 glossary）を追加した。既存の「generic 文言と完全一致」
+    テスト（`toBe`）は2段目追加により壊れるため `toContain` に変更した。
+    新規に以下を確認するテストを追加した:
+    - 1段目・2段目が両方含まれること（generic hint 時 / 具体的なブート
+      ノード名が解決できる hint 時の両方）
+    - `data-testid="glossary-term-el-cl-separation"` のアンカーが存在すること
+    - アンカーへネストしてホバーすると `glossary-popover-el-cl-separation`
+      が開き、かつ外側のツールチップ（`role="tooltip"`）が2つ同時に存在する
+      （閉じない）こと
+    - ワークベンチ追加ボタンの hint には pair 説明・アンカーが出ないこと
+    - 英語モードでの2段目の文言
+
+#### 動作確認
+
+- `pnpm --filter @chainviz/frontend build` / `pnpm --filter @chainviz/frontend test`
+  （117ファイル・1824件）が通ることを確認した
+- 実機（ブラウザ）での確認は、この環境に Chromium 実行に必要な共有ライブラリ
+  （`libnspr4.so` 等）が無く `sudo apt-get install` の権限も無いため
+  Playwright 経由の実ブラウザ確認ができなかった。代替として、実アプリと
+  同じ `glossary/data.js`（本物の glossary データ、モックではない）を使い、
+  `@testing-library/react` で `CanvasToolbar` を実際にレンダーしてホバー
+  イベントを発火させ、以下を目視確認した（確認用の一時テストファイルは
+  検証後に削除しコミットに含めていない）:
+  - ツールチップの `outerHTML` に、1段目の文言・2段目の文言・
+    `data-testid="glossary-term-el-cl-separation"` を持つ `GlossaryTerm`
+    アンカーが期待どおりの構造で含まれていること
+  - `GlossaryTerm` アンカーへホバーすると、本物の glossary 定義文
+    （`glossary/ethereum/terms/d-internal.yaml` の `el-cl-separation`）が
+    表示されること
+  - このホバー後も `role="tooltip"` の要素が2つ（外側の ActionHint 用と
+    内側の GlossaryTerm 用）同時に存在し、外側のツールチップが閉じて
+    いないこと（ネストしたホバーが成立することの確認）
+
+#### 決定事項・注意点
+
+- `docs/PLAN.md` のチェックは #251（本実装）のみを完了に更新した。関連する
+  #216（「なぜペアでしか追加できないのか」という疑問そのもの）は
+  `docs/worklog/issue-216.md` で既に別 Issue として #251 に切り出し済みで
+  あり、#216 自体のチェックボックス状態は本作業では変更していない
+  （#216 側の完了判定は当該 Issue の担当・レビューに委ねる）
