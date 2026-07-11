@@ -62,6 +62,37 @@ cl-client:
   layer: a-infra
   relatedTerms: [el-client, container, engine-api, el-cl-separation]
 
+slot:
+  name:
+    ja: スロット
+    en: Slot
+  definition:
+    ja: >-
+      Proof of Stake で「ブロックを提案してよい機会」に割り当てられる時間の
+      単位。Ethereum の本番ネットワーク（メインネット）では1スロット=12秒に
+      固定されているが、chainviz の開発環境では起動・進行を待つ時間を
+      短くするため2秒に短縮している。担当バリデーターが不在・遅延した
+      場合はブロックが提案されない空スロットになる。ヘッドスロットは
+      合意クライアント（CL）が今いる先頭のスロット番号で、空スロットの分
+      だけ実行クライアント（EL）のブロック高より少し大きくなり得る。
+      chainviz ではコンセンサスクライアントのカードで「ヘッドスロット」
+      として見え、reth（EL）側の「ブロック高」と数値が完全には一致
+      しなくても異常ではない。
+    en: >-
+      The unit of time assigned to a Proof of Stake block-proposal
+      opportunity. On Ethereum mainnet a slot is fixed at 12 seconds;
+      chainviz's dev environment shortens it to 2 seconds so you don't
+      have to wait as long to see the chain progress. If the assigned
+      validator is absent or too slow, the slot goes empty with no block
+      proposed. The head slot is the slot number the consensus client
+      (CL) currently sits at, and it can run slightly ahead of the
+      execution client's (EL) block height by the count of empty slots.
+      chainviz shows this as "Head slot" on the consensus client's card;
+      a small mismatch with the reth (EL) card's "Block height" is
+      expected, not a sign of trouble.
+  layer: a-infra
+  relatedTerms: [block, cl-client]
+
 workbench:
   name:
     ja: ワークベンチ

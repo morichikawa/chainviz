@@ -80,7 +80,14 @@ interface NodeEntity extends InfraEntity {
   kind: "node";
   chainType: ChainType;
   clientType: string; // "reth" | "lighthouse" など
+  // チェーン先端への追従状態。判定方法はチェーン・役割ごとに ChainAdapter が
+  // 決める（Ethereum の EL は同期チェックポイントの他ノード比較＝Issue #187、
+  // CL は Beacon API の自己申告＝Issue #274。詳細は §7.3）
   syncStatus: "syncing" | "synced";
+  // チェーン先端への追従の進み具合を表す高さ。単位・意味づけは役割に応じて
+  // チェーンプロファイルが決める（Ethereum の EL はブロック高、CL はヘッド
+  // スロット。Issue #274）。役割の異なるノード間で直接比較・集計しない。
+  // 表示ラベルもフロントのチェーンプロファイル表現セットが役割で選ぶ
   blockHeight: number;
   headBlockHash: string;
   // P2P ネットワーク上の役割。"bootnode" = 新規参加ノードが最初に接続する
@@ -1211,9 +1218,29 @@ sequenceDiagram
     checkpoint最大値との差が`SYNCED_TOLERANCE_BLOCKS`（既定5ブロック。
     並行スクレイプのタイミングずれによる一時的な差を実測した上での許容量。
     詳細は`docs/worklog/issue-187.md`）以内なら`"synced"`、それ以外は
-    `"syncing"`と判定する。**CLノード（beacon）はD層メトリクスを持たない
-    ため、この更新の対象外でsyncStatus/blockHeightは既存プレースホルダの
-    ままという既知のギャップが残る**（EL側のギャップのみ解消）
+    `"syncing"`と判定する
+  - **CLノード（beacon）の情報源（Issue #274）**: CLノードはD層メトリクス
+    （rethのFinish checkpoint）を持たないため上記の更新の対象外であり、
+    かつて「syncStatus/blockHeightが既存プレースホルダのまま」という既知の
+    ギャップが残っていた（consensusは`showsSyncState: true`のため、健全な
+    beaconがポップオーバー上で永久に「同期中/ブロック高0」に見える。
+    Issue #243の実機確認で観測）。これは**Beacon API
+    `GET /eth/v1/node/syncing`（既にピア取得で使用中のAPIの別エンドポイント。
+    軽量な1リクエスト/ノード/周期）をD層と同じポーリングループで観測して
+    埋める**。`syncStatus`はビーコンノード自身の自己申告から導出し
+    （`is_syncing`/`el_offline`/`is_optimistic`がすべてfalseなら`"synced"`、
+    いずれかがtrueなら`"syncing"`。EL側と違い他ノードとの比較は不要）、
+    `blockHeight`には`head_slot`（ヘッドスロット）を入れる。スロットは
+    ブロック高と近いが一致しない（空スロットの分だけ大きい。実測で
+    head_slot 16587に対しELブロック高16583）ため、フロントの
+    チェーンプロファイル表現セット（`nodeRoles.ts`）がconsensus役割の
+    高さ行のラベルを「ブロック高」ではなく「ヘッドスロット」（用語解説
+    `slot`）に切り替えて表示する（値の意味づけはチェーンプロファイルの
+    責務、という§2の方針どおり）。書き込みはEL側と同様にアダプタ内の
+    専用キャッシュ（`beacon-sync-status.ts`）へ行い、pollInfraの`toEntity`が
+    EL側キャッシュ→CL側キャッシュの順で読み出す（書き手をapplyInfraの
+    1本に保つ構造は不変。両キャッシュの対象ノード集合は互いに素）。
+    設計の詳細・実測記録は`docs/worklog/issue-274.md`
 
 ### 7.4 フロントエンドの表現
 

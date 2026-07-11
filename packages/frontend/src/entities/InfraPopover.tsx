@@ -1,5 +1,9 @@
 import type { RefObject } from "react";
-import { describeNodeRole, nodeShowsSyncState } from "../chain-profiles/ethereum/nodeRoles.js";
+import {
+  describeHeightField,
+  describeNodeRole,
+  nodeShowsSyncState,
+} from "../chain-profiles/ethereum/nodeRoles.js";
 import { format, pickLocale } from "../i18n/i18n.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
@@ -54,7 +58,11 @@ function Field({ label, value }: { label: string; value: string }) {
  * に変更して混同を防ぐ。`nodeRole` の `showsSyncState` が false（現状
  * validator のみ）のときは「同期状態」「ブロック高」の2行を出さない
  * （バリデーターはチェーンを同期する係ではなく、値ゼロを出し続けると
- * 「壊れている」誤解を招くため）。
+ * 「壊れている」誤解を招くため）。「ブロック高」行のラベル・用語解説は
+ * `nodeRoles.ts` の記述子が `heightField` を持てば差し替える（Issue #274。
+ * consensus は `blockHeight` にヘッドスロットが入るため「ヘッドスロット」+
+ * 用語解説 `slot` に切り替える。持たない役割（execution・validator・
+ * 未知値・省略）は既定の「ブロック高」+ `block` のまま）。
  *
  * `anchorRef` はこのポップオーバーを開いたカード本体への ref（Issue #245）。
  * React Flow のノードはそれぞれ独立したスタッキングコンテキストを持つため、
@@ -85,6 +93,12 @@ export function InfraPopover({
     entity.kind === "node" ? describeNodeRole(entity.nodeRole) : undefined;
   const showsSyncState =
     entity.kind === "node" ? nodeShowsSyncState(entity.nodeRole) : true;
+  const heightFieldOverride =
+    entity.kind === "node" ? describeHeightField(entity.nodeRole) : undefined;
+  const heightLabel = heightFieldOverride
+    ? pickLocale(heightFieldOverride.label, lang)
+    : t("field.blockHeight");
+  const heightGlossaryKey = heightFieldOverride?.glossaryKey ?? "block";
 
   return (
     <PopoverPortal
@@ -150,7 +164,7 @@ export function InfraPopover({
               />
               <div className="infra-field">
                 <span className="infra-field__label">
-                  <GlossaryTerm termKey="block">{t("field.blockHeight")}</GlossaryTerm>
+                  <GlossaryTerm termKey={heightGlossaryKey}>{heightLabel}</GlossaryTerm>
                 </span>
                 <span className="infra-field__value">
                   {String(entity.blockHeight)}
