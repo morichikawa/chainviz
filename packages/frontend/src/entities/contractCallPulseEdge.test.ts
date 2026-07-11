@@ -222,3 +222,90 @@ describe("removeContractCallPulse", () => {
     expect(next[0].data?.pulses).toEqual([pulse("p2")]);
   });
 });
+
+describe("buildContractCallPulseEdge address casing (Issue #232)", () => {
+  it("matches a wallet address that differs in case from the tracked wallet id", () => {
+    // fromWalletAddress はチェーン側の生の表記(小文字)、presentWalletIds は
+    // EIP-55 チェックサム表記になりうる想定の再現(deployEdge.ts の
+    // Issue #201 修正と同型)。
+    const edge = buildContractCallPulseEdge(
+      "0xabcdef",
+      TOKEN,
+      new Set(["0xABCDEF"]),
+      new Set([TOKEN]),
+    );
+    expect(edge).not.toBeNull();
+    // React Flow がノードを解決できるよう、source にはキャンバス上に実在
+    // するウォレットの表記(presentWalletIds側)を使う。
+    expect(edge).toMatchObject({
+      id: contractCallPulseEdgeId("0xABCDEF", TOKEN),
+      source: "0xABCDEF",
+      target: TOKEN,
+    });
+  });
+
+  it("matches a contract address that differs in case from the tracked contract id", () => {
+    const edge = buildContractCallPulseEdge(
+      ALICE,
+      "0xtoken",
+      new Set([ALICE]),
+      new Set(["0xTOKEN"]),
+    );
+    expect(edge).not.toBeNull();
+    expect(edge).toMatchObject({ source: ALICE, target: "0xTOKEN" });
+  });
+
+  it("still returns null when the wallet is not present even case-insensitively", () => {
+    const edge = buildContractCallPulseEdge(
+      "0xabcdef",
+      TOKEN,
+      new Set(["0xdifferent"]),
+      new Set([TOKEN]),
+    );
+    expect(edge).toBeNull();
+  });
+
+  it("still returns null when the contract is not present even case-insensitively", () => {
+    // ウォレット側は表記違いで一致するが、コントラクト側は case を無視しても
+    // 一致しない場合は null（casing 修正が「存在しない端点」ガードを弱めて
+    // いないことの回帰）。
+    const edge = buildContractCallPulseEdge(
+      "0xabcdef",
+      "0xtoken",
+      new Set(["0xABCDEF"]),
+      new Set(["0xother"]),
+    );
+    expect(edge).toBeNull();
+  });
+
+  it("returns null when both endpoints are missing", () => {
+    expect(
+      buildContractCallPulseEdge("0xabcdef", "0xtoken", new Set(), new Set()),
+    ).toBeNull();
+  });
+
+  it("detects a self-loop even when wallet/contract differ only by case", () => {
+    // wallet と contract が大文字小文字だけ違う同一アドレスの場合、両方が
+    // それぞれ present 側の表記へ解決されたあと lowercase 同士で比較されるので
+    // 自己ループとして null になる（表記揺れが自己ループ判定をすり抜けない）。
+    const edge = buildContractCallPulseEdge(
+      "0xabc",
+      "0xABC",
+      new Set(["0xAbc"]),
+      new Set(["0xaBC"]),
+    );
+    expect(edge).toBeNull();
+  });
+
+  it("does not treat trailing whitespace as a case difference (no match)", () => {
+    // addressCasing は case のみ吸収し空白は正規化しない。前後空白がずれた
+    // アドレスは端点として一致しない（buildContractCallPulseEdge 経由での確認）。
+    const edge = buildContractCallPulseEdge(
+      "0xalice ",
+      TOKEN,
+      new Set([ALICE]),
+      new Set([TOKEN]),
+    );
+    expect(edge).toBeNull();
+  });
+});
