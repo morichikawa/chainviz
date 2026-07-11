@@ -39,7 +39,15 @@ export const SYNC_STAGE_LABELS: Readonly<Record<string, Localized>> = {
  * Prune系、Era）は undefined を返し、呼び出し側は生名のまま表示するフォール
  * バックに倒す（ARCHITECTURE.md §7.6.7「マッピングに無いステージは生の名前の
  * まま表示する」。reth のステージ構成が変わっても行が欠けない縮退動作）。
+ *
+ * `SYNC_STAGE_LABELS` はオブジェクトリテラルで `Object.prototype` を
+ * 継承しているため、ブラケットアクセスだけだと `stage` が `"toString"` /
+ * `"constructor"` / `"__proto__"` のような継承メンバ名のとき、その継承
+ * メンバ（関数など）を誤って真値として返してしまう（`nodeRoles.ts` の
+ * `describeNodeRole` と同種の穴、Issue #258）。`Object.hasOwn` で自身の
+ * 列挙可能プロパティかどうかを確認してから引くことでこれを防ぐ。
  */
 export function describeSyncStage(stage: string): Localized | undefined {
+  if (!Object.hasOwn(SYNC_STAGE_LABELS, stage)) return undefined;
   return SYNC_STAGE_LABELS[stage];
 }

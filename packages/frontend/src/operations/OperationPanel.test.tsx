@@ -75,7 +75,7 @@ describe("OperationPanel (ARCHITECTURE.md §6.5)", () => {
   it("submitting the transfer form dispatches runWorkbenchOperation and closes the panel", () => {
     const { actions, onClose } = renderPanel();
     fireEvent.change(screen.getByTestId("operation-transfer-to"), {
-      target: { value: "0xbob" },
+      target: { value: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
     });
     fireEvent.change(screen.getByTestId("operation-transfer-amount"), {
       target: { value: "1" },
@@ -83,7 +83,7 @@ describe("OperationPanel (ARCHITECTURE.md §6.5)", () => {
     fireEvent.click(screen.getByText("送金する"));
     expect(actions.runWorkbenchOperation).toHaveBeenCalledWith("workbench-alice", {
       type: "transfer",
-      to: "0xbob",
+      to: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       amount: "1000000000000000000",
     });
     expect(onClose).toHaveBeenCalledTimes(1);
