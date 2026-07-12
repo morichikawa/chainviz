@@ -529,3 +529,64 @@ UX観点からの見立てであり、正式なデータフロー・型設計は
     の `pickCanonicalPerNumber`（同一 number は latestReceiptTime最大→
     hash辞書順で1件選ぶ暫定ルール）を、#296 が正史判定を実装したら
     そちらの成果物に置き換える設計にしてある
+
+### 2026-07-12 Issue #298 テスト強化（異常系・境界値）
+
+- 担当: tester
+- ブランチ: issue-298-block-stacking-visualization
+- 内容: collector/frontend の実装担当が書いた基本テストに対し、エッジ
+  ケース・境界値・双方向連動のテストを追加した（実装は変更していない。
+  追加はテストファイルのみ）。
+- 追加したテストと観点:
+  - `entities/chainRibbon.test.ts`:
+    - `pickCanonicalPerNumber` の暫定選択ルールの境界。両ブロックとも
+      `receivedAt` 空（`latestReceiptTime` が null 同士 = NEGATIVE_INFINITY）
+      で時刻決着がつかない場合の hash 辞書順フォールバック。片方だけ
+      `receivedAt` を持つ場合に時刻を持つ側が勝つこと（入力順非依存）。
+    - collector の保持窓（32）と表示件数（8）の差（24）をまたぐ統合的な
+      境界。32件中の末尾8件だけを描き、先頭タイルは隠れた24件と連鎖して
+      いても `connectedToPrevious` が常に false であること、2件目以降は
+      表示窓内だけで前タイルと比較して連結すること。
+    - `deriveReceivedOrder` が非有限な `receivedAt` 値（NaN/Infinity）を
+      offset に混入させずスキップすること。
+    - `formatBlockTimestamp` の UTC 固定書式。負オフセット TZ で前日に
+      ずれる早朝時刻でも UTC 日付を保つこと、秒未満のドリフトを切り捨てる
+      こと（テスト実行環境の TZ 設定に依存しない確認）。
+  - `entities/useRibbonLanding.test.ts`:
+    - 鮮度ガード（`isFreshBlock`）の境界。閾値ちょうど（6000ms）は着地
+      アニメーションし、1ms 過ぎたら過去分として扱うこと。
+    - 再接続バーストで過去ブロックが一斉に届いても一つも着地しないこと。
+      過去分に本物の新着が1件混じるケースでは新着だけが着地すること
+      （鮮度ガードがタイル単位で効く確認）。
+  - `entities/RibbonHoverContext.test.tsx`:
+    - 順方向で tx を持たないブロックをホバーすると hoveredBlockHash は
+      立つが highlightedAddresses は空になること。
+    - 明示的な解除を挟まず別ブロックへホバーを移した際、前ブロックの
+      アドレスが残らず置き換わること（状態リセット漏れの確認）。
+  - `entities/chainRibbonCrossHighlight.test.tsx`:
+    - 逆方向（ウォレット tx チップのホバー）が対応タイルだけでなく同一
+      ブロックのコントラクトカードにも同時に波及すること（双方向連動が
+      単一の hoveredBlockHash に一本化されている確認）。
+    - 順方向でタイルを直接ホバーするとそのタイル自身も逆方向ハイライトの
+      対象になること。
+  - `entities/ChainRibbonCard.test.tsx`:
+    - 空状態でヘッダの最新ブロック番号を出さないこと。
+  - `world-state/store-block-retention.test.ts`:
+    - 同一ブロックの再受信（冪等）で差分ゼロ・窓不変であること。
+    - 先端（観測済み最大番号）でのフォーク共存。
+    - 最初の観測が genesis（番号0）でも取り込まれること。
+- 退行検出の確認（実装を意図的に壊して失敗することを確認後に復元）:
+  - `chainRibbon.ts` の hash 比較 `<` → `>`: 上記の both-null tie テストが
+    失敗。
+  - `blockPulse.ts#isFreshBlock` の `<=` → `<`: 鮮度ガード境界テストが失敗。
+  - `chainRibbon.ts` の表示窓リンク計算を canonical 全体参照に変更:
+    32→8 リンク境界テストが失敗。
+  - `RibbonHoverContext.tsx#setHoveredTxHash` の blockHash 解決を素通しに
+    変更: reverse fan-out テストが失敗。
+  - `store.ts` の窓拒否分岐 `<` → `<=`: 窓下限境界の受理テストが失敗。
+- ファイル分割: 追加は各実装モジュールに対応する既存テストファイルへの
+  関心事別の追記に留めた。`chainRibbon.test.ts` は 1 モジュール
+  （`chainRibbon.ts`）に対応するテストのため、関数ごとの describe 単位で
+  まとまっており現時点（約250行）では分割不要と判断した。
+- ビルド・テスト結果: collector build 成功 / test 1322件成功、
+  frontend build 成功 / test 2003件成功（追加分 +17件）。
