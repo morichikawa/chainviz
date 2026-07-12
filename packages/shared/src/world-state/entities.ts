@@ -77,6 +77,24 @@ export interface NodeEntity extends InfraEntity {
    * セットが役割に応じて選ぶ）。観測がまだ無い間は 0（プレースホルダ）。
    */
   blockHeight: number;
+  /**
+   * このノードが現在チェーン先端（tip）と認識しているブロックのハッシュ。
+   * どう観測するかはチェーン・役割ごとに ChainAdapter が決める（Ethereum
+   * プロファイルは EL の newHeads 通知の最新値。CL ノードには同じ論理ノードの
+   * EL が認識する tip をエイリアスとして載せる。BlockEntity.receivedAt の
+   * 2 キー記録＝Issue #141 と同じ扱い。Issue #296）。
+   *
+   * 未観測（観測前・観測手段を持たないノード。例: Ethereum の validator
+   * client）は空文字列。optional への変更ではなく空文字列なのは、この
+   * フィールドが必須 string として先に存在していた経緯による（旧スナップ
+   * ショットは常に ""）。フロントは空文字列のノードを tip 比較（フォークの
+   * 色分け。Issue #296）の対象から除外する。
+   *
+   * blockHeight とは情報源・更新タイミングが異なる（Ethereum の EL は
+   * blockHeight が D層メトリクス由来、headBlockHash が newHeads 由来）ため、
+   * 両者を突き合わせて「同一時点の観測」として扱ってはならない。tip の
+   * 高さ・親子関係が必要な場合はこのハッシュで BlockEntity を引くこと。
+   */
   headBlockHash: string;
   /**
    * P2P ネットワーク上の役割。"bootnode" は新規参加ノードが最初に接続する

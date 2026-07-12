@@ -118,3 +118,33 @@ gossip:
       milliseconds.
   layer: b-network
   relatedTerms: [peer, p2p]
+
+fork:
+  name:
+    ja: フォーク（一時的な分岐）
+    en: Fork (temporary chain split)
+  definition:
+    ja: >-
+      同じ高さで異なるブロックが同時に作られ、チェーンが一時的に複数の
+      枝に分かれること。ほぼ同時刻に別々のバリデーターがそれぞれ自分の
+      知る最新ブロックの上に次のブロックを提案したときや、ネットワークが
+      一時的に分断されてノード同士の情報共有が遅れたときに起こる。
+      各ノードはしばらくの間バラバラの枝を「今のチェーン」として見て
+      いるが、やがて合意ルールに従っていずれか1本の枝だけが正準
+      （canonical）として残り、他の枝は捨てられる（reorg）。
+      chainviz では、ノードごとに見ている枝（tip）が異なる間、カードの
+      枠を tip ごとの色で縁取って表す。全ノードの色が揃った瞬間が
+      収束（合意）を表す。
+    en: >-
+      A temporary split in the chain that happens when different blocks are
+      produced at the same height at nearly the same time — for example when
+      two validators each propose a block on top of the latest block they
+      individually know about, or when the network is briefly partitioned and
+      nodes fall out of sync with one another. For a while, different nodes
+      regard different branches as "the current chain," until consensus rules
+      settle on a single canonical branch and the other branches are dropped
+      (a reorg). chainviz outlines each node card in a color tied to the tip
+      it is currently following; once every card's color matches, the branches
+      have converged.
+  layer: b-network
+  relatedTerms: [peer, gossip, p2p]

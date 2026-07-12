@@ -1,4 +1,5 @@
 import type {
+  BlockEntity,
   Command,
   ContractEntity,
   DiffEvent,
@@ -572,6 +573,173 @@ export function createMultiNetworkMockSnapshot(): WorldStateSnapshot {
     entities: [rethNode(1, 128), rethNode(2, 128), nodeC, nodeD],
     edges,
   };
+}
+
+/**
+ * フォークシナリオ共通祖先のブロック高（両陣営が分岐する直前の高さ）。
+ * ARCHITECTURE.md §9 のフォーク色分けデモ用（Issue #296）。
+ */
+const FORK_COMMON_ANCESTOR_HASH = "0x00000080";
+const FORK_BRANCH_A_MID_HASH = "0xaaaa0081";
+/** branch A（reth-node-1/lighthouse-1/validator-1 陣営）の tip。 */
+const FORK_BRANCH_A_TIP_HASH = "0xaaaa0082";
+/** branch B（reth-node-2/lighthouse-2/validator-2 陣営）の tip（branch A より1つ低い）。 */
+const FORK_BRANCH_B_TIP_HASH = "0xbbbb0081";
+
+/**
+ * B層拡張: フォーク（一時的な分岐）の色分け表現をオフラインで確認するための
+ * デモシナリオ（ARCHITECTURE.md §9、Issue #296）。既定の `createMockSnapshot`
+ * には含めない専用シナリオ（`createMultiNetworkMockSnapshot` と同じ流儀。
+ * `createMockClient` の既定シナリオには自動接続されず、このシナリオを
+ * 確認したい呼び出し側が明示的に使う）。
+ *
+ * 高さ128の共通祖先ブロックから、branch A（reth-node-1/lighthouse-1、
+ * 高さ130の tip）と branch B（reth-node-2/lighthouse-2、高さ129の tip）が
+ * 分岐した状態を表す。両陣営とも P2P ブートノード経由でつながっている体で
+ * `edges` を張る（実環境でパーティション中でも同じネットワーク上には
+ * いるため）。
+ *
+ * - reth-node-1/lighthouse-1/validator-1 は branch A の tip を見ている
+ *   （lighthouse-1 は既定の `lighthouseNode` を流用しつつ blockHeight/
+ *   headBlockHash だけ上書き）。
+ * - reth-node-2/lighthouse-2/validator-2 は branch B の tip を見ている
+ *   （lighthouse-2 は新規。reth-node-2 を駆動する）。
+ * - validator-1/validator-2 は `headBlockHash` を持たない（Ethereum の
+ *   validator は tip 観測手段を持たないため常に空文字列。ARCHITECTURE.md
+ *   §9.2「validator は空のまま対象外」）。フォーク判定・色分けの対象外に
+ *   なることを、このシナリオでも確認できる。
+ *
+ * `entities/forkState.ts` の判定は「同じ高さまで parentHash を辿っても
+ * 一致しない」ことを根拠にフォークを検知する（branch A の高さ130の tip を
+ * 129まで1ホップ辿った先＝branchAMid と、branch B の高さ129の tip が
+ * 異なるハッシュであることを確認する）ため、branch A 側は中間ブロック
+ * （高さ129）も `entities` に含める。
+ */
+export function createForkMockSnapshot(): WorldStateSnapshot {
+  const commonAncestor: BlockEntity = {
+    kind: "block",
+    hash: FORK_COMMON_ANCESTOR_HASH,
+    number: 128,
+    parentHash: "0x0000007f",
+    timestamp: Date.now() - 12_000,
+    receivedAt: {
+      "reth-node-1": Date.now() - 12_000,
+      "lighthouse-1": Date.now() - 12_000,
+      "reth-node-2": Date.now() - 12_000,
+      "lighthouse-2": Date.now() - 12_000,
+    },
+  };
+  const branchAMid: BlockEntity = {
+    kind: "block",
+    hash: FORK_BRANCH_A_MID_HASH,
+    number: 129,
+    parentHash: commonAncestor.hash,
+    timestamp: Date.now() - 8_000,
+    receivedAt: { "reth-node-1": Date.now() - 8_000, "lighthouse-1": Date.now() - 8_000 },
+  };
+  const branchATip: BlockEntity = {
+    kind: "block",
+    hash: FORK_BRANCH_A_TIP_HASH,
+    number: 130,
+    parentHash: branchAMid.hash,
+    timestamp: Date.now() - 4_000,
+    receivedAt: { "reth-node-1": Date.now() - 4_000, "lighthouse-1": Date.now() - 4_000 },
+  };
+  const branchBTip: BlockEntity = {
+    kind: "block",
+    hash: FORK_BRANCH_B_TIP_HASH,
+    number: 129,
+    parentHash: commonAncestor.hash,
+    timestamp: Date.now() - 4_000,
+    receivedAt: { "reth-node-2": Date.now() - 4_000, "lighthouse-2": Date.now() - 4_000 },
+  };
+
+  const rethA: NodeEntity = {
+    ...rethNode(1, 130),
+    headBlockHash: branchATip.hash,
+    p2pRole: "bootnode",
+  };
+  const beaconA: NodeEntity = {
+    ...lighthouseNode,
+    blockHeight: 130,
+    headBlockHash: branchATip.hash,
+    p2pRole: "bootnode",
+  };
+  const rethB: NodeEntity = {
+    ...rethNode(2, 129),
+    headBlockHash: branchBTip.hash,
+    p2pRole: "peer",
+  };
+  const beaconB: NodeEntity = {
+    ...lighthouseNode,
+    id: "lighthouse-2",
+    containerName: "chainviz-lighthouse-2",
+    ip: "172.20.0.21",
+    blockHeight: 129,
+    headBlockHash: branchBTip.hash,
+    drivesNodeId: "reth-node-2",
+    p2pRole: "peer",
+  };
+  // 既定の validatorNode() はデモ用の placeholder として headBlockHash に
+  // "0x00000080"（= FORK_COMMON_ANCESTOR_HASH）を持たせているが、本来
+  // validator は tip 観測手段を持たず常に空文字列（ARCHITECTURE.md §9.2）。
+  // このシナリオでは commonAncestor を entities に含めるため、placeholder の
+  // ままだと validator の headBlockHash が誤って解決されてしまう
+  // （フォーク判定の対象外であるはずの validator が対象に混ざる）。
+  // 「validator は対象外」を正しく確認できるよう、ここで明示的に空へ戻す。
+  const validatorA: NodeEntity = { ...validatorNode(1), headBlockHash: "" };
+  const validatorB: NodeEntity = {
+    ...validatorNode(2),
+    drivesNodeId: "lighthouse-2",
+    headBlockHash: "",
+  };
+
+  return {
+    chainType: "ethereum",
+    timestamp: Date.now(),
+    entities: [
+      rethA,
+      beaconA,
+      rethB,
+      beaconB,
+      validatorA,
+      validatorB,
+      commonAncestor,
+      branchAMid,
+      branchATip,
+      branchBTip,
+    ],
+    edges: [
+      {
+        kind: "peer",
+        fromNodeId: "reth-node-1",
+        toNodeId: "reth-node-2",
+        networkId: MOCK_NETWORK_ID,
+      },
+    ],
+  };
+}
+
+/**
+ * `createForkMockSnapshot` の状態から、branch B（reth-node-2/lighthouse-2）が
+ * branch A の tip へ乗り換えた（reorg で収束した）ことを表す diff（Issue
+ * #296）。適用すると `entities/forkState.ts` の判定が「フォークなし」に
+ * 戻り、ノードカードの色分けが消える（設計メモ「収束の検知は専用状態を
+ * 持たない」。色が消えること自体が収束の表現）。
+ */
+export function mockForkConvergeDiffs(): DiffEvent[] {
+  return [
+    {
+      type: "entityUpdated",
+      id: "reth-node-2",
+      patch: { blockHeight: 130, headBlockHash: FORK_BRANCH_A_TIP_HASH },
+    },
+    {
+      type: "entityUpdated",
+      id: "lighthouse-2",
+      patch: { blockHeight: 130, headBlockHash: FORK_BRANCH_A_TIP_HASH },
+    },
+  ];
 }
 
 /**
