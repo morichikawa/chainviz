@@ -446,3 +446,48 @@ export class PeerObservationCache {
 （`beaconSummary`・`multiBeaconClient`・`beaconHttp`）が重複している。
 1ファイル1責務の分割を優先した結果として妥当だが、同種のテストが今後
 さらに増えるならヘルパーの共有化を検討してよい。
+
+#### QA検証（chainviz-qa、実機・独立検証）
+
+判定: **合格**。差し戻し事項なし。
+
+statuscheck: マシン再起動により検証開始時点で全コンテナが Exited 状態
+だったため（稼働中の公式スタックは存在しなかった）、profiles/ethereum
+の基本スタックを `docker compose up -d` で起動して検証した。genesis は
+停止後の経過時間により自動再生成され、新しいチェーンで開始した。本
+ブランチでビルドした collector を隔離ポート（CHAINVIZ_COLLECTOR_PORT=4100
+/ CHAINVIZ_PROXY_PORT=4101）で起動し、WebSocket クライアントで snapshot
+と diff（edgeAdded/edgeRemoved）を実況記録した。
+
+- **正常時のエッジ安定**: 起動後、beacon1 と beacon2 が P2P 接続を確立し
+  （`/eth/v1/node/peer_count` の connected=1、head slot 進行を確認）、
+  snapshot に `beacon1--beacon2`（CL P2P）と `reth1--reth2`（EL P2P）の
+  2 本のピアエッジが現れた。約 22 秒間の観測で edgeAdded/edgeRemoved は
+  一切発生せず、エッジは安定していた。
+- **単発の一時失敗ではエッジが維持される（ちらつかない）**: beacon2 を
+  `docker pause` で約 7 秒間（poll 間隔 3000ms + HTTP タイムアウト 3000ms
+  の下で 1 tick 程度）無応答にし unpause した。collector ログに実際の
+  観測失敗（`consensus peer poll failed for chainviz-ethereum/beacon2:
+  AbortError`）が記録されたにもかかわらず、observe ログには edgeRemoved
+  が一切現れず、`beacon1--beacon2` エッジは維持された。これは Issue #288
+  の再現条件（1 回の観測失敗で全エッジが消える）が解消されていることの
+  直接確認である。
+- **猶予超過ではエッジが消える（恒久不調を隠蔽しない）**: beacon2 を
+  `docker stop` で継続停止したところ、停止から約 13 秒後（猶予 3 tick、
+  実時間で約 10〜20 秒という設計の想定内）に `beacon1--beacon2` の
+  edgeRemoved が配信され、エッジが消えた。単発失敗（上記）では消えず、
+  持続失敗でのみ約 13 秒後に消えた対比により、猶予ヒステリシスが即時
+  消滅も恒久隠蔽もせず設計どおりに働いていることを確認した。
+- **復旧後のエッジ再表示**: beacon2 を `docker start` で再開すると、
+  約 13 秒後に `beacon1--beacon2` の edgeAdded が配信され、エッジが
+  再表示された。beacon1 の peer_count も connected=1 に復帰した。
+- **完了条件の照合（設計メモ「完了条件の言語化」）**: (1) 1 回の失敗で
+  表示が変化しない、(2) 猶予超過でエッジが消える、(3) #287 のログ挙動
+  維持（間引きにより stop 期間中の多数の失敗のうちログ出力は初回のみで
+  あることを実測、挙動不変）——いずれも満たしている。docs/PLAN.md の
+  該当項目（#288）の完了条件を満たすと判断する。
+
+検証後、pause/stop した beacon2 は Test5 の `docker start` で復旧済み
+（connected=1・head slot 進行を再確認）。破壊的な残留はない。検証用に
+起動した collector プロセスは終了し、ポート 4100/4101 は解放済み。
+スタック（chainviz-ethereum）は健全な稼働状態のまま残している。
