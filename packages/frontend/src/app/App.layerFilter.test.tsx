@@ -116,4 +116,48 @@ describe("App: layer lens wiring (Issue #299)", () => {
       container.querySelector(".react-flow__node.layer-lens-dim"),
     ).toBeNull();
   });
+
+  // UX 設計 §3.1「状態は永続化しない。リロードで『すべて』に戻る」を守って
+  // いることを確認する。共有ストレージを両マウントへ注入することで「リロードを
+  // またいで復元されるか」を検出できる形にする(jsdom の getBrowserStorage は
+  // マウントごとに別のインメモリ代替を返すため、注入しないと永続化退行を
+  // 検出できない)。選択層をストレージへ書き込む実装(将来の退行)を入れると、
+  // 2 度目のマウントで復元されてこのテストが落ちる。
+  it("does not persist the selection: a fresh mount defaults back to 'all' even with shared storage", async () => {
+    const map = new Map<string, string>();
+    const sharedStorage = {
+      getItem: (key: string) => map.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        map.set(key, value);
+      },
+    };
+
+    const first = render(
+      <App clientFactory={mockClientFactory()} storage={sharedStorage} />,
+    );
+    await screen.findByTestId("infra-card-lighthouse-1");
+    fireEvent.click(screen.getByTestId("layer-filter-chip-b"));
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("layer-filter-chip-b").getAttribute("aria-pressed"),
+      ).toBe("true"),
+    );
+
+    // リロード相当: 現在の DOM を破棄し、同じストレージで App を新規マウント。
+    first.unmount();
+    const { container } = render(
+      <App clientFactory={mockClientFactory()} storage={sharedStorage} />,
+    );
+    await screen.findByTestId("infra-card-lighthouse-1");
+
+    expect(screen.getByTestId("layer-filter-chip-all").getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    expect(screen.getByTestId("layer-filter-chip-b").getAttribute("aria-pressed")).toBe(
+      "false",
+    );
+    expect(
+      container.querySelector(".react-flow__node.layer-lens-dim"),
+    ).toBeNull();
+  });
 });

@@ -43,6 +43,21 @@ describe("LayerFilterBar", () => {
     expect(screen.queryByTestId("layer-filter-chip-d")).toBeNull();
   });
 
+  it("renders only the 'all' chip when the profile exposes no layers (empty list boundary)", () => {
+    // D層を持たない将来のチェーンプロファイルは配列を短くするだけ、という
+    // 設計(§5)の極端な境界。層が 0 件でも「すべて」だけは常に出る。
+    render(
+      <LanguageProvider initialLanguage="ja">
+        <GlossaryProvider glossary={{}}>
+          <LayerFilterBar value="all" onChange={vi.fn()} layers={[]} />
+        </GlossaryProvider>
+      </LanguageProvider>,
+    );
+    expect(screen.getByTestId("layer-filter-chip-all")).toBeTruthy();
+    expect(screen.queryByTestId("layer-filter-chip-a")).toBeNull();
+    expect(screen.queryByTestId("layer-filter-chip-b")).toBeNull();
+  });
+
   it("marks the 'all' chip active by default", () => {
     renderBar("all");
     expect(screen.getByTestId("layer-filter-chip-all").getAttribute("aria-pressed")).toBe(
@@ -108,6 +123,18 @@ describe("LayerFilterBar", () => {
       fireEvent.mouseEnter(chip.parentElement as HTMLElement);
       expect(screen.getByRole("tooltip").textContent).toBe(
         "全レイヤーを同時に表示します（既定）",
+      );
+    });
+
+    it("also surfaces the hint on keyboard focus (accessibility, not hover-only)", () => {
+      // ActionHint は onFocus/onBlur も持つ(ネイティブ title と違いキーボード
+      // フォーカスでも出る、が導入理由)。ホバーできない利用者にもヒントが
+      // 届くことを固定する。
+      renderBar();
+      const chip = screen.getByTestId("layer-filter-chip-c");
+      fireEvent.focus(chip.parentElement as HTMLElement);
+      expect(screen.getByRole("tooltip").textContent).toContain(
+        "ウォレット・コントラクト・操作の流れだけが通常表示になり",
       );
     });
   });
