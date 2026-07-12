@@ -100,4 +100,31 @@ describe("RibbonHoverContext", () => {
     expect(result.current.hoveredBlockHash).toBeNull();
     expect(result.current.highlightedAddresses.size).toBe(0);
   });
+
+  it("forward: hovering a block with no tx sets the hash but yields no highlighted addresses", () => {
+    const txs = [tx({ hash: "0x1", blockHash: "0xb1" })];
+    const { result } = renderHook(() => useRibbonHover(), {
+      wrapper: wrapper(txs),
+    });
+    // タイル自身は光る（hoveredBlockHash が立つ）が、対応する tx を持つ
+    // カードが無いので highlightedAddresses は空。
+    act(() => result.current.setHoveredBlockHash("0xEmptyBlock"));
+    expect(result.current.hoveredBlockHash).toBe("0xEmptyBlock");
+    expect(result.current.highlightedAddresses.size).toBe(0);
+  });
+
+  it("switching hover from one block to another replaces the highlighted set (no stale leak)", () => {
+    const txs = [
+      tx({ hash: "0x1", blockHash: "0xb1", from: "0xAAA", to: "0xBBB" }),
+      tx({ hash: "0x2", blockHash: "0xb2", from: "0xCCC", to: "0xDDD" }),
+    ];
+    const { result } = renderHook(() => useRibbonHover(), {
+      wrapper: wrapper(txs),
+    });
+    act(() => result.current.setHoveredBlockHash("0xb1"));
+    expect(result.current.highlightedAddresses).toEqual(new Set(["0xaaa", "0xbbb"]));
+    // 明示的な解除を挟まず別ブロックへ移っても、前ブロックのアドレスは残らない。
+    act(() => result.current.setHoveredBlockHash("0xb2"));
+    expect(result.current.highlightedAddresses).toEqual(new Set(["0xccc", "0xddd"]));
+  });
 });

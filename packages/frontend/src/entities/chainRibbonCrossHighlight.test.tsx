@@ -176,4 +176,32 @@ describe("chain ribbon cross-card hover highlight (Issue #298 second stage)", ()
     fireEvent.mouseLeave(screen.getByTestId(`contract-activity-chip-${TX_HASH}-call`));
     expect(tileEl.className).not.toContain("chain-ribbon-tile--highlight");
   });
+
+  it("reverse: hovering the wallet's tx chip also fans out to the contract card in the same block", () => {
+    // 逆方向は「タイルだけ」でなく、同じブロックに属する他カードにも同時に
+    // 波及する（双方向連動が単一の hoveredBlockHash に一本化されている確認）。
+    renderScene();
+    const contractCard = screen.getByTestId(`contract-card-${CONTRACT_ADDRESS}`);
+    expect(contractCard.className).not.toContain("infra-card--ribbon-highlight");
+
+    fireEvent.mouseEnter(screen.getByTestId(`wallet-tx-chip-${TX_HASH}`));
+    expect(contractCard.className).toContain("infra-card--ribbon-highlight");
+
+    fireEvent.mouseLeave(screen.getByTestId(`wallet-tx-chip-${TX_HASH}`));
+    expect(contractCard.className).not.toContain("infra-card--ribbon-highlight");
+  });
+
+  it("forward: hovering a tile self-highlights that tile (same hoveredBlockHash drives the tile too)", () => {
+    // タイルを直接ホバーすると setHoveredBlockHash が立ち、そのタイル自身も
+    // 逆方向ハイライトの対象になる（順方向・逆方向が同じ状態を共有する）。
+    renderScene();
+    const tileEl = screen.getByTestId(`chain-ribbon-tile-${BLOCK_HASH}`);
+    expect(tileEl.className).not.toContain("chain-ribbon-tile--highlight");
+
+    fireEvent.mouseEnter(tileEl);
+    expect(tileEl.className).toContain("chain-ribbon-tile--highlight");
+
+    fireEvent.mouseLeave(tileEl);
+    expect(tileEl.className).not.toContain("chain-ribbon-tile--highlight");
+  });
 });

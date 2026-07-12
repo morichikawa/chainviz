@@ -172,6 +172,45 @@ describe("WorldStateStore.applyBlock retention window (BLOCK_RETENTION = 32)", (
     ]);
   });
 
+  it("returns an empty diff when the identical block is re-applied (no spurious update or eviction)", () => {
+    // 同一ブロックの再受信（同じ hash・同じ内容）は差分ゼロ。窓も動かさない。
+    const store = new WorldStateStore();
+    const b = block({ hash: "0xb10", number: 10, receivedAt: { a: 1000 } });
+    store.applyBlock(b);
+    const diff = store.applyBlock(
+      block({ hash: "0xb10", number: 10, receivedAt: { a: 1000 } }),
+    );
+    expect(diff).toEqual([]);
+    expect(storedBlockNumbers(store)).toEqual([10]);
+  });
+
+  it("keeps both hashes of a fork at the current tip (same number as the observed max)", () => {
+    // フォークは窓の内側だけでなく先端（観測済み最大番号）でも共存できる。
+    const store = new WorldStateStore();
+    store.applyBlock(block({ hash: "0xb1", number: 1 }));
+    const tipA = block({ hash: "0xtipA", number: 2, parentHash: "0xb1" });
+    const tipB = block({ hash: "0xtipB", number: 2, parentHash: "0xb1" });
+    store.applyBlock(tipA);
+    const diffB = store.applyBlock(tipB);
+    // 先端フォークは entityRemoved を伴わずに両方 add される（番号は進まない）。
+    expect(diffB).toEqual([{ type: "entityAdded", entity: tipB }]);
+    expect(
+      store
+        .getSnapshot()
+        .entities.filter((e) => e.kind === "block" && e.number === 2),
+    ).toHaveLength(2);
+  });
+
+  it("accepts the genesis block (number 0) as the first observation", () => {
+    // 最初の観測が番号0でも、窓下限 = 0 - 32 + 1 = -31 なので取り込まれる。
+    const store = new WorldStateStore();
+    const diff = store.applyBlock(block({ hash: "0xgenesis", number: 0 }));
+    expect(diff).toEqual([
+      { type: "entityAdded", entity: block({ hash: "0xgenesis", number: 0 }) },
+    ]);
+    expect(storedBlockNumbers(store)).toEqual([0]);
+  });
+
   it("does not disturb infra entities or edges while evicting blocks", () => {
     const store = new WorldStateStore();
     for (let n = 1; n <= 33; n++) {

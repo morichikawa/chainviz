@@ -66,6 +66,11 @@ describe("ChainRibbonCard", () => {
     expect(screen.queryByTestId("chain-ribbon-older")).toBeNull();
   });
 
+  it("omits the latest-block-number header while empty (no block observed yet)", () => {
+    renderCard(data());
+    expect(screen.queryByTestId("chain-ribbon-latest")).toBeNull();
+  });
+
   it("renders the latest block number in the header", () => {
     renderCard(data({ tiles: [tile("0x1", { number: 131 })] }));
     expect(screen.getByTestId("chain-ribbon-latest").textContent).toBe("#131");
