@@ -157,3 +157,49 @@
 `/-\s*\.\/contracts:(\S+)/` はファイル全体の最初のマッチを取るため、
 将来別サービスが `./contracts` をマウントすると意図しない行に一致し得る。
 現状は該当箇所が workbench のみで実害は無い。
+
+## QA検証（chainviz-qa）
+
+判定: **合格**。実際に稼働中の chainviz-ethereum スタックと、この
+ブランチのコードでビルドした collector（ポート4100）を使い、動的
+ワークベンチでのデプロイ・呼び出しを実機で確認した。
+
+検証手順と結果:
+
+1. 修正前の状態の確認（対照）: 稼働中に残っていた、修正前バージョンで
+   追加された動的ワークベンチ `chainviz-ethereum-test-1` を `docker inspect`
+   したところ Mounts が空で、`docker exec ... ls /contracts` が
+   `No such file or directory` を返した。これが Issue #293 の不具合そのもの
+   （動的ワークベンチに `/contracts` が無いためデプロイが失敗する状態）。
+2. 修正後の動的ワークベンチ作成: WebSocket 経由で
+   `addWorkbench(label=QaCheck293)` を送信し成功。作られたコンテナ
+   `chainviz-ethereum-QaCheck293-3` を `docker inspect` すると、bind mount
+   `<profileDir>/profiles/ethereum/contracts -> /contracts (rw)` が付与され、
+   `docker exec ... ls /contracts` で Foundry プロジェクト
+   （catalog.json / foundry.toml / src / out 等）が見えることを確認した。
+3. deployContract の成功: 同ワークベンチに `deployContract(ChainvizToken)`
+   を実行。ChainvizToken はコンストラクタに initialSupply(uint256) を取るため
+   引数無しでは `constructor argument count mismatch`（＝コントラクトは
+   発見できている。修正前の `No contract found` ではない）となり、
+   `constructorArgs=["1000000000000000000000"]` を付けて再実行すると
+   commandResult(ok:true) で成功（0x7c21…7335 へデプロイ）。修正前に必ず
+   出ていた `No contract found with the name ChainvizToken` は解消している。
+4. callContract の成功: `callContract(mint(address,uint256), [deployerAddr,
+   500e18])` を実行し成功。デプロイ側ワークベンチの鍵アドレスに対し
+   `balanceOf` を cast で確認したところ 1500e18（コンストラクタで配布した
+   1000e18 ＋ mint した 500e18）となり、デプロイ・呼び出しが実際に
+   オンチェーンへ反映されていることを確認した。なお callContract の
+   functionName は完全なシグネチャ（例: `mint(address,uint256)`）で渡す
+   必要がある（`workbench-operations.ts` の仕様どおり。関数名のみだと
+   cast がシグネチャ不足でエラーになる）。
+5. 静的ワークベンチの非退行: docker-compose.yml 定義の静的ワークベンチ
+   `chainviz-ethereum/workbench` に対しても `deployContract(ChainvizToken)`
+   を実行し commandResult(ok:true) で成功。退行が無いことを確認した。
+6. 後始末: 検証用に作成した動的ワークベンチ `QaCheck293` は
+   `removeWorkbench` で削除済み。デプロイしたコントラクトはオンチェーンに
+   残るが無害。稼働スタックへの悪影響は無い（残存する
+   `chainviz-ethereum-test-1` は検証開始前から存在していた修正前由来の
+   ワークベンチで、本検証では手を付けていない）。
+
+完了条件（PLAN.md「動的に追加したワークベンチでコントラクトデプロイが
+常に No contract found で失敗する」）を満たしていると判断する。
