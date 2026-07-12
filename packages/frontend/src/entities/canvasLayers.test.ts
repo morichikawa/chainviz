@@ -119,6 +119,20 @@ function peerEdge(id: string, source: string, target: string): CanvasFlowEdge {
   };
 }
 
+/**
+ * 任意の種別の最小エッジ（`computeLayerVisibility` は id/type/source/target
+ * しか見ないため、種別ごとの正しい data 形は境界テストでは不要）。判定表に
+ * 無い未知種別や、data 形の準備が本質でないエッジを作るために使う。
+ */
+function typedEdge(
+  id: string,
+  type: string,
+  source: string,
+  target: string,
+): CanvasFlowEdge {
+  return { id, type, source, target } as unknown as CanvasFlowEdge;
+}
+
 describe("edgeVisualizationLayer", () => {
   it("maps each in-scope edge type to its layer (UX design §3.2)", () => {
     expect(edgeVisualizationLayer({ type: PEER_EDGE_TYPE })).toBe("b");
@@ -137,6 +151,14 @@ describe("edgeVisualizationLayer", () => {
 
   it("returns undefined for an edge with no type", () => {
     expect(edgeVisualizationLayer({ type: undefined })).toBeUndefined();
+  });
+
+  it("returns undefined for an edge type absent from the decision table (unclassified/future type)", () => {
+    // 判定表に無い種別は「層を持たない」= 常に通常表示。判定表を拡張しやすい
+    // 既定動作(#299 §3.2 の表に追記するだけで済む)であることを固定する。
+    expect(
+      edgeVisualizationLayer({ type: "future-edge" } as unknown as Pick<CanvasFlowEdge, "type">),
+    ).toBeUndefined();
   });
 });
 
@@ -255,6 +277,120 @@ describe("computeLayerVisibility", () => {
     const glowing = infraNode({ id: "reth-1", data: { entity: rethEntity, isNew: true } });
     const result = computeLayerVisibility([glowing], [], "c");
     expect(result.dimNodeIds.has("reth-1")).toBe(false);
+  });
+
+  describe("boundary: endpoint promotion of selected-layer edges", () => {
+    it("promotes only endpoints of in-layer edges: an infra card wired solely by an out-of-layer edge stays dimmed", () => {
+      const infra1 = infraNode({ id: "reth-1" });
+      const infra2 = infraNode({ id: "lighthouse-1", data: { entity: lighthouseEntity } });
+      const peer = peerEdge("p1", "reth-1", "lighthouse-1"); // B層
+      // C レンズでは peer は選択層のエッジではないため端点は昇格しない。
+      const result = computeLayerVisibility([infra1, infra2], [peer], "c");
+      expect(result.dimNodeIds.has("reth-1")).toBe(true);
+      expect(result.dimNodeIds.has("lighthouse-1")).toBe(true);
+      expect(result.dimEdgeIds.has("p1")).toBe(true);
+    });
+
+    it("with an in-layer edge spanning two base layers, one endpoint's base matches the lens and the other is promoted; under another lens only the base-matching endpoint stays normal", () => {
+      const wallet = walletNode(); // base C
+      const reth = infraNode({ id: "reth-1" }); // base A
+      const ownership = typedEdge("own-1", OWNERSHIP_EDGE_TYPE, wallet.id, "reth-1"); // C層
+
+      // C レンズ: エッジは通常表示。両端点とも通常(wallet=base C, reth=端点昇格)。
+      const underC = computeLayerVisibility([wallet, reth], [ownership], "c");
+      expect(underC.dimEdgeIds.has("own-1")).toBe(false);
+      expect(underC.dimNodeIds.has(wallet.id)).toBe(false);
+      expect(underC.dimNodeIds.has("reth-1")).toBe(false);
+
+      // A レンズ: エッジ(C)は dim。reth は base A で通常、wallet は base C で dim
+      // (片方の端点だけが選択層に属するケース)。
+      const underA = computeLayerVisibility([wallet, reth], [ownership], "a");
+      expect(underA.dimEdgeIds.has("own-1")).toBe(true);
+      expect(underA.dimNodeIds.has("reth-1")).toBe(false);
+      expect(underA.dimNodeIds.has(wallet.id)).toBe(true);
+    });
+
+    it("keeps a card normal when it is an endpoint of both an in-layer and an out-of-layer edge (in-layer endpoint wins)", () => {
+      const el = infraNode({ id: "reth-1" });
+      const cl = infraNode({ id: "lighthouse-1", data: { entity: lighthouseEntity } });
+      const other = infraNode({ id: "reth-2", data: { entity: { ...rethEntity, id: "reth-2" } } });
+      const peer = peerEdge("p1", "reth-1", "reth-2"); // B層(B レンズでは in-layer)
+      const internal = typedEdge("il-1", INTERNAL_LINK_EDGE_TYPE, "reth-1", "lighthouse-1"); // D層(out)
+
+      const result = computeLayerVisibility([el, cl, other], [peer, internal], "b");
+      expect(result.dimNodeIds.has("reth-1")).toBe(false); // peer(B) の端点
+      expect(result.dimNodeIds.has("reth-2")).toBe(false); // peer(B) の端点
+      expect(result.dimEdgeIds.has("il-1")).toBe(true); // D エッジは dim
+      // internal の他端 lighthouse は peer に属さず base A → dim
+      expect(result.dimNodeIds.has("lighthouse-1")).toBe(true);
+    });
+  });
+
+  describe("edge cases: unknown/unclassified elements and empty inputs", () => {
+    it("returns empty sets for empty node/edge inputs even under a specific layer filter", () => {
+      const result = computeLayerVisibility([], [], "b");
+      expect(result.dimNodeIds.size).toBe(0);
+      expect(result.dimEdgeIds.size).toBe(0);
+    });
+
+    it("never dims a card whose type is unknown to the decision table, for every layer filter", () => {
+      const unknown = {
+        id: "mystery-1",
+        type: "future-card",
+        position: { x: 0, y: 0 },
+        data: {},
+      } as unknown as CanvasFlowNode;
+      for (const filter of ["a", "b", "c", "d"] as const) {
+        const result = computeLayerVisibility([unknown], [], filter);
+        expect(result.dimNodeIds.has("mystery-1")).toBe(false);
+      }
+    });
+
+    it("ignores an edge whose type is unknown to the decision table: it is not dimmed and its endpoints are not promoted", () => {
+      const infra1 = infraNode({ id: "reth-1" });
+      const infra2 = infraNode({ id: "lighthouse-1", data: { entity: lighthouseEntity } });
+      const unknownEdge = typedEdge("future-1", "future-edge", "reth-1", "lighthouse-1");
+      const result = computeLayerVisibility([infra1, infra2], [unknownEdge], "d");
+      // 未知エッジは層を持たない扱いで dim されない。
+      expect(result.dimEdgeIds.has("future-1")).toBe(false);
+      // 端点は「選択層のエッジの端点」として昇格しないため base A のまま D レンズで dim。
+      expect(result.dimNodeIds.has("reth-1")).toBe(true);
+      expect(result.dimNodeIds.has("lighthouse-1")).toBe(true);
+    });
+
+    it("dims nothing under 'all' even when unknown-typed nodes/edges are mixed in", () => {
+      const unknownNode = {
+        id: "x",
+        type: "future-card",
+        position: { x: 0, y: 0 },
+        data: {},
+      } as unknown as CanvasFlowNode;
+      const result = computeLayerVisibility(
+        [infraNode(), walletNode(), unknownNode],
+        [peerEdge("p1", "reth-1", "lighthouse-1")],
+        "all",
+      );
+      expect(result.dimNodeIds.size).toBe(0);
+      expect(result.dimEdgeIds.size).toBe(0);
+    });
+  });
+
+  describe("boundary: new-arrival glow exemption", () => {
+    it("still dims a card whose isNew flag is explicitly false", () => {
+      const notGlowing = infraNode({
+        id: "reth-1",
+        data: { entity: rethEntity, isNew: false },
+      });
+      const result = computeLayerVisibility([notGlowing], [], "c");
+      expect(result.dimNodeIds.has("reth-1")).toBe(true);
+    });
+
+    it("exempts a new-arrival wallet card as well (the glow check is node-type agnostic)", () => {
+      const glowingWallet = walletNode();
+      (glowingWallet.data as { isNew?: boolean }).isNew = true;
+      const result = computeLayerVisibility([glowingWallet], [], "b");
+      expect(result.dimNodeIds.has(glowingWallet.id)).toBe(false);
+    });
   });
 });
 
