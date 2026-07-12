@@ -92,7 +92,7 @@ describe("summarizeOperationError / known patterns", () => {
     const detail =
       "Error: Failed to estimate gas: server returned an error response: error code -32003: insufficient funds for gas * price + value: have 1000000000000000000000000000 want 999999999999999999999999999999999";
     expect(summarizeOperationError(detail)).toBe(
-      "insufficient balance for this transaction (have 1000000000000000000000000000, need 999999999999999999999999999999999)",
+      "insufficient balance for this transaction (have 1000000000.0 ETH, need 999999999999999.999999 ETH)",
     );
   });
 });
