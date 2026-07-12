@@ -405,3 +405,127 @@ UX観点からの見立てであり、正式なデータフロー・型設計は
   frontend 側で block 由来かどうかを区別する必要がある場合は、削除前に
   保持していたエンティティの `kind` をフロント側の store で参照すること
   （collector 側では区別する追加情報を載せていない）
+### 2026-07-12 Issue #298 frontend実装 設計メモ（着手前）
+
+- 担当: frontend
+- ブランチ: issue-298-block-stacking-visualization-frontend
+  （collector担当が同名の issue-298-block-stacking-visualization を
+  同時に使用中のため、設計メモの前例（chainviz-designer/chainviz-ux の
+  ブランチ運用）に倣い別名で分岐。統括が後で cherry-pick して合流させる
+  運用）
+- 実装方針:
+  - **データフロー**: 純粋関数を2ファイルに分離する。
+    `entities/chainRibbon.ts`（タイル列導出 `deriveRibbonTiles`・tx件数
+    `countTransactionsByBlockHash`・受信順リスト `deriveReceivedOrder`・
+    時刻整形）と `entities/blockRelations.ts`（第2段階のハイライト対象
+    アドレス導出 `deriveBlockRelatedAddresses`）。前者は「表示物の中身」、
+    後者は「カード間の相互作用」で関心事が異なるため分割する
+  - **React Flow ノード化**: `entities/chainRibbonNode.ts`
+    （`ContractCard`/`contractNode.ts` と対になる型・変換関数。id固定
+    `chain-ribbon`）+ `entities/ChainRibbonCard.tsx`（表示本体）+
+    `entities/ChainRibbonPopover.tsx`（ホバー詳細。既存の
+    `ContractPopover.tsx` と同じ `PopoverPortal` 流儀）
+  - **着地アニメーション**: 新規フック `entities/useRibbonLanding.ts`
+    （`useNewArrivalHighlight.ts` と同型。`blockPulse.ts` の
+    `isFreshBlock` を再利用して再接続時の一斉アニメーションを防ぐ）
+  - **第2段階のホバー連動**: 新規 Context
+    `entities/RibbonHoverContext.tsx`（`OperationDataContext.tsx` と
+    同じ「React Flow ノード内部からキャンバス全体の一時状態へアクセスする
+    ための Context」パターン）。状態は `hoveredBlockHash: string | null`
+    1本に一本化し、タイルホバー（`setHoveredBlockHash`）・tx/活動チップ
+    ホバー（`setHoveredTxHash` → 内部で blockHash に解決）のどちらから
+    でも同じ状態を駆動する。`highlightedAddresses` を導出値として持たせ、
+    `WalletCard`/`ContractCard` 側は自分の address が含まれるかだけを見る
+  - **App.tsx への組み込み**: `blocks`/`transactions`/`nodeEntities` は
+    既存の memo を再利用し、`deriveRibbonTiles` → `useRibbonLanding` →
+    `chainRibbonToFlowNode` の順で1ノードを組み立て、`nodes` 配列に
+    無条件で追加する（コントラクトカードと違い「常設」なので entities の
+    有無でフィルタしない）。位置は他カードと同じ `layout`
+    （`saveNodePosition`/`canvasNodeLayoutKey`）に乗せ、固定 id
+    `chain-ribbon` をキーにする
+  - **Issue #119 の stabilizeNodes 対応は見送る**: 他のカード型
+    （`isSameInfraNode` 等）と違い、リボンは1本しか無く毎ブロックで
+    実質的に内容が変わるため、内容比較による再レンダー抑制の効果が薄い。
+    `Canvas.tsx` の `preserveMeasuredDimensions` は id ベースで自動的に
+    効くため、Issue #119 の「measured 破棄によるチラつき」自体は対応済み
+    のまま。将来リボンの再レンダーコストが問題になったら追加最適化を
+    検討する（今回は見送りとその理由をここに明記するだけに留める）
+  - **モック**: `websocket/mockData.ts` に `initialMockBlocks`（初期
+    スナップショット用、direnced past `receivedAt` で鮮度ガードの外）と
+    `advanceChain`（tick ごとに1ブロック追加 + 遅延 `receivedAt` 更新 +
+    `MOCK_BLOCK_RETENTION`（モック専用の12。collector側の実窓32とは無関係）
+    超過分の evict）を追加する
+  - **既存表現の維持確認**: `blockPulse.ts`/`useBlockPulses.ts`
+    （伝播パルス）・`useTxLifecycle.ts`（tx確定演出）には一切手を入れない
+    （UX設計の「置き換えず補完する」方針どおり）
+
+### 2026-07-12 Issue #298 frontend実装
+
+- 担当: frontend
+- ブランチ: issue-298-block-stacking-visualization-frontend
+- 内容: 上記設計メモのとおり実装した。新規ファイル: `entities/chainRibbon.ts`
+  （+テスト）、`entities/blockRelations.ts`（+テスト）、
+  `entities/chainRibbonNode.ts`（+テスト）、`entities/ChainRibbonCard.tsx`
+  （+テスト）、`entities/ChainRibbonPopover.tsx`、
+  `entities/useRibbonLanding.ts`（+テスト）、
+  `entities/RibbonHoverContext.tsx`（+テスト）、
+  `entities/chainRibbonCrossHighlight.test.tsx`（リボン⇔ウォレット/
+  コントラクトの結合テスト）、
+  `websocket/mockData.chainRibbon.test.ts`。既存ファイルの変更:
+  `App.tsx`（リボンノードの組み立て・`RibbonHoverProvider` の設置）、
+  `Canvas.tsx`（`nodeTypes` へ登録）、`canvasNode.ts`（`CanvasFlowNode`
+  合併型・`canvasNodeLayoutKey` にリボンを追加）、`WalletCard.tsx`/
+  `ContractCard.tsx`（順方向ハイライトのクラス付与・tx/活動チップの
+  逆方向ホバー連動）、`i18n/messages.ts`（`chainRibbon.*` キー群）、
+  `glossary/ethereum/terms/c-transaction.yaml`（`block` 定義文にリボンへの
+  言及を追記）、`styles.css`（`.chain-ribbon-*`/`.infra-card--ribbon-highlight`）、
+  `websocket/mockData.ts`（`initialMockBlocks`/`advanceChain`）。
+- 決定事項・注意点:
+  - **`docs/PLAN.md` の Issue #298 チェックボックスはまだチェックしない**。
+    collector側（`WorldStateStore` の保持窓 `BLOCK_RETENTION=32`）が
+    並行worktreeで実装中で、統括が両ブランチを cherry-pick して合流させる
+    運用のため、片方だけでは Issue 全体が完了したことにならない。両方が
+    揃いレビュー・QAを通過した時点でチェックを付けること
+  - **canvas.empty の空状態メッセージが実質到達不能になった**:
+    チェーンリボンを `nodes` 配列に無条件で追加するようにしたため、
+    `nodes.length === 0` は常に false になる（リボン自体が空状態
+    （`chain-ribbon.empty`「ブロックの到着を待っています…」）を持つため、
+    UX的には後退ではなく改善だが、既存の「表示するコンテナがありません」
+    分岐は事実上死んだコードになった。既存テストはこの分岐に依存して
+    いなかったため退行は無いが、次にこの分岐を触る担当は事情を把握して
+    おくこと
+  - **ブロックタイムスタンプの表示形式**: `BlockEntity.timestamp` は
+    Ethereum のブロックヘッダ慣習どおり epoch秒（collector側
+    `blocks.ts`）。`toLocaleString` はホストのロケール/タイムゾーンに
+    依存し表示・テストの両方が不安定になるため、
+    `chainRibbon.ts#formatBlockTimestamp` で常に UTC 固定書式
+    （`YYYY-MM-DD HH:MM:SS UTC`）に整形する方針にした
+  - **ホバー連動ハイライト（第2段階）の実装範囲**: `WalletCard` の
+    tx チップ・`ContractCard` の活動チップの両方から逆方向ハイライト
+    （チップ → 対応タイル）を実装した（UX設計 §4.5 は「別Issueでもよい」
+    としていたが、統括のユーザー確認で今回スコープに含めることが確定して
+    いたため両方実装した）。色は新着強調と同じ `--accent`（青）を再利用し、
+    着地アニメーションの `--synced`（緑）とは意図的に系統を分けている
+    （「伝播の出来事」と「操作起点の強調」を混同させないため）
+  - **e2e**: `packages/e2e/SCENARIOS.md` に UI-B-05（基本表示・着地）・
+    UI-B-06（第2段階のホバー連動）を追記し、
+    `packages/e2e/src/ui/chain-ribbon.spec.ts` を実装した。
+    `pnpm exec playwright test --list` で2件とも正しく登録されることは
+    確認したが、**実 Docker スタックに対する実行（`pnpm test:e2e:ui`）は
+    実施していない**（frontend 実装担当の作業範囲は「モックデータでの
+    動作確認」までとし、実環境での検証は chainviz-qa に委ねる運用のため）。
+    QA は本Issueの検証時に必ず `pnpm test:e2e:ui -- chain-ribbon` を
+    実行すること
+  - **確認手段**: `pnpm --filter @chainviz/frontend dev` で起動し、
+    Playwright（`chromium.launch({ channel: "chromium" })` +
+    `LD_LIBRARY_PATH=/home/zoe/chrome-deps/root/usr/lib/x86_64-linux-gnu`。
+    §8の前例どおり `packages/e2e` 配下から `@playwright/test` の
+    `chromium` をインポートして実行）でスクリーンショットを撮り、
+    タイル表示・着地アニメーション（緑発光）・ホバーポップオーバー
+    （親ブロック行ホバーでの直前タイル強調含む）・順方向/逆方向の
+    カード間ハイライト（青枠）を目視確認した
+  - **次の担当（#296 フォーク色分け）への申し送り**: UX設計 §5 の
+    拡張点（先端の縦並置）はこの実装に含めていない。`deriveRibbonTiles`
+    の `pickCanonicalPerNumber`（同一 number は latestReceiptTime最大→
+    hash辞書順で1件選ぶ暫定ルール）を、#296 が正史判定を実装したら
+    そちらの成果物に置き換える設計にしてある
