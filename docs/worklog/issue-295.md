@@ -107,6 +107,43 @@ have/need 差の最小オーダーはガス代で、21000 gas × ~1 gwei ≈ 0.0
 アルゴリズムを参考に書き下ろしてよい）、テストケースの追加。
 変えてはいけない点: 上記の決定事項1〜3、ファイル分割方針。
 
+## 2026-07-12 Issue #295 実装（着手前メモ）
+
+- 担当: collector
+- 設計メモ（上記）の決定事項1〜3・引き継ぎ内容をそのまま採用する。
+  実装方針を以下に確認として記す。
+
+### 実装方針
+
+1. `packages/collector/src/adapters/ethereum/ether-display.ts` を新規作成し、
+   `formatWeiAsEther(wei: string): string` を実装する。中身は
+   `packages/frontend/src/entities/tokenAmount.ts` の `formatUnits`
+   （BigInt計算・符号処理・`decimals` 桁ゼロ埋めしてから先頭
+   `fractionDigits` 桁を取り出す方式）を土台に、decimals=18・
+   fractionDigits=6 固定へ単純化し、以下を追加する:
+   - 末尾ゼロを削る（ただし小数部は最低1桁残す。`replace(/0+$/, "")` の
+     結果が空文字になったら `"0"` を補う）
+   - `BigInt()` が解釈できない入力は wei をそのまま返す（既存
+     `formatUnits` と同じフォールバック方針）
+   単位 `" ETH"` は付けない（呼び出し側の `summarize` テンプレートで付与）。
+2. `ether-display.test.ts` に以下のケースを用意する: 整数ETH
+   （末尾ゼロ削り後 `.0` が残る例）、小数が6桁ちょうど、6桁を超える値の
+   切り捨て、小数末尾に複数ゼロがある場合の削り、Issueの実例
+   （`1000000000000000000000000000` → `1000000000.0` /
+   `999999999999999999999999999999999` → `999999999999999.999999`）、
+   非数値入力のフォールバック、負値。
+3. `operation-error-summary.ts` の `insufficientFunds.summarize` を
+   `formatWeiAsEther` 適用後に ` ETH` を付与する形へ変更する。
+4. `operation-error-summary.test.ts` の該当ケース（"summarizes insufficient
+   native balance for a transfer"）の期待値を ETH 表示に更新する。
+5. コミットは (a) `ether-display.ts` 新設+テスト、(b)
+   `operation-error-summary.ts` の呼び出し変更、(c)
+   `operation-error-summary.test.ts` の既存ケース期待値更新、の3つに分ける
+   （設計・エラーパターン修正・既存テスト更新で関心事が異なるため）。
+6. 実装後、`chainviz-ethereum` スタックを起動し、残高の少ないアカウントから
+   多い額を送金するコマンドを実際に発行して `commandResult.error` に
+   ETH 単位の表示が出ることを確認する。
+
 ### ARCHITECTURE.md 更新の要否
 
 不要と判断した。エラー要約機構（Issue #209）は ARCHITECTURE.md に節を
