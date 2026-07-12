@@ -9,11 +9,13 @@ import type {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas } from "../canvas/Canvas.js";
 import { CanvasToolbar } from "../canvas/CanvasToolbar.js";
+import { LayerFilterBar } from "../canvas/LayerFilterBar.js";
 import { CommandActionsProvider } from "../commands/CommandActionsContext.js";
 import { useCommands } from "../commands/useCommands.js";
 import { ToastStack } from "../notifications/Toast.js";
 import { useNotifications } from "../notifications/useNotifications.js";
 import { attachPulsesToEdges } from "../entities/blockPulse.js";
+import type { LayerFilter } from "../entities/canvasLayers.js";
 import { resolveBootNodes } from "../entities/connectionTargets.js";
 import { connectingEdgesToFlowEdges } from "../entities/connectingEdge.js";
 import {
@@ -63,6 +65,7 @@ import {
   saveNodePosition,
 } from "../layout/layoutStore.js";
 import { ETHEREUM_OPERATION_CATALOG } from "../chain-profiles/ethereum/operationCatalog.js";
+import { ETHEREUM_VISUALIZATION_LAYERS } from "../chain-profiles/ethereum/visualizationLayers.js";
 import { deriveDeployedContracts } from "../operations/deployedContracts.js";
 import { OperationDataProvider } from "../operations/OperationDataContext.js";
 import { deriveWalletCandidates } from "../operations/walletCandidates.js";
@@ -120,6 +123,9 @@ function AppShell({
   const { t } = useLanguage();
   const [layout, setLayout] = useState<LayoutMap>(() => loadLayout(storage));
   const { notifications, notify, dismiss } = useNotifications();
+  // レイヤーレンズの選択状態（Issue #299）。永続化しない（UX設計 §3.1
+  // 手順5: リロードで必ず「すべて」に戻る。開いたら全部見える、を保証する）。
+  const [layerFilter, setLayerFilter] = useState<LayerFilter>("all");
 
   const {
     state,
@@ -517,15 +523,27 @@ function AppShell({
       <CommandActionsProvider actions={actions}>
         <OperationDataProvider value={{ walletCandidates, deployedContracts }}>
           <main className="app__canvas">
-            <CanvasToolbar
-              pendingAddNode={pendingAddNode}
-              pendingAddWorkbench={pendingAddWorkbench}
-              entities={entities}
-            />
+            <div className="canvas-overlay-top">
+              <CanvasToolbar
+                pendingAddNode={pendingAddNode}
+                pendingAddWorkbench={pendingAddWorkbench}
+                entities={entities}
+              />
+              <LayerFilterBar
+                value={layerFilter}
+                onChange={setLayerFilter}
+                layers={ETHEREUM_VISUALIZATION_LAYERS}
+              />
+            </div>
             {nodes.length === 0 ? (
               <p className="app__empty">{t("canvas.empty")}</p>
             ) : (
-              <Canvas nodes={nodes} edges={edges} onPersistPosition={persist} />
+              <Canvas
+                nodes={nodes}
+                edges={edges}
+                onPersistPosition={persist}
+                layerFilter={layerFilter}
+              />
             )}
             <ToastStack notifications={notifications} onDismiss={dismiss} />
           </main>
