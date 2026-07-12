@@ -1877,3 +1877,19 @@
 - docs のみの変更(コード変更なし)のため、CLAUDE.md の例外規定により
   chainviz-qa は省略。ビルド/lint/test はコードに触れていないため
   main と同一の結果になることから省略。
+
+### 2026-07-13 サブエージェントのモデル指定をfableからopusへ統一
+
+- 担当: 統括
+- ブランチ: chore-agent-model-opus
+- 内容: ユーザーからの指示で、`.claude/agents/` 配下のうち
+  `model: fable` になっていた4エージェント定義
+  (chainviz-detective・chainviz-reviewer・chainviz-designer・
+  chainviz-ux)を `model: opus` に変更した。他の6エージェント
+  (chainviz-i18n・chainviz-node-env・chainviz-collector・
+  chainviz-frontend は sonnet、chainviz-tester・chainviz-qa は
+  既に opus)には変更なし。
+- 決定事項・注意点: `.claude/agents/*.md` のfrontmatterのみの変更で、
+  コード・スキーマへの影響は無い。CLAUDE.mdの例外規定
+  (`docs/`配下・`.claude/agents/`配下のみの変更は`chainviz-reviewer`の
+  合格のみで`chainviz-qa`を省略してよい)に従い、レビューのみを通す。
