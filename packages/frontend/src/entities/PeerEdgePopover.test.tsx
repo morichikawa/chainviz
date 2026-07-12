@@ -23,6 +23,13 @@ function wrap(
   );
 }
 
+describe("PeerEdgePopover layer badge (Issue #299)", () => {
+  it("shows the B-layer badge in the heading", () => {
+    wrap("chainviz-ethereum-execution", ["reth1", "reth2"]);
+    expect(screen.getByTestId("layer-badge-b")).toBeTruthy();
+  });
+});
+
 describe("PeerEdgePopover", () => {
   it("shows the endpoints joined with the connector symbol", () => {
     wrap("chainviz-ethereum-execution", ["reth1", "reth2"]);

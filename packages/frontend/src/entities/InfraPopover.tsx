@@ -14,6 +14,7 @@ import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { PopoverPortal } from "../interaction/PopoverPortal.js";
 import { InfraPopoverSyncStages } from "./InfraPopoverSyncStages.js";
 import type { InfraEntity } from "./infraNode.js";
+import { LayerBadge } from "./LayerBadge.js";
 import { shortHex } from "./transaction.js";
 
 /** クライアント種別を用語キーへ対応づける（EL/CL の用語解説に繋ぐ）。 */
@@ -135,6 +136,9 @@ export function InfraPopover({
       role="tooltip"
       data-testid={`infra-popover-${entity.id}`}
     >
+      <div className="infra-popover__heading">
+        <LayerBadge layer="a" />
+      </div>
       <Field label={t("field.ip")} value={entity.ip} />
       <div className="infra-field">
         <span className="infra-field__label">

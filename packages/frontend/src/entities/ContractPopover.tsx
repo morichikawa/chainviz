@@ -3,6 +3,7 @@ import type { ReactNode, RefObject } from "react";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { PopoverPortal } from "../interaction/PopoverPortal.js";
+import { LayerBadge } from "./LayerBadge.js";
 import { shortHex } from "./transaction.js";
 
 function Field({ label, value }: { label: ReactNode; value: string }) {
@@ -67,6 +68,9 @@ export function ContractPopover({
       className="infra-popover contract-popover"
       role="tooltip"
     >
+      <div className="infra-popover__heading">
+        <LayerBadge layer="c" />
+      </div>
       <p className="contract-popover__description">
         {isUncataloged
           ? withAbiAnchor(t("contract.popover.unknownDescription"))
