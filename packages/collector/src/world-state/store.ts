@@ -59,6 +59,28 @@ const MAX_WALLET_RECENT_TX_HASHES = 20;
  */
 const BLOCK_RETENTION = 32;
 
+/**
+ * store が保持する pending（未取り込み）tx エンティティ数の上限（Issue #303）。
+ * included/failed tx は対応する block の store 内存在に連動して自動的に
+ * 有界になる（`applyTransaction` の入口ガード・`evictBlocksBelow` 参照）が、
+ * pending tx は block を持たないためその窓の対象外であり、代わりにこの
+ * 件数上限で有界化する。超過時は挿入順（Map の反復順）で最古の pending
+ * から間引く。
+ *
+ * この固定値 256 が成立する前提条件（CLAUDE.md「今この瞬間に観測できる
+ * 状態に依存した固定値をロジックに埋め込まない」対応。値を変える場合は
+ * 以下も併せて見直すこと。詳細は docs/worklog/issue-303.md 参照）:
+ * - 健全に稼働するチェーンでは pending tx は 1〜2 ブロックで included へ
+ *   遷移して掃けるため、同時に滞留する pending は少数に留まる。この上限は
+ *   「今この瞬間の同時滞留数」から導いた値ではなく、「一度も採掘されない
+ *   tx（無効・過少ガス・置換で捨てられた等）が病的に溜まり続ける」ケース
+ *   だけを防ぐ安全弁として設定している
+ * - cap で間引かれた pending がその後 included/failed になった場合でも、
+ *   `applyTransaction` の入口ガードを通って再度取り込まれるため、恒久的な
+ *   取りこぼしにはならない（一時的にウォレットの tx チップ等から消えるだけ）
+ */
+const PENDING_TX_RETENTION = 256;
+
 export class WorldStateStore {
   private readonly entities = new Map<string, WorldStateEntity>();
   private edges: PeerEdge[] = [];
@@ -122,9 +144,13 @@ export class WorldStateStore {
    * - 同一番号・別ハッシュ（フォーク）のブロックはどちらも窓内であれば
    *   両方保持される（削除はブロック番号だけで判定し、ハッシュの同一性は
    *   見ない）
+   * - 窓から外れて削除される block の hash に `blockHash` が一致する
+   *   included/failed tx（`TransactionEntity`）も同じ差分の中で併せて
+   *   削除する（Issue #303。「included/failed tx が store に在るのは、
+   *   その block が store に在るときだけ」という不変条件を保つ）
    *
    * 返り値は適用した差分イベント（この block 自身の add/update に加えて、
-   * 窓から外れた既存ブロックの entityRemoved を含む）。
+   * 窓から外れた既存ブロックとそれに紐づく tx の entityRemoved を含む）。
    */
   applyBlock(block: BlockEntity): DiffEvent[] {
     const newMax =
@@ -149,12 +175,28 @@ export class WorldStateStore {
   /**
    * 保持窓の下限（`lowerBound`）未満のブロック番号を持つ block エンティティを
    * 削除し、`entityRemoved` イベントとして返す。`applyBlock` からのみ呼ぶ。
+   * 削除した block の hash に `blockHash` が一致する included/failed tx も
+   * 同じ差分イベント配列に含めて併せて削除する（Issue #303）。
    */
   private evictBlocksBelow(lowerBound: number): DiffEvent[] {
     const events: DiffEvent[] = [];
+    const evictedBlockHashes = new Set<string>();
     for (const entity of this.entities.values()) {
       if (entity.kind !== "block") continue;
       if (entity.number >= lowerBound) continue;
+      const event: DiffEvent = { type: "entityRemoved", id: entityId(entity) };
+      this.applyEvent(event);
+      events.push(event);
+      evictedBlockHashes.add(entityId(entity));
+    }
+    if (evictedBlockHashes.size === 0) return events;
+
+    // 窓落ちした block を親に持つ tx（included/failed。blockHash が一致）を
+    // 併せて削除する。pending tx（blockHash なし）はこのループの対象外
+    // （`entity.blockHash` が undefined なら Set.has は必ず false になる）。
+    for (const entity of this.entities.values()) {
+      if (entity.kind !== "transaction") continue;
+      if (!entity.blockHash || !evictedBlockHashes.has(entity.blockHash)) continue;
       const event: DiffEvent = { type: "entityRemoved", id: entityId(entity) };
       this.applyEvent(event);
       events.push(event);
@@ -165,11 +207,67 @@ export class WorldStateStore {
   /**
    * C 層の tx ライフサイクル（TransactionEntity）を取り込む。tx はハッシュを
    * キーとするエンティティなので、既存の同一 tx との差分だけを計算する
-   * （pending → included の遷移は entityUpdated として出る）。返り値は適用した
-   * 差分イベント。
+   * （pending → included の遷移は entityUpdated として出る）。
+   *
+   * Issue #303: 種別に応じて 2 系統の保持窓を適用する。
+   * - included/failed tx（`blockHash` を持つ）: **入口ガード**として、その
+   *   `blockHash` を id に持つ block が store に存在するときだけ取り込む。
+   *   存在しなければ空の差分を返して捨てる（addNode 直後の追いつきで届く
+   *   過去ブロックの tx は、対応する block が番号窓で既に弾かれているため
+   *   同じ窓で自動的に弾かれる。前提: block は対応する included/failed tx
+   *   より先に store へ届く。docs/worklog/issue-303.md 参照）。取り込んだ
+   *   場合の退去は `applyBlock`/`evictBlocksBelow` が block 退去と同時に行う
+   * - pending tx（`blockHash` を持たない）: block 連動の対象外とし、代わりに
+   *   `PENDING_TX_RETENTION` による件数上限を適用する
+   *
+   * 返り値は適用した差分イベント。
    */
   applyTransaction(tx: TransactionEntity): DiffEvent[] {
-    return this.applyKeyed(tx);
+    if (tx.blockHash !== undefined) {
+      const block = this.entities.get(tx.blockHash);
+      if (!block || block.kind !== "block") return [];
+      return this.applyKeyed(tx);
+    }
+
+    const diff = this.applyKeyed(tx);
+    const evicted = this.evictExcessPendingTransactions();
+    return evicted.length > 0 ? [...diff, ...evicted] : diff;
+  }
+
+  /**
+   * pending tx（`blockHash` なし）が `PENDING_TX_RETENTION` を超えている
+   * 場合、超過分を Map の挿入順（＝ store への取り込み順）で最古のものから
+   * 間引き、`entityRemoved` イベントとして返す。`applyTransaction` からのみ
+   * 呼ぶ。
+   */
+  private evictExcessPendingTransactions(): DiffEvent[] {
+    const pendingIds: string[] = [];
+    for (const entity of this.entities.values()) {
+      if (entity.kind === "transaction" && entity.status === "pending") {
+        pendingIds.push(entityId(entity));
+      }
+    }
+    const excess = pendingIds.length - PENDING_TX_RETENTION;
+    if (excess <= 0) return [];
+
+    const events: DiffEvent[] = [];
+    for (let i = 0; i < excess; i++) {
+      const event: DiffEvent = { type: "entityRemoved", id: pendingIds[i] };
+      this.applyEvent(event);
+      events.push(event);
+    }
+    return events;
+  }
+
+  /**
+   * 指定 hash を持つ tx エンティティが store に存在するか。`applyTransaction`
+   * の入口ガードで捨てられた（＝ store に一度も取り込まれていない）tx を
+   * 呼び出し側が判別するために使う（Issue #303。`linkTransactionToWallets`
+   * は store に存在しない tx のウォレット紐付けを避けるべきため）。
+   */
+  hasTransaction(hash: string): boolean {
+    const entity = this.entities.get(hash);
+    return entity !== undefined && entity.kind === "transaction";
   }
 
   /**
