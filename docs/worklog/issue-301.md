@@ -1,0 +1,154 @@
+# Issue #301 subscribeBlocks が動的追加ノードに newHeads 購読を張らない
+
+### 2026-07-13 Issue #301 設計メモ（実装着手前）
+- 担当: designer（設計 想）
+- ブランチ: issue-301-subscribe-blocks-dynamic-nodes
+- 対象: `packages/collector/src/adapters/ethereum/`（collector のみ）
+
+## 背景・問題
+
+`EthereumAdapter.subscribeBlocks`（`index.ts`）は起動時に一度だけ
+`this.poller.pollOnce()` → `executionTargets(observations)` で対象ノードを
+列挙し、各ノードへ永続 WebSocket（`eth_subscribe(newHeads)`）を張っている。
+このため addNode コマンドでキャンバスから動的に追加したノードには
+newHeads 購読が張られない。影響:
+
+- Issue #25（ブロック伝播パルス）: 動的追加ノードに受信時刻が乗らない。
+- Issue #296（フォーク色分け）: 動的追加ノードの `headBlockHash` が空文字列
+  （未観測）のままで色分け対象外になる。#296 は「未観測=縮退」で受容済み
+  だが、根本のギャップは未解消だった。
+- 併せて、現状は removeNode したノードの購読が `dispose()` まで close されず、
+  死んだコンテナへ 2 秒間隔で無期限に再接続を試み続ける（`eth-ws-client.ts`
+  の内部再接続。ログが出続ける潜在リーク）。本 Issue で同時に解消する。
+
+## 既存パターンの調査結果
+
+collector には「Docker 観測から対象を列挙して観測する」購読が 2 系統ある。
+
+1. **周期ポーリング系**（`subscribePeers` / `subscribeNodeInternals`）:
+   setTimeout ループで毎 tick `poller.pollOnce()` を呼び直し、その時点の
+   対象集合に対して観測する。HTTP request/response なのでノードの増減に
+   自然に追従する。`subscribeNodeInternals` は `trackedNodeInternalsIds`
+   （前 tick の stableId 集合）と突き合わせ、消えたノードのキャッシュを
+   `forgetNode()` で後始末している。
+2. **永続 WebSocket 系**（`subscribeBlocks` / `subscribeTransactions`）:
+   起動時に一度だけ列挙し、各ノードへ張った WS 購読を配列に貯める。WS は
+   長寿命の接続なので毎 tick 張り直さない。切断時の再接続は `eth-ws-client.ts`
+   の `subscribe()` 内部（Issue #135）が担う。**動的ノード追従の仕組みは無い**
+   ＝これが本 Issue のギャップ。
+
+`subscribeTransactions` も同じ「一度だけ列挙」構造で同じギャップを持つが、
+影響は限定的（詳細は後述）。本 Issue のスコープは `subscribeBlocks`。
+
+## 設計方針: 周期リコンサイル（開いたら維持、差分だけ開閉）
+
+`subscribeBlocks` を「一度だけ列挙」から「周期リコンサイルループ」へ変更する。
+`subscribePeers` / `subscribeNodeInternals` と同じ setTimeout ループにするが、
+**毎 tick 張り直すのではなく、対象集合の差分だけを開閉する**点が異なる
+（WS は長寿命接続で、毎 tick の張り直しは無駄なため）。
+
+各 tick:
+1. `poller.pollOnce()` → `executionTargets(observations)` で現在の対象を列挙。
+2. 購読レジストリ（`stableId` → 購読）と突き合わせ、
+   - レジストリに無い `stableId` → 新規に `subscribeNewHeads` を開いて登録。
+   - レジストリにあるが今回の対象に無い `stableId` → `close()` して削除。
+   - レジストリにあり `signature` が変わった `stableId` → close して開き直す
+     （後述）。
+
+### なぜ addNode/removeNode への割り込みではなく周期ループか
+
+- addNode コマンド完了時点では、作成したコンテナがまだ Docker 観測に IP 付き
+  で現れていない・reth の WS ポートが listen していないことがある。コマンド
+  フローに購読開始を割り込ませると「まだ届かないノードへ購読を試みて失敗」
+  というタイミング依存になる。周期ループなら次 tick 以降で自然に拾える。
+- removeNode も同様に、コンテナ消滅が観測へ反映されたタイミングで購読を
+  close できる。
+- 既存の `subscribeNodeInternals` が同じ理由で周期ループを採っており
+  （「毎 tick で Docker 観測を取り直すため addNode/removeNode で execution
+  ノードが増減しても追従する」）、パターンを揃えられる。
+
+### 二重購読の防止
+
+購読レジストリを `stableId` キーの Map にし、既にキーがあれば新規購読を
+開かない。これで同一ノードへの二重購読を構造的に防ぐ。
+
+### signature による張り直し（receivedAtKeys の陳腐化対策）
+
+`executionTargets` が返す `receivedAtKeys` は、対応する beacon の有無で
+`[beacon, self]` / `[self]` と変わる。newHeads コールバックはこのキー群を
+クロージャに捕捉するため、`stableId` だけをキーにすると捕捉した値が古いまま
+になりうる。addNode は reth/beacon を同時作成するが、tick のタイミング次第で
+「reth だけ先に観測 → `[self]` で購読 → 次 tick で beacon が観測される」が
+起こる。これに追従するため、購読レジストリには購読と併せて `signature`
+（`wsUrl` + `receivedAtKeys` を連結した文字列）を保持し、同じ `stableId`
+でも signature が変われば close して張り直す。これは IP 変更（`wsUrl` 変化）
+にも同時に対応する（固定 IP 帯運用では稀だが無償で頑健になる）。
+
+### WebSocket の生存確認・エラーハンドリング（Issue #135 との整合）
+
+- 個々の WS 購読の切断→再接続（コンテナ再作成など）は従来どおり
+  `eth-ws-client.ts` の `subscribe()` 内部が無期限に担う。リコンサイルは
+  「ノードが観測に居る限り購読を維持し、居なくなったら close する」だけを
+  扱い、内部再接続には干渉しない。
+- `close()` は `closedByCaller=true` を立てて内部再接続タイマーも止めるので、
+  removeNode 時にリコンサイルが close すれば死んだコンテナへの再接続ループが
+  確実に止まる（現状の潜在リークの解消）。
+- newHeads の `onError` は従来どおりログのみ（購読 1 本の異常として握って
+  継続）。onError が来ても購読レジストリからは外さない（内部再接続に任せる）。
+
+## 実装の想定構成（collector 実装担当へ）
+
+`packages/collector/src/adapters/ethereum/` 内で完結する。
+
+1. **リコンサイラを 1 ファイル 1 責務で新設**（推奨）:
+   `ws-subscription-reconciler.ts`（+ `ws-subscription-reconciler.test.ts`）。
+   `stableId` キーで `{ signature, subscription }` を保持し、
+   - `reconcile(targets, signatureOf, open)`: 新規 open / 消滅 close /
+     signature 変化で close→open。
+   - `closeAll()`: dispose 用に全 close。
+   `Subscription`（`eth-ws-client.ts`）にのみ依存する汎用クラスにしておくと、
+   後述の `subscribeTransactions` 移行や他アダプタでも再利用できる。テストは
+   フェイクの `open`／フェイク `Subscription` で「新規・消滅・signature 変化・
+   二重防止・closeAll」を検証できる（実 WS 不要）。
+2. **`index.ts` の `subscribeBlocks` をループ化**:
+   `subscribeNodeInternals` と同型に、`blockLoopRunning` / `blockTimer` を
+   持ち、`blockTick` が毎 tick `executionTargets` を取り直してリコンサイラを
+   回す。`open(target)` の中身は現状の newHeads コールバック
+   （`blockTracker.record` + `headTipCache.recordHead` + `onBlock`）をそのまま
+   使う。既存の `blockSubscriptions: NewHeadsSubscription[]` はリコンサイラに
+   置き換える。
+3. **リコンサイル間隔の定数**: `BLOCK_SUBSCRIPTION_RECONCILE_INTERVAL_MS`
+   のような定数を新設し、`deps` で上書き可能にする（テスト用）。既定は
+   `PEER_POLL_INTERVAL_MS` / `NODE_INTERNALS_POLL_INTERVAL_MS` と同じ 3000ms
+   を推奨。根拠（CLAUDE.md「観測状態に依存した固定値を埋め込まない」への
+   対応）: この値は「新規/削除ノードを何秒以内に購読へ反映するか」の応答性
+   だけを決め、他ループと同じ責務・同じ応答性でよい。値が成立する前提は
+   他の Docker 再ポーリングループと同一なので、コメントで既存定数と同根で
+   ある旨を明記すれば足りる。
+4. **`dispose()`**: `blockLoopRunning=false` + `clearTimeout(blockTimer)` +
+   `reconciler.closeAll()` に置き換える。
+
+## 決定事項
+
+- **shared 型変更なし**。`ChainAdapter.subscribeBlocks` のシグネチャ
+  （`(onBlock) => Promise<void>`）は不変。リコンサイルは `EthereumAdapter`
+  内部の実装詳細。`subscribeNodeInternals` が既に「async だが実体は setTimeout
+  ループを起動して即 resolve」なので、`subscribeBlocks` も同じ形にできる。
+- **frontend 変更なし**。配信される差分（`store.applyBlock`）は同一。
+  frontend は届いたブロック・tip をノードによらず扱うため影響しない。
+- **collector 単独で完結**。node-env の変更も不要。
+- 個々の WS の再接続は既存の Issue #135 実装に委ね、本 Issue では作らない。
+
+## 未確定・統括に確認したい点
+
+- **`subscribeTransactions` を本 Issue で一緒に直すか**（方向性の分岐）。
+  推奨は「本 Issue は `subscribeBlocks` に絞り、`subscribeTransactions` は
+  別 Issue（新設したリコンサイラを再利用）」。理由:
+  - Issue #301 のスコープが `subscribeBlocks` であり、CLAUDE.md の「先回り
+    実装をしない」に沿う。
+  - `subscribeTransactions` のギャップは影響が小さい: ブロック取り込み検知は
+    `processedBlocks` で全ノード横断に重複排除され、共有チェーン上の正準
+    ブロックはどの既存ノードにも届くため、新規ノードが無くても検知できる。
+    pending tx（mempool）も P2P でゴシップされ既存ノードの mempool に乗る。
+  - リコンサイラを汎用に作っておけば移行は軽微。
+  一緒に直す判断もありうる（機構が共通なため）。統括の判断を仰ぐ。
