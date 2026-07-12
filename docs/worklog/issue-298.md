@@ -590,3 +590,65 @@ UX観点からの見立てであり、正式なデータフロー・型設計は
   まとまっており現時点（約250行）では分割不要と判断した。
 - ビルド・テスト結果: collector build 成功 / test 1322件成功、
   frontend build 成功 / test 2003件成功（追加分 +17件）。
+
+### 2026-07-12 Issue #298 レビュー結果（差し戻し1件・統括対応2件）
+
+- 担当: reviewer
+- 対象: ブランチ `issue-298-block-stacking-visualization`（cherry-pick合流後、
+  working tree clean の状態）
+- 確認した内容:
+  - `pnpm build && pnpm lint && pnpm test` 全パッケージ通過（collector
+    1322件 / frontend 2003件）
+  - `git diff <分岐点>...HEAD` で `packages/shared` の変更が無いことを確認
+    （設計メモの「shared の型変更なし」どおり）
+  - 設計メモの3決定事項（shared/collector最小限・リボンはエンティティで
+    なく表示物・既存表現の置き換えなし）からの逸脱なし。
+    `blockPulse.ts`/`useBlockPulses.ts`/`useTxLifecycle.ts` は未変更
+  - `WorldStateStore` の保持窓は `applyBlock`/`evictBlocksBelow` に閉じて
+    おり、`applyKeyed` は未変更。tx/contract/node/wallet への影響なし。
+    `BLOCK_RETENTION=32` の前提条件コメントもコード・worklog 両方に記載
+    済み（固定値ルール準拠）
+  - 境界の遵守: フロント新規コードに Docker・チェーン固有語彙の漏れなし
+  - エラー握りつぶし: 新規コードに catch して無視する箇所なし（e2e の
+    後始末の `isVisible().catch(() => false)` は既存スペックと同じ
+    防御的クリーンアップで許容）
+  - コミット粒度・Conventional Commits: `git log main..HEAD` 17コミット
+    全て準拠。cherry-pick 由来の履歴も関心事ごとに分かれている
+  - docs: ARCHITECTURE.md §9・PLAN.md（チェック済み+Issueリンク）・
+    WORKLOG.md 索引・glossary の `block` 定義更新、いずれも実装と整合
+  - e2e: `playwright test --list` で UI-B-05/UI-B-06 の2件が登録される
+    ことを確認
+- **差し戻し（frontend担当）**:
+  1. `packages/e2e/src/ui/chain-ribbon.spec.ts` の UI-B-06 が、テスト
+     本体の内側（81行目）で `test.use({ viewport: OPERATION_PANEL_VIEWPORT })`
+     を呼んでいる。Playwright は `test.use()` をテスト内で呼ぶと実行時
+     エラー（"test.use() can only be called in a test file and can only
+     be used in the top level scope..."）で即失敗する。最小スペックで
+     実際に再現して確認済み（`--list` では検出されず、実行して初めて
+     落ちる）。既存スペック（`token-balance.spec.ts` 29行目等）と同じく
+     ファイルのトップレベルへ移すこと（同一ファイルの UI-B-05 にも
+     viewport が適用されることになるが、既存スペック群と同じ扱いで問題
+     ないか実装担当が判断すること）
+- **統括対応が必要な事項（実装の欠陥ではない）**:
+  1. ブランチの分岐点（e1327b9）が #295/#296 のマージ前で、main への
+     マージで `docs/ARCHITECTURE.md`・`docs/WORKLOG.md`・
+     `packages/frontend/src/app/App.tsx` の3ファイルがコンフリクトする
+     （`git merge-tree` で確認）。特に App.tsx は #296（フォーク色分け）と
+     #298（リボン組み込み）が同じ領域を触っており、機械的な解消では
+     済まない可能性がある。main を取り込んで解消したうえで、合流後の
+     状態で build/lint/test を再実行すること（本レビューの合格判定は
+     ブランチ単体の状態にのみ有効）
+  2. 設計メモが統括に依頼しているバックログ起票2件の確認:
+     (a) tx（TransactionEntity）の store 無制限蓄積の保持方針、
+     (b) リボン×#296 フォーク判定の統合（`pickCanonicalPerNumber` の
+     暫定ルールを #296 の成果物へ置き換える + 先端の縦並置。UX設計 §5 の
+     拡張点）。#296 は main にマージ済みだが本ブランチは分岐が先行して
+     いるため未統合のままであり、設計どおり「独立成立・後乗せ」の扱いで
+     問題ない（今回のスコープに含める必要はない）
+- 軽微な指摘（対応任意）:
+  - `store-block-retention.test.ts` の最後のテスト
+    （"does not disturb infra entities or edges..."）は名前に反して
+    infra エンティティを実際には投入しておらず、block 件数の確認しか
+    していない。テスト名どおりの検証にするなら node/edge を置いた状態で
+    evict 後も残ることを確認すべき（コメントで自認しているため
+    ブロッカーとはしない）
