@@ -144,6 +144,52 @@ have/need 差の最小オーダーはガス代で、21000 gas × ~1 gwei ≈ 0.0
    多い額を送金するコマンドを実際に発行して `commandResult.error` に
    ETH 単位の表示が出ることを確認する。
 
+### 実装結果
+
+設計・着手前メモの方針どおりに実装した。
+
+- `packages/collector/src/adapters/ethereum/ether-display.ts`（新規）:
+  `formatWeiAsEther(wei: string): string` を実装。BigInt計算、decimals=18
+  固定、小数部最大6桁を切り捨て、末尾ゼロを削る（最低1桁は残す）、
+  `BigInt()` が解釈できない入力は入力をそのまま返すフォールバック。
+- `packages/collector/src/adapters/ethereum/ether-display.test.ts`（新規）:
+  整数ETH表示・6桁ちょうど・6桁超の切り捨て（四捨五入しないことの確認）・
+  末尾ゼロ削り・ゼロ値・負値・Issue実例の2値・非数値/非整数フォールバックの
+  10ケース。
+- `operation-error-summary.ts`: `insufficientFunds.summarize` を
+  `formatWeiAsEther` 経由でETH表示にした上で `" ETH"` を付与する形へ変更。
+- `operation-error-summary.test.ts`: 既存の insufficientFunds ケースの
+  期待値を ETH 表示に更新（`have 1000000000.0 ETH, need
+  999999999999999.999999 ETH`）。
+
+コミットは (1) ether-display 新設+テスト、(2)
+operation-error-summary.ts の呼び出し変更、(3) 既存テストの期待値更新、の
+3つに分けた。
+
+### 実機検証
+
+`chainviz-ethereum` の Docker スタック（既に起動済みのものをそのまま
+利用）に対し、本ブランチでビルドした collector を別ポート
+（WebSocket 4100 / proxy 4101）で起動し、WebSocket 経由で
+`runWorkbenchOperation`（`transfer`、残高を大幅に超える金額）コマンドを
+実際に送信した。
+
+- 修正前の挙動（設計メモ・Issue本文の記述どおり、実装前のコードで再現
+  済みと判断できる）: `have <wei>, need <wei>` の生数値表示
+- 修正後の実機応答（実測）:
+  ```
+  commandResult: {"ok":false,"error":"transfer 999999999999999999999999999999999 to 0xfCd9569Ab54097047D3b512510674826aaf444d6 failed on workbench chainviz-ethereum/test: insufficient balance for this transaction (have 999998765.999999 ETH, need 999999999999999.999999 ETH)"}
+  ```
+  wei の生数値ではなく ETH 単位の小数表示になっていることを確認した。
+- 検証用に立てた collector プロセスは確認後に停止した。ワークベンチの
+  実行環境（Dockerスタック）自体は変更していない。
+
+### ビルド・テスト
+
+- `pnpm --filter @chainviz/collector build`: 成功
+- `pnpm --filter @chainviz/collector test`: 52 test files / 1319 tests
+  すべて成功
+
 ### ARCHITECTURE.md 更新の要否
 
 不要と判断した。エラー要約機構（Issue #209）は ARCHITECTURE.md に節を
