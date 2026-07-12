@@ -319,3 +319,107 @@ frontend をモックデータモード(`VITE_COLLECTOR_URL` 未設定、
   `layer` の複数値を持たせる変更はスコープ外のため、design メモの
   「妥協案」をそのまま採用する）
 
+### 2026-07-12 Issue #299 実装完了
+
+- 担当: frontend
+- ブランチ: issue-299-layer-toggle
+- 内容: 上記 UX 設計・設計メモに従い、レイヤーレンズを実装した。
+
+#### 実装したもの
+
+- `packages/frontend/src/entities/canvasLayers.ts`: 判定ロジックの純粋関数
+  (`computeLayerVisibility`)。判定表(§3.2)をそのままコード化し、
+  `dimNodeIds`/`dimEdgeIds` の2つの `Set<string>` を返す。エッジ種別→層の
+  対応、カード基本層(wallet/contract→C、infra→A)、新着発光中カードの
+  除外、ゴースト・pendingConnection・connecting の自動除外(層マッピングに
+  含めないことで実現)をすべてここに集約した
+- `packages/frontend/src/canvas/Canvas.tsx`: `layerFilter` prop を追加し、
+  `computeLayerVisibility` の結果を `displayNodes`/`displayEdges` の
+  useMemo(既存の hover/isNew 注入と同じ場所)で `className` に
+  `layer-lens-dim` 修飾クラスとして注入した。edge/node オブジェクトの
+  `className` は React Flow がそれぞれのラッパー要素
+  (`.react-flow__edge`/`.react-flow__node`)にそのまま反映するため、
+  パルスの `<circle>` を含めて1箇所の opacity 指定で丸ごと薄くできる
+  (個々の `*Edge.tsx`/`*Card.tsx` は無改修)。ホバー時の復帰は CSS の
+  `.layer-lens-dim:hover { opacity: 1 }` に任せ、JS 側の個別 hover state
+  とは独立させた(子要素のホバーでも `:hover` は祖先へ伝播するため機能する)
+- `packages/frontend/src/canvas/LayerFilterBar.tsx`: 単一選択のチップバー。
+  「レイヤー」ラベルは `visualization-layers` 用語のアンカー、各チップは
+  `ActionHint` で予告ツールチップを持つ
+- `packages/frontend/src/chain-profiles/ethereum/visualizationLayers.ts`:
+  `ETHEREUM_VISUALIZATION_LAYERS`(a/b/c/d)。`LayerFilterBar` はこれを
+  受け取ってチップを描画するだけなので、将来 D層を持たないチェーン
+  プロファイルではこの配列を短くするだけで対応できる
+- `packages/frontend/src/app/App.tsx`: `layerFilter` の state(永続化しない)
+  を持ち、`CanvasToolbar` と `LayerFilterBar` を `canvas-overlay-top`
+  (縦積みの flex コンテナ)でラップして配置した
+- `packages/frontend/src/entities/LayerBadge.tsx`: ポップオーバー見出しに
+  添える層バッジ。既存の `infra-card__badge--bootnode` と同型
+  (pill + `GlossaryTerm`)。以下7箇所の見出しに追加した:
+  `InfraPopover`(A)・`WalletPopover`(C)・`ContractPopover`(C)・
+  `PeerEdgePopover`(B)・`DeployEdgePopover`(C)・
+  `InternalLinkEdgePopover`(D)・`OperationTargetEdgePopover`(C)。
+  見出しを持たなかった `InfraPopover`/`WalletPopover`/`ContractPopover`/
+  `DeployEdgePopover` には最小限の見出し行を追加した
+- `packages/frontend/src/i18n/messages.ts`: `app.subtitle` を
+  「(A層)」→「(A層〜D層)」に修正(§3.5 のとおり `app.title` は対象外。
+  統括からの指示でスコープを subtitle のみに絞った)。`layerFilter.*`
+  (チップ・ヒント文言、§3.7 の初稿をそのまま採用)・`layerBadge.*`
+  (バッジの短縮ラベル)を追加
+- `glossary/ethereum/terms/a-infra.yaml`: `visualization-layers` を1エントリ
+  追加(`layer: a-infra` で設計メモの妥協案どおり配置)
+- `docs/ARCHITECTURE.md`: §7.4「レイヤー切り替えについて」、§7.6.2
+  「表示切り替え・フィルタは導入しない」、§7.6.10 決定事項1 を、実装内容
+  (レイヤーレンズを導入した旨)に合わせて更新した(見送り判断自体は
+  Phase 5 当時の記録として残し、その後の状況として追記する形にした)
+
+#### 遭遇した実装上の判断
+
+- `Canvas.tsx` の displayNodes 生成で `let next = node` としたあとに
+  `next.data` を参照すると、TypeScript が `node.type === X` による型の
+  絞り込みを引き継がず、`CanvasFlowNode` 合併型のまま扱われてビルドが
+  失敗した(`next` は広い型のまま)。絞り込みが効いている `node.data` を
+  参照するよう修正した(値としては同じだが、型的に安全な経路にする必要が
+  あった)
+- `OperationTargetEdgePopover.test.tsx` は元々 `GlossaryProvider` を
+  使っていなかった(用語解説アンカーが無かったため)。`LayerBadge` の追加で
+  `useGlossary()` が呼ばれるようになり、Provider 無しでは例外になる
+  ため、他の `*Popover.test.tsx` と同じ形へテストのラップも修正した
+
+#### 動作確認
+
+- `pnpm --filter @chainviz/frontend build && pnpm --filter @chainviz/frontend test`
+  が通ることを確認(127 テストファイル / 1963 テスト全て pass)
+- `npx eslint packages/frontend/src` でエラー無しを確認
+- モックデータモードで frontend を起動し(`pnpm --filter @chainviz/frontend dev`)、
+  Playwright(chromium。§8 と同じ手法で `libnspr4`/`libnss3`/
+  `libasound2t64` の `.deb` をスクラッチパッドに展開して
+  `LD_LIBRARY_PATH` 経由で起動)でスクリーンショットを取り、以下を確認した:
+  - 既定(「すべて」選択)は従来どおり全カード・全エッジが通常表示
+  - B層選択時: peer エッジで結ばれた reth-node-1/reth-node-2 のみ通常表示、
+    validator・workbench・ウォレット・コントラクトは dim
+  - C層選択時: ウォレット・コントラクト・workbench-alice・その RPC 接続先
+    (reth-node-1)は通常表示、reth-node-2・validator は dim
+  - D層選択時: internal link エッジで結ばれた reth-node-1・
+    validator-1/2(lighthouse 経由)は通常表示、reth-node-2・workbench・
+    ウォレット・コントラクトは dim
+  - D層選択中に dim されたウォレットカードをホバーすると即座に通常表示へ
+    戻り、ポップオーバーに「C層」バッジが表示される
+  - 同じチップをもう一度押すと「すべて」に戻り、dim が解除される
+  - 「レイヤー」ラベルをホバーすると `visualization-layers` の用語解説
+    ポップオーバーが表示される
+  - `InfraPopover` に「A層」バッジが表示される
+
+#### 次の担当への注意点
+
+- Issue #298(ブロック列)が実装される際は、そのブロック列コンポーネントの
+  エッジ/カードを `entities/canvasLayers.ts` の `EDGE_LAYER_BY_TYPE` /
+  `baseCardLayer` に「B層・C層の両方で通常表示」というルールで追加する
+  必要がある(現状の実装は「1エッジ種別→1層」の単純対応表なので、
+  複数層に属する種別を表現する場合はこの表の型を拡張する設計変更が要る。
+  §4 参照)
+- `chain-profiles/ethereum/visualizationLayers.ts` の
+  `ETHEREUM_VISUALIZATION_LAYERS` は現状 Ethereum 専用ファイルに直書き
+  している。複数チェーンプロファイルが実在するようになったら、
+  `App.tsx` がどのプロファイルの配列を選ぶかの分岐(または registry)が
+  別途必要になる(現状はチェーン選択 UI 自体が無い前提で固定 import)
