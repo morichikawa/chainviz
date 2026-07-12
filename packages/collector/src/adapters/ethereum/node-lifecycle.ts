@@ -45,6 +45,7 @@ import {
 } from "./wallet-derivation.js";
 import {
   buildOperationCommand,
+  CONTRACTS_MOUNT_PATH,
   describeOperation,
   parseOperationOutcome,
 } from "./workbench-operations.js";
@@ -642,6 +643,16 @@ export class EthereumNodeLifecycle implements NodeLifecycle {
       entrypoint: ["/bin/sh", "-c", "sleep infinity"],
       env,
       labels: this.workbenchLabels(service, walletIndex),
+      // サンプルコントラクトの Foundry プロジェクト（profiles/ethereum/
+      // contracts/）を静的ワークベンチ（docker-compose.yml の `workbench`
+      // サービス）と同じパスへ bind mount する。これが無いと deployContract
+      // （forge create --root /contracts ...）が /contracts の不在で必ず
+      // 失敗する（Issue #293）。read-only にしないのは、docker-compose.yml
+      // 側の静的ワークベンチも読み書き可能でマウントしており、forge create が
+      // ビルド成果物（out/・cache/）をマウント先へ書き戻すため（挙動を揃える）。
+      binds: [
+        `${this.contractsPath()}:${CONTRACTS_MOUNT_PATH}`,
+      ],
       networkName: this.cfg.networkName,
       extraHosts: this.workbenchExtraHosts(),
     };
@@ -705,6 +716,11 @@ export class EthereumNodeLifecycle implements NodeLifecycle {
 
   private scriptPath(name: string): string {
     return path.join(this.cfg.profileDir, "scripts", name);
+  }
+
+  /** サンプルコントラクトの Foundry プロジェクトのホスト絶対パス。 */
+  private contractsPath(): string {
+    return path.join(this.cfg.profileDir, "contracts");
   }
 
   private readMnemonic(): string | undefined {
