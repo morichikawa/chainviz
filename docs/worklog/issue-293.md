@@ -102,3 +102,58 @@
   実装を元へ戻した。
 - `pnpm --filter @chainviz/collector build` / `test`（1309 件）/ 新規
   ファイルの lint が通ることを確認した。
+
+## レビュー（chainviz-reviewer）
+
+判定: **合格**。依頼された観点を順に確認した。
+
+- **binds の形式と profileDir の解決**: `workbenchSpec()` の
+  `binds: ["<contractsPath()>:<CONTRACTS_MOUNT_PATH>"]` は Docker Binds の
+  `host:container` 形式として正しい。ホスト側パスは新設の私有ヘルパー
+  `contractsPath()`（`path.join(this.cfg.profileDir, "contracts")`）で
+  組み立てており、既存の `scriptPath()` と同じパターン。`profileDir` は
+  本番では `resolveProfileDir()`（`index.ts`）が `path.resolve` で絶対パス
+  として導出するため、reth/beacon の既存 binds と同じ前提で問題ない。
+- **CONTRACTS_MOUNT_PATH の再利用**: `node-lifecycle.ts` は元々
+  `workbench-operations.ts` から `buildOperationCommand` 等を import して
+  おり、既存の依存辺に定数を1つ足しただけ。`workbench-operations.ts` 側の
+  import は `@chainviz/shared` のみで、循環依存は生じていない。
+- **`:ro` を付けない判断**: forge がビルド成果物（out/・cache/）を
+  マウント先へ書き戻すこと、静的ワークベンチ（docker-compose.yml）も
+  読み書き可能でマウントしており挙動を揃えることが、実装のコメントに
+  明記されている。妥当。
+- **静的ワークベンチ側**: `git diff main..HEAD -- profiles/` は空。
+  `docker-compose.yml` の `workbench` サービスは `./contracts:/contracts`
+  を既にマウントしており変更不要。意図どおり。
+- **境界の遵守**: 変更は `ContainerSpec.binds`（`docker/operations.ts` の
+  抽象）への値追加のみ。Docker Engine API への変換は既存の
+  `dockerode-operations.ts`（`Binds: spec.binds`）が担っており、
+  node-lifecycle が Docker API の詳細に触れていない。チェーン固有の語彙が
+  shared / frontend に漏れる変更も無い。
+- **エラー握りつぶし**: 追加コードに catch は無く、該当なし。
+- **テストの質**: 基本テスト1件（node-lifecycle.test.ts）に加え、新規
+  `workbench-contracts-mount.test.ts`（9件）が source の profileDir 追従・
+  末尾スラッシュ正規化・target と `forge create --root` の一致・
+  docker-compose.yml 実ファイルとの突き合わせ・非退行（他フィールド、
+  `:ro` 無し、addNode への非波及）をカバーしている。tester が実装を
+  意図的に壊してテストが失敗することを確認済み（worklog 記載）で、
+  「壊れたコードでも通るテスト」にはなっていない。肥大化した
+  node-lifecycle.test.ts に積み増さず新規ファイルへ切り出した判断も
+  1ファイル1責務の方針に沿う。
+- **ビルド・lint・テスト**: リポジトリ全体で `pnpm build` / `pnpm lint` /
+  `pnpm test` がすべて成功（shared 62 / collector 1309 / e2e 158 /
+  frontend 1925 件、新規9件を含む）。
+- **コミット粒度**: fix → test（基本）→ docs → test（強化+その記録）の
+  4コミット。いずれも Conventional Commits 準拠で、1コミット1関心事に
+  なっている。fix コミットのメッセージ中の `Closes #293` は、CLAUDE.md が
+  禁じているのは実装担当による `gh issue close` の手動実行であり、
+  クローズ自体はレビュー・QA 後の main へのマージ時（PR 本文の Closes と
+  同じタイミング）に発火するため、手続きの骨抜きにはならず問題ない。
+- **docs**: worklog・PLAN.md（チェック+Issueリンク）・WORKLOG.md（索引1行）
+  が実装内容を正しく反映している。ARCHITECTURE.md / CONCEPT.md の記述と
+  矛盾する点は無い（既存の抽象・構成の範囲内の修正のため追記不要）。
+
+軽微な備考（差し戻し不要）: compose 突き合わせテストの正規表現
+`/-\s*\.\/contracts:(\S+)/` はファイル全体の最初のマッチを取るため、
+将来別サービスが `./contracts` をマウントすると意図しない行に一致し得る。
+現状は該当箇所が workbench のみで実害は無い。
