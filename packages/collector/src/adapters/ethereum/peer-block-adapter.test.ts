@@ -48,6 +48,28 @@ function clientFrom(fixtures: Fixture[]): DockerClient {
   };
 }
 
+/**
+ * `fixtures` を毎回参照で読み直す DockerClient。配列の中身を呼び出し側が
+ * 書き換える（push/splice/length=0）ことで、addNode/removeNode 相当のノード
+ * 増減を後続の poll で反映できる（head-block-hash.test.ts の
+ * mutableClientFrom と同じ発想。`clientFrom` は `getContainer` の解決に
+ * 作成時点の `byId` スナップショットを使うため、生成後に追加された
+ * コンテナの `top()` を正しく解決できない点が異なる）。
+ */
+function mutableClientFrom(fixtures: Fixture[]): DockerClient {
+  return {
+    listContainers: async () => fixtures.map((f) => f.summary),
+    getContainer: (id: string) => ({
+      top: async () =>
+        fixtures.find((f) => f.summary.Id === id)?.top ?? {
+          Titles: ["CMD"],
+          Processes: [],
+        },
+      stats: async () => zeroStats,
+    }),
+  };
+}
+
 function beaconFixture(
   service: string,
   ip: string,
@@ -281,6 +303,17 @@ function controllableWsClient(): {
       return {
         close(): void {
           closed.push(wsUrl);
+          // 実際の WebSocket close と同様、close 済みのハンドラには以後の
+          // emit を届けない（この特定のハンドラだけを取り除く。同じ wsUrl
+          // への他の購読（B 層/C 層、または張り直し後の新しい購読）には
+          // 影響しない。Issue #301: リコンサイルが signature 変化で
+          // close→open する際、古いハンドラが emit で呼ばれ続けないことを
+          // テストで確認できるようにするため）。
+          const current = headHandlers.get(wsUrl);
+          if (current) {
+            const idx = current.indexOf(onHeader);
+            if (idx !== -1) current.splice(idx, 1);
+          }
         },
       };
     },
@@ -827,6 +860,7 @@ describe("EthereumAdapter.subscribeBlocks", () => {
     });
     expect(blocks[1].number).toBe(16);
     expect(blocks[1].hash).toBe("0xblock1");
+    adapter.dispose();
   });
 
   it("falls back to the execution node's own stableId when it has no beacon", async () => {
@@ -847,6 +881,7 @@ describe("EthereumAdapter.subscribeBlocks", () => {
     expect(blocks[0].receivedAt).toEqual({
       "chainviz-ethereum/reth1": 1000,
     });
+    adapter.dispose();
   });
 
   it("keys receivedAt by each execution node's own stableId when none have a beacon", async () => {
@@ -875,6 +910,7 @@ describe("EthereumAdapter.subscribeBlocks", () => {
       "chainviz-ethereum/reth1": 1000,
       "chainviz-ethereum/reth2": 1300,
     });
+    adapter.dispose();
   });
 
   it("mixes beacon-keyed and self-keyed receivedAt within one block", async () => {
@@ -906,6 +942,7 @@ describe("EthereumAdapter.subscribeBlocks", () => {
       "chainviz-ethereum/reth1": 1000,
       "chainviz-ethereum/reth2": 1400,
     });
+    adapter.dispose();
   });
 
   it("shares a beacon key across execution nodes while still keying each node's own EL edge separately", async () => {
@@ -940,6 +977,7 @@ describe("EthereumAdapter.subscribeBlocks", () => {
       "chainviz-ethereum/reth1": 1000,
       "chainviz-ethereum/geth1": 1500,
     });
+    adapter.dispose();
   });
 
   it("closes all subscriptions on dispose", async () => {
@@ -968,6 +1006,146 @@ describe("EthereumAdapter.subscribeBlocks", () => {
     const adapter = new EthereumAdapter(poller, { ethWsClient: ws.client });
     await adapter.subscribeBlocks(() => {});
     expect(ws.subscribedUrls).toEqual([]);
+    adapter.dispose();
+  });
+});
+
+describe("EthereumAdapter.subscribeBlocks dynamic node tracking (Issue #301)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("opens a newHeads subscription for an execution node that first appears on a later reconcile tick (addNode)", async () => {
+    const containers: Fixture[] = [];
+    const poller = new DockerPoller(mutableClientFrom(containers));
+    const ws = controllableWsClient();
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      blockSubscriptionReconcileIntervalMs: 3000,
+    });
+
+    await adapter.subscribeBlocks(() => {});
+    expect(ws.subscribedUrls).toEqual([]);
+
+    // addNode 相当: reth1 が observation に現れる。
+    containers.push(rethFixture("reth1", "172.28.1.1"));
+    await vi.advanceTimersByTimeAsync(3000);
+
+    expect(ws.subscribedUrls).toEqual(["ws://172.28.1.1:8546"]);
+    adapter.dispose();
+  });
+
+  it("closes an execution node's subscription once it disappears from a later reconcile tick (removeNode) instead of leaving it open until dispose", async () => {
+    const containers: Fixture[] = [rethFixture("reth1", "172.28.1.1")];
+    const poller = new DockerPoller(mutableClientFrom(containers));
+    const ws = controllableWsClient();
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      blockSubscriptionReconcileIntervalMs: 3000,
+    });
+
+    await adapter.subscribeBlocks(() => {});
+    expect(ws.subscribedUrls).toEqual(["ws://172.28.1.1:8546"]);
+
+    // removeNode 相当: observation から消える。
+    containers.length = 0;
+    await vi.advanceTimersByTimeAsync(3000);
+
+    // dispose() を呼ぶ前の時点で、既に close されている（旧実装では
+    // dispose() まで close されず、死んだコンテナへの再接続タイマーが
+    // 無期限に残る潜在リークがあった。Issue #301 の副次的な解消点）。
+    expect(ws.closed).toEqual(["ws://172.28.1.1:8546"]);
+    adapter.dispose();
+  });
+
+  it("does not close and reopen the subscription across ticks when the target set is unchanged (idempotent reconcile)", async () => {
+    const containers: Fixture[] = [rethFixture("reth1", "172.28.1.1")];
+    const poller = new DockerPoller(mutableClientFrom(containers));
+    const ws = controllableWsClient();
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      blockSubscriptionReconcileIntervalMs: 3000,
+    });
+
+    await adapter.subscribeBlocks(() => {});
+    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(3000);
+
+    // signature（wsUrl + receivedAtKeys）が変わらない限り、同一ノードへの
+    // 購読は最初の1回だけで維持される（毎 tick 張り直さない）。
+    expect(ws.subscribedUrls).toEqual(["ws://172.28.1.1:8546"]);
+    expect(ws.closed).toEqual([]);
+    adapter.dispose();
+  });
+
+  it("closes and reopens the subscription when a paired beacon appears on a later tick and receivedAtKeys change (addNode: reth observed before its beacon)", async () => {
+    // addNode は reth/beacon を同時作成するが、Docker 観測への反映タイミング
+    // 次第で reth のみ先に観測されることがある（設計メモ参照）。
+    const containers: Fixture[] = [rethFixture("reth1", "172.28.1.1")];
+    const poller = new DockerPoller(mutableClientFrom(containers));
+    const ws = controllableWsClient();
+    let clock = 1000;
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      blockSubscriptionReconcileIntervalMs: 3000,
+      now: () => clock,
+    });
+    const blocks: BlockEntity[] = [];
+
+    await adapter.subscribeBlocks((b) => blocks.push(b));
+    expect(ws.subscribedUrls).toEqual(["ws://172.28.1.1:8546"]);
+
+    ws.emit("ws://172.28.1.1:8546", header());
+    expect(blocks[0].receivedAt).toEqual({ "chainviz-ethereum/reth1": 1000 });
+
+    // 次 tick で beacon1 が観測に現れ、reth1 の receivedAtKeys が
+    // [self] -> [beacon1, self] へ変わる（signature 変化）。
+    containers.push(beaconFixture("beacon1", "172.28.2.1"));
+    await vi.advanceTimersByTimeAsync(3000);
+
+    // 同じ wsUrl へ張り直す（close されてから再度 open される）。
+    expect(ws.closed).toEqual(["ws://172.28.1.1:8546"]);
+    expect(ws.subscribedUrls).toEqual([
+      "ws://172.28.1.1:8546",
+      "ws://172.28.1.1:8546",
+    ]);
+
+    clock = 2000;
+    // 同じブロックハッシュ（header() の既定値）を再送する想定なので、
+    // BlockPropagationTracker は既に記録済みの reth1（1000）はそのまま
+    // 保持し、まだ記録の無い beacon1 だけを新しい時刻（2000）で追加する
+    // （blocks.ts の「同一キーは初回の時刻を保持する」仕様どおり）。
+    ws.emit("ws://172.28.1.1:8546", header());
+    expect(blocks[1].receivedAt).toEqual({
+      "chainviz-ethereum/beacon1": 2000,
+      "chainviz-ethereum/reth1": 1000,
+    });
+    adapter.dispose();
+  });
+
+  it("is idempotent: a second subscribeBlocks call does not start a second reconcile loop", async () => {
+    const poller = new DockerPoller(
+      clientFrom([rethFixture("reth1", "172.28.1.1")]),
+    );
+    const pollSpy = vi.spyOn(poller, "pollOnce");
+    const ws = controllableWsClient();
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      blockSubscriptionReconcileIntervalMs: 3000,
+    });
+
+    await adapter.subscribeBlocks(vi.fn());
+    await adapter.subscribeBlocks(vi.fn());
+    await vi.advanceTimersByTimeAsync(0);
+
+    // 二重に subscribeBlocks を呼んでも、1 巡分のポーリング（初回 tick）しか
+    // 走っていない（2 回目の呼び出しは即座に return する）。
+    expect(pollSpy).toHaveBeenCalledTimes(1);
+    expect(ws.subscribedUrls).toEqual(["ws://172.28.1.1:8546"]);
+    adapter.dispose();
   });
 });
 
