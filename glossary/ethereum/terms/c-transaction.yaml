@@ -34,15 +34,18 @@ block:
       直前のブロックのハッシュ（parentHash）を指しており、この連なりが
       「ブロックチェーン」そのものになる。過去のブロックを改ざんすると
       この連結が切れるため、一度取り込まれた記録は事実上守られる。
-      chainviz ではノードのブロック高と、新ブロック到着時の伝播パルスと
-      して見える。
+      chainviz ではノードのブロック高・新ブロック到着時の伝播パルスに加え、
+      キャンバス上の「チェーン」カード（チェーンリボン）で、この連なりが
+      タイルとして積み上がっていく様子をそのまま見られる。
     en: >-
       The unit that appends a batch of transactions to the chain. Each
       block points to the hash of the previous one (parentHash), and that
       chain of links is what makes it a "blockchain". Tampering with a past
       block breaks this chain of links, which is why an included record is
       effectively protected once it lands. chainviz shows this as a node's
-      block height and as a propagation pulse when a new block arrives.
+      block height, a propagation pulse when a new block arrives, and — on
+      the canvas — a "Chain" card (the chain ribbon) where this chain of
+      links visibly stacks up as tiles.
   layer: c-transaction
   relatedTerms: [transaction, mempool, gossip]
 
