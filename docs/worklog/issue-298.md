@@ -321,3 +321,87 @@ UX観点からの見立てであり、正式なデータフロー・型設計は
   - tx（TransactionEntity）の store 無制限蓄積は本 Issue の範囲外として
     残る（表示が「直近N件」に閉じないため別途設計が要る）。バックログ
     Issue 起票を統括に依頼する
+
+### 2026-07-12 Issue #298 collector側実装: ブロック番号ベースの保持窓
+
+- 担当: collector
+- ブランチ: issue-298-block-stacking-visualization
+- スコープ: designer が確定した ARCHITECTURE.md §9.2 の仕様どおり、
+  `WorldStateStore.applyBlock` に保持窓を実装した。新規 RPC・アダプタ変更・
+  shared の型変更はなし。
+
+#### 着手前の方針確認（設計メモ）
+
+- 対象は `packages/collector/src/world-state/store.ts` の `applyBlock` の
+  みで、`applyKeyed`（block/transaction/contract 共通の単一エンティティ
+  取り込み処理）はそのまま流用する。block だけが保持窓の対象なので、
+  `applyBlock` 側で窓判定・evict を行い、`applyKeyed` 自体は変更しない
+  （tx・contract には影響を与えない）
+- 状態として `maxObservedBlockNumber`（観測済み最大ブロック番号、単調増加）
+  を store のプライベートフィールドに追加する。窓の下限は
+  `maxObservedBlockNumber - BLOCK_RETENTION + 1`
+- 処理順序: (1) 新しい最大値 `newMax` を計算 → (2) 今回のブロックが
+  `newMax` 基準の窓より古ければ空配列を返して終了（`maxObservedBlockNumber`
+  も更新しない）→ (3) 窓内なら `maxObservedBlockNumber` を更新し、
+  `applyKeyed` で通常どおり add/update を計算 → (4) 窓から外れた既存の
+  block エンティティを number 基準で探索して `entityRemoved` を生成・適用し、
+  (3) の差分と結合して返す
+- evict は挿入順ではなく `entities` 全走査で `kind === "block" && number <
+  windowLowerBound` を条件に判定する（store 全体のエンティティ数はノード数
+  等に比べて block が支配的なので、線形走査のコストは許容範囲と判断）
+- `BLOCK_RETENTION = 32` はコード上の定数コメントに前提条件（表示件数8以上・
+  フォーク共存・`BlockPropagationTracker` からの遅延 receivedAt マージが
+  窓内で反映される余裕）を明記し、このファイルにも同じ内容を残す
+  （CLAUDE.md の固定値ルール対応）
+
+#### テスト
+
+- `packages/collector/src/world-state/store-block-retention.test.ts` を
+  新規ファイルとして分離した（既存の `store.test.ts` は 800 行超まで
+  肥大化しており、これ以上関心事の異なるテストを積み増さない方針。
+  `store-transaction-wallet-link.test.ts` と同じ「関心事ごとに分離する」
+  既存パターンに合わせた）
+- ケース: ちょうど32件投入（evictなし）/ 33件目投入時に最古の1件が
+  entityRemoved / 大きな番号ギャップで複数件を一度に evict / 窓より
+  古い番号の流入拒否（空diff・store状態不変）/ 境界値（下限ちょうどは
+  受理、下限-1は拒否）/ フォーク（同一番号2ハッシュ）が窓内で共存し、
+  窓が進むと両方同時に evict される / 拒否されたブロックが
+  `maxObservedBlockNumber` を動かさない（＝窓を縮めない）ことの確認 /
+  窓内に残るブロックへの entityUpdated（receivedAt の遅延マージ）が
+  保持窓と共存すること
+- 退行検出の確認: 実装前の store.ts（`git stash` で一時的に変更を戻した
+  状態）でこの新規テストファイルを実行し、6件のテストが実際に失敗する
+  ことを確認してから実装を復元した（CLAUDE.md「回帰テストを書く場合は
+  そのテストが実際に元の不具合を検出できることを確認する」対応）
+
+#### 実機確認
+
+- 既に3時間以上稼働していた `profiles/ethereum` の共有 Docker スタック
+  （複数 worktree で共有しているホストの docker daemon 上のスタック。
+  他チームが利用中の可能性を考慮し、`docker compose up -d` での再起動や
+  停止は行わず既存スタックをそのまま利用した）に対し、collector を
+  ポート 4100/4101（既定の 4000/4001 とは別ポート。他の作業中プロセスとの
+  衝突を避けるため）で起動し、小さな WebSocket クライアントスクリプトで
+  `snapshot`/`diff` を購読して確認した
+- 観測結果（約95秒間）: block の entityAdded 47件・entityRemoved 35件、
+  最終的に store 内の block エンティティ数は常に32件に収束していた。
+  33件目の到着から evict が始まり、以後は「1件追加 → 1件削除」で32件を
+  維持する挙動を確認（設計どおり）
+- 検証に使った一時スクリプト（`packages/collector/watch-298.mjs`）は
+  作業ディレクトリに残さず削除済み
+
+#### ビルド・テスト結果
+
+- `pnpm --filter @chainviz/collector build`: 成功
+- `pnpm --filter @chainviz/collector test`: 52 test files / 1319 tests
+  すべて成功（新規10件を含む）
+
+#### 次の担当（frontend）への申し送り
+
+- collector 側は完了。frontend 側のチェーンリボン実装は本変更に依存せず
+  並行着手可能（設計メモの「作業分担と依存」節のとおり）
+- `entityRemoved` は block の evict でも通常の削除（node/workbench の
+  A層差分など）でも同じ `{ type: "entityRemoved", id }` 形で届く。
+  frontend 側で block 由来かどうかを区別する必要がある場合は、削除前に
+  保持していたエンティティの `kind` をフロント側の store で参照すること
+  （collector 側では区別する追加情報を載せていない）
