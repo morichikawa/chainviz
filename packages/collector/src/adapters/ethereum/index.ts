@@ -54,6 +54,7 @@ import {
   type NewHeadsSubscription,
   type Subscription,
 } from "./eth-ws-client.js";
+import { HeadTipCache } from "./head-tip-cache.js";
 import { createFetchHttpClient, type HttpClient } from "./http-client.js";
 import { PeerObservationCache } from "./peer-observation-cache.js";
 import { toPeerEdges, type NodePeers } from "./peers.js";
@@ -223,6 +224,12 @@ export class EthereumAdapter implements ChainAdapter {
   // 判定ロジックも異なるため別のキャッシュに分ける。書き込み・読み出しの
   // タイミングは syncStatusCache と同じ。
   private readonly beaconSyncStatusCache = new BeaconSyncStatusCache();
+  // B層観測（既存の eth_subscribe(newHeads)。追加購読ゼロ、Issue #296）から
+  // NodeEntity.headBlockHash を解決するためのキャッシュ。書き込みは
+  // subscribeBlocks の newHeads コールバック、読み出しは toEntity（A層。
+  // pollInfra）から行う（head-tip-cache.ts のコメント参照。syncStatusCache と
+  // 同じ「書き込みは購読、store の書き手は applyInfra 1 本」構造）。
+  private readonly headTipCache = new HeadTipCache();
 
   private peerTimer?: ReturnType<typeof setTimeout>;
   private peerLoopRunning = false;
@@ -338,6 +345,14 @@ export class EthereumAdapter implements ChainAdapter {
    * `beaconSyncStatusCache`（CL、Beacon API の自己申告同期状態由来）から
    * `toEntity()` が毎回埋める。書き手は本メソッド（applyInfra 経由）1 本の
    * まま変わらない（docs/worklog/issue-187.md・issue-274.md 参照）。
+   *
+   * B層（Issue #296）: `NodeEntity.headBlockHash` も、subscribeBlocks の
+   * newHeads コールバックが別途更新している `headTipCache` から
+   * `toEntity()` が毎回埋める。あわせて、今回の観測に含まれるノードの
+   * stableId 集合で `headTipCache.prune()` を呼び、観測から消えた
+   * ノード（removeNode 等）の前回 tip を破棄する（`trackedNodeInternalsIds`
+   * と同じ「毎 tick 現在の対象集合と突き合わせて破棄する」方式。head-tip-
+   * cache.ts 参照）。
    */
   async pollInfra(): Promise<Partial<WorldStateSnapshot>> {
     const observations = await this.poller.pollOnce();
@@ -349,6 +364,11 @@ export class EthereumAdapter implements ChainAdapter {
       }
     }
     this.resolveDrivesNodeId(entities, observations);
+    this.headTipCache.prune(
+      new Set(
+        entities.filter((e) => e.kind === "node").map((e) => e.id),
+      ),
+    );
     return {
       chainType: this.chainType,
       entities,
@@ -427,12 +447,18 @@ export class EthereumAdapter implements ChainAdapter {
     // 両キャッシュの対象ノード集合は互いに素なので参照順に意味は無い。
     // どちらにも観測が無い（観測前・reth のバージョン差で Finish メトリクス
     // 自体が無い・lighthouse 以外の CL クライアントで is_syncing が読めない
-    // 等）場合は既存のプレースホルダのまま（headBlockHash は本Issueのスコープ
-    // 外で常に空文字列。docs/ARCHITECTURE.md §7.3、docs/worklog/issue-187.md・
-    // issue-274.md 参照）。
+    // 等）場合は既存のプレースホルダのまま（docs/ARCHITECTURE.md §7.3、
+    // docs/worklog/issue-187.md・issue-274.md 参照）。
     const resolvedSync =
       this.syncStatusCache.resolve(obs.stableId) ??
       this.beaconSyncStatusCache.resolve(obs.stableId);
+    // 各ノードが見ている tip は B層観測のキャッシュ（headTipCache、
+    // Issue #296）から埋める。書き込みは subscribeBlocks の newHeads
+    // コールバックのみで、追加の RPC 購読は発生しない。subscribeBlocks が
+    // 未起動（呼ばれていない）・対象ノードにまだ newHeads が届いていない・
+    // validator（P2P 非参加で対象外）の場合は既定の空文字列（= 未観測。
+    // フロントは tip 比較の対象から除外する。docs/ARCHITECTURE.md §9.2）。
+    const headBlockHash = this.headTipCache.resolve(obs.stableId) ?? "";
     const roleLabel = obs.labels[ROLE_LABEL];
     return {
       ...infra,
@@ -441,7 +467,7 @@ export class EthereumAdapter implements ChainAdapter {
       clientType: classification.clientType,
       syncStatus: resolvedSync?.syncStatus ?? "syncing",
       blockHeight: resolvedSync?.blockHeight ?? 0,
-      headBlockHash: "",
+      headBlockHash,
       // ノードの役割（Issue #215）。ROLE_LABEL（com.chainviz.role）の生値を
       // そのまま転記する。値の妥当性検証・解釈（execution/consensus/
       // validator の意味づけ）はフロントのチェーンプロファイル表現セットの
@@ -652,6 +678,10 @@ export class EthereumAdapter implements ChainAdapter {
    * 受信 1 回につき target.receivedAtKeys の全キー（beacon と Execution
    * 自身、または Execution 自身のみ）へ同一時刻で記録することで、CL エッジ・
    * EL エッジの両方にブロック伝播パルスが乗るようにする（Issue #141）。
+   *
+   * 同じ受信 1 回で、同じ target.receivedAtKeys の全キーへ今回のヘッダの
+   * ハッシュを tip として `headTipCache` にも記録する（Issue #296。追加の
+   * RPC・購読は発生しない。書き込みは head-tip-cache.ts 参照）。
    */
   async subscribeBlocks(onBlock: (block: BlockEntity) => void): Promise<void> {
     const observations = await this.poller.pollOnce();
@@ -666,6 +696,7 @@ export class EthereumAdapter implements ChainAdapter {
             header,
             this.now(),
           );
+          this.headTipCache.recordHead(target.receivedAtKeys, header.hash);
           onBlock(block);
         },
         (err) =>

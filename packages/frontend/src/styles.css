@@ -39,6 +39,17 @@
      --contract-edge の飽和したインディゴ(#6f7dea)だが、こちらは彩度を
      大きく落とした淡いシルバーブルーで、視覚的に混同しない。 */
   --internal-edge: #c9d4e8;
+  /* B層拡張: フォーク（一時的な分岐）色分け（ARCHITECTURE.md §9。Issue #296）。
+     ノードカードの outline（枠の border-color/box-shadow とは別プロパティ）
+     専用の2色。既存のカード色体系（ワークベンチの紫 #7a5cff・ウォレットの
+     琥珀 --own-edge・コントラクトのインディゴ --contract-edge）、エッジ色
+     体系（ピア接続の6色パレット・所有の琥珀・操作のマゼンタ --op-edge・
+     内部リンクのシルバー --internal-edge）のどの色とも大きくズレた、
+     彩度の高いゴールドイエロー / エレクトリックシアンにする。3枝目以降が
+     同時に出る稀なケースは outline-style（実線/破線）を掛け合わせて
+     区別する（.infra-card--fork-2/3、下記）ため、2色で4枝まで表現できる。 */
+  --fork-color-a: #ffcc00;
+  --fork-color-b: #00e0ff;
   font-family:
     "Inter", system-ui, -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN",
     "Noto Sans JP", sans-serif;
@@ -424,6 +435,36 @@ body {
 .infra-card--contract-unknown {
   border-style: dashed;
   border-color: var(--muted);
+}
+
+/* --- B層拡張: フォーク（一時的な分岐）の色分け（ARCHITECTURE.md §9。
+   Issue #296） ---
+   `border-color` は役割別のカード枠（ワークベンチの紫・ウォレットの琥珀・
+   コントラクトのインディゴ）が既に使っているため、フォーク色は `outline`
+   （独立したボックスモデルのプロパティ）で表現し、両者が同時に成立しても
+   打ち消し合わない。同じ tip を見ているノードは同じクラスになる。 */
+.infra-card--fork-0 {
+  outline: 3px solid var(--fork-color-a);
+  outline-offset: 3px;
+  box-shadow: 0 0 12px rgba(255, 204, 0, 0.45);
+}
+
+.infra-card--fork-1 {
+  outline: 3px solid var(--fork-color-b);
+  outline-offset: 3px;
+  box-shadow: 0 0 12px rgba(0, 224, 255, 0.45);
+}
+
+.infra-card--fork-2 {
+  outline: 3px dashed var(--fork-color-a);
+  outline-offset: 3px;
+  box-shadow: 0 0 12px rgba(255, 204, 0, 0.45);
+}
+
+.infra-card--fork-3 {
+  outline: 3px dashed var(--fork-color-b);
+  outline-offset: 3px;
+  box-shadow: 0 0 12px rgba(0, 224, 255, 0.45);
 }
 
 .contract-card__badges {

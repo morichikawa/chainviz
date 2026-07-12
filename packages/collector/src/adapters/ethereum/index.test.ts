@@ -128,7 +128,9 @@ describe("EthereumAdapter.pollInfra", () => {
     expect(node.ports).toEqual([8545]);
     // 代表プロセスはクライアント種別に一致するものを選ぶ
     expect(node.process.name).toBe("reth");
-    // A 層では同期状態・ブロック高は未取得のプレースホルダ
+    // A 層では同期状態・ブロック高は未取得のプレースホルダ。headBlockHash も
+    // B 層購読（subscribeBlocks）を呼んでいないため未観測のまま空文字列
+    // （Issue #296。実際に埋まる経路は head-block-hash.test.ts で確認する）。
     expect(node.syncStatus).toBe("syncing");
     expect(node.blockHeight).toBe(0);
     expect(node.headBlockHash).toBe("");

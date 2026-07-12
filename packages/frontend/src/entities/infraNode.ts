@@ -76,6 +76,18 @@ export interface InfraNodeData extends Record<string, unknown> {
    * `useCommands` の `pendingRemovalIds` から後付けする。
    */
   removalPending?: boolean;
+  /**
+   * entity が node で、フォーク（一時的な分岐）検知の結果このノードが
+   * 属する枝に割り当てられた色のパレット index（0〜3。
+   * `entities/useForkColors.ts` の `FORK_COLOR_PALETTE_SIZE` 参照。
+   * ARCHITECTURE.md §9、Issue #296）。フォークが検知されていない・
+   * このノードの `headBlockHash` が未観測（空文字列）・対応する
+   * `BlockEntity` が引けない、のいずれかであれば省略する。isNew 等と
+   * 同じ理由（tip 集合全体・時間経過に依存する派生状態）で
+   * entitiesToFlowNodes 自体は持たず、呼び出し側（App.tsx）が
+   * `useForkColorAssignment` の結果から後付けする。
+   */
+  forkColorIndex?: number;
 }
 
 export type InfraFlowNode = Node<InfraNodeData, "infra">;

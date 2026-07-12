@@ -31,6 +31,13 @@ import type { InfraFlowNode } from "./infraNode.js";
  * カード全体を半透明化し、削除ボタンをスピナー付きの無効状態にする（Issue
  * #222。追加時の仮カード（`.ghost-card`）と同じ見た目の流儀で「進行中」を
  * 示す）。
+ *
+ * `data.forkColorIndex` が数値のとき（entity が node で、フォーク検知の
+ * 結果このノードがいずれかの枝に分類されているとき）、専用のフォーク色
+ * 系統（`.infra-card--fork-0`〜`.infra-card--fork-3`、`styles.css`）で
+ * カード枠を縁取る。同じ tip を見ているノードは同じ色になる（ARCHITECTURE.md
+ * §9.3、Issue #296）。既存の役割別カード枠（ワークベンチの紫等）とは別の
+ * CSSプロパティ（outline）を使うため両立する。
  */
 export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
   const {
@@ -43,6 +50,7 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
     isNew,
     operationPending,
     removalPending,
+    forkColorIndex,
   } = data;
   const { t, lang } = useLanguage();
   const actions = useCommandActions();
@@ -97,6 +105,10 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
     // 削除コマンド送信からcommandResultが返るまでの間だけ付く見た目
     // （半透明化。ゴーストカードと同じ opacity/pointer-events。Issue #222）。
     removalPending ? "infra-card--removing" : "",
+    // フォーク（一時的な分岐）検知の結果このノードが分類された枝の色
+    // （Issue #296）。entity が node かつ検知対象外（headBlockHash 未観測・
+    // フォークなし）なら forkColorIndex は undefined でクラス自体を出さない。
+    typeof forkColorIndex === "number" ? `infra-card--fork-${forkColorIndex}` : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -230,6 +242,7 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
           drivenByContainerName={drivenByContainerName}
           drivenByNodeRole={drivenByNodeRole}
           maxElBlockHeight={maxElBlockHeight}
+          forkColorIndex={forkColorIndex}
         />
       )}
       {entity.kind === "workbench" && operationPanelOpen && (

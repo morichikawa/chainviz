@@ -62,6 +62,8 @@ export const messages = {
   "field.blockHeight": { ja: "ブロック高", en: "Block height" },
   "sync.synced": { ja: "同期済み", en: "Synced" },
   "sync.syncing": { ja: "同期中", en: "Syncing" },
+  // B層拡張: フォーク（一時的な分岐）の色分け（ARCHITECTURE.md §9。Issue #296）。
+  "field.headTip": { ja: "見ている tip", en: "Following tip" },
   "ghost.status": { ja: "起動中…", en: "Starting…" },
   "canvas.empty": {
     ja: "表示するコンテナがありません",

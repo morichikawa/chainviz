@@ -698,13 +698,18 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       は元々マウント済みのため変更なし。実機検証で修正前の再現・修正後の
       成功を確認済み。docs/worklog/issue-293.md参照)
       [#293](https://github.com/morichikawa/chainviz/issues/293)
-- [ ] 送金操作の残高不足エラーがwei単位の生数値のまま表示され分かりにくい
+- [x] 送金操作の残高不足エラーがwei単位の生数値のまま表示され分かりにくい
       (operation-error-summary.tsのinsufficientFundsパターンをETH単位表示に
-      変更する。wei→ETH変換ロジックの置き場所は設計判断が必要)
+      変更した。変換ロジックはpackages/shared共通化ではなくcollector側
+      `adapters/ethereum/ether-display.ts`に軽量実装(小数最大6桁切り捨て・
+      末尾ゼロ削り)。実機検証で残高不足送金時にETH単位表示になることを
+      確認済み。docs/worklog/issue-295.md参照)
       [#295](https://github.com/morichikawa/chainviz/issues/295)
-- [ ] フォーク（一時的な分岐）の色分け表現が未実装
-      (CONCEPT.mdのB層節に構想として記載されているが未着手。フォークの
-      検知・収束判定・表現方法・sharedの型変更要否は設計段階で精査する)
+- [x] フォーク（一時的な分岐）の色分け表現が未実装
+      (既存のNodeEntity.headBlockHashを活用。collectorはeth_subscribe(newHeads)
+      からHeadTipCache経由で埋め、frontendはparentHashの祖先関係比較で
+      フォーク判定・色分け表現を行う。追加RPC・shared型変更なし。
+      docs/worklog/issue-296.md参照)
       [#296](https://github.com/morichikawa/chainviz/issues/296)
 - [ ] ブロックが連なって積み上がっていく様子を視覚表現する
       (オンチェーンの内容がノードに紐づくことは分かるが、チェーンが刻まれて
