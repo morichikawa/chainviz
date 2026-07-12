@@ -1018,3 +1018,35 @@ UX観点からの見立てであり、正式なデータフロー・型設計は
   合流後の状態で build/lint/test を再実行すること
 - `docs/PLAN.md` の #298 注記が「修正中」のまま。QA合格後にチェックと
   併せて注記を更新すること
+
+### 2026-07-12 Issue #298 再レビュー差し戻し対応（frontend, 意味のない逆方向凍結テストの修正）
+
+- 担当: frontend
+- ブランチ: issue-298-block-stacking-visualization
+- 差し戻し要約: `ChainRibbonCard.test.tsx` の凍結テスト3件目
+  （"also freezes for the reverse direction"）が、`tilesB` にホバー対象の
+  `0x2` を残したまま（`[0x2, 0x3]`）窓前進を模していたため、凍結フックが
+  無くても `0x2` は liveTiles 由来でそのまま描画・ハイライトされてしまい、
+  退行を検出できない「意味のないテスト」になっていた（`b929a90^` で実測
+  確認済み、との指摘）。
+- 修正: `tilesB` を、ホバー対象が完全に窓外へ流出する構成
+  （`[tile("0x3"), tile("0x4")]`。`0x2` を含めない）に変更した。あわせて
+  1件目のテストと同様に「新規タイル（0x3/0x4）がまだ見えていないこと」も
+  明示的にアサートし、「凍結によって古いタイルが残っている」ことと「凍結
+  によって新しいタイルの反映が止まっている」ことの両方を検証するようにした。
+- **回帰検出能力の実機確認**（CLAUDE.mdの品質ゲート運用ルールに従い実施）:
+  1. `packages/frontend/src/entities/ChainRibbonCard.tsx` を一時的に
+     `b929a90^`（凍結フック導入前のバージョン。`git show b929a90^:...`
+     で取得）へ差し替え、修正後のテストファイルのままで
+     `pnpm vitest run src/entities/ChainRibbonCard.test.tsx` を実行した
+  2. 結果: 16件中13件は合格、**凍結関連の3件（1・2・3件目すべて）が
+     期待どおり失敗した**。3件目は
+     `screen.getByTestId("chain-ribbon-tile-0x2")` が要素を見つけられずに
+     落ちており、「凍結が無ければ 0x2 は描画されずテストが検出する」ことを
+     直接確認できた
+  3. `ChainRibbonCard.tsx` を修正版（`git show b929a90:...` と同一内容）へ
+     戻し、`pnpm vitest run src/entities/ChainRibbonCard.test.tsx` で
+     16件全て合格することを再確認した（差し戻し前と差分無しであることも
+     `diff` で確認済み）
+- `pnpm --filter @chainviz/frontend build && test`: 成功（132ファイル/2011
+  テスト）。`tsc --noEmit`・`eslint` も成功

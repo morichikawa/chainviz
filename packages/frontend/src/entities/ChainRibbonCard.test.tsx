@@ -289,13 +289,22 @@ describe("ChainRibbonCard", () => {
         "chain-ribbon-tile--highlight",
       );
 
-      const tilesB = [tile("0x2", { number: 2 }), tile("0x3", { number: 3 })];
+      // ホバー対象(0x2)が表示窓から完全に流出した体（凍結が効いていなければ
+      // 0x2 はもう liveTiles に存在せず、getByTestId が投げて即座にこのテスト
+      // が失敗するはずの構成。査読差し戻し対応: 旧版は tilesB に 0x2 を
+      // 残したままだったため、凍結が無くても liveTiles 由来の 0x2 がそのまま
+      // 描画され、退行を検出できなかった）。
+      const tilesB = [tile("0x3", { number: 3 }), tile("0x4", { number: 4 })];
       rerender(<Scene tiles={tilesB} />);
 
+      // 凍結中なので、本来なら窓外へ流出したはずの 0x2 が消えずハイライトも
+      // 保持され続ける。liveTiles 側の新規タイルはまだ見えない。
       expect(screen.getByTestId("chain-ribbon-tile-0x2")).toBeTruthy();
       expect(screen.getByTestId("chain-ribbon-tile-0x2").className).toContain(
         "chain-ribbon-tile--highlight",
       );
+      expect(screen.queryByTestId("chain-ribbon-tile-0x3")).toBeNull();
+      expect(screen.queryByTestId("chain-ribbon-tile-0x4")).toBeNull();
     });
   });
 });
