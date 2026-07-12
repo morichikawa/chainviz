@@ -39,6 +39,17 @@
      --contract-edge の飽和したインディゴ(#6f7dea)だが、こちらは彩度を
      大きく落とした淡いシルバーブルーで、視覚的に混同しない。 */
   --internal-edge: #c9d4e8;
+  /* B層拡張: フォーク（一時的な分岐）色分け（ARCHITECTURE.md §9。Issue #296）。
+     ノードカードの outline（枠の border-color/box-shadow とは別プロパティ）
+     専用の2色。既存のカード色体系（ワークベンチの紫 #7a5cff・ウォレットの
+     琥珀 --own-edge・コントラクトのインディゴ --contract-edge）、エッジ色
+     体系（ピア接続の6色パレット・所有の琥珀・操作のマゼンタ --op-edge・
+     内部リンクのシルバー --internal-edge）のどの色とも大きくズレた、
+     彩度の高いゴールドイエロー / エレクトリックシアンにする。3枝目以降が
+     同時に出る稀なケースは outline-style（実線/破線）を掛け合わせて
+     区別する（.infra-card--fork-2/3、下記）ため、2色で4枝まで表現できる。 */
+  --fork-color-a: #ffcc00;
+  --fork-color-b: #00e0ff;
   font-family:
     "Inter", system-ui, -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN",
     "Noto Sans JP", sans-serif;
@@ -135,12 +146,23 @@ body {
   color: var(--muted);
 }
 
-/* --- キャンバス操作ツールバー（ノード/ワークベンチ追加） --- */
-.canvas-toolbar {
+/* --- キャンバス左上のオーバーレイ群（ツールバー + レイヤーレンズの
+   チップバー。Issue #299）。絶対配置は wrapper 側だけに持たせ、内側の
+   各パネルは縦に積むだけにする。ツールバーの高さに依存した固定オフセットで
+   チップバーを下に置くと、将来ツールバーの内容が増えたときにズレるため。 --- */
+.canvas-overlay-top {
   position: absolute;
   top: 12px;
   left: 12px;
   z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/* --- キャンバス操作ツールバー（ノード/ワークベンチ追加） --- */
+.canvas-toolbar {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -239,6 +261,77 @@ body {
   margin-top: 6px;
   padding-top: 6px;
   border-top: 1px solid var(--divider);
+}
+
+/* --- レイヤーレンズのチップバー（Issue #299。canvas-toolbar の直下） --- */
+.layer-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  border-radius: 999px;
+  background: rgba(26, 32, 48, 0.9);
+  border: 1px solid var(--divider);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.layer-filter-bar__label {
+  font-size: 12px;
+  color: var(--muted);
+  margin-right: 2px;
+  white-space: nowrap;
+}
+
+.layer-filter-bar__chip {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.layer-filter-bar__chip:hover {
+  border-color: var(--accent);
+}
+
+/* 選択中のチップ。canvas-toolbar__button--pending と同じ「輪郭をアクセント
+   色にする」流儀に、選択状態と分かるよう淡い塗りを足す。 */
+.layer-filter-bar__chip--active {
+  border-color: var(--accent);
+  background: rgba(79, 157, 255, 0.18);
+}
+
+/* --- レイヤーレンズの dim 表示（選択層以外を薄くする。Issue #299） ---
+   `entities/canvasLayers.ts` の computeLayerVisibility が対象外と判定した
+   要素（ゴーストカード・接続予定/確立中エッジ・新着発光中カード）には
+   このクラス自体が付かない。ホバー中は CSS の :hover で一時的に通常表示へ
+   戻す（子要素をホバーしても :hover は祖先へ伝播するため、JS 側の個別
+   hover state を経由しなくてよい。ホバー・ポップオーバーは薄い状態でも
+   機能させる、という UX設計 §3 の要件を CSS 側だけで満たす）。 */
+.layer-lens-dim {
+  opacity: 0.2;
+  transition: opacity 0.15s ease;
+}
+
+.layer-lens-dim:hover {
+  opacity: 1;
+}
+
+/* --- ポップオーバー見出しに添える層バッジ（Issue #299 UX設計 §6-3） ---
+   infra-card__badge--bootnode と同型の中立配色の pill。 */
+.layer-badge {
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  background: rgba(70, 87, 125, 0.18);
+  white-space: nowrap;
 }
 
 /* --- インフラカード --- */
@@ -342,6 +435,36 @@ body {
 .infra-card--contract-unknown {
   border-style: dashed;
   border-color: var(--muted);
+}
+
+/* --- B層拡張: フォーク（一時的な分岐）の色分け（ARCHITECTURE.md §9。
+   Issue #296） ---
+   `border-color` は役割別のカード枠（ワークベンチの紫・ウォレットの琥珀・
+   コントラクトのインディゴ）が既に使っているため、フォーク色は `outline`
+   （独立したボックスモデルのプロパティ）で表現し、両者が同時に成立しても
+   打ち消し合わない。同じ tip を見ているノードは同じクラスになる。 */
+.infra-card--fork-0 {
+  outline: 3px solid var(--fork-color-a);
+  outline-offset: 3px;
+  box-shadow: 0 0 12px rgba(255, 204, 0, 0.45);
+}
+
+.infra-card--fork-1 {
+  outline: 3px solid var(--fork-color-b);
+  outline-offset: 3px;
+  box-shadow: 0 0 12px rgba(0, 224, 255, 0.45);
+}
+
+.infra-card--fork-2 {
+  outline: 3px dashed var(--fork-color-a);
+  outline-offset: 3px;
+  box-shadow: 0 0 12px rgba(255, 204, 0, 0.45);
+}
+
+.infra-card--fork-3 {
+  outline: 3px dashed var(--fork-color-b);
+  outline-offset: 3px;
+  box-shadow: 0 0 12px rgba(0, 224, 255, 0.45);
 }
 
 .contract-card__badges {
@@ -511,6 +634,12 @@ body {
   border: 1px solid var(--contract-edge);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   font-size: 11px;
+}
+
+/* 層バッジ(Issue #299)を添える見出し行。他のポップオーバーの
+   `__heading` と同じく本文の上に少し余白を空けて置く。 */
+.deploy-popover__heading {
+  margin-bottom: 4px;
 }
 
 .wallet-card__orphan {
@@ -813,6 +942,10 @@ body {
 }
 
 .internal-link-popover__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   font-weight: 600;
   margin-bottom: 4px;
 }
@@ -1009,6 +1142,14 @@ body {
   font-size: 11px;
 }
 
+/* NetworkLabel + 層バッジ(Issue #299)を横並びにする見出し行。 */
+.peer-popover__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .peer-popover__endpoints {
   margin-top: 6px;
   font-weight: 600;
@@ -1100,6 +1241,10 @@ body {
 }
 
 .operation-target-popover__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   font-weight: 600;
   margin-bottom: 4px;
 }
@@ -1147,6 +1292,14 @@ body {
   background: #0c1119;
   border: 1px solid var(--border);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+/* 層バッジ(Issue #299)を添える見出し行。InfraPopover/WalletPopover/
+   ContractPopover はいずれも `.infra-popover` を土台にしており、見出しが
+   無かったので最小限の行として追加する。 */
+.infra-popover__heading {
+  display: flex;
+  margin-bottom: 6px;
 }
 
 .infra-field {

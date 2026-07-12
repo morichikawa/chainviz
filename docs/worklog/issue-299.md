@@ -1,0 +1,635 @@
+# Issue #299 A〜D層が常時同一キャンバスに共存し情報が読み取りにくい
+
+### 2026-07-12 Issue #299 レイヤー絞り込み(レイヤーレンズ)の UX 設計
+
+- 担当: ux
+- ブランチ: issue-299-layer-toggle
+- 内容: ユーザーフィードバック「A層、B層、C層、D層ってあるけど他の層って
+  どうやったら見れるん？」に対する UX 設計。実装は frontend 担当へ引き継ぐ
+
+## 1. 実際に動かして確認したこと
+
+frontend をモックデータモード(`VITE_COLLECTOR_URL` 未設定、
+`pnpm --filter @chainviz/frontend dev`)で起動し、Playwright(chromium)で
+操作・スクリーンショット確認した。
+
+- 初期状態: インフラ行(lighthouse/reth×2/validator×2/workbench)・
+  ウォレット行(3枚)・コントラクト行(3枚)の帯構造と、P2P 実線(有彩色)・
+  内部リンク二重線(シルバー)・所有破線(琥珀)・デプロイ点線(インディゴ)が
+  同一キャンバスに共存している
+- 「+ ノードを追加」を2回実行した後: フォロワーノード(reth+beacon)×2 が
+  ウォレット行の近くに配置され、P2P エッジ・内部リンクエッジがウォレット
+  カードの上を横切り交差が激しくなる。特定の層(例: C層の所有・デプロイの
+  関係)だけを目で追うのが難しくなることを確認(=§7.6.2 が導入見送りの
+  条件としていた「実害」の観測に相当する)
+- UI 文言の全数確認(`i18n/messages.ts` の grep): ユーザーの目に入る
+  「〜層」という語は **ヘッダー副題「Docker 上の Ethereum ノード群
+  （A層）」の1箇所だけ**。エッジ・カードのポップオーバーは「ピア接続」
+  「内部リンク(Engine API)」など要素の説明はするが、どの層に属するかは
+  一度も言わない
+
+## 2. 何が伝わっていないか(課題の言語化)
+
+1. **画面が「A層」と名乗ったまま**。ヘッダー副題の「（A層）」は Phase 1
+   (インフラ可視化のみだった頃)の遺物で、現在のキャンバスは A〜D層すべてを
+   表示しているのに、画面上で唯一の「層」への言及がこれ。見た人は「今は
+   A層を見ている。ならば B〜D層に切り替える手段がどこかにあるはず」と
+   期待する。ユーザーの疑問はこの文言が直接の引き金になっている可能性が
+   高い
+2. **要素と層の対応が画面のどこにも無い**。帯構造とエッジ種別は層を暗黙に
+   表しているが、「この実線は B層(P2P)」「このカードは C層(ウォレット)」
+   という対応を教える凡例・ラベル・バッジが無い。docs を読まない利用者には
+   「層」という概念と画面の対応が成立しない
+3. **密度の実害**。ノード追加で層をまたぐエッジの交差が増え、注目したい
+   1つの層の関係が他の層の線に埋もれる(上記の実測)
+
+## 3. UX 設計: 「レイヤーレンズ」(強調表示フィルタ)
+
+ユーザーの明示的な方向性(「現状の見え方も残しつつ、切り替えできると
+嬉しい」)に従い、**非表示にする切り替えではなく、選んだ層以外を薄くする
+「レンズ」方式**にする。
+
+- **既定は現状どおり全層通常表示**。何も選んでいなければ見た目は一切
+  変わらない
+- レイヤーを1つ選ぶと、その層に属する要素(カード・エッジ・パルス)は
+  通常表示のまま、**それ以外の要素は低不透明度(dim)で残る**。消さない
+  ので「全部が見える」既定の世界観を壊さず、レイアウトも動かない
+  (Miro 的な空間の安定を保つ)
+- どの層も「二度と見えなくなる」ことはない。dim された要素もホバー・
+  ポップオーバーは通常どおり機能する(情報への到達手段を奪わない)
+
+### 3.1 操作フロー
+
+1. キャンバス左上、既存ツールバー(ノード追加/ワークベンチ追加)の直下に
+   **「レイヤー」チップバー**を置く:
+   `レイヤー: [すべて] [A層 インフラ] [B層 P2Pネットワーク] [C層 トランザクション] [D層 ノード内部]`
+2. 既定は「すべて」が選択状態。チップを1つクリックするとその層のレンズが
+   かかる(単一選択。複数選択は導入しない — 後述 §6-1)
+3. 選択中のチップは強調表示(選択状態が一目で分かる)。同じチップを
+   もう一度クリックするか「すべて」をクリックすると解除される
+4. 各チップにホバー(またはフォーカス)すると、既存 ActionHint と同じ流儀の
+   予告ツールチップで「この層は何か」+「選ぶと何が起きるか」を1〜2行で
+   説明する(押す前に結果が分かる、Issue #123 以来の流儀)
+5. 状態は**永続化しない**。リロードで「すべて」に戻る(学習アプリとして
+   「開いたら全部見える」を初期保証する。前回の絞り込みが残っていると
+   「要素が薄い/壊れた?」という混乱の種になる)
+
+このチップバー自体が「この画面には A〜D層がある」という一覧の役割を
+果たすため、課題1・2(層の存在と対応の発見可能性)への回答にもなる。
+
+### 3.2 要素と層の対応(実装用の判定表)
+
+| 要素 | 種別/型 | 層 |
+| --- | --- | --- |
+| インフラカード(node: reth/beacon/validator) | `infra` | A層(+B/C/D の端点) |
+| インフラカード(workbench) | `infra` | A層(+C の端点) |
+| ウォレットカード | `wallet` | C層 |
+| コントラクトカード | `contract` | C層 |
+| P2P ピア接続エッジ + 伝播パルス | `peer` | B層 |
+| ブロック追従の発光(カード上の表現) | — | B層 |
+| 所有エッジ | `ownership` | C層 |
+| デプロイエッジ | `deploy` | C層 |
+| 操作パルスエッジ | `operation` | C層 |
+| 操作先エッジ | `operationTarget` | C層 |
+| コントラクト呼び出しパルス | `contractCallPulse` | C層 |
+| 内部リンクエッジ + 活動パルス | `internalLink` | D層 |
+
+**カードの通常/dim の判定ルール**: 選択層の「層固有カード」に加えて、
+**選択層に属するエッジの端点になっているカードは通常表示**にする
+(エッジだけ通常でカードが薄いと関係が読めないため)。具体的には:
+
+- **A層レンズ**: インフラカード(node/workbench)を全て通常表示。エッジは
+  全種 dim(エッジは層をまたぐ関係の表現であり、A層は「どんなマシンが
+  いるか」を見る層)。ウォレット・コントラクトも dim
+- **B層レンズ**: peer エッジ・伝播パルス・その端点カード(EL/CL ノード)と
+  ブロック追従発光を通常表示。workbench・ウォレット・コントラクト・
+  他エッジは dim
+- **C層レンズ**: ウォレット・コントラクトカード、所有/デプロイ/操作/
+  操作先/コントラクト呼び出しエッジと、その端点カード(workbench、RPC 先
+  ノード)を通常表示。それ以外(P2P・内部リンク・端点でないノード)は dim
+- **D層レンズ**: 内部リンクエッジ・活動パルスと、その端点カード
+  (reth/beacon/validator)を通常表示。workbench・ウォレット・
+  コントラクト・他エッジは dim。同期ステージ・txpool 内訳は端点カードの
+  ポップオーバー内なので、カードが通常表示であれば従来どおり読める
+
+### 3.3 絞り込みの対象外(常に通常表示)
+
+- **HUD パネル類**: ツールバー、ネットワーク凡例、コントラクト一覧
+  パネル、ミニマップ、接続ステータスバッジ、言語トグル。これらは参照・
+  操作のための画面装置であってキャンバス上の被可視化要素ではない。
+  ミニマップは絞り込み中の方向感覚の维持にも必要
+- **操作フィードバック**: ゴーストカード(addNode/addWorkbench/デプロイ中の
+  仮カード)、接続確立中エッジ(`connecting`/`pendingConnection`)、新着発光中の
+  カード。絞り込み中に操作した結果が薄く表示されると「押したのに反応が
+  ない」という既知の事故(Issue #102/#220 で潰した類)を再発させるため、
+  フィードバック表示はレンズより優先する
+
+### 3.4 dim の見た目
+
+- dim 対象は opacity を目安 0.15〜0.25 に落とす(正確な値・トランジションの
+  有無は実装時に実際の画面で微調整してよい。Issue #95 の色調整と同じ裁量)
+- dim 中もホバーで従来のホバー強調(太くなる等)とポップオーバーは機能させる
+  (ホバー中はその要素だけ一時的に通常表示へ戻す、が望ましい)
+- パルスアニメーションも属する層に従って dim する(動くものは薄くても目を
+  引くため、非対象の層のパルスを通常輝度で流すとレンズの意味が薄れる)
+
+### 3.5 ヘッダー文言の修正(課題1の根治)
+
+- `app.title`: 「chainviz — インフラ可視化」→ **「chainviz — ブロック
+  チェーン内部可視化」**(en: "chainviz — Blockchain Internals")。
+  CONCEPT.md の正式な題「ブロックチェーン内部可視化キャンバス」に揃える
+- `app.subtitle`: 「Docker 上の Ethereum ノード群（A層）」→
+  **「Docker 上の Ethereum ノード群（A層〜D層）」**(en: "Ethereum nodes
+  on Docker (Layers A–D)")。チップバーの層名と呼応させる
+
+### 3.6 用語解説(グロッサリー)
+
+新しい用語キー **`visualization-layers`**(用語名: 可視化レイヤー
+（A層〜D層）/ Visualization layers (A–D))を1エントリ追加し、チップバーの
+「レイヤー」ラベルを GlossaryTerm アンカーにする。定義文は既存の3拍子
+(定義 → なぜ必要か → chainviz ではどう見えるか)で書く。初稿:
+
+> chainviz が画面を整理するための4つの視点。A層=インフラ(コンテナと
+> プロセス)、B層=P2Pネットワーク(ノード間の通信)、C層=トランザクション
+> (チェーン上の出来事)、D層=ノード内部(クライアント間の配管)。
+> ブロックチェーンは複数の抽象度が同時に動くシステムなので、どの高さから
+> 眺めるかを決めると理解しやすくなる。chainviz では全レイヤーが同じ
+> キャンバスに同時に表示され、レイヤーチップで1つを選ぶとその層だけが
+> 通常表示になり他は薄くなる。
+
+- 置き場所(`glossary/ethereum/terms/` のどのファイルか、`layer` フィールドに
+  何を入れるか)は横断概念のため既存スキーマとの整合を designer に確認して
+  決める(候補: a-infra.yaml に `layer: a-infra` で置く妥協、または スキーマに
+  影響しない置き方があるか)
+- 4層それぞれを別用語にはしない(アンカーが1箇所しか無いのに用語を4つ
+  増やすと Issue #124 の「アンカーの無い用語」教訓に反する)
+
+### 3.7 i18n 文言初稿(実装時の語調微調整は frontend 裁量)
+
+| キー | ja | en |
+| --- | --- | --- |
+| `layerFilter.label` | レイヤー | Layers |
+| `layerFilter.all` | すべて | All |
+| `layerFilter.a` | A層 インフラ | A: Infrastructure |
+| `layerFilter.b` | B層 P2Pネットワーク | B: P2P Network |
+| `layerFilter.c` | C層 トランザクション | C: Transactions |
+| `layerFilter.d` | D層 ノード内部 | D: Node Internals |
+| `layerFilter.hint.all` | 全レイヤーを同時に表示します（既定） | Show all layers at once (default) |
+| `layerFilter.hint.a` | コンテナとプロセス。選ぶとマシン（ノード・ワークベンチ）のカードだけが通常表示になり、他は薄くなります | Containers and processes. Selecting keeps machine cards highlighted and dims the rest |
+| `layerFilter.hint.b` | ノード間のP2P通信。選ぶとピア接続とブロック伝播だけが通常表示になり、他は薄くなります | Peer-to-peer communication. Selecting keeps peer connections and block propagation highlighted |
+| `layerFilter.hint.c` | チェーン上の出来事。選ぶとウォレット・コントラクト・操作の流れだけが通常表示になり、他は薄くなります | On-chain activity. Selecting keeps wallets, contracts and operations highlighted |
+| `layerFilter.hint.d` | ノード内部の配管。選ぶと合意（CL）と実行（EL）の内部リンクだけが通常表示になり、他は薄くなります | Node internals. Selecting keeps CL–EL internal links highlighted |
+
+## 4. Issue #298(ブロック列の視覚表現)との整合
+
+#298 でブロックが連なって積み上がる表現(ブロック列)が追加された場合、
+レイヤーレンズでは**B層・C層の両方に属する要素**として扱う:
+
+- ブロックの伝播(どのノードにいつ届いたか)は B層の主題、ブロックへの
+  tx 取り込みは C層の主題であり、ブロック列はその接点にある
+- したがって B層レンズ・C層レンズのどちらでも通常表示、A層・D層レンズでは
+  dim する
+- 逆方向(#298 側から見た扱い)は #298 の設計メモに委ねるが、「ブロック列の
+  情報密度が気になる場合は A層/D層レンズで自然に薄くなる」という関係に
+  なる
+
+## 5. 型・データフロー・作業分担への影響(designer への引き継ぎ)
+
+- **`packages/shared` の型変更: 不要**。レンズは純粋なフロントの表示状態で
+  あり、ワールドステートに層の概念を持ち込まない(ARCHITECTURE.md §7.4 で
+  「スキーマへの影響は無い」と確認済みのとおり)
+- **collector 変更: 不要**
+- **frontend のみ**の実装。designer に委ねる実装判断:
+  - レンズ状態(選択中レイヤー)の持ち方(App の state か store か)
+  - dim の実装方式(edge/node data への注入か、CSS クラス+変数か。既存の
+    hover 注入パターン「表示直前に derived state を注入し rfNodes/rfEdges
+    自体は書き換えない」との整合)
+  - エッジ種別→層のマッピングの置き場所。エッジ種別は Ethereum 固有では
+    ないため共通コードでよいが、「非 EVM チェーンでは D層が無い」将来
+    (CONCEPT.md)を考えると、チェーンプロファイル表現セット
+    (`chain-profiles/ethereum/`)に「この プロファイルに存在する層の一覧」を
+    置き、チップバーはそれを読んで描画する形が望ましい(D層の無い
+    プロファイルでは D チップ自体が出ない)
+  - `visualization-layers` 用語の置き場所(§3.6)
+- **ARCHITECTURE.md の更新が必要**(実装と同じ PR 内で): §7.4「表示の
+  切り替え・フィルタを導入するかどうかは UX 設計の判断に委ねる」、
+  §7.6.2「表示切り替え・フィルタは導入しない」、§7.6.10 決定事項 1 は、
+  本 Issue で「実害が観測されたため A〜D層一貫のレンズ方式を導入」に
+  更新する(見送り判断の前提だった「実害が出てから」の条件が成立した)
+
+## 6. 決めきれない点(統括・ユーザーへの確認事項)
+
+1. **単一選択とした**(複数選択チェックボックスにしない)。理由: 複数選択は
+   「B+C を同時に」のような組み合わせを許すが、組み合わせるほど dim 対象が
+   減って絞り込みの意味が薄れるうえ、チップの状態遷移(トグルの組み合わせ)が
+   分かりにくくなる。「1つの層に注目する」が学習アプリとしての主用途と
+   判断した。組み合わせが欲しい実例が出たら拡張を検討
+2. **キーボードショートカット(Esc で解除等)は必須にしない**。既存 UI に
+   ショートカットの前例が無く、一貫性を優先。実装が軽ければ足してよい
+   (実装裁量)
+3. **ポップオーバー見出しへの層バッジ追加は本 Issue のスコープ外として
+   提案のみ残す**: 各エッジ・カードのポップオーバー見出しに小さな層バッジ
+   (例: 「B層」)を添えると「要素→層」の対応が個別要素からも学べる
+   (課題2の補強)。工数は小さいが対象箇所が多いため、採否は統括判断
+4. ヘッダー文言(§3.5)は既存文言の変更にあたるため、この案でよいか統括・
+   ユーザーの確認を仰ぐ
+
+## 7. CONCEPT.md への追記
+
+「可視化の階層(レイヤー)」節の冒頭に、切り替えの具体的な方式(レンズ方式。
+既定は全層同時表示、選択層以外を薄く)を追記した。これは「レイヤー切り替えで
+見る階層を変えられる」という既存構想の具体化であり、ユーザーの明示的な
+方向性(「現状の見え方も残しつつ、切り替えできると嬉しい」)をそのまま
+反映したもの。
+
+## 8. 検証環境についての注記(次の担当への引き継ぎ)
+
+- Playwright の chromium はシステムライブラリ(`libnspr4.so`/`libnss3.so`/
+  `libasound.so.2` 等)が未導入の環境では起動しない。sudo が使えないため、
+  `apt-get download libnspr4 libnss3 libasound2t64` で .deb を取得して
+  スクラッチパッドに `dpkg-deb -x` で展開し、`LD_LIBRARY_PATH` に展開先を
+  指定して起動した(システムへの変更なし。issue-198 の QA と同じ手法)
+- モックデータモードで「+ ノードを追加」を2回押すと、本設計の動機となった
+  「層をまたぐエッジの交差で読みにくくなる」状態を誰でも再現できる
+
+### 2026-07-12 実装着手前の設計メモ
+
+- 担当: frontend
+- ブランチ: issue-299-layer-toggle（designer フェーズは省略。上記 UX 設計を
+  そのまま実装する）
+- スコープ確認: 統括からの指示により、ヘッダー文言修正は `app.subtitle`
+  のみ（§3.5 が提案していた `app.title` の変更は対象外。ユーザー確認は
+  subtitle 側のみ得られている）。ポップオーバー見出しへの層バッジ追加
+  （§6-3）は「わかりやすさに資するなら含める」との回答を受け、本 PR で
+  実装する。
+
+#### データフロー・状態の持ち方
+
+- レンズの選択状態（`LayerFilter = "all" | "a" | "b" | "c" | "d"`）は
+  `App.tsx`（`AppShell`）が `useState` で持つ。永続化しない（§3.1 の
+  決定どおり、リロードで "all" に戻る）。`CanvasToolbar` の直下に
+  `LayerFilterBar` を新設し、`app__canvas` 内で両者をラップする
+  `canvas-overlay-top`（flex column）に収める。ツールバー自身の高さに
+  依存した固定オフセットで下に置くと、将来ツールバーの内容が増えたときに
+  ズレるため、絶対配置はラップ側だけに持たせる
+- 選択状態は `Canvas` に `layerFilter` prop として渡す（省略時 "all"）。
+  dim 判定はワールドステートではなくキャンバス表示状態そのものなので、
+  `Canvas.tsx`（`rfNodes`/`rfEdges` を持つ場所）が計算の主体になる。
+  既存の hover 注入（`displayEdges`/`displayNodes` の
+  useMemo。「rfNodes/rfEdges 自体は書き換えず、表示直前に derived state を
+  注入する」既存パターン）と同じ場所に、dim 用の `className` 注入を追加する
+- 层→要素の判定ロジックは `entities/canvasLayers.ts` に純粋関数として
+  切り出す（`computeLayerVisibility(nodes, edges, filter)` が
+  `dimNodeIds`/`dimEdgeIds` の2つの `Set<string>` を返す）。判定表(§3.2)を
+  そのままコードにする:
+  - カード基本層: wallet/contract → C層固定、infra(node/workbench) → A層
+    （B/C/D層エッジの端点なら該当層でも通常表示）、ghost → レンズ対象外
+  - エッジ→層: peer→B、ownership/deploy/operation/operationTarget/
+    contractCallPulse→C、internalLink→D。pendingConnection/connecting は
+    マッピングに含めない（＝常に「層を持たない」扱いとなり、dim 対象にも
+    「選択層のエッジ」にもならない。これにより #102/#220 対象の操作
+    フィードバックは自動的にレンズ対象外になる）
+  - 新着発光中（`data.isNew`）のカードは `computeLayerVisibility` 内で
+    dim 対象から除外する（判定を1箇所に集約し、Canvas.tsx 側で個別に
+    isNew を見る分岐を増やさない）
+  - ゴーストカード自体もカード基本層が無いため自動的に対象外
+- **dim の反映方式**: edge/node オブジェクトの `className` に
+  `layer-lens-dim` 修飾クラスを追加するだけにする。React Flow は
+  `edge.className`/`node.className` をそれぞれのラッパー要素
+  （`<g class="react-flow__edge ...">`／`<div class="react-flow__node ...">`）
+  に反映する（xyflow のソースで確認済み）ため、パルスの `<circle>` も含めて
+  1箇所の opacity 指定で丸ごと薄くできる。個々の `*Edge.tsx`/`*Card.tsx`
+  コンポーネントを書き換える必要が無く、変更が波及する範囲を最小化できる。
+  ホバー時に通常表示へ戻す（§3.4「望ましい」)は CSS の `:hover` で実現する
+  （ラッパー要素自体がマウスイベントの対象になっており、子要素をホバー
+  しても `:hover` は伝播するため、JS 側の個別 hover state を経由しなくて
+  よい）
+- チェーンプロファイルごとの「存在するレイヤー一覧」は
+  `chain-profiles/ethereum/visualizationLayers.ts` に
+  `ETHEREUM_VISUALIZATION_LAYERS: VisualizationLayer[]` として置く
+  （`LayerFilterBar` はこれを渡されてチップを描画するだけで、D層の無い
+  将来のチェーンプロファイルでは配列を短くするだけで済む設計にする。
+  CLAUDE.md「チェーンプロファイル単位で増やす」）
+- ポップオーバー見出しの層バッジは `entities/LayerBadge.tsx` を新設し、
+  既存の `infra-card__badge--bootnode` と同型（pill + `GlossaryTerm`）で
+  実装する。見出しの無い `InfraPopover`/`WalletPopover`/`ContractPopover`/
+  `DeployEdgePopover` には最小限の見出し行を追加する
+- glossary: `visualization-layers` を `glossary/ethereum/terms/a-infra.yaml`
+  に `layer: a-infra` で追加する（横断概念だが、既存スキーマに
+  `layer` の複数値を持たせる変更はスコープ外のため、design メモの
+  「妥協案」をそのまま採用する）
+
+### 2026-07-12 Issue #299 実装完了
+
+- 担当: frontend
+- ブランチ: issue-299-layer-toggle
+- 内容: 上記 UX 設計・設計メモに従い、レイヤーレンズを実装した。
+
+#### 実装したもの
+
+- `packages/frontend/src/entities/canvasLayers.ts`: 判定ロジックの純粋関数
+  (`computeLayerVisibility`)。判定表(§3.2)をそのままコード化し、
+  `dimNodeIds`/`dimEdgeIds` の2つの `Set<string>` を返す。エッジ種別→層の
+  対応、カード基本層(wallet/contract→C、infra→A)、新着発光中カードの
+  除外、ゴースト・pendingConnection・connecting の自動除外(層マッピングに
+  含めないことで実現)をすべてここに集約した
+- `packages/frontend/src/canvas/Canvas.tsx`: `layerFilter` prop を追加し、
+  `computeLayerVisibility` の結果を `displayNodes`/`displayEdges` の
+  useMemo(既存の hover/isNew 注入と同じ場所)で `className` に
+  `layer-lens-dim` 修飾クラスとして注入した。edge/node オブジェクトの
+  `className` は React Flow がそれぞれのラッパー要素
+  (`.react-flow__edge`/`.react-flow__node`)にそのまま反映するため、
+  パルスの `<circle>` を含めて1箇所の opacity 指定で丸ごと薄くできる
+  (個々の `*Edge.tsx`/`*Card.tsx` は無改修)。ホバー時の復帰は CSS の
+  `.layer-lens-dim:hover { opacity: 1 }` に任せ、JS 側の個別 hover state
+  とは独立させた(子要素のホバーでも `:hover` は祖先へ伝播するため機能する)
+- `packages/frontend/src/canvas/LayerFilterBar.tsx`: 単一選択のチップバー。
+  「レイヤー」ラベルは `visualization-layers` 用語のアンカー、各チップは
+  `ActionHint` で予告ツールチップを持つ
+- `packages/frontend/src/chain-profiles/ethereum/visualizationLayers.ts`:
+  `ETHEREUM_VISUALIZATION_LAYERS`(a/b/c/d)。`LayerFilterBar` はこれを
+  受け取ってチップを描画するだけなので、将来 D層を持たないチェーン
+  プロファイルではこの配列を短くするだけで対応できる
+- `packages/frontend/src/app/App.tsx`: `layerFilter` の state(永続化しない)
+  を持ち、`CanvasToolbar` と `LayerFilterBar` を `canvas-overlay-top`
+  (縦積みの flex コンテナ)でラップして配置した
+- `packages/frontend/src/entities/LayerBadge.tsx`: ポップオーバー見出しに
+  添える層バッジ。既存の `infra-card__badge--bootnode` と同型
+  (pill + `GlossaryTerm`)。以下7箇所の見出しに追加した:
+  `InfraPopover`(A)・`WalletPopover`(C)・`ContractPopover`(C)・
+  `PeerEdgePopover`(B)・`DeployEdgePopover`(C)・
+  `InternalLinkEdgePopover`(D)・`OperationTargetEdgePopover`(C)。
+  見出しを持たなかった `InfraPopover`/`WalletPopover`/`ContractPopover`/
+  `DeployEdgePopover` には最小限の見出し行を追加した
+- `packages/frontend/src/i18n/messages.ts`: `app.subtitle` を
+  「(A層)」→「(A層〜D層)」に修正(§3.5 のとおり `app.title` は対象外。
+  統括からの指示でスコープを subtitle のみに絞った)。`layerFilter.*`
+  (チップ・ヒント文言、§3.7 の初稿をそのまま採用)・`layerBadge.*`
+  (バッジの短縮ラベル)を追加
+- `glossary/ethereum/terms/a-infra.yaml`: `visualization-layers` を1エントリ
+  追加(`layer: a-infra` で設計メモの妥協案どおり配置)
+- `docs/ARCHITECTURE.md`: §7.4「レイヤー切り替えについて」、§7.6.2
+  「表示切り替え・フィルタは導入しない」、§7.6.10 決定事項1 を、実装内容
+  (レイヤーレンズを導入した旨)に合わせて更新した(見送り判断自体は
+  Phase 5 当時の記録として残し、その後の状況として追記する形にした)
+
+#### 遭遇した実装上の判断
+
+- `Canvas.tsx` の displayNodes 生成で `let next = node` としたあとに
+  `next.data` を参照すると、TypeScript が `node.type === X` による型の
+  絞り込みを引き継がず、`CanvasFlowNode` 合併型のまま扱われてビルドが
+  失敗した(`next` は広い型のまま)。絞り込みが効いている `node.data` を
+  参照するよう修正した(値としては同じだが、型的に安全な経路にする必要が
+  あった)
+- `OperationTargetEdgePopover.test.tsx` は元々 `GlossaryProvider` を
+  使っていなかった(用語解説アンカーが無かったため)。`LayerBadge` の追加で
+  `useGlossary()` が呼ばれるようになり、Provider 無しでは例外になる
+  ため、他の `*Popover.test.tsx` と同じ形へテストのラップも修正した
+
+#### 動作確認
+
+- `pnpm --filter @chainviz/frontend build && pnpm --filter @chainviz/frontend test`
+  が通ることを確認(127 テストファイル / 1963 テスト全て pass)
+- `npx eslint packages/frontend/src` でエラー無しを確認
+- モックデータモードで frontend を起動し(`pnpm --filter @chainviz/frontend dev`)、
+  Playwright(chromium。§8 と同じ手法で `libnspr4`/`libnss3`/
+  `libasound2t64` の `.deb` をスクラッチパッドに展開して
+  `LD_LIBRARY_PATH` 経由で起動)でスクリーンショットを取り、以下を確認した:
+  - 既定(「すべて」選択)は従来どおり全カード・全エッジが通常表示
+  - B層選択時: peer エッジで結ばれた reth-node-1/reth-node-2 のみ通常表示、
+    validator・workbench・ウォレット・コントラクトは dim
+  - C層選択時: ウォレット・コントラクト・workbench-alice・その RPC 接続先
+    (reth-node-1)は通常表示、reth-node-2・validator は dim
+  - D層選択時: internal link エッジで結ばれた reth-node-1・
+    validator-1/2(lighthouse 経由)は通常表示、reth-node-2・workbench・
+    ウォレット・コントラクトは dim
+  - D層選択中に dim されたウォレットカードをホバーすると即座に通常表示へ
+    戻り、ポップオーバーに「C層」バッジが表示される
+  - 同じチップをもう一度押すと「すべて」に戻り、dim が解除される
+  - 「レイヤー」ラベルをホバーすると `visualization-layers` の用語解説
+    ポップオーバーが表示される
+  - `InfraPopover` に「A層」バッジが表示される
+
+#### 次の担当への注意点
+
+- Issue #298(ブロック列)が実装される際は、そのブロック列コンポーネントの
+  エッジ/カードを `entities/canvasLayers.ts` の `EDGE_LAYER_BY_TYPE` /
+  `baseCardLayer` に「B層・C層の両方で通常表示」というルールで追加する
+  必要がある(現状の実装は「1エッジ種別→1層」の単純対応表なので、
+  複数層に属する種別を表現する場合はこの表の型を拡張する設計変更が要る。
+  §4 参照)
+- `chain-profiles/ethereum/visualizationLayers.ts` の
+  `ETHEREUM_VISUALIZATION_LAYERS` は現状 Ethereum 専用ファイルに直書き
+  している。複数チェーンプロファイルが実在するようになったら、
+  `App.tsx` がどのプロファイルの配列を選ぶかの分岐(または registry)が
+  別途必要になる(現状はチェーン選択 UI 自体が無い前提で固定 import)
+
+### 2026-07-12 Issue #299 テスト強化(異常系・境界値)
+
+- 担当: tester
+- ブランチ: issue-299-layer-toggle
+- 内容: frontend 実装担当が書いた基本テスト(ハッピーパス中心)に、
+  エッジケース・異常系・境界値のテストを追加した。実装コードは変更して
+  いない(テストファイルのみの追加・強化)。
+
+#### 追加したテストの観点
+
+- `entities/canvasLayers.test.ts`(基本 20 ケース → 27 ケース):
+  - 端点昇格ルールの境界。選択層のエッジの端点のみを通常表示にすること
+    (層外エッジの端点は昇格しない)、選択層のエッジが2つの基底層をまたぐ
+    場合に「片方の端点だけが選択層に属する」ケースの挙動、1つのカードが
+    層内エッジと層外エッジの両方の端点になっている場合は層内側が優先されて
+    通常表示になること
+  - 未分類・未知要素の既定動作(要望 §3)。判定表に無いエッジ種別は層を
+    持たない扱いで dim されず端点も昇格しないこと、判定表に無いカード種別は
+    どの層を選んでも dim されないこと(判定表を追記するだけで拡張できる
+    設計であることを固定)
+  - 空入力(0 件)の境界。ノード・エッジが空でも特定層フィルタで空集合を
+    返すこと
+  - 新着発光除外の境界。`isNew` が明示的に `false` のカードは通常どおり
+    dim されること、新着発光の除外がノード種別に依存しないこと
+    (ウォレットカードでも除外されること)を確認
+  - `edgeVisualizationLayer` に判定表外の種別を渡すと `undefined` を返すこと
+- `app/App.layerFilter.test.tsx`: 選択状態を永続化しないこと(UX設計 §3.1
+  手順5)の確認。共有ストレージを2度のマウントへ注入し、1度目で B層を
+  選んで破棄・再マウントしても既定の「すべて」に戻ることを検証する。
+  jsdom の `getBrowserStorage` はマウントごとに別のインメモリ代替を返すため、
+  `storage` prop で共有ストレージを注入しないと「リロードをまたいで復元される」
+  退行を検出できない点に注意(実際に localStorage 永続化を注入する変異で
+  この形なら落ちること、注入しない当初の形では落ちないことを確認済み)
+- `canvas/LayerFilterBar.test.tsx`: 層が 0 件のチェーンプロファイル(将来
+  D層を持たない等)でも「すべて」チップだけは常に出る境界、キーボード
+  フォーカスでも予告ヒントが出る(ホバー限定でない)ことの確認
+- 7 つのポップオーバーテスト(Infra=A / Peer=B / Wallet=C / Contract=C /
+  Deploy=C / OperationTarget=C / InternalLink=D)に、見出しへ正しい層バッジが
+  表示されることの確認を1件ずつ追加
+
+#### 回帰検出の確認(意図的に実装を壊して確認)
+
+追加テストが実際に元実装のバグを検出できることを、`canvasLayers.ts` /
+`App.tsx` / `PeerEdgePopover.tsx` を一時的に壊して確認し、いずれも該当
+テストが失敗することを見てから元に戻した。
+
+- 端点を常に昇格させる変異・未知エッジも dim する変異 → 端点昇格の境界
+  テスト群と未知エッジテストが失敗
+- 未知カード種別を C層扱いにする変異・新着発光除外を無効化する変異 →
+  未知カードテストと新着発光除外テストが失敗
+- `App.tsx` に選択層の localStorage 永続化を注入する変異 → 非永続化テストが
+  失敗(上記の共有ストレージ注入形にした後)
+- `PeerEdgePopover` の層バッジを `b` → `a` に変える変異 → 該当バッジテストが
+  失敗
+
+#### 補足(実装担当への差し戻しではない設計上の観察)
+
+- 層バッジ(`LayerBadge`)は単一の層しか受け取らない。内部リンクエッジ等
+  「複数の抽象度の接点にある要素」も現状は単一バッジ(内部リンク=D層)で
+  表示される。#298(ブロック列)のように B・C 両層に属する要素が入る場合は、
+  判定表(`EDGE_LAYER_BY_TYPE`)とバッジの両方を「1種別→複数層」対応に
+  拡張する設計変更が要る(§4・実装完了メモの「次の担当への注意点」と同旨)。
+  現時点の実装はバグではないため、観察の記録に留める
+
+#### 動作確認
+
+- `pnpm --filter @chainviz/frontend build` および
+  `pnpm --filter @chainviz/frontend test`(127 ファイル / 1983 テスト)が
+  すべて pass することを確認。追加した観点は計 20 ケース(1963 → 1983)。
+  変更したテストファイルに対する eslint もエラー無し
+
+### 2026-07-12 Issue #299 レビュー結果(合格・軽微指摘1件)
+
+- 担当: reviewer
+- ブランチ: issue-299-layer-toggle
+- 判定: **合格**(下記の軽微指摘1件はマージ前に修正することを推奨)
+
+#### 確認したこと
+
+- **UX設計の決定事項からの逸脱なし**: (1) 既定は全層表示維持
+  (`App.tsx` の `useState<LayerFilter>("all")`、永続化なし。非永続化は
+  共有ストレージ注入のテストで担保)、(2) 単一選択(`LayerFilterBar` は
+  排他チップ。同チップ再クリック/「すべて」で解除)、(3) HUDパネル・
+  ゴーストカード・接続確立中エッジ・新着発光中カードのレンズ対象外、
+  の3点すべて実装と一致
+- **`computeLayerVisibility` の判定ロジック**: 判定表(§3.2)と一致。
+  端点昇格は「選択層のエッジの端点のみ」で正しく、判定表に無い種別
+  (未知の将来種別・`pendingConnection`/`connecting`)は「層を持たない」
+  =常に通常表示・端点昇格なしのフェイルオープン設計。dim よりも
+  見える側に倒す既定は #102/#220 の教訓(操作フィードバックを隠さない)
+  と整合する
+- **レンズ対象外の実機構を確認**: dim は node/edge の `className` 注入
+  のみで実現しており、HUDパネル(ツールバー・凡例・コントラクト一覧・
+  ミニマップ等)には構造上波及しない。ミニマップは xyflow のソース
+  (`MiniMapNodes` は `nodeClassName` prop 既定値 `''` を使い
+  `node.className` を反映しない)を確認し、dim クラスが波及しないことを
+  静的に確認した。ゴースト(`baseCardLayer` が `undefined`)・
+  `pendingConnection`/`connecting`(層マッピング外)・新着発光中
+  (`isNew === true` で除外)も `computeLayerVisibility` 内で対象外
+- **shared/collector 無変更**: merge-base(`e1327b9`)との diff で
+  変更が frontend + docs + glossary のみであることを確認。
+  `git diff main..HEAD` に見える collector/shared の差分は、ブランチ
+  作成後に main が #295/#296 を取り込んで進んだことによる見かけ上の
+  もの(マージ前に main の取り込みが必要。競合は docs/WORKLOG.md 索引
+  程度の見込み)
+- **エラー握りつぶしなし**: 追加コードは純粋な表示ロジックで
+  try/catch の追加自体が無い
+- **ビルド・lint・テスト**: リポジトリ全体で `pnpm lint && pnpm build
+  && pnpm test` がすべて通ることを確認(frontend 127ファイル/1983、
+  collector 1309、shared 62、e2e 158)
+- **テストの質**: 端点昇格の境界(層外エッジのみの端点は昇格しない・
+  片端点のみ選択層・層内外両方の端点は層内優先)、未知種別のフェイル
+  オープン、空入力、`isNew: false` の境界、非永続化(共有ストレージ
+  注入でリロード相当を再現)、層0件プロファイルの境界、キーボード
+  フォーカスでのヒント表示、7ポップオーバーの層バッジ、と異常系・
+  境界値を十分にカバー。tester が変異検証(意図的に壊して落ちることの
+  確認)を実施済みである点も記録から確認
+- **docs との整合**: ARCHITECTURE.md §7.6.2/§7.6.10 は Phase 5 当時の
+  見送り判断を「当時の判断」として残したまま「その後の状況」を追記する
+  形になっており、過去指摘の方針に沿う。§7.4 は現状の記述(実装の説明)
+  なので書き換えで正しい。CONCEPT.md へのレンズ方式の追記、PLAN.md の
+  チェック+要約、glossary の定義(3拍子構成、relatedTerms 3件とも実在、
+  アンカーは LayerFilterBar ラベルと LayerBadge の2系統で実在)も問題なし
+- **#298(ブロック列)との関係**: #298 は main 未マージ(バックログ登録
+  のみ)であり、現時点で衝突・影響は無い。tester の申し送り
+  (「1種別→複数層」対応への拡張が必要)は #298 実装時の課題として
+  worklog に二重に記録済みで、本 Issue のスコープでは対応不要と判断。
+  なお #298 の要素が判定表に無いまま入っても、フェイルオープン設計に
+  より「常に通常表示」となるだけで表示が壊れることはない
+
+#### 指摘(軽微・マージ前に修正推奨)
+
+1. `docs/WORKLOG.md` の #299 索引行に「6種のポップオーバー見出しに
+   層バッジを追加」とあるが、実際は7種(Infra/Wallet/Contract/Peer/
+   Deploy/OperationTarget/InternalLink)。issue-299.md 本文・PLAN.md は
+   正しく、索引行のみの数え間違い
+
+#### 記録(差し戻し不要の観察)
+
+- コミット `dce6ba7` は「ヘッダー副題の修正(fix)」と「レンズ用
+  i18n キー・CSS の追加(機能実装の一部)」という2つの関心事を1コミットに
+  含んでいる。また、コンポーネント追加コミット(57de2f1 等)が参照する
+  i18n キーがこのコミットで後から入るため、中間コミット単体では
+  ビルドが通らない可能性が高い。PR 全体としては整合しており差し戻しは
+  しないが、次回以降は「文言修正」と「新機能の文言追加」を分けることが
+  望ましい
+
+### 2026-07-12 Issue #299 QA検証結果(合格)
+
+- 担当: qa
+- ブランチ: issue-299-layer-toggle
+- 判定: **合格**(PLAN.md の完了条件を満たしている)
+
+#### 検証環境
+
+- 稼働中の profiles/ethereum の Docker スタック(chainviz-ethereum、10
+  コンテナ)を利用。RPC(127.0.0.1:8545)でブロック番号が 0x21e2→0x21e4 と
+  進行していることを確認
+- worktree の collector を再ビルドし(`pnpm --filter @chainviz/shared
+  --filter @chainviz/collector build`)、実 collector を起動
+  (port 4000、logging proxy 4001→172.28.1.1:8545)。frontend は worktree の
+  vite dev server を `VITE_COLLECTOR_URL=ws://127.0.0.1:4000` で起動し、
+  モックではなく実 collector に接続した
+- WebSocket 疎通を確認: snapshot(type=snapshot、payload.entities 55件=
+  node8/wallet3/workbench3/block41、edges あり)と後続 diff(entityUpdated で
+  resources/blockHeight/syncStages が流れる)が仕様どおり届いている
+- ブラウザ確認は Playwright(chromium headless)で実施。共有ライブラリは
+  `/home/zoe/chrome-deps/root/usr/lib/x86_64-linux-gnu` を `LD_LIBRARY_PATH`
+  に指定して起動(§8 の手法。システムへの変更なし)
+
+#### 確認した項目と結果
+
+1. チップバー表示・既定「すべて」選択: チップ(すべて/A層 インフラ/
+   B層 P2Pネットワーク/C層 トランザクション/D層 ノード内部)が表示され、
+   初期状態は「すべて」が active。dim ノード・dim エッジともに 0 件
+2. 各層の絞り込み(選択層以外を dim、選択層は通常表示)を実データで確認。
+   いずれも設計メモ §3.2 の判定表と一致:
+   - A層: インフラ10枚すべて通常、ウォレット3枚 dim、エッジ14/14 dim
+   - B層: reth×3・beacon×3(peer 端点)が通常、validator/workbench/
+     ウォレットが dim、peer エッジのみ通常(9/14 dim)
+   - C層: ウォレット3枚・workbench(test/workbench)・その RPC 先 reth1 が
+     通常、他ノード dim。ownership/operationTarget エッジが通常、
+     peer/internal-link エッジが dim
+   - D層: reth×3・beacon×3・validator×2(internal link 端点)が通常、
+     workbench・ウォレットが dim
+3. 選択層に接続するエッジの端点カードが dim されないことを確認
+   (C層で workbench の RPC 先 reth1 が通常表示、ownership エッジ端点が通常)
+4. 「すべて」に戻すと dim ノード・dim エッジともに 0 件に戻る
+5. dim 中要素の実効 opacity は 0.2(目標 0.15〜0.25 内)。dim されたウォレットを
+   ホバーすると opacity が 1 に復帰し、ポップオーバーが正常表示される
+6. ポップオーバー見出しの層バッジを確認: ウォレット=「C層」、
+   インフラ(reth1)=「A層」
+7. レンズ対象外の確認(#102/#220 の再発防止):
+   - HUD パネル類(チップバー・ツールバー・凡例・ミニマップ・接続ステータス・
+     ヘッダー)には全状態で layer-lens-dim が一切付かない(hudDim=0)
+   - B層/C層選択中に「+ ノードを追加」を実行し、ゴーストカード(2枚)・
+     新着発光カード(2枚)・接続確立中エッジ(pending-connection-edge)の
+     いずれにも layer-lens-dim が付かないことを、追加操作の全過程で
+     ポーリング観測して確認
+8. ヘッダー副題が「Docker 上の Ethereum ノード群（A層〜D層）」になっている
+   ことを確認(app.title は統括指示のスコープどおり未変更)
+9. ブラウザコンソールにエラーなし
+
+#### 備考
+
+- app.subtitle 以外(app.title「chainviz — インフラ可視化」)は本 Issue の
+  スコープ外(統括指示)であり、未変更のままで正しい
+- 検証に使った実 collector・frontend プロセスは検証後に停止した。Docker
+  スタックは検証前から稼働していたものをそのまま残している

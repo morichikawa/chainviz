@@ -14,6 +14,8 @@ import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { PopoverPortal } from "../interaction/PopoverPortal.js";
 import { InfraPopoverSyncStages } from "./InfraPopoverSyncStages.js";
 import type { InfraEntity } from "./infraNode.js";
+import { LayerBadge } from "./LayerBadge.js";
+import { shortHex } from "./transaction.js";
 
 /** クライアント種別を用語キーへ対応づける（EL/CL の用語解説に繋ぐ）。 */
 export function clientGlossaryKey(clientType: string): string {
@@ -56,6 +58,13 @@ function Field({ label, value }: { label: string; value: string }) {
  * role まで揃わないと行ごと消える設計にはしない。詳細は
  * `internalLinkKinds.ts` のコメント参照）。
  *
+ * `forkColorIndex` が数値のとき（entity が node で、フォーク検知の結果
+ * このノードがいずれかの枝に分類されているとき）、「見ている tip」欄
+ * （短縮ハッシュ + 用語解説アンカー `fork`）を追加する（ARCHITECTURE.md
+ * §9.3、Issue #296）。フォークが検知されていない・headBlockHash が未観測
+ * （空文字列。例: validator）の間は省略する（既存の各欄と同じ
+ * 「解決できなければ省略」フォールバック）。
+ *
  * `maxElBlockHeight` はキャンバス上の全 EL ノードの blockHeight 最大値
  * （同期ステージのミニバーの分母。ARCHITECTURE.md §7.6.5。Issue #189）。
  * `entity.internals.syncStages` がある node にのみ「同期ステージ」セクションを、
@@ -88,6 +97,7 @@ export function InfraPopover({
   drivenByContainerName,
   drivenByNodeRole,
   maxElBlockHeight,
+  forkColorIndex,
 }: {
   anchorRef: RefObject<HTMLElement | null>;
   entity: InfraEntity;
@@ -96,6 +106,7 @@ export function InfraPopover({
   drivenByContainerName?: string;
   drivenByNodeRole?: string;
   maxElBlockHeight?: number;
+  forkColorIndex?: number;
 }) {
   const { t, lang } = useLanguage();
   const ports = entity.ports.length > 0 ? entity.ports.join(", ") : "-";
@@ -125,6 +136,9 @@ export function InfraPopover({
       role="tooltip"
       data-testid={`infra-popover-${entity.id}`}
     >
+      <div className="infra-popover__heading">
+        <LayerBadge layer="a" />
+      </div>
       <Field label={t("field.ip")} value={entity.ip} />
       <div className="infra-field">
         <span className="infra-field__label">
@@ -188,6 +202,16 @@ export function InfraPopover({
                 </span>
               </div>
             </>
+          )}
+          {typeof forkColorIndex === "number" && entity.headBlockHash !== "" && (
+            <div className="infra-field">
+              <span className="infra-field__label">
+                <GlossaryTerm termKey="fork">{t("field.headTip")}</GlossaryTerm>
+              </span>
+              <span className="infra-field__value">
+                {shortHex(entity.headBlockHash)}
+              </span>
+            </div>
           )}
           {drivesNodeContainerName && (
             <div className="infra-field">

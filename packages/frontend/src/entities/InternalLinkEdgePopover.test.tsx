@@ -38,6 +38,13 @@ function engineApiProps(
   };
 }
 
+describe("InternalLinkEdgePopover layer badge (Issue #299)", () => {
+  it("shows the D-layer badge in the heading", () => {
+    wrap(engineApiProps());
+    expect(screen.getByTestId("layer-badge-d")).toBeTruthy();
+  });
+});
+
 describe("isActivityFresh", () => {
   it("is fresh exactly at the freshness boundary", () => {
     expect(isActivityFresh(0, INTERNAL_LINK_FRESHNESS_MS)).toBe(true);

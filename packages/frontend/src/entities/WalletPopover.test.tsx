@@ -50,6 +50,13 @@ function wrap(
   );
 }
 
+describe("WalletPopover layer badge (Issue #299)", () => {
+  it("shows the C-layer badge in the heading", () => {
+    wrap([]);
+    expect(screen.getByTestId("layer-badge-c")).toBeTruthy();
+  });
+});
+
 describe("WalletPopover call preview (ARCHITECTURE.md §6.6)", () => {
   it("shows nothing extra for a plain transfer without contract info", () => {
     const tx: TransactionEntity = {

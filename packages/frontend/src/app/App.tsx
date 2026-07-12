@@ -9,6 +9,7 @@ import type {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas } from "../canvas/Canvas.js";
 import { CanvasToolbar } from "../canvas/CanvasToolbar.js";
+import { LayerFilterBar } from "../canvas/LayerFilterBar.js";
 import { CommandActionsProvider } from "../commands/CommandActionsContext.js";
 import { useCommands } from "../commands/useCommands.js";
 import { ToastStack } from "../notifications/Toast.js";
@@ -19,6 +20,7 @@ import {
   deriveRibbonTiles,
 } from "../entities/chainRibbon.js";
 import { chainRibbonToFlowNode } from "../entities/chainRibbonNode.js";
+import type { LayerFilter } from "../entities/canvasLayers.js";
 import { resolveBootNodes } from "../entities/connectionTargets.js";
 import { connectingEdgesToFlowEdges } from "../entities/connectingEdge.js";
 import {
@@ -46,6 +48,7 @@ import { stabilizeArrayReference, stabilizeNodes } from "../entities/nodeStabili
 import { indexTransactions } from "../entities/transaction.js";
 import { useBlockPulses } from "../entities/useBlockPulses.js";
 import { useContractSettlementEffects } from "../entities/useContractSettlementEffects.js";
+import { useForkColorAssignment } from "../entities/useForkColors.js";
 import { useNewArrivalHighlight } from "../entities/useNewArrivalHighlight.js";
 import { useNodeLinkActivityPulses } from "../entities/useNodeLinkActivityPulses.js";
 import { useOperationPulses } from "../entities/useOperationPulses.js";
@@ -70,6 +73,7 @@ import {
   saveNodePosition,
 } from "../layout/layoutStore.js";
 import { ETHEREUM_OPERATION_CATALOG } from "../chain-profiles/ethereum/operationCatalog.js";
+import { ETHEREUM_VISUALIZATION_LAYERS } from "../chain-profiles/ethereum/visualizationLayers.js";
 import { deriveDeployedContracts } from "../operations/deployedContracts.js";
 import { OperationDataProvider } from "../operations/OperationDataContext.js";
 import { deriveWalletCandidates } from "../operations/walletCandidates.js";
@@ -127,6 +131,9 @@ function AppShell({
   const { t } = useLanguage();
   const [layout, setLayout] = useState<LayoutMap>(() => loadLayout(storage));
   const { notifications, notify, dismiss } = useNotifications();
+  // レイヤーレンズの選択状態（Issue #299）。永続化しない（UX設計 §3.1
+  // 手順5: リロードで必ず「すべて」に戻る。開いたら全部見える、を保証する）。
+  const [layerFilter, setLayerFilter] = useState<LayerFilter>("all");
 
   const {
     state,
@@ -438,6 +445,21 @@ function AppShell({
       ),
     [entities],
   );
+
+  // B層拡張: フォーク（一時的な分岐）の色分け（ARCHITECTURE.md §9、Issue
+  // #296）。判定は各ノードの headBlockHash と blocks（BlockEntity 集合）
+  // だけから導出する純粋な派生状態で、色の安定性（同じ枝には同じ色を
+  // 引き継ぐ）はフック内部で管理する。
+  const forkColors = useForkColorAssignment(nodeEntities, blocks);
+  const infraNodesWithForkColor = useMemo(
+    () =>
+      infraNodesWithHighlight.map((node) => {
+        const forkColorIndex = forkColors.colorIndexByNodeId.get(node.id);
+        if (forkColorIndex === node.data.forkColorIndex) return node;
+        return { ...node, data: { ...node.data, forkColorIndex } };
+      }),
+    [infraNodesWithHighlight, forkColors],
+  );
   // ゴースト（仮カード）→ 接続予定先ノードの点線エッジ（§4-2）。
   const pendingConnectionEdges = useMemo(
     () => ghostsToPendingConnectionEdges(ghosts, infraNodeIds),
@@ -496,14 +518,14 @@ function AppShell({
 
   const nodes = useMemo(
     () => [
-      ...infraNodesWithHighlight,
+      ...infraNodesWithForkColor,
       ...walletNodes,
       ...contractNodesWithHighlight,
       chainRibbonNode,
       ...ghosts,
     ],
     [
-      infraNodesWithHighlight,
+      infraNodesWithForkColor,
       walletNodes,
       contractNodesWithHighlight,
       chainRibbonNode,
@@ -563,15 +585,27 @@ function AppShell({
               useRibbonHover まで届く（OperationDataProvider と同じ理由）。 */}
           <RibbonHoverProvider transactions={transactions}>
             <main className="app__canvas">
-              <CanvasToolbar
-                pendingAddNode={pendingAddNode}
-                pendingAddWorkbench={pendingAddWorkbench}
-                entities={entities}
-              />
+              <div className="canvas-overlay-top">
+                <CanvasToolbar
+                  pendingAddNode={pendingAddNode}
+                  pendingAddWorkbench={pendingAddWorkbench}
+                  entities={entities}
+                />
+                <LayerFilterBar
+                  value={layerFilter}
+                  onChange={setLayerFilter}
+                  layers={ETHEREUM_VISUALIZATION_LAYERS}
+                />
+              </div>
               {nodes.length === 0 ? (
                 <p className="app__empty">{t("canvas.empty")}</p>
               ) : (
-                <Canvas nodes={nodes} edges={edges} onPersistPosition={persist} />
+                <Canvas
+                  nodes={nodes}
+                  edges={edges}
+                  onPersistPosition={persist}
+                  layerFilter={layerFilter}
+                />
               )}
               <ToastStack notifications={notifications} onDismiss={dismiss} />
             </main>

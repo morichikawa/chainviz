@@ -129,6 +129,33 @@ validator:
   layer: a-infra
   relatedTerms: [cl-client, bootnode, beacon-api]
 
+visualization-layers:
+  name:
+    ja: 可視化レイヤー（A層〜D層）
+    en: Visualization layers (A–D)
+  definition:
+    ja: >-
+      chainviz が画面を整理するための4つの視点。A層はインフラ（コンテナと
+      プロセス）、B層はP2Pネットワーク（ノード間の通信）、C層はトランザク
+      ション（チェーン上の出来事）、D層はノード内部（クライアント間の配管）
+      を指す。ブロックチェーンは複数の抽象度が同時に動くシステムなので、
+      どの高さから眺めるかを決めると理解しやすくなる。chainviz では既定で
+      全レイヤーが同じキャンバスに同時に表示され、ツールバー下の「レイヤー」
+      チップで1つを選ぶとその層に属する要素だけが通常表示のまま残り、他の
+      要素は薄く表示される（レイヤーレンズ）。
+    en: >-
+      The four viewpoints chainviz uses to organize the screen. Layer A is
+      infrastructure (containers and processes), Layer B is the P2P network
+      (communication between nodes), Layer C is transactions (on-chain
+      events), and Layer D is node internals (the plumbing between clients).
+      Because a blockchain runs several levels of abstraction at once,
+      picking which height to view from makes it easier to follow. chainviz
+      shows all layers on the same canvas by default; selecting one of the
+      "Layers" chips below the toolbar keeps that layer's elements at full
+      opacity while dimming the rest (the layer lens).
+  layer: a-infra
+  relatedTerms: [container, el-client, cl-client]
+
 rpc-endpoint:
   name:
     ja: RPCエンドポイント

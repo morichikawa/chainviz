@@ -1,10 +1,14 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import { GlossaryProvider } from "../glossary/GlossaryProvider.js";
 import { LanguageProvider } from "../i18n/LanguageProvider.js";
 import { OperationTargetEdgePopover } from "./OperationTargetEdgePopover.js";
 
 afterEach(cleanup);
 
+// Issue #299: 見出しに LayerBadge（GlossaryTerm 経由で useGlossary を呼ぶ）を
+// 追加したため、GlossaryProvider 無しでは例外になる（他の *Popover.test.tsx
+// と同じ理由）。
 function wrap(
   workbenchContainerName: string,
   targetContainerName: string,
@@ -12,13 +16,22 @@ function wrap(
 ) {
   return render(
     <LanguageProvider initialLanguage={lang}>
-      <OperationTargetEdgePopover
-        workbenchContainerName={workbenchContainerName}
-        targetContainerName={targetContainerName}
-      />
+      <GlossaryProvider glossary={{}}>
+        <OperationTargetEdgePopover
+          workbenchContainerName={workbenchContainerName}
+          targetContainerName={targetContainerName}
+        />
+      </GlossaryProvider>
     </LanguageProvider>,
   );
 }
+
+describe("OperationTargetEdgePopover layer badge (Issue #299)", () => {
+  it("shows the C-layer badge in the heading", () => {
+    wrap("chainviz-workbench-alice", "chainviz-reth-1");
+    expect(screen.getByTestId("layer-badge-c")).toBeTruthy();
+  });
+});
 
 describe("OperationTargetEdgePopover (Issue #215)", () => {
   it("has a tooltip role for accessibility", () => {

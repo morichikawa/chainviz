@@ -1,4 +1,5 @@
 import { useLanguage } from "../i18n/LanguageProvider.js";
+import { LayerBadge } from "./LayerBadge.js";
 
 /**
  * 操作先エッジ（ワークベンチ → RPC 接続先ノード）へのホバーで出す
@@ -24,7 +25,8 @@ export function OperationTargetEdgePopover({
   return (
     <div className="operation-target-popover nodrag nopan" role="tooltip">
       <div className="operation-target-popover__heading">
-        {t("edge.operationTarget")}
+        <span>{t("edge.operationTarget")}</span>
+        <LayerBadge layer="c" />
       </div>
       <div className="operation-target-popover__endpoints">
         {workbenchContainerName} → {targetContainerName}

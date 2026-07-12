@@ -17,6 +17,8 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChainRibbonCard } from "../entities/ChainRibbonCard.js";
 import { CHAIN_RIBBON_NODE_TYPE } from "../entities/chainRibbonNode.js";
+import type { LayerFilter } from "../entities/canvasLayers.js";
+import { computeLayerVisibility, withLayerDimClassName } from "../entities/canvasLayers.js";
 import { ContractCallPulseEdge } from "../entities/ContractCallPulseEdge.js";
 import { CONTRACT_CALL_PULSE_EDGE_TYPE } from "../entities/contractCallPulseEdge.js";
 import { ContractCard } from "../entities/ContractCard.js";
@@ -91,9 +93,20 @@ export interface CanvasProps {
   edges?: CanvasFlowEdge[];
   /** ドラッグ完了時に安定 ID（containerName / address）と位置を保存する。 */
   onPersistPosition: (stableId: string, position: Position) => void;
+  /**
+   * レイヤーレンズの選択状態（Issue #299）。省略時は "all"（全層通常表示、
+   * 既定・見た目は従来どおり変わらない）。選択状態自体は App.tsx が
+   * 持つ（`LayerFilterBar` はツールバー直下に別途配置するため）。
+   */
+  layerFilter?: LayerFilter;
 }
 
-function CanvasInner({ nodes, edges = [], onPersistPosition }: CanvasProps) {
+function CanvasInner({
+  nodes,
+  edges = [],
+  onPersistPosition,
+  layerFilter = "all",
+}: CanvasProps) {
   const [rfNodes, setRfNodes] = useState<CanvasFlowNode[]>(nodes);
   const [rfEdges, setRfEdges] = useState<CanvasFlowEdge[]>(edges);
   // ホバー中のピア接続（紐）の id。ホバー強調・ポップオーバー表示
@@ -205,32 +218,52 @@ function CanvasInner({ nodes, edges = [], onPersistPosition }: CanvasProps) {
     }
   }, []);
 
-  // 表示直前にホバー状態を注入する。rfEdges 自体は書き換えない
-  // （applyEdgeChanges の対象と hover 由来の派生 state を混ぜない）。
+  // レイヤーレンズ(Issue #299): 選択層以外の要素の id 集合。"all" のときは
+  // 常に空集合(既存の見た目を一切変えない)。rfNodes/rfEdges(hover 注入前の
+  // 状態)を入力にする。
+  const layerVisibility = useMemo(
+    () => computeLayerVisibility(rfNodes, rfEdges, layerFilter),
+    [rfNodes, rfEdges, layerFilter],
+  );
+
+  // 表示直前にホバー状態・dim状態を注入する。rfEdges 自体は書き換えない
+  // （applyEdgeChanges の対象と hover/dim 由来の派生 state を混ぜない）。
   const displayEdges = useMemo(
     () =>
       rfEdges.map((edge) => {
+        let next = edge;
         if (isPeerFlowEdge(edge)) {
           const hovered = edge.id === hoveredPeerEdgeId;
-          if ((edge.data?.hovered ?? false) === hovered) return edge;
-          return { ...edge, data: { ...edge.data, hovered } };
-        }
-        if (isDeployFlowEdge(edge)) {
+          if ((edge.data?.hovered ?? false) !== hovered) {
+            next = { ...next, data: { ...next.data, hovered } };
+          }
+        } else if (isDeployFlowEdge(edge)) {
           const hovered = edge.id === hoveredDeployEdgeId;
-          if ((edge.data?.hovered ?? false) === hovered) return edge;
-          return { ...edge, data: { ...edge.data, hovered } };
-        }
-        if (isInternalLinkFlowEdge(edge)) {
+          if ((edge.data?.hovered ?? false) !== hovered) {
+            next = { ...next, data: { ...next.data, hovered } };
+          }
+        } else if (isInternalLinkFlowEdge(edge)) {
           const hovered = edge.id === hoveredInternalLinkEdgeId;
-          if ((edge.data?.hovered ?? false) === hovered) return edge;
-          return { ...edge, data: { ...edge.data, hovered } };
-        }
-        if (isOperationTargetFlowEdge(edge)) {
+          if ((edge.data?.hovered ?? false) !== hovered) {
+            next = { ...next, data: { ...next.data, hovered } };
+          }
+        } else if (isOperationTargetFlowEdge(edge)) {
           const hovered = edge.id === hoveredOperationTargetEdgeId;
-          if ((edge.data?.hovered ?? false) === hovered) return edge;
-          return { ...edge, data: { ...edge.data, hovered } };
+          if ((edge.data?.hovered ?? false) !== hovered) {
+            next = { ...next, data: { ...next.data, hovered } };
+          }
         }
-        return edge;
+
+        // dim はホバー中の紐/線でも一旦付けたままにする。実際の見た目の
+        // 復帰は styles.css の `.layer-lens-dim:hover` (CSS の :hover は
+        // 子要素のホバーでも発火するため、JS 側の hovered state と二重に
+        // 判定を持たなくてよい。docs/worklog/issue-299.md 参照)。
+        const dim = layerVisibility.dimEdgeIds.has(edge.id);
+        const className = withLayerDimClassName(next.className, dim);
+        if (className !== next.className) {
+          next = { ...next, className };
+        }
+        return next;
       }),
     [
       rfEdges,
@@ -238,6 +271,7 @@ function CanvasInner({ nodes, edges = [], onPersistPosition }: CanvasProps) {
       hoveredDeployEdgeId,
       hoveredInternalLinkEdgeId,
       hoveredOperationTargetEdgeId,
+      layerVisibility,
     ],
   );
 
@@ -302,17 +336,27 @@ function CanvasInner({ nodes, edges = [], onPersistPosition }: CanvasProps) {
     [getNode, setCenter, getZoom],
   );
 
-  // 表示直前にジャンプ強調を注入する（displayEdges の hover 注入と同じ
-  // パターン）。rfNodes 自体・ContractNodeData の型は変えない。
-  const displayNodes = useMemo(() => {
-    if (jumpHighlightNodeId === null) return rfNodes;
-    return rfNodes.map((node) => {
-      if (node.id !== jumpHighlightNodeId || node.type !== CONTRACT_NODE_TYPE) {
-        return node;
-      }
-      return { ...node, data: { ...node.data, isNew: true } };
-    });
-  }, [rfNodes, jumpHighlightNodeId]);
+  // 表示直前にジャンプ強調・レイヤーレンズの dim 状態を注入する
+  // （displayEdges の hover/dim 注入と同じパターン）。rfNodes 自体・各
+  // NodeData の型は変えない。ゴーストカード・新着発光中のカードは
+  // layerVisibility.dimNodeIds に含まれないため常に対象外になる
+  // （entities/canvasLayers.ts の computeLayerVisibility 参照）。
+  const displayNodes = useMemo(
+    () =>
+      rfNodes.map((node) => {
+        let next = node;
+        if (jumpHighlightNodeId !== null && node.id === jumpHighlightNodeId && node.type === CONTRACT_NODE_TYPE) {
+          next = { ...node, data: { ...node.data, isNew: true } };
+        }
+        const dim = layerVisibility.dimNodeIds.has(node.id);
+        const className = withLayerDimClassName(next.className, dim);
+        if (className !== next.className) {
+          next = { ...next, className };
+        }
+        return next;
+      }),
+    [rfNodes, jumpHighlightNodeId, layerVisibility],
+  );
 
   return (
     <ReactFlow

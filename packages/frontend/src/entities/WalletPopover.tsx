@@ -5,6 +5,7 @@ import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { useHoverPopover } from "../interaction/useHoverPopover.js";
 import { PopoverPortal } from "../interaction/PopoverPortal.js";
+import { LayerBadge } from "./LayerBadge.js";
 import { shortHex, TX_STATUS_MESSAGE_KEY } from "./transaction.js";
 import { deriveTxCallPreview } from "./txCallPreview.js";
 import { TxLifecyclePopover } from "./TxLifecyclePopover.js";
@@ -126,6 +127,9 @@ export function WalletPopover({
 
   return (
     <PopoverPortal anchorRef={anchorRef} gapPx={8} className="infra-popover" role="tooltip">
+      <div className="infra-popover__heading">
+        <LayerBadge layer="c" />
+      </div>
       <div className="infra-field">
         <span className="infra-field__label">{t("field.address")}</span>
         <span className="infra-field__value">{shortHex(entity.address, 10, 6)}</span>

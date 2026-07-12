@@ -11,9 +11,12 @@ export type Localized = Record<Language, string>;
 /** UI 文言。値は `{ja, en}` 形式で持つ。 */
 export const messages = {
   "app.title": { ja: "chainviz — インフラ可視化", en: "chainviz — Infrastructure" },
+  // Issue #299: 画面は初出のA層(インフラ)のみだったPhase 1の名残で
+  // 「(A層)」固定表記だったが、現在のキャンバスはA〜D層すべてを同時に
+  // 表示するため「(A層〜D層)」に更新する(docs/worklog/issue-299.md §3.5)。
   "app.subtitle": {
-    ja: "Docker 上の Ethereum ノード群（A層）",
-    en: "Ethereum nodes on Docker (Layer A)",
+    ja: "Docker 上の Ethereum ノード群（A層〜D層）",
+    en: "Ethereum nodes on Docker (Layers A–D)",
   },
   "language.toggle": { ja: "English", en: "日本語" },
   "connection.connecting": { ja: "接続中…", en: "Connecting…" },
@@ -59,6 +62,8 @@ export const messages = {
   "field.blockHeight": { ja: "ブロック高", en: "Block height" },
   "sync.synced": { ja: "同期済み", en: "Synced" },
   "sync.syncing": { ja: "同期中", en: "Syncing" },
+  // B層拡張: フォーク（一時的な分岐）の色分け（ARCHITECTURE.md §9。Issue #296）。
+  "field.headTip": { ja: "見ている tip", en: "Following tip" },
   "ghost.status": { ja: "起動中…", en: "Starting…" },
   "canvas.empty": {
     ja: "表示するコンテナがありません",
@@ -400,7 +405,7 @@ export const messages = {
     ja: "同期中: {stage} {checkpoint}",
     en: "Syncing: {stage} {checkpoint}",
   },
-  // --- チェーンリボン（ブロックの連なり表示。ARCHITECTURE.md §9。
+  // --- チェーンリボン（ブロックの連なり表示。ARCHITECTURE.md §10。
   // Issue #298） ---
   "chainRibbon.title": { ja: "チェーン", en: "Chain" },
   "chainRibbon.subtitle": {
@@ -429,6 +434,40 @@ export const messages = {
     en: "No receipt times observed yet",
   },
   "chainRibbon.popover.receivedByOffset": { ja: "+{ms}ms", en: "+{ms}ms" },
+  // --- レイヤーレンズ（A〜D層のチップバー。Issue #299。
+  // docs/worklog/issue-299.md §3.7 の初稿をそのまま採用） ---
+  "layerFilter.label": { ja: "レイヤー", en: "Layers" },
+  "layerFilter.all": { ja: "すべて", en: "All" },
+  "layerFilter.a": { ja: "A層 インフラ", en: "A: Infrastructure" },
+  "layerFilter.b": { ja: "B層 P2Pネットワーク", en: "B: P2P Network" },
+  "layerFilter.c": { ja: "C層 トランザクション", en: "C: Transactions" },
+  "layerFilter.d": { ja: "D層 ノード内部", en: "D: Node Internals" },
+  "layerFilter.hint.all": {
+    ja: "全レイヤーを同時に表示します（既定）",
+    en: "Show all layers at once (default)",
+  },
+  "layerFilter.hint.a": {
+    ja: "コンテナとプロセス。選ぶとマシン（ノード・ワークベンチ）のカードだけが通常表示になり、他は薄くなります",
+    en: "Containers and processes. Selecting keeps machine cards highlighted and dims the rest",
+  },
+  "layerFilter.hint.b": {
+    ja: "ノード間のP2P通信。選ぶとピア接続とブロック伝播だけが通常表示になり、他は薄くなります",
+    en: "Peer-to-peer communication. Selecting keeps peer connections and block propagation highlighted",
+  },
+  "layerFilter.hint.c": {
+    ja: "チェーン上の出来事。選ぶとウォレット・コントラクト・操作の流れだけが通常表示になり、他は薄くなります",
+    en: "On-chain activity. Selecting keeps wallets, contracts and operations highlighted",
+  },
+  "layerFilter.hint.d": {
+    ja: "ノード内部の配管。選ぶと合意（CL）と実行（EL）の内部リンクだけが通常表示になり、他は薄くなります",
+    en: "Node internals. Selecting keeps CL–EL internal links highlighted",
+  },
+  // ポップオーバー見出しに添える短い層バッジ（Issue #299 UX設計 §6-3）。
+  // チップバーの `layerFilter.a` 等より短く、見出しに収まる表記にする。
+  "layerBadge.a": { ja: "A層", en: "Layer A" },
+  "layerBadge.b": { ja: "B層", en: "Layer B" },
+  "layerBadge.c": { ja: "C層", en: "Layer C" },
+  "layerBadge.d": { ja: "D層", en: "Layer D" },
 } as const satisfies Record<string, Localized>;
 
 export type MessageKey = keyof typeof messages;
