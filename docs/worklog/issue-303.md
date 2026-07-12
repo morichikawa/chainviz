@@ -201,3 +201,56 @@
   - `evictBlocksBelow` の tx 走査は pending tx（`blockHash` が
     `undefined`）を自然に除外する（`Set.has(undefined)` は必ず
     `false`）ため、pending tx 用の特別な除外条件は不要だった。
+
+### 2026-07-13 テスト強化（tester）
+
+- 担当: tester
+- ブランチ: issue-303-transaction-retention
+- 内容: 実装担当が書いた基本テスト（`store-transaction-retention.test.ts`、
+  18 ケース）を土台に、境界値・異常系・タイミングズレに絞った補強テストを
+  新規ファイル `packages/collector/src/world-state/store-transaction-retention-edge.test.ts`
+  に追加した（10 ケース）。基本ファイルはハッピーパスの保持方針を担い、
+  こちらは境界・異常系の関心事を担う分割（1 ファイル 1 責務。CLAUDE.md）。
+  追加した観点:
+  - 入口ガードのタイミングズレ:
+    - included tx が対応 block より先着した場合は捨てられ、その後 block が
+      到着しても遡って取り込まれない（入口ガードは applyTransaction の瞬間の
+      block 存在のみを見る）。
+    - block 到着後に同じ tx が再配信されれば取り込まれる（再試行での回復）。
+    - `blockHash` が block 以外の既存エンティティ（例: pending tx の hash）を
+      指す場合、`get` はヒットするが `kind !== "block"` なので捨てられる
+      （kind チェックの境界）。
+  - `PENDING_TX_RETENTION` 境界と pending -> included 遷移:
+    - pending が included へ遷移すると pending 件数が減り、空いたスロットに
+      新しい pending が間引きなしで入る。
+    - 超過ごとに次に古い pending が退去する（窓のスライドが継続する）。
+    - cap で退去した pending が pending のまま再配信されても末尾に入り直し、
+      恒久的な取りこぼしにはならない。
+  - 複数 block が同時に窓外へ押し出される場合の同期性:
+    - 番号の大きなジャンプで複数 block が一度に窓外となったとき、各 block に
+      紐づく複数 tx が同じ差分の中で全て削除される。
+    - 窓内に残る block の tx は削除されず、窓落ちした block の tx だけが消える。
+  - 入口ガードで捨てた tx がウォレット観測を害しないこと:
+    - included tx が入口ガードで捨てられた場合、`index.ts` は
+      `hasTransaction` が false のため `linkTransactionToWallets` を呼ばない
+      （その配線を模したテスト）。それでも残高・nonce は次のポーリング周期の
+      `applyWallets` で独立に反映される（tx 紐付けと無関係）。
+    - 取り込まれた場合のみ `linkTransactionToWallets` によって
+      `recentTxHashes` に載る。
+- 回帰検出の確認: 追加テストが実装の欠陥を実際に検出できることを、実装を
+  意図的に壊して確認した（確認後は元に戻し、`store.ts` は無変更）:
+  - 入口ガードの `kind !== "block"` チェックを外す → kind 境界のテストが失敗。
+  - `evictBlocksBelow` の tx 削除ループをスキップ → 複数 block 同期のテストが失敗。
+  - `evictExcessPendingTransactions` の pending 判定から `status === "pending"`
+    を外し included も数える → スロット解放のテストが失敗。
+- `pnpm --filter @chainviz/collector build && pnpm --filter @chainviz/collector test`
+  が通ることを確認済み（57 test files / 1408 tests。既存 1398 + 追加 10）。
+- 報告した気づき（実装のバグではなく設計前提の確認事項。差し戻しではない）:
+  - `applyTransaction` の分岐は `tx.blockHash` の有無だけで行うため、
+    `status === "included"`/`"failed"` にもかかわらず `blockHash` が
+    `undefined` の tx（アダプタが本来生成しない不正入力）は pending 分岐に
+    入り、`status === "pending"` でないため pending cap にも数えられず、
+    block 連動でも消えないため無制限に残りうる。現状の設計は「included/failed は
+    必ず blockHash を持つ」というアダプタの保証を前提としており、通常運転では
+    到達しない。堅牢性を上げるなら分岐条件を status も見る形にする余地がある
+    （今回はテスト追加のみの担当のため実装は変更していない）。
