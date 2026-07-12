@@ -251,3 +251,71 @@ frontend をモックデータモード(`VITE_COLLECTOR_URL` 未設定、
   指定して起動した(システムへの変更なし。issue-198 の QA と同じ手法)
 - モックデータモードで「+ ノードを追加」を2回押すと、本設計の動機となった
   「層をまたぐエッジの交差で読みにくくなる」状態を誰でも再現できる
+
+### 2026-07-12 実装着手前の設計メモ
+
+- 担当: frontend
+- ブランチ: issue-299-layer-toggle（designer フェーズは省略。上記 UX 設計を
+  そのまま実装する）
+- スコープ確認: 統括からの指示により、ヘッダー文言修正は `app.subtitle`
+  のみ（§3.5 が提案していた `app.title` の変更は対象外。ユーザー確認は
+  subtitle 側のみ得られている）。ポップオーバー見出しへの層バッジ追加
+  （§6-3）は「わかりやすさに資するなら含める」との回答を受け、本 PR で
+  実装する。
+
+#### データフロー・状態の持ち方
+
+- レンズの選択状態（`LayerFilter = "all" | "a" | "b" | "c" | "d"`）は
+  `App.tsx`（`AppShell`）が `useState` で持つ。永続化しない（§3.1 の
+  決定どおり、リロードで "all" に戻る）。`CanvasToolbar` の直下に
+  `LayerFilterBar` を新設し、`app__canvas` 内で両者をラップする
+  `canvas-overlay-top`（flex column）に収める。ツールバー自身の高さに
+  依存した固定オフセットで下に置くと、将来ツールバーの内容が増えたときに
+  ズレるため、絶対配置はラップ側だけに持たせる
+- 選択状態は `Canvas` に `layerFilter` prop として渡す（省略時 "all"）。
+  dim 判定はワールドステートではなくキャンバス表示状態そのものなので、
+  `Canvas.tsx`（`rfNodes`/`rfEdges` を持つ場所）が計算の主体になる。
+  既存の hover 注入（`displayEdges`/`displayNodes` の
+  useMemo。「rfNodes/rfEdges 自体は書き換えず、表示直前に derived state を
+  注入する」既存パターン）と同じ場所に、dim 用の `className` 注入を追加する
+- 层→要素の判定ロジックは `entities/canvasLayers.ts` に純粋関数として
+  切り出す（`computeLayerVisibility(nodes, edges, filter)` が
+  `dimNodeIds`/`dimEdgeIds` の2つの `Set<string>` を返す）。判定表(§3.2)を
+  そのままコードにする:
+  - カード基本層: wallet/contract → C層固定、infra(node/workbench) → A層
+    （B/C/D層エッジの端点なら該当層でも通常表示）、ghost → レンズ対象外
+  - エッジ→層: peer→B、ownership/deploy/operation/operationTarget/
+    contractCallPulse→C、internalLink→D。pendingConnection/connecting は
+    マッピングに含めない（＝常に「層を持たない」扱いとなり、dim 対象にも
+    「選択層のエッジ」にもならない。これにより #102/#220 対象の操作
+    フィードバックは自動的にレンズ対象外になる）
+  - 新着発光中（`data.isNew`）のカードは `computeLayerVisibility` 内で
+    dim 対象から除外する（判定を1箇所に集約し、Canvas.tsx 側で個別に
+    isNew を見る分岐を増やさない）
+  - ゴーストカード自体もカード基本層が無いため自動的に対象外
+- **dim の反映方式**: edge/node オブジェクトの `className` に
+  `layer-lens-dim` 修飾クラスを追加するだけにする。React Flow は
+  `edge.className`/`node.className` をそれぞれのラッパー要素
+  （`<g class="react-flow__edge ...">`／`<div class="react-flow__node ...">`）
+  に反映する（xyflow のソースで確認済み）ため、パルスの `<circle>` も含めて
+  1箇所の opacity 指定で丸ごと薄くできる。個々の `*Edge.tsx`/`*Card.tsx`
+  コンポーネントを書き換える必要が無く、変更が波及する範囲を最小化できる。
+  ホバー時に通常表示へ戻す（§3.4「望ましい」)は CSS の `:hover` で実現する
+  （ラッパー要素自体がマウスイベントの対象になっており、子要素をホバー
+  しても `:hover` は伝播するため、JS 側の個別 hover state を経由しなくて
+  よい）
+- チェーンプロファイルごとの「存在するレイヤー一覧」は
+  `chain-profiles/ethereum/visualizationLayers.ts` に
+  `ETHEREUM_VISUALIZATION_LAYERS: VisualizationLayer[]` として置く
+  （`LayerFilterBar` はこれを渡されてチップを描画するだけで、D層の無い
+  将来のチェーンプロファイルでは配列を短くするだけで済む設計にする。
+  CLAUDE.md「チェーンプロファイル単位で増やす」）
+- ポップオーバー見出しの層バッジは `entities/LayerBadge.tsx` を新設し、
+  既存の `infra-card__badge--bootnode` と同型（pill + `GlossaryTerm`）で
+  実装する。見出しの無い `InfraPopover`/`WalletPopover`/`ContractPopover`/
+  `DeployEdgePopover` には最小限の見出し行を追加する
+- glossary: `visualization-layers` を `glossary/ethereum/terms/a-infra.yaml`
+  に `layer: a-infra` で追加する（横断概念だが、既存スキーマに
+  `layer` の複数値を持たせる変更はスコープ外のため、design メモの
+  「妥協案」をそのまま採用する）
+
