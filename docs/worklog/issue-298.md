@@ -739,3 +739,101 @@ UX観点からの見立てであり、正式なデータフロー・型設計は
     `chainviz-ethereum-e2e-ribbon-recipient-*` を削除済みとのことなので、
     QA は汚染のない状態で `chain-ribbon.spec.ts` を一度実行し、UI-B-06 が
     最後まで green になることを確認すること
+
+### 2026-07-12 Issue #298 QA検証結果（差し戻し: UI-B-06 が再現性を持って失敗）
+
+- 担当: qa
+- ブランチ: issue-298-block-stacking-visualization（cherry-pick 合流後の worktree、working tree clean）
+- 判定: **差し戻し（chainviz-frontend）**。第1段階（チェーンリボンの表示）は
+  合格。第2段階のホバー連動ハイライト（UI-B-06）が実 Docker 環境で再現性を
+  持って失敗し、完了条件「ホバー連動ハイライト(第2段階)も含む」を満たさない。
+
+#### 検証環境
+
+- 既存稼働中の共有 Docker スタック（`profiles/ethereum`）を再利用。検証開始時
+  reth1 のブロック高は 9041、検証中も 2 秒スロットで進行し続けることを確認
+  （終盤 9381 以降）。globalSetup が collector（4125）・vite dev（5275、
+  `VITE_COLLECTOR_URL=ws://127.0.0.1:4125`）を起動し、実 collector に接続した
+  状態で chromium から検証した（モックデータではない）。
+- スタックには別セッションが追加した reth4/reth5・beacon4/beacon5（一部は
+  同期途中）が存在した。これらは検証開始前から在ったもので QA の生成物では
+  ない。
+
+#### UI-B-05（合格）
+
+- `chain-ribbon.spec.ts` を単体実行し、UI-B-05 は 2 回とも green（3.5s / 5.4s）。
+  以下を実物で確認できた:
+  - 無限キャンバス上にチェーンリボンカード（`chain-ribbon-card`）が表示される
+  - タイル（`chain-ribbon-tile-<hash>`）が並び、ヘッダの最新ブロック番号
+    （`chain-ribbon-latest`）が時間とともに増える（新ブロックが右端に積まれる）
+  - タイルホバーでポップオーバーが開き、親ブロック行
+    （`chain-ribbon-popover-parent-<hash>`）が表示される
+
+#### UI-B-06（不合格・再現性あり）
+
+- 3 回とも失敗（フルスイート実行時 1 回 + 単体実行 2 回）。症状は毎回同じで、
+  「送金 → tx 確定（`wallet-tx-chip` が `data-status="included"` になる）→ その
+  チップにホバー → 対応するリボンタイルが光る（`.chain-ribbon-tile--highlight`
+  が 1 件になる）」の逆方向ハイライト待ちで、30 秒間ずっと 0 件のままタイムアウト
+  する（`toHaveCount(1)` が 64 回のポーリングすべてで 0 を観測）。
+
+- 再現手順:
+  1. 汚染のない状態（`e2e-ribbon-recipient*` コンテナが無いこと）を確認
+  2. `pnpm --filter @chainviz/e2e exec playwright test src/ui/chain-ribbon.spec.ts:86 --project=chromium`
+     （globalSetup が実 Docker・collector・vite を起動）
+  3. UI-B-06 が「チェーンリボンで、tx を含むブロックのタイルにホバーする」
+     ステップで失敗する
+
+- 原因調査（trace.zip の DOM スナップショット + reth RPC で裏取り）:
+  - 失敗は「tx のブロックが最初から 8 タイルの表示窓の外にあった（窓外流出）」
+    ためではない。単体実行 2 回目の trace で、ホバー実行時刻（ts≈18047ms）と
+    直前の DOM スナップショット（ts≈18038ms、リボン最新 #9431）が一致しており、
+    ホバー時点で tx の入ったブロック 9431（canonical hash
+    `0x4e16e9d8…4cdd`、receipt の blockHash と一致）は最新タイルとして表示されて
+    いた。
+  - さらに trace のスナップショットには、ホバー直後に当該タイル
+    （`chain-ribbon-tile-0x4e16e9d8…`）へ `chain-ribbon-tile--highlight` クラスが
+    一度は付与された瞬間が記録されている。つまり逆方向ハイライトのロジック
+    （`RibbonHoverContext.setHoveredTxHash` → `tx.blockHash` → タイルの
+    `block.hash === hoveredBlockHash`）自体は正しく動作し、一瞬は光っている。
+  - ところがそのハイライトは最初のアサーション・ポーリング（ホバーから約 470ms
+    後）より前に消え、以後 30 秒間 0 のまま復帰しない。待機中にチェーンが進行して
+    表示窓が #9431→#9447 へ前進し、当該タイルは 8 枠の窓から流れ出て二度と戻らない
+    （窓は前進のみ）。
+
+- 結論（メカニズム）: 逆方向ハイライトはホバー直後に一度は正しく点灯するが、
+  **ライブの実チェーン（2 秒スロットで差分が流れ続け、追加ノードの同期も重なって
+  再描画が頻発する状況）ではハイライトがほぼ即座に失われ、`toHaveCount(1)` が
+  一度も 1 を観測できない**。ホバー状態が短時間で落ちる要因（頻繁な再描画で
+  ホバー中のチップの下から要素が動き mouseleave が発生する等）と、待機中に対象
+  タイルが 8 枠窓の外へ流れて戻らないことが重なっている。ユーザー体験としても
+  「チップにホバーして対応ブロックが光るが、次のブロックが届いた瞬間に消える」
+  という不安定さになり得る点で、実挙動上の不具合と判断する。
+
+- 差し戻し先と扱い: chainviz-frontend。実装（ライブ更新中もホバー中はハイライトを
+  保持させるか、対象タイルが窓外でも参照できるようにするか）と e2e スペック
+  （単発ホバー後に 30 秒 `toHaveCount` を待つ前提が現状の挙動と噛み合っていない）は
+  いずれも frontend 担当の範囲。どちらをどう直すかは統括・frontend の判断に委ねる
+  （QA は挙動の事実と再現手順の報告に留める）。
+
+#### その他の観測
+
+- `pnpm test:e2e:ui -- chain-ribbon` は、`-- chain-ribbon` のフィルタが効かず UI 層
+  スペック 35 件すべてを直列実行した（chain-ribbon への絞り込みにならない）。この
+  フルスイート実行では chain-ribbon 以外にも複数スペックが失敗したが、7 分での
+  タイムアウト・同期途中の追加ノードを含む多忙な共有スタックが原因と見られ、#298
+  の退行ではない（chain-ribbon の判定は `chain-ribbon.spec.ts` の単体実行を根拠と
+  した）。UI-B-06 のみを対象にしたい場合は
+  `playwright test src/ui/chain-ribbon.spec.ts` のようにファイルパスで指定する。
+- 既存のブロック伝播パルス・tx ライフサイクル表示の退行は、対象ファイルが未変更
+  （査読済み）であり UI-B-05 実行時にアプリがクラッシュせず描画されたことから
+  問題は観測されなかった。ただし本セッションでパルスを独立に走らせて目視確認は
+  していない。
+
+#### 後片付け
+
+- 検証で追加された `e2e-ribbon-recipient` 系ワークベンチコンテナ
+  （`chainviz-ethereum-e2e-ribbon-recipient-2` / `-2-3`）を `docker rm -f` で削除
+  済み。メインスタック（reth1〜5・beacon・validator・test・workbench）には手を
+  付けていない。残プロセス（collector 4125 / vite 5275 等）が残っていないことも
+  確認済み。
