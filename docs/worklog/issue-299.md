@@ -570,3 +570,66 @@ frontend をモックデータモード(`VITE_COLLECTOR_URL` 未設定、
   ビルドが通らない可能性が高い。PR 全体としては整合しており差し戻しは
   しないが、次回以降は「文言修正」と「新機能の文言追加」を分けることが
   望ましい
+
+### 2026-07-12 Issue #299 QA検証結果(合格)
+
+- 担当: qa
+- ブランチ: issue-299-layer-toggle
+- 判定: **合格**(PLAN.md の完了条件を満たしている)
+
+#### 検証環境
+
+- 稼働中の profiles/ethereum の Docker スタック(chainviz-ethereum、10
+  コンテナ)を利用。RPC(127.0.0.1:8545)でブロック番号が 0x21e2→0x21e4 と
+  進行していることを確認
+- worktree の collector を再ビルドし(`pnpm --filter @chainviz/shared
+  --filter @chainviz/collector build`)、実 collector を起動
+  (port 4000、logging proxy 4001→172.28.1.1:8545)。frontend は worktree の
+  vite dev server を `VITE_COLLECTOR_URL=ws://127.0.0.1:4000` で起動し、
+  モックではなく実 collector に接続した
+- WebSocket 疎通を確認: snapshot(type=snapshot、payload.entities 55件=
+  node8/wallet3/workbench3/block41、edges あり)と後続 diff(entityUpdated で
+  resources/blockHeight/syncStages が流れる)が仕様どおり届いている
+- ブラウザ確認は Playwright(chromium headless)で実施。共有ライブラリは
+  `/home/zoe/chrome-deps/root/usr/lib/x86_64-linux-gnu` を `LD_LIBRARY_PATH`
+  に指定して起動(§8 の手法。システムへの変更なし)
+
+#### 確認した項目と結果
+
+1. チップバー表示・既定「すべて」選択: チップ(すべて/A層 インフラ/
+   B層 P2Pネットワーク/C層 トランザクション/D層 ノード内部)が表示され、
+   初期状態は「すべて」が active。dim ノード・dim エッジともに 0 件
+2. 各層の絞り込み(選択層以外を dim、選択層は通常表示)を実データで確認。
+   いずれも設計メモ §3.2 の判定表と一致:
+   - A層: インフラ10枚すべて通常、ウォレット3枚 dim、エッジ14/14 dim
+   - B層: reth×3・beacon×3(peer 端点)が通常、validator/workbench/
+     ウォレットが dim、peer エッジのみ通常(9/14 dim)
+   - C層: ウォレット3枚・workbench(test/workbench)・その RPC 先 reth1 が
+     通常、他ノード dim。ownership/operationTarget エッジが通常、
+     peer/internal-link エッジが dim
+   - D層: reth×3・beacon×3・validator×2(internal link 端点)が通常、
+     workbench・ウォレットが dim
+3. 選択層に接続するエッジの端点カードが dim されないことを確認
+   (C層で workbench の RPC 先 reth1 が通常表示、ownership エッジ端点が通常)
+4. 「すべて」に戻すと dim ノード・dim エッジともに 0 件に戻る
+5. dim 中要素の実効 opacity は 0.2(目標 0.15〜0.25 内)。dim されたウォレットを
+   ホバーすると opacity が 1 に復帰し、ポップオーバーが正常表示される
+6. ポップオーバー見出しの層バッジを確認: ウォレット=「C層」、
+   インフラ(reth1)=「A層」
+7. レンズ対象外の確認(#102/#220 の再発防止):
+   - HUD パネル類(チップバー・ツールバー・凡例・ミニマップ・接続ステータス・
+     ヘッダー)には全状態で layer-lens-dim が一切付かない(hudDim=0)
+   - B層/C層選択中に「+ ノードを追加」を実行し、ゴーストカード(2枚)・
+     新着発光カード(2枚)・接続確立中エッジ(pending-connection-edge)の
+     いずれにも layer-lens-dim が付かないことを、追加操作の全過程で
+     ポーリング観測して確認
+8. ヘッダー副題が「Docker 上の Ethereum ノード群（A層〜D層）」になっている
+   ことを確認(app.title は統括指示のスコープどおり未変更)
+9. ブラウザコンソールにエラーなし
+
+#### 備考
+
+- app.subtitle 以外(app.title「chainviz — インフラ可視化」)は本 Issue の
+  スコープ外(統括指示)であり、未変更のままで正しい
+- 検証に使った実 collector・frontend プロセスは検証後に停止した。Docker
+  スタックは検証前から稼働していたものをそのまま残している
