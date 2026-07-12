@@ -29,6 +29,13 @@ function wrap(entity: ContractEntity, lang: "ja" | "en" = "ja") {
   );
 }
 
+describe("ContractPopover layer badge (Issue #299)", () => {
+  it("shows the C-layer badge in the heading", () => {
+    wrap(contract());
+    expect(screen.getByTestId("layer-badge-c")).toBeTruthy();
+  });
+});
+
 describe("ContractPopover", () => {
   it("has a tooltip role for accessibility", () => {
     wrap(contract());

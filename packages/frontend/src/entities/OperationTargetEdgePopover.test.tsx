@@ -26,6 +26,13 @@ function wrap(
   );
 }
 
+describe("OperationTargetEdgePopover layer badge (Issue #299)", () => {
+  it("shows the C-layer badge in the heading", () => {
+    wrap("chainviz-workbench-alice", "chainviz-reth-1");
+    expect(screen.getByTestId("layer-badge-c")).toBeTruthy();
+  });
+});
+
 describe("OperationTargetEdgePopover (Issue #215)", () => {
   it("has a tooltip role for accessibility", () => {
     wrap("chainviz-workbench-alice", "chainviz-reth-1");

@@ -16,6 +16,13 @@ function wrap(deployerAddress: string, lang: "ja" | "en" = "ja") {
   );
 }
 
+describe("DeployEdgePopover layer badge (Issue #299)", () => {
+  it("shows the C-layer badge in the heading", () => {
+    wrap(`0x${"a".repeat(40)}`);
+    expect(screen.getByTestId("layer-badge-c")).toBeTruthy();
+  });
+});
+
 describe("DeployEdgePopover", () => {
   it("has a tooltip role for accessibility", () => {
     wrap(`0x${"a".repeat(40)}`);

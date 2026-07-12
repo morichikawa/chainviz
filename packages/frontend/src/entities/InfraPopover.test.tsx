@@ -82,6 +82,14 @@ function renderPopover(
   );
 }
 
+describe("InfraPopover layer badge (Issue #299)", () => {
+  it("shows the A-layer badge in the heading", () => {
+    renderPopover(node);
+    expect(screen.getByTestId("layer-badge-a")).toBeTruthy();
+    expect(screen.queryByTestId("layer-badge-b")).toBeNull();
+  });
+});
+
 describe("InfraPopover data-testid instrumentation (Issue #198, ARCHITECTURE.md §8.5)", () => {
   it("exposes the popover root via data-testid keyed by the entity id", () => {
     renderPopover(node);
