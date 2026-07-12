@@ -1,4 +1,5 @@
 import { useLanguage } from "../i18n/LanguageProvider.js";
+import { LayerBadge } from "./LayerBadge.js";
 import { NetworkLabel } from "./NetworkLabel.js";
 
 /**
@@ -7,6 +8,8 @@ import { NetworkLabel } from "./NetworkLabel.js";
  * ここは中身の描画だけに専念する（`EdgeLabelRenderer` はテストのために
  * 実際の React Flow ツリーが必要になるため、ロジックをここへ切り出して
  * 単体テストできるようにする）。
+ *
+ * `NetworkLabel` の隣に層バッジ（Issue #299 UX設計 §6-3）を添える。
  */
 export function PeerEdgePopover({
   networkId,
@@ -20,7 +23,10 @@ export function PeerEdgePopover({
 
   return (
     <div className="peer-popover nodrag nopan" role="tooltip">
-      <NetworkLabel networkId={networkId} />
+      <div className="peer-popover__heading">
+        <NetworkLabel networkId={networkId} />
+        <LayerBadge layer="b" />
+      </div>
       <div className="peer-popover__endpoints">
         {from} ↔ {to}
       </div>

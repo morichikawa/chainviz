@@ -3,6 +3,7 @@ import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { format } from "../i18n/i18n.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { formatInternalCallList } from "./internalLinkActivity.js";
+import { LayerBadge } from "./LayerBadge.js";
 import {
   INTERNAL_LINK_FRESHNESS_MS,
   INTERNAL_LINK_POLL_INTERVAL_MS,
@@ -62,13 +63,16 @@ export function InternalLinkEdgePopover({
   return (
     <div className="internal-link-popover nodrag nopan" role="tooltip">
       <div className="internal-link-popover__heading">
-        {kind.headingGlossaryKey ? (
-          <GlossaryTerm termKey={kind.headingGlossaryKey}>
-            {t(kind.headingKey)}
-          </GlossaryTerm>
-        ) : (
-          t(kind.headingKey)
-        )}
+        <span>
+          {kind.headingGlossaryKey ? (
+            <GlossaryTerm termKey={kind.headingGlossaryKey}>
+              {t(kind.headingKey)}
+            </GlossaryTerm>
+          ) : (
+            t(kind.headingKey)
+          )}
+        </span>
+        <LayerBadge layer="d" />
       </div>
       <div className="internal-link-popover__endpoints">
         {drivingContainerName} → {drivenContainerName}
