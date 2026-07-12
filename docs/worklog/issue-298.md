@@ -1312,3 +1312,46 @@ DOM ノード同一性を細かくポーリングして切り分けた。
   `docker rm` で削除した（起動中のコンテナへの操作は行っていない）。正規
   スタック（reth1-2/beacon1-2/validator1-2/workbench-1/genesis）には手を
   付けていない。`docker ps -a` で残存が無いことを最終確認済み。
+
+### 2026-07-12 Issue #298 再々々レビュー（reviewer, UI-B-06 Fit View 修正）
+
+- 担当: reviewer
+- 対象: コミット `9dd80c5`（QA 3回目差し戻しへの対応。UI-B-06 のホバー直前に
+  Fit View 操作を追加）
+- 判定: **合格**
+- 確認内容:
+  - 前回合格レビュー（`84bf21a`）以降の worklog 以外のコード差分が
+    `packages/e2e/src/ui/chain-ribbon.spec.ts` への13行追加のみであることを
+    `git diff` で確認（実装本体・テスト本体に変更なし）
+  - `.react-flow__controls-fitview` クラスが @xyflow/react 12.11.1 の
+    dist に実在すること、`<Controls />` が `Canvas.tsx` で既定設定
+    （showFitView 有効）のまま描画されていることを確認。セレクタは有効
+  - React Flow はキャンバスを CSS transform でパンし、スクロール可能な
+    祖先が DOM 上に無いため Playwright の hover() 内蔵の自動スクロールが
+    効かない、という原因分析はライブラリの実装と整合しており正しい
+  - テストの意図（実ユーザー操作のシミュレート）との整合: Fit View は
+    画面上に常時表示される Controls のボタンで、「カードが画面外に出て
+    見えない」ときにユーザーが実際に押す標準操作。テスト専用のフックや
+    内部 API 呼び出しではなく UI 操作なので、意図を損なわない
+  - 既存 e2e との一貫性: fitview クリックは初出のパターンだが、既存の
+    対処（`OPERATION_PANEL_VIEWPORT` によるビューポート拡大）はグリッドが
+    伸び続ける問題の根本対処にならないため、新パターンの導入は妥当。
+    spec 内コメントで理由と QA での確認経緯が丁寧に説明されている
+  - コミット粒度: `9dd80c5` は spec 修正とその worklog 記録の1コミットで、
+    同一関心事。ブランチ内の先例（`b929a90` 等）とも整合。メッセージは
+    原因・対処・検証を明確に記述しており Conventional Commits 準拠
+  - `pnpm build` / `pnpm lint` / `pnpm test` を worktree 全体で実行し
+    すべて成功（shared 62 / collector 1322 / frontend 2011 / e2e 158 件
+    すべて green。collector の stderr 出力は異常系テスト自身のログ）
+  - spec 全体を再読し、エラー握りつぶし・決め打ち定数の観点も再確認。
+    finally 節の `isVisible().catch(() => false)` は後片付けのベスト
+    エフォートでコメントによる意図の明示があり許容
+- 留意点（差し戻し理由ではない、記録のみ）:
+  - `.react-flow__controls-fitview` はライブラリ内部のクラス名への依存。
+    @xyflow/react のメジャー更新時に変わる可能性があるが、React Flow の
+    安定した公開スタイルクラスであり、テスト専用 testid をアプリ側へ
+    足すより低侵襲な選択として妥当と判断した
+  - キャンバスの `minZoom=0.2` の制約上、グリッドが極端に大きい環境では
+    Fit View でも全体が収まらない理論的可能性がある。e2e は正規スタック
+    （混雑無し）前提で、その前提は spec コメントと本 worklog に記録済み
+- 次工程: chainviz-qa による実 Docker 環境での最終検証に委ねる
