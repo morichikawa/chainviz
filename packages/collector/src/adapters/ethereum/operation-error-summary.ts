@@ -12,11 +12,18 @@
 // 語彙であり、ChainAdapter 境界の中（このファイル）に閉じ込める。
 // commandResult や呼び出し元には要約後の文字列だけを渡す。
 //
+// `insufficientFunds` パターンの have/need の値は wei（最小単位）の生数値
+// のままではユーザーに分かりにくいため、`ether-display.ts` の
+// `formatWeiAsEther` で ETH 単位の小数表記へ変換してから要約文に載せる
+// （Issue #295）。
+//
 // パターンに一致しない未知のエラーは、要約せず「最初の行」を（長すぎる
 // 場合のみ切り詰めて）返す。生のメッセージを完全に隠さない
 // （CLAUDE.md「エラーを握りつぶすコードを見逃さない」）。詳細な複数行の
 // 生メッセージ自体は、呼び出し元（node-lifecycle.ts）が console.error に
 // 残す前提で、ここでは commandResult.error に載せる要約だけを返す。
+
+import { formatWeiAsEther } from "./ether-display.js";
 
 /** 未知パターンのフォールバック時、commandResult.error に載せる長さの上限。 */
 const FALLBACK_MAX_LENGTH = 200;
@@ -105,7 +112,8 @@ const ERROR_PATTERNS: ErrorPattern[] = [
     // 例: "insufficient funds for gas * price + value: have 100 want 999"
     name: "insufficientFunds",
     regex: /insufficient funds for gas \* price \+ value: have (\S+) want (\S+)/,
-    summarize: (m) => `insufficient balance for this transaction (have ${m[1]}, need ${m[2]})`,
+    summarize: (m) =>
+      `insufficient balance for this transaction (have ${formatWeiAsEther(m[1])} ETH, need ${formatWeiAsEther(m[2])} ETH)`,
   },
 ];
 
