@@ -93,3 +93,111 @@
   （安全弁）と前提コメントは維持する。
 - 入口ガードで tx を弾いた場合に collector 側でログを出すか（追いつき時に大量に
   なりうるため既定は無ログ推奨。デバッグ用に件数集計ログを検討してよい）。
+
+### 2026-07-13 実装着手前の方針確認メモ（collector）
+
+設計メモの方針をそのまま採用する。実装に落とす際の具体的な関数構成・
+既存パターンとの対応を以下に記録する。
+
+- `PENDING_TX_RETENTION = 256` を採用する（推奨値どおり）。前提コメントは
+  `BLOCK_RETENTION` の書き方（固定値が成立する前提条件を列挙する形式）を
+  踏襲する。
+- `applyTransaction` の分岐は `tx.blockHash` の有無で分ける。
+  - `blockHash` あり（included/failed）: `this.entities.get(tx.blockHash)` を
+    見て `kind === "block"` でなければ空配列を返して捨てる。存在すれば
+    従来どおり `applyKeyed` に委ねる。
+  - `blockHash` なし（pending）: 従来どおり `applyKeyed` を呼んだ後、新設の
+    `evictExcessPendingTransactions()` で件数上限を適用する。この private
+    メソッドは `this.entities` を1回走査して `kind === "transaction" &&
+    status === "pending"` のものを Map 挿入順（`values()` の反復順）で
+    収集し、上限超過分だけ先頭（＝最古）から `entityRemoved` として
+    `applyEvent` に流す。`evictBlocksBelow` と同じ「一度だけ走査して
+    削除しながら差分配列を組み立てる」形に揃える。
+- `applyBlock` の `evictBlocksBelow` は、削除した block の hash 集合を
+  作った後、`this.entities` をもう一度走査して `kind === "transaction" &&
+  blockHash` がその集合に含まれるものを併せて `entityRemoved` にする
+  （block 削除と tx 削除を同一差分配列にまとめて返す。設計メモの
+  「同一差分で配信」に対応）。
+- `index.ts` の配線: `applyTransaction` 自体の返り値（`DiffEvent[]`）だけでは
+  「入口ガードで捨てた（空配列）」のか「差分なし（既に反映済みで内容も
+  同じ）」なのかを呼び出し側から区別できない。返り値の型を変える案も
+  検討したが、既存の多数のテスト（`store.test.ts` の `applyTransaction`
+  系）が配列としての等価比較をしており、型変更は無関係な既存テストの
+  書き換えを広げてしまう。代わりに `findWorkbenchByIp` / `findNodeByIp`
+  と同じ「id からエンティティの有無を引く」パターンに倣い、
+  `hasTransaction(hash: string): boolean` を store に追加する。`index.ts`
+  は `applyTransaction` を呼んだ直後に `store.hasTransaction(tx.hash)` を
+  見て、true のときだけ `linkTransactionToWallets` を呼ぶ（tx が store に
+  存在しない＝入口ガードで捨てられた、または一度も取り込まれていない
+  状態なら wallet 側にも載せない）。`linkTransactionToWallets` 自体は
+  同一 hash の重複追加を既にガードしているため、副作用は無い。
+- テストは設計メモの5観点を、既存 `store.test.ts` を肥大化させない形で
+  `store-transaction-retention.test.ts` に分割して追加する。既存
+  `store.test.ts` の `applyTransaction` テストのうち、pending →
+  included の遷移で存在しない block hash を参照していたケースは、新しい
+  入口ガードの下では「block 未観測」として弾かれる挙動に変わるため、
+  対応する block を `applyBlock` で事前に seed するよう修正する。
+
+### 2026-07-13 実装（collector）
+
+- 担当: collector
+- ブランチ: issue-303-transaction-retention
+- 内容: 設計メモどおり、`WorldStateStore` の tx 保持に2系統の窓を実装した。
+  - `packages/collector/src/world-state/store.ts`
+    - `PENDING_TX_RETENTION = 256`（前提コメント付き）を追加。
+    - `applyTransaction`: `tx.blockHash` の有無で分岐。included/failed
+      （`blockHash` あり）は `this.entities.get(tx.blockHash)` が
+      `kind === "block"` のときだけ `applyKeyed` に委ね、無ければ空配列を
+      返して捨てる（入口ガード）。pending（`blockHash` なし）は
+      `applyKeyed` の後に新設 `evictExcessPendingTransactions()` で件数
+      上限を適用する。
+    - `evictBlocksBelow`: 窓落ちした block の hash 集合を作った後、
+      `blockHash` が一致する tx も同じ差分配列の中で `entityRemoved` に
+      する。
+    - `evictExcessPendingTransactions`（private・新設）: pending tx を
+      Map 挿入順で収集し、`PENDING_TX_RETENTION` 超過分を最古から
+      `entityRemoved` にする。
+    - `hasTransaction(hash)`（新設・public）: 指定 hash の tx が store に
+      存在するかを返す。`applyTransaction` の返り値（`DiffEvent[]`）だけ
+      では「入口ガードで捨てた」のか「差分なし（既に反映済みで内容も
+      同じ）」なのかを呼び出し側が区別できないため、`index.ts` 側の判定に
+      使う（`findWorkbenchByIp` 等と同じ「id からエンティティの有無を
+      引く」パターン）。
+  - `packages/collector/src/index.ts`: `subscribeTransactions` のコール
+    バックで `store.applyTransaction(tx)` の後に `store.hasTransaction(tx.hash)`
+    を確認し、true のときだけ `store.linkTransactionToWallets(tx)` を呼ぶ
+    ように変更した（入口ガードで捨てた tx をウォレットの
+    `recentTxHashes` に載せないため）。
+- テスト:
+  - 新規 `packages/collector/src/world-state/store-transaction-retention.test.ts`
+    に、設計メモの5観点（block退去との連動・追いつきフラッドの入口ガード・
+    pendingがblock evictionで消えないこと・pending上限のevict・
+    pending→included遷移）を含む18ケースを追加した。
+  - 既存 `store.test.ts` の「emits an update with only the changed fields
+    on inclusion」テストは、included への遷移前に対応 block を
+    `applyBlock` で seed するよう修正した（新しい入口ガードにより、
+    存在しない block を参照する included tx は取り込まれなくなったため、
+    元のテストのままでは失敗する）。他の既存 tx 系テストは pending の
+    ままのケースが大半で影響を受けなかった。
+  - `pnpm --filter @chainviz/collector build && pnpm --filter @chainviz/collector test`
+    が通ることを確認済み（56 test files / 1398 tests）。
+- 実機検証: `pnpm dev:up` で稼働中の Docker スタック（`profiles/ethereum`）に
+  対し collector を起動し、WebSocket 経由で `runWorkbenchOperation`
+  （`transfer`）を2回実行した。
+  - 送金の tx が pending を経て included としてワールドステートに正しく
+    反映され、送金元ウォレットの `recentTxHashes` にも反映されることを
+    確認した。
+  - その後チェーンの進行を実測で待ち、最初の送金が含まれるブロックが
+    `BLOCK_RETENTION`（32）の窓外に押し出された時点で、そのブロックと
+    紐づく tx が store のスナップショットから同時に消えている（残存 tx
+    エンティティ 0 件）ことを確認した。
+  - collector ログにエラー・警告は出ていない。
+- 決定事項・注意点:
+  - `applyTransaction` の返り値の型自体は変更していない（`DiffEvent[]`
+    のまま）。理由は設計メモの実装着手前メモに記載したとおり、型を
+    変えると既存の多数のテストの等価比較を無関係に書き換える必要が
+    生じるため。代わりに `hasTransaction` という副問い合わせメソッドで
+    「取り込まれたか」を表現した。
+  - `evictBlocksBelow` の tx 走査は pending tx（`blockHash` が
+    `undefined`）を自然に除外する（`Set.has(undefined)` は必ず
+    `false`）ため、pending tx 用の特別な除外条件は不要だった。
