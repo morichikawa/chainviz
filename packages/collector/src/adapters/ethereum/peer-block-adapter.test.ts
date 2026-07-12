@@ -1147,6 +1147,167 @@ describe("EthereumAdapter.subscribeBlocks dynamic node tracking (Issue #301)", (
     expect(ws.subscribedUrls).toEqual(["ws://172.28.1.1:8546"]);
     adapter.dispose();
   });
+
+  it("awaits only the first tick: a node added later is not subscribed until a reconcile timer fires, not merely on a microtask flush (fire-and-forget after the initial await)", async () => {
+    // 後方互換仕様（設計メモの唯一の逸脱点）の境界確認: subscribeBlocks() は
+    // 初回 tick の完了だけを await し、2 回目以降は setTimeout 経由の
+    // fire-and-forget。よって「関数解決後に現れたノード」は、マイクロタスクを
+    // 流すだけ（advanceTimersByTimeAsync(0)）では拾われず、リコンサイル間隔
+    // 経過後にのみ購読される。
+    const containers: Fixture[] = [];
+    const poller = new DockerPoller(mutableClientFrom(containers));
+    const ws = controllableWsClient();
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      blockSubscriptionReconcileIntervalMs: 3000,
+    });
+
+    await adapter.subscribeBlocks(() => {});
+    // 初回 tick 時点では対象ゼロ。
+    expect(ws.subscribedUrls).toEqual([]);
+
+    // 関数解決後に addNode 相当でノードが現れる。
+    containers.push(rethFixture("reth1", "172.28.1.1"));
+    // マイクロタスクを流すだけでは次 tick は走らない（fire-and-forget なので
+    // 次 tick は setTimeout に積まれており、タイマーを進めないと発火しない）。
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ws.subscribedUrls).toEqual([]);
+
+    // リコンサイル間隔ぶんタイマーを進めて初めて購読される。
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(ws.subscribedUrls).toEqual(["ws://172.28.1.1:8546"]);
+    adapter.dispose();
+  });
+
+  it("opens subscriptions for multiple execution nodes that appear together in the same reconcile tick", async () => {
+    const containers: Fixture[] = [];
+    const poller = new DockerPoller(mutableClientFrom(containers));
+    const ws = controllableWsClient();
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      blockSubscriptionReconcileIntervalMs: 3000,
+    });
+
+    await adapter.subscribeBlocks(() => {});
+    // 1 tick の間に 2 ノードが同時に現れる。
+    containers.push(rethFixture("reth1", "172.28.1.1"));
+    containers.push(rethFixture("reth2", "172.28.1.2"));
+    await vi.advanceTimersByTimeAsync(3000);
+
+    expect(ws.subscribedUrls).toEqual([
+      "ws://172.28.1.1:8546",
+      "ws://172.28.1.2:8546",
+    ]);
+    expect(ws.closed).toEqual([]);
+    adapter.dispose();
+  });
+
+  it("closes the departed node and opens the arriving node when one is removed and another added within the same tick", async () => {
+    const containers: Fixture[] = [rethFixture("reth1", "172.28.1.1")];
+    const poller = new DockerPoller(mutableClientFrom(containers));
+    const ws = controllableWsClient();
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      blockSubscriptionReconcileIntervalMs: 3000,
+    });
+
+    await adapter.subscribeBlocks(() => {});
+    expect(ws.subscribedUrls).toEqual(["ws://172.28.1.1:8546"]);
+
+    // 同一 tick で reth1 が消え、reth2 が現れる（入れ替え）。
+    containers.length = 0;
+    containers.push(rethFixture("reth2", "172.28.1.2"));
+    await vi.advanceTimersByTimeAsync(3000);
+
+    expect(ws.closed).toEqual(["ws://172.28.1.1:8546"]);
+    expect(ws.subscribedUrls).toEqual([
+      "ws://172.28.1.1:8546",
+      "ws://172.28.1.2:8546",
+    ]);
+    adapter.dispose();
+  });
+
+  it("does not re-subscribe a removed node on subsequent ticks (regression: no rogue reconnect churn after removeNode)", async () => {
+    // removeNode 後の潜在リーク解消の回帰テスト。一度 close したノードは、
+    // 以降の tick で観測に現れない限り二度と subscribe されない
+    // （レジストリから削除されているため、毎 tick 開き直す挙動が無いこと）。
+    const containers: Fixture[] = [rethFixture("reth1", "172.28.1.1")];
+    const poller = new DockerPoller(mutableClientFrom(containers));
+    const ws = controllableWsClient();
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      blockSubscriptionReconcileIntervalMs: 3000,
+    });
+
+    await adapter.subscribeBlocks(() => {});
+    containers.length = 0;
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(ws.closed).toEqual(["ws://172.28.1.1:8546"]);
+
+    // 何 tick 経過しても、消えたノードへの再 subscribe も追加の close も
+    // 発生しない（close は 1 回きり、subscribe は最初の 1 回きり）。
+    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(ws.subscribedUrls).toEqual(["ws://172.28.1.1:8546"]);
+    expect(ws.closed).toEqual(["ws://172.28.1.1:8546"]);
+    adapter.dispose();
+  });
+
+  it("reopens a fresh subscription when a removed node reappears on a later tick (removeNode then re-addNode of the same stableId)", async () => {
+    const containers: Fixture[] = [rethFixture("reth1", "172.28.1.1")];
+    const poller = new DockerPoller(mutableClientFrom(containers));
+    const ws = controllableWsClient();
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      blockSubscriptionReconcileIntervalMs: 3000,
+    });
+
+    await adapter.subscribeBlocks(() => {});
+    // 消滅。
+    containers.length = 0;
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(ws.closed).toEqual(["ws://172.28.1.1:8546"]);
+
+    // 同じ stableId で再出現。古い購読は既に close 済みなので、新しい購読が
+    // 開かれる（購読が 2 本目として張られる）。
+    containers.push(rethFixture("reth1", "172.28.1.1"));
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(ws.subscribedUrls).toEqual([
+      "ws://172.28.1.1:8546",
+      "ws://172.28.1.1:8546",
+    ]);
+    adapter.dispose();
+  });
+
+  it("keeps subscribing the rest of the nodes even if one node's reconcile poll observation is partial across ticks", async () => {
+    // 複数ノードが順に増える通常の増設シナリオでも、既存ノードの購読を
+    // 張り直さずに新規ノードだけを追加で開く（既存購読への非干渉）。
+    const containers: Fixture[] = [rethFixture("reth1", "172.28.1.1")];
+    const poller = new DockerPoller(mutableClientFrom(containers));
+    const ws = controllableWsClient();
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      blockSubscriptionReconcileIntervalMs: 3000,
+    });
+
+    await adapter.subscribeBlocks(() => {});
+    expect(ws.subscribedUrls).toEqual(["ws://172.28.1.1:8546"]);
+
+    containers.push(rethFixture("reth2", "172.28.1.2"));
+    await vi.advanceTimersByTimeAsync(3000);
+    containers.push(rethFixture("reth3", "172.28.1.3"));
+    await vi.advanceTimersByTimeAsync(3000);
+
+    // 追加のたびに新規ノードだけが開かれ、既存ノードは close されていない。
+    expect(ws.subscribedUrls).toEqual([
+      "ws://172.28.1.1:8546",
+      "ws://172.28.1.2:8546",
+      "ws://172.28.1.3:8546",
+    ]);
+    expect(ws.closed).toEqual([]);
+    adapter.dispose();
+  });
 });
 
 describe("EthereumAdapter.subscribeTransactions", () => {

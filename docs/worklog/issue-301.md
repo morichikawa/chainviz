@@ -258,3 +258,60 @@ collector には「Docker 観測から対象を列挙して観測する」購読
 - 統括への申し送り: `subscribeTransactions` の同型ギャップは今回のスコープ
   外（統括の判断どおり）。将来対応する場合は本 Issue で新設した
   `WsSubscriptionReconciler` をそのまま再利用できる見込み。
+
+### 2026-07-13 テスト強化
+
+- 担当: tester（試験 学）
+- 実装担当の基本テスト（ハッピーパス中心）に対し、エッジケース・境界値・
+  異常系のテストを追加した。実装は変更していない。
+- `ws-subscription-reconciler.test.ts` に「WsSubscriptionReconciler edge
+  cases (Issue #301)」describe を追加（9 ケース）:
+  - 空の対象集合を空レジストリに対して reconcile しても何もしない（0 件境界）。
+  - 複数対象が同一 tick で同時に出現したとき全件を open する。
+  - 複数対象が同一 tick で同時に消滅したとき全件を close する。
+  - 1 tick 内で「維持 + 消滅 + signature 変化 + 新規」が同時に起きたときの
+    整合性（張り直し対象だけ close→open され、維持対象は触られない）。
+  - 消滅後に同一キーが再出現したら新規購読として開き直す。
+  - `closeAll` 後に同一対象が再度 reconcile されれば新規として開かれる
+    （`closeAll` はレジストリを空にするだけで以後の reconcile を止めない）。
+  - signature 変化は 1 回だけ張り直し、その後は安定していれば張り直さない。
+  - 集合として同じでも順序違いの key 配列は別 signature として扱われる
+    （`signatureOf` が安定した文字列を返すべきという呼び出し側の契約を固定。
+    `executionTargets` の `receivedAtKeys` が常に `[beacon, self]` /
+    `[self]` の決定的順序であることが signature 安定性の前提であり、この
+    順序が非決定になると毎 tick 張り直す回帰を検出できる）。
+  - `open` が例外を投げた場合の現在の挙動を固定（reconcile はそのまま
+    例外を伝播させ、それより前に open 済みの購読はレジストリに残る。
+    `index.ts` の `blockTick` が try/catch で受けて次 tick で再試行するため
+    自己修復する）。
+- `peer-block-adapter.test.ts` の「subscribeBlocks dynamic node tracking
+  (Issue #301)」describe に統合レベルの境界ケースを追加（6 ケース）:
+  - 初回 tick のみ await する後方互換仕様の境界: 関数解決後に現れたノードは
+    マイクロタスクを流すだけ（`advanceTimersByTimeAsync(0)`）では拾われず、
+    リコンサイル間隔経過後にのみ購読される（fire-and-forget の確認）。
+  - 同一 tick で複数ノードが同時に出現したとき全件購読する。
+  - 同一 tick でノード入れ替え（一方が消え他方が現れる）が起きたときの
+    close/open。
+  - removeNode 後、以降の tick で対象に現れない限り二度と subscribe されない
+    （潜在リーク解消の回帰テスト。close は 1 回きり）。
+  - removeNode 後に同一 stableId が再出現したら新しい購読を開く。
+  - ノードを順に増設しても既存ノードの購読は張り直さず新規だけ開く
+    （既存購読への非干渉）。
+- 追加したテストが実際に元の実装の不具合を検出できることを、意図的な
+  ミューテーションで確認した:
+  - リコンサイラの signature 変化ブランチを無効化 → signature 関連 4 ケース
+    が失敗。
+  - リコンサイラの消滅時 close ループを削除 → remove / reappear 系 8 ケース
+    が失敗。
+  いずれも元に戻してから全テスト green を確認した。
+- `pnpm --filter @chainviz/collector build` / `test`（1407 tests）・
+  `pnpm lint` とも成功。
+- 申し送り: `peer-block-adapter.test.ts` は 3300 行超と肥大化している
+  （Issue #301 以前からの共有テスト基盤で、pollPeers / subscribeBlocks /
+  subscribeTransactions などが同居）。1 ファイル 1 責務の観点では
+  fixture ヘルパー（`controllableWsClient` / `mutableClientFrom` /
+  各 `*Fixture`）を共有モジュールへ切り出したうえで describe 単位に
+  分割するのが望ましいが、pollPeers/subscribeTransactions を含む広範囲の
+  移動を伴い破壊リスクが高いため、本 Issue のスコープ外の follow-up
+  として別途対応するのが妥当。今回は既存の Issue #301 describe に追記する
+  形に留めた。
