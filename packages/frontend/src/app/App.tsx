@@ -40,6 +40,7 @@ import { stabilizeArrayReference, stabilizeNodes } from "../entities/nodeStabili
 import { indexTransactions } from "../entities/transaction.js";
 import { useBlockPulses } from "../entities/useBlockPulses.js";
 import { useContractSettlementEffects } from "../entities/useContractSettlementEffects.js";
+import { useForkColorAssignment } from "../entities/useForkColors.js";
 import { useNewArrivalHighlight } from "../entities/useNewArrivalHighlight.js";
 import { useNodeLinkActivityPulses } from "../entities/useNodeLinkActivityPulses.js";
 import { useOperationPulses } from "../entities/useOperationPulses.js";
@@ -431,6 +432,21 @@ function AppShell({
       ),
     [entities],
   );
+
+  // B層拡張: フォーク（一時的な分岐）の色分け（ARCHITECTURE.md §9、Issue
+  // #296）。判定は各ノードの headBlockHash と blocks（BlockEntity 集合）
+  // だけから導出する純粋な派生状態で、色の安定性（同じ枝には同じ色を
+  // 引き継ぐ）はフック内部で管理する。
+  const forkColors = useForkColorAssignment(nodeEntities, blocks);
+  const infraNodesWithForkColor = useMemo(
+    () =>
+      infraNodesWithHighlight.map((node) => {
+        const forkColorIndex = forkColors.colorIndexByNodeId.get(node.id);
+        if (forkColorIndex === node.data.forkColorIndex) return node;
+        return { ...node, data: { ...node.data, forkColorIndex } };
+      }),
+    [infraNodesWithHighlight, forkColors],
+  );
   // ゴースト（仮カード）→ 接続予定先ノードの点線エッジ（§4-2）。
   const pendingConnectionEdges = useMemo(
     () => ghostsToPendingConnectionEdges(ghosts, infraNodeIds),
@@ -463,12 +479,12 @@ function AppShell({
 
   const nodes = useMemo(
     () => [
-      ...infraNodesWithHighlight,
+      ...infraNodesWithForkColor,
       ...walletNodes,
       ...contractNodesWithHighlight,
       ...ghosts,
     ],
-    [infraNodesWithHighlight, walletNodes, contractNodesWithHighlight, ghosts],
+    [infraNodesWithForkColor, walletNodes, contractNodesWithHighlight, ghosts],
   );
   const edges = useMemo(
     () => [
