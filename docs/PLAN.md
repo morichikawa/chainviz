@@ -698,6 +698,14 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       は元々マウント済みのため変更なし。実機検証で修正前の再現・修正後の
       成功を確認済み。docs/worklog/issue-293.md参照)
       [#293](https://github.com/morichikawa/chainviz/issues/293)
+- [ ] 送金操作の残高不足エラーがwei単位の生数値のまま表示され分かりにくい
+      (operation-error-summary.tsのinsufficientFundsパターンをETH単位表示に
+      変更する。wei→ETH変換ロジックの置き場所は設計判断が必要)
+      [#295](https://github.com/morichikawa/chainviz/issues/295)
+- [ ] フォーク（一時的な分岐）の色分け表現が未実装
+      (CONCEPT.mdのB層節に構想として記載されているが未着手。フォークの
+      検知・収束判定・表現方法・sharedの型変更要否は設計段階で精査する)
+      [#296](https://github.com/morichikawa/chainviz/issues/296)
 
 ## 運用ルール（全ステップ共通）
 
