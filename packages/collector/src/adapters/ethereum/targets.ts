@@ -288,6 +288,28 @@ export function executionStableIdForBeacon(
 }
 
 /**
+ * validator（VC）コンテナが Beacon API で接続する beacon（CL）コンテナの
+ * stableId を導く。`NodeEntity.drivesNodeId` の解決に使う（D層、
+ * Issue #285）。VC の実接続先（`--beacon-nodes`）を実測観測する経路は
+ * 現状存在しない（lighthouse VC の HTTP API・メトリクスはノード環境
+ * テンプレートで無効のまま、Beacon API 側にも接続元 VC を列挙する
+ * エンドポイントが無い、Docker 観測はコンテナの環境変数を収集しない）ため、
+ * `executionStableIdForBeacon`（beacon→execution）と同じ「compose サービス名
+ * のノード群キーによる静的解決」にそろえる。`validator` がそもそも
+ * validator 役のコンテナでなければ（beacon・execution・workbench 等）
+ * 呼び出し元の判定に関わらず即 undefined を返す（`pollInfra` が全
+ * NodeEntity に対して機械的に呼べるようにするための自己防衛。
+ * `executionStableIdForBeacon` と同型）。
+ */
+export function beaconStableIdForValidator(
+  validator: ContainerObservation,
+  observations: ContainerObservation[],
+): string | undefined {
+  if (!isValidatorService(validator)) return undefined;
+  return findPairedStableId(validator, observations, isConsensusBeaconNode);
+}
+
+/**
  * EL 間ピア接続の取得対象になる Execution ノードを観測値から抽出する。
  * execution クライアントであり IP が取れるコンテナだけを対象にする
  * （executionTargets と同じ選別基準。あちらはブロック購読用の WS URL と

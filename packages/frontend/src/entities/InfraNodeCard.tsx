@@ -38,6 +38,7 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
     rpcTargetContainerName,
     drivesNodeContainerName,
     drivenByContainerName,
+    drivenByNodeRole,
     maxElBlockHeight,
     isNew,
     operationPending,
@@ -227,6 +228,7 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
           rpcTargetContainerName={rpcTargetContainerName}
           drivesNodeContainerName={drivesNodeContainerName}
           drivenByContainerName={drivenByContainerName}
+          drivenByNodeRole={drivenByNodeRole}
           maxElBlockHeight={maxElBlockHeight}
         />
       )}

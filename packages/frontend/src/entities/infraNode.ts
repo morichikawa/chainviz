@@ -37,6 +37,15 @@ export interface InfraNodeData extends Record<string, unknown> {
    */
   drivenByContainerName?: string;
   /**
+   * `drivenByContainerName` が解決できた場合の、その駆動元ノードの
+   * `nodeRole`（Issue #285）。InfraPopover が「駆動元（合意ノード）」/
+   * 「接続元のバリデーター」のどちらのラベルを出すかを、この値で選ぶ
+   * （`chain-profiles/ethereum/internalLinkKinds.ts` の
+   * `describeDrivenByField` 参照）。`drivenByContainerName` が省略なら
+   * こちらも省略。
+   */
+  drivenByNodeRole?: string;
+  /**
    * D層: キャンバス上の全 EL ノード（`internals.syncStages` を持つ node）の
    * blockHeight 最大値（ARCHITECTURE.md §7.6.5「同期ステージのミニバーの
    * 分母」）。全カードに同じ値が入る（entity 単位ではなくスナップショット
@@ -203,11 +212,13 @@ export function entitiesToFlowNodes(
   // 計算しない（ARCHITECTURE.md §7.6.5）。
   const maxElBlockHeight = computeMaxSyncTargetHeight(nodesById.values());
 
-  // 「駆動元（合意ノード）」逆引き用の索引（Issue #215）。node 全体を一度
-  // 走査し、`drivesNodeId` の指す先ごとに最初に見つかった駆動元の
-  // containerName を記録する。Ethereum プロファイルは beacon→reth が1対1
+  // 「駆動元（合意ノード / バリデーター）」逆引き用の索引（Issue #215、
+  // nodeRole は Issue #285 で追加）。node 全体を一度走査し、`drivesNodeId` の
+  // 指す先ごとに最初に見つかった駆動元の containerName・nodeRole を記録する。
+  // Ethereum プロファイルは beacon→reth・validator→beacon がそれぞれ1対1
   // なので、複数の駆動元が同じ相手を指す状況は想定しない（最初の一致を採用）。
   const drivenByContainerNameByTargetId = new Map<string, string>();
+  const drivenByNodeRoleByTargetId = new Map<string, string | undefined>();
   for (const candidate of nodesById.values()) {
     if (!candidate.drivesNodeId) continue;
     if (drivenByContainerNameByTargetId.has(candidate.drivesNodeId)) continue;
@@ -215,6 +226,7 @@ export function entitiesToFlowNodes(
       candidate.drivesNodeId,
       candidate.containerName,
     );
+    drivenByNodeRoleByTargetId.set(candidate.drivesNodeId, candidate.nodeRole);
   }
 
   return infra.map((entity) => {
@@ -238,6 +250,10 @@ export function entitiesToFlowNodes(
       entity.kind === "node"
         ? drivenByContainerNameByTargetId.get(entity.id)
         : undefined;
+    const drivenByNodeRole =
+      entity.kind === "node" && drivenByContainerName !== undefined
+        ? drivenByNodeRoleByTargetId.get(entity.id)
+        : undefined;
 
     return {
       id: entity.id,
@@ -248,6 +264,7 @@ export function entitiesToFlowNodes(
         rpcTargetContainerName,
         drivesNodeContainerName,
         drivenByContainerName,
+        drivenByNodeRole,
         maxElBlockHeight,
       },
     };
@@ -263,9 +280,9 @@ export function entitiesToFlowNodes(
  * 「実データが変わっていないか」を安価に判定できる。
  *
  * `maxElBlockHeight` は例外的に明示比較が必要（Issue #189）。
- * `rpcTargetContainerName`/`drivesNodeContainerName`/`drivenByContainerName`
- * は解決先ノードの containerName（実質不変）から導かれるため、この関数が
- * entity 参照のみで
+ * `rpcTargetContainerName`/`drivesNodeContainerName`/`drivenByContainerName`/
+ * `drivenByNodeRole` は解決先ノードの containerName・nodeRole（実質不変）
+ * から導かれるため、この関数が entity 参照のみで
  * 判定しても古い値を使い回す実害がほぼ無い。一方 `maxElBlockHeight` は
  * チェーン進行のたびに変わり続ける値であり、当のノード自身の entity が
  * 変化しない間（例: バックフィル中で blockHeight がまだ動いていない

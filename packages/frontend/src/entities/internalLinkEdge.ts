@@ -70,6 +70,15 @@ export interface InternalLinkEdgeData extends Record<string, unknown> {
   drivingContainerName: string;
   /** ポップオーバー端点表記用: 駆動される側（EL）の containerName。 */
   drivenContainerName: string;
+  /**
+   * 駆動する側の `NodeEntity.nodeRole`（チェーン依存の生文字列。Issue #285）。
+   * 解釈（見出し・説明文・活動セクション表示可否の切り替え）は
+   * `chain-profiles/ethereum/internalLinkKinds.ts` が担う。省略時は
+   * role 不明（旧スナップショット等）としてフォールバック表現になる。
+   */
+  drivingNodeRole?: string;
+  /** 駆動される側の `NodeEntity.nodeRole`。同上。 */
+  drivenNodeRole?: string;
   /** 現在このエッジがホバーされているか（Canvas.tsx が hover 状態から注入する）。 */
   hovered?: boolean;
   /** このエッジ上で現在走らせている活動パルス。 */
@@ -106,8 +115,13 @@ export function internalLinkEdgeId(fromNodeId: string, toNodeId: string): string
 
 /**
  * ノード群から内部リンクエッジ（常設。パルス・直近観測なしの土台）を導出する。
+ * `drivesNodeId` は「駆動する側→される側」の一般関係で、Ethereum プロファイル
+ * では CL→EL（Engine API）と validator→CL（Beacon API）の2種類の組が入り得る
+ * （Issue #285。ARCHITECTURE.md §7.6.11）。役割の組ごとの見た目・文言の違いは
+ * ここでは扱わず、`data` に生の `nodeRole` を渡すだけに留める（解釈は
+ * `chain-profiles/ethereum/internalLinkKinds.ts` の責務）。
  *
- * - `drivesNodeId` を持つノード（CL）だけが起点になる。
+ * - `drivesNodeId` を持つノード（CL/validator）だけが起点になる。
  * - 自己参照・自身が現在キャンバス上に無い・駆動先が現在キャンバス上に無い
  *   （削除された、または解決できなかった）場合は描かない（§7.4 ダングリング
  *   ガード。`deployEdgesToFlowEdges` と同じ考え方）。
@@ -140,6 +154,8 @@ export function internalLinkEdgesToFlowEdges(
       data: {
         drivingContainerName: node.containerName,
         drivenContainerName: driven.containerName,
+        drivingNodeRole: node.nodeRole,
+        drivenNodeRole: driven.nodeRole,
       },
       className: "internal-link-edge",
       style: {

@@ -418,6 +418,14 @@ function unknownContract(): ContractEntity {
  * 確認できるように既定スナップショットへ含める。`nodeRole: "validator"`
  * により、カードの同期状態ドット・ポップオーバーの同期状態/ブロック高が
  * 出ないこと（Issue #215）もオフラインで確認できる。
+ *
+ * `drivesNodeId: "lighthouse-1"` で、この validator が Beacon API で接続する
+ * beacon への内部リンクエッジをオフラインで確認できるようにする
+ * （ARCHITECTURE.md §7.6.11。Issue #285）。実環境では validator1/2 それぞれが
+ * 対になる beacon1/2 に接続するが、既定のオフラインモックには beacon が
+ * lighthouse-1 の1台しか無いため、両方とも lighthouse-1 を指す（fan-in。
+ * `internalLinkEdgesToFlowEdges` は複数の駆動元が同じ相手を指しても各々
+ * 独立したエッジとして描く。`internalLinkEdge.test.ts` 参照）。
  */
 function validatorNode(n: number): NodeEntity {
   return {
@@ -435,6 +443,7 @@ function validatorNode(n: number): NodeEntity {
     headBlockHash: "0x00000080",
     p2pRole: "none",
     nodeRole: "validator",
+    drivesNodeId: "lighthouse-1",
   };
 }
 

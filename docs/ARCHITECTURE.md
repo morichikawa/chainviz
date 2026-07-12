@@ -121,9 +121,12 @@ interface NodeEntity extends InfraEntity {
   // フロントは役割表示を出さない側に倒す。表現セットに無い未知の値も同様
   nodeRole?: string;
   // D層: このノードが内部 API で駆動する相手ノード（同じ論理ノードを構成する
-  // 相方クライアント）の id。Ethereum プロファイルでは beacon（CL）に入り、
-  // 対になる Execution（EL）を Engine API で駆動する関係を表す（チェーン固有
-  // 語彙はスキーマに持ち込まず「駆動する側→される側」の一般関係だけを載せる）。
+  // 相方クライアント）の id。チェーン固有語彙はスキーマに持ち込まず
+  // 「駆動する側→される側」の一般関係だけを載せる。Ethereum プロファイル
+  // では 2 種類の関係に入る: beacon（CL）→ Execution（EL）の Engine API
+  // 駆動（Issue #186）と、validator → beacon の Beacon API 接続
+  // （Issue #285）。役割の組ごとの意味づけ・文言は端点の nodeRole を見て
+  // フロントのチェーンプロファイル表現セットが決める。
   // collector がインフラ観測から毎回解決する（rpcTargetNodeId と同じ考え方）。
   // 駆動関係を持たない・解決不能・旧スナップショットでは省略。フロントは
   // この値から常設の「内部リンク」エッジを導出して描画する（§7）
@@ -1212,6 +1215,21 @@ sequenceDiagram
   のノード群キー + プロジェクトスコープ）を逆向きに使い、beacon エンティティ
   に対応する Execution ノードの id を設定する。対応が取れなければ省略
   （`rpcTargetNodeId` と同じ流儀）
+  - **（Issue #285 で追加）** validator エンティティにも同じ pollInfra で
+    `drivesNodeId` を解決し、対応する beacon の id を設定する。対応付けは
+    compose サービス名のノード群キー（validator\<n\> ↔ beacon\<n\>。
+    `serviceNodeKey` は既に "validator" プレフィックスを剥がせる）+
+    プロジェクトスコープの静的解決（`executionStableIdForBeacon` と同じ
+    `findPairedStableId` を validator→beacon 向けに使う。関数名の例:
+    `beaconStableIdForValidator`。validator 役でないコンテナには即
+    undefined を返す自己防衛も同型）。lighthouse VC の実接続先
+    （`--beacon-nodes`）を実測観測する経路は現状存在しない（VC の HTTP
+    API・メトリクスはノード環境テンプレートで無効のまま、Beacon API 側にも
+    接続元 VC を列挙するエンドポイントが無い、Docker 観測はコンテナの
+    環境変数を収集しない）ため、beacon→reth と同じ「構成からの静的解決」に
+    そろえる。なお addNode のフォロワーは validator 無しの reth+beacon
+    ペアなので、この対応付けが効くのは compose 起動の静的
+    validator1/validator2 のみ
 - `NodeInternals` は store の新メソッド（例 `applyNodeInternals(nodeId,
   internals)`）で既存 NodeEntity への **`internals` フィールドのパッチ**として
   反映する。A層の `applyInfra` は `pollInfra` の出力に `internals` キーが
@@ -1275,7 +1293,9 @@ sequenceDiagram
   reth カード間に描く（`rpcTargetNodeId` → OperationTargetEdge と同じ
   「エンティティのフィールドから導出する」流儀。snapshot.edges には入れない）。
   ダングリングガード必須（相手ノードがキャンバスに無ければ描かない）。
-  色は既存のエッジ体系（P2P・所有・操作・デプロイ）と混同しない別系統にする
+  色は既存のエッジ体系（P2P・所有・操作・デプロイ）と混同しない別系統にする。
+  **（Issue #285 で追加）** validator → beacon にも同じ内部リンクエッジを
+  描く（詳細は §7.6.11）
 - **活動パルス**: `nodeLinkActivity` 受信時に内部リンクエッジ上へパルスを
   流す（`useOperationPulses` と同型の分離経路。端点がキャンバスに無い観測は
   無視）。増分が複数メソッドあってもパルスは 1 回の観測につき 1 本で足りるか、
@@ -1344,7 +1364,9 @@ Phase 4 までの画面を実際に操作して確認した課題:
   操作モデルを分裂させない
 - **表示切り替え・フィルタは導入しない**。理由: (a) D層が常設で足すのは
   内部リンクエッジのみで、本数は「reth+beacon のペア数」（初期構成で 2 本、
-  addNode ごとに +1 本）に限られ、氾濫しない。(b) 既存 A〜C層に切り替え
+  addNode ごとに +1 本。Issue #285 で validator→beacon の 2 本が加わり
+  初期構成 4 本になるが、addNode では増えないため氾濫しない判断は
+  変わらない）に限られ、氾濫しない。(b) 既存 A〜C層に切り替え
   機構が無く、D層のためだけに導入すると UI の一貫性が壊れる。(c) CONCEPT.md
   の「レイヤー切り替えで見る階層を変えられる」は「最終的に」の構想として
   残し、エッジ・パルスが読めなくなる実害が観測されてから A〜D層一貫の
@@ -1566,6 +1588,95 @@ relatedTerms の配線: `engine-api` ↔ `el-cl-separation` ↔ `el-client` /
    txpool 内訳はポップオーバーのみ）
 4. **内部リンクは無彩色シルバーの二重線**（7.6.3。有彩色 = ネットワーク/
    チェーン上の関係、無彩色 = ノード内部の機構、という色の系統分け）
+
+#### 7.6.11 validator→beacon の内部リンク（Issue #285）
+
+validator client（VC）カードがキャンバス上でどのノードとも結ばれず
+「浮いて見える」課題への対応。`drivesNodeId` の一般関係（駆動する側→される
+側）を再利用し、validator → beacon にも内部リンクエッジを描く。新しい
+エッジ種別・スキーマフィールドは増やさない（collector 側の解決方法は §7.3、
+スキーマ上の意味づけは §2 の `drivesNodeId` docstring 参照）。
+
+代替案との比較（設計判断の記録）:
+
+- **専用エッジ種別の新設（不採用）**: 「VC が beacon へ内部 API で接続して
+  職務を果たす」関係は、スキーマ上は既存の「駆動する側→される側」の一般
+  関係と同型であり、種別を分けるとフロントに同じ見た目・同じ導出ロジックの
+  並行実装が生まれるだけで利点が無い。役割の組ごとの文言の違いは
+  `nodeRole`（チェーンプロファイル依存の生の文字列）の解釈としてフロント
+  表現セットが担えばよく、スキーマを分ける理由にならない
+- **グループ化・配置の工夫（不採用）**: カード位置はユーザーがドラッグで
+  自由に動かせる（レイアウト永続化済み）ため、配置による関連表現は移動で
+  壊れる。既存 UI の「関係はエッジで示す」流儀（P2P・所有・操作先・
+  デプロイ・内部リンク）に合わせるのが一貫する
+
+表現の設計:
+
+- **エッジの見た目は既存の内部リンクと同一**（無彩色シルバーの二重線。
+  7.6.3）。「ノード内部の機構」という色・線種の系統分けは validator→beacon
+  にもそのまま当てはまる。source = validator（駆動する側）、target =
+  beacon（駆動される側）で、validator → beacon → reth という「チェーンを
+  動かす因果の連なり」が同じ見た目の配管として繋がる
+- **活動パルスは流さない**。VC→beacon の呼び出し活動を観測する経路が無い
+  （§7.3。collector は validator 起点の `nodeLinkActivity` を配信しない）
+  ため、エッジは常設リンクのみ。ポップオーバーの「直近の呼び出し」
+  セクションも出さない（実際には VC はスロットごとに beacon を呼んで
+  いるのに、観測していないだけで「最近の呼び出しはありません」を常時
+  出すと「呼び出しが無い」という誤った事実を伝えてしまうため、
+  セクションごと隠す）
+- **文言は役割の組で切り替える**: エッジポップオーバーの見出し・説明・
+  InfraPopover の行ラベルは、端点の `nodeRole` の組（駆動する側→される側）
+  で選ぶマッピングをチェーンプロファイル表現セット
+  （`packages/frontend/src/chain-profiles/ethereum/`）に新設する（7.6.7 と
+  同じ「チェーン固有語彙の解釈は表現セットが担う」流儀。1ファイル1責務の
+  ため `internalLinkKinds.ts` のような専用ファイルを推奨）:
+
+  | 役割の組 | ポップオーバー見出し | glossary | 活動セクション |
+  | --- | --- | --- | --- |
+  | consensus → execution | 内部リンク（Engine API）（既存） | `engine-api` | 表示する（既存） |
+  | validator → consensus | 内部リンク（Beacon API） | `beacon-api`（新設） | 表示しない |
+  | 上記以外・nodeRole 不明 | 内部リンク（用語アンカー無しの汎用見出し） | — | 表示しない |
+
+  フォールバック行（未知の組）を必ず持つ（`describeNodeRole` と同じ
+  「マッピングに無い値は出さない側に倒す」流儀。既存の consensus→execution
+  文言を誤って出さない）
+- **フロントのデータ変換**: `internalLinkEdgesToFlowEdges` は既に
+  `drivesNodeId` を持つ全ノードを機械的に扱うため、エッジ自体は collector が
+  値を入れれば無変更で現れる。`InternalLinkEdgeData` に端点の nodeRole
+  （生の文字列、optional）を追加し、ポップオーバーが上記マッピングを
+  引けるようにする
+- **InfraPopover の行**（7.6.3 の「駆動する実行ノード」「駆動元（合意
+  ノード）」と同型。ラベルは役割の組から選ぶ）:
+  - validator カード: 「接続先の beacon ノード」行（値 = beacon の
+    containerName、GlossaryTerm: `beacon-api`）
+  - beacon カード: 「接続元のバリデーター」行（値 = validator の
+    containerName、GlossaryTerm: `validator`（既存 a-infra））。beacon は
+    既存の「駆動する実行ノード」（reth）と合わせて関連行が 2 行になる。
+    既存の `field.drivenBy`（「駆動元（合意ノード）」）は駆動元が consensus
+    である前提の固定文言なので、駆動元の nodeRole でラベルを選ぶ形に
+    一般化する（`infraNode.ts` の逆引き索引に駆動元の nodeRole も載せる）
+- **i18n 文言（初稿。キー名・語調の調整は実装時の frontend の裁量）**:
+
+  | キー | ja | en |
+  | --- | --- | --- |
+  | `edge.internalLinkValidator` | 内部リンク（Beacon API） | Internal link (Beacon API) |
+  | `internalEdge.validatorPair` | このバリデーターは、この beacon ノードに Beacon API で接続し、担当スロットでのブロック提案・証明を行います。チェーンを前に進める起点です | This validator connects to this beacon node over the Beacon API to propose blocks and attest in its assigned slots — the starting point that moves the chain forward. |
+  | `field.connectsToBeacon` | 接続先の beacon ノード | Connected beacon node |
+  | `field.validatorClient` | 接続元のバリデーター | Connected validator |
+
+- **用語解説**: `glossary/ethereum/terms/d-internal.yaml` に `beacon-api` を
+  新設する（アンカー: validator→beacon エッジポップオーバーの見出し・
+  validator ポップオーバーの「接続先の beacon ノード」ラベル。アンカーの
+  無い用語を作らない Issue #124 の教訓に従う）。定義に必ず含めるポイント:
+  VC と beacon ノードを繋ぐ HTTP API。VC はこの API で担当の職務（どの
+  スロットでブロック提案・証明するか）を問い合わせ、署名した結果を提出
+  する。**なぜ必要か**: 鍵を預かる VC と P2P ネットワークに参加する beacon
+  を別プロセスに分けることで、鍵の管理と外部との通信を分離できる。
+  **chainviz では**: validator カードから beacon カードへ引かれる内部
+  リンクの紐（Engine API のリンクと違い呼び出しの観測は無いため、パルスは
+  流れない）。relatedTerms: `validator` / `cl-client` / `engine-api`
+  （既存側からの逆リンクも追記する）。英語定義は chainviz-i18n のレビュー
+  対象
 
 ## 8. E2E テストの構成（プロトコル層 + UI 層）
 

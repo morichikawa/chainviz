@@ -668,6 +668,13 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       受理するparseHeadSlotを新設し、それ以外はthrowするよう統一。
       docs/worklog/issue-282.md参照)
       [#282](https://github.com/morichikawa/chainviz/issues/282)
+- [x] validatorがbeaconと視覚的に関連付けられておらず「浮いて見える」
+      (既存のdrivesNodeIdを再利用しvalidator→beaconにも内部リンクエッジを
+      描くよう実装。ARCHITECTURE.md §7.6.11・docs/worklog/issue-285.md参照。
+      collector側(beaconStableIdForValidator新設・resolveDrivesNodeIdの
+      フォールスルー化)・frontend側(役割組ごとのポップオーバー文言切替・
+      InfraPopoverの駆動元行の一般化)とも実装完了。レビュー・QAとも合格)
+      [#285](https://github.com/morichikawa/chainviz/issues/285)
 - [x] 長時間稼働スタックの短時間再起動でgenesisが古いまま再利用され
       beaconが追いつき不能になる(再生成判定を「停止時間」から「genesis
       年齢+生存サンプリング」に置き換えて対応。実機検証で修正前の再現・

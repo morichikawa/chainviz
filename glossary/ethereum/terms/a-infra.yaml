@@ -60,7 +60,7 @@ cl-client:
       attestation) and talks to the execution client over the Engine API.
       chainviz uses lighthouse.
   layer: a-infra
-  relatedTerms: [el-client, container, engine-api, el-cl-separation]
+  relatedTerms: [el-client, container, engine-api, el-cl-separation, beacon-api]
 
 slot:
   name:
@@ -127,7 +127,7 @@ validator:
       client; it does not keep its own copy of the chain, so it shows
       neither sync status nor block height.
   layer: a-infra
-  relatedTerms: [cl-client, bootnode]
+  relatedTerms: [cl-client, bootnode, beacon-api]
 
 rpc-endpoint:
   name:

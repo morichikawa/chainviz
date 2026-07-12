@@ -69,6 +69,7 @@ import { pollRethNodeInternals } from "./reth-node-internals.js";
 import { NodeSyncStatusCache } from "./sync-status.js";
 import {
   beaconStableIdForExecution,
+  beaconStableIdForValidator,
   beaconTargets,
   executionMetricsTargets,
   executionPeerTargets,
@@ -371,11 +372,13 @@ export class EthereumAdapter implements ChainAdapter {
 
   /**
    * 各 NodeEntity について、対応する ContainerObservation を
-   * `executionStableIdForBeacon()` に渡し、解決できれば `drivesNodeId` を
-   * その場でパッチする（beacon ではないノード・対応が取れないノードは
-   * 何もしない。省略 = 無し/不明の流儀）。`executionStableIdForBeacon` は
-   * beacon 役でないコンテナに対して呼んでも常に undefined を返すため、全
-   * NodeEntity へ機械的に呼んで問題ない。
+   * `executionStableIdForBeacon()` → `beaconStableIdForValidator()` の順に
+   * 試し、いずれかが解決できれば `drivesNodeId` をその場でパッチする
+   * （beacon でも validator でもないノード・対応が取れないノードは何も
+   * しない。省略 = 無し/不明の流儀）。両関数とも対象役でないコンテナに
+   * 対して呼んでも常に undefined を返す自己防衛を持ち、かつ対象コンテナ
+   * 集合（beacon 役・validator 役）は互いに素なので、全 NodeEntity へ
+   * 機械的にフォールスルーで呼んで問題ない（Issue #186 / #285）。
    */
   private resolveDrivesNodeId(
     entities: (NodeEntity | WorkbenchEntity)[],
@@ -386,7 +389,9 @@ export class EthereumAdapter implements ChainAdapter {
       if (entity.kind !== "node") continue;
       const obs = obsById.get(entity.id);
       if (!obs) continue;
-      const drivesNodeId = executionStableIdForBeacon(obs, observations);
+      const drivesNodeId =
+        executionStableIdForBeacon(obs, observations) ??
+        beaconStableIdForValidator(obs, observations);
       if (drivesNodeId !== undefined) entity.drivesNodeId = drivesNodeId;
     }
   }
