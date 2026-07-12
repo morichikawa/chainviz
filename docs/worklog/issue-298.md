@@ -651,4 +651,47 @@ UX観点からの見立てであり、正式なデータフロー・型設計は
     infra エンティティを実際には投入しておらず、block 件数の確認しか
     していない。テスト名どおりの検証にするなら node/edge を置いた状態で
     evict 後も残ることを確認すべき（コメントで自認しているため
+
+### 2026-07-12 Issue #298 差し戻し対応（frontend, chain-ribbon.spec.ts の test.use() 配置）
+
+- 担当: frontend
+- ブランチ: issue-298-block-stacking-visualization（cherry-pick 合流後の
+  worktree で対応。旧 frontend 専用ブランチではない）
+- 内容: レビュー差し戻し1件を修正した。`test.use({ viewport:
+  OPERATION_PANEL_VIEWPORT })` をテスト本体（UI-B-06）の内側からファイルの
+  トップレベルへ移した（既存4ファイルと同じ配置。UI-B-05 にも同じ
+  viewport が適用されることになるがアサーションには影響しない）。
+- 決定事項・注意点:
+  - 実 Docker スタック（起動済みの `profiles/ethereum`）に対して
+    `pnpm exec playwright test src/ui/chain-ribbon.spec.ts --project=chromium`
+    を実行し、修正の効果を実測で確認した。UI-B-05 は完全に green（実行完了）。
+    UI-B-06 は「`test.use()` の実行時エラーで即座に落ちる」という指摘の
+    症状が完全に解消され（そのエラー自体は一度も再発しなかった）、実際の
+    ステップ（送金・tx確定待ち・ホバー連動）を数十秒かけて実行するところ
+    まで進むことを確認した
+  - 実行中に**別の実バグ**を発見し、同じコミットで修正した:
+    「tx を含むブロックのタイルにホバーする」ステップで
+    `page.getByTestId(`wallet-tx-chip-${hash}`)`（ページ全体検索）が
+    strict mode 違反（要素2件ヒット）で失敗していた。原因は
+    `WalletEntity.recentTxHashes` が送信元・宛先の両方のウォレットで
+    同じ tx を追跡するため、同じ tx hash の chip テストID が2枚の
+    ウォレットカードに同時に存在すること。送信元ウォレットカード配下に
+    スコープを絞ることで解消した
+  - **UI-B-06 の完全な green 確認はこのセッション内では取れていない**。
+    同じ固定ラベル（`e2e-ribbon-recipient`）の addWorkbench を、この
+    長時間稼働中の共有 Docker スタックに対して検証のため何度も手動で
+    再実行したことで、ベースラベルの workbench 追加が毎回 `-2`/`-3` の
+    ような別IDへ逃げるようになった（一度使われたラベルをこの環境が
+    再利用しない挙動によるもので、修正内容そのものの欠陥ではない。
+    `wallet-balance.spec.ts`/`token-balance.spec.ts` も同じ固定ラベル
+    方式を採っており、同じ環境で繰り返し手動実行すれば同様に汚染されうる
+    という、このリポジトリの e2e テスト全体に共通する既知の脆さ）。
+    副生成された `chainviz-ethereum-e2e-ribbon-recipient-*` コンテナの
+    後始末は、sandbox の権限方針（パターンマッチでの検出はセッション内
+    追跡と見なされず自動許可されない）によりこのセッションでは実行
+    できなかった。統括・QA側で該当コンテナの要否を確認し、不要なら
+    削除してほしい
+  - QA には、汚染されていない（またはこのタスクで使ったラベルが未使用の）
+    状態で `pnpm test:e2e:ui -- chain-ribbon` を一度実行し、UI-B-06 が
+    最後まで green になることの最終確認を依頼する
     ブロッカーとはしない）
