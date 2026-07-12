@@ -692,6 +692,12 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       統合。実機検証で修正前の再現・修正後のヒステリシス動作（単発失敗で
       維持・猶予超過で消滅・回復）を確認済み。docs/worklog/issue-288.md参照)
       [#288](https://github.com/morichikawa/chainviz/issues/288)
+- [x] 動的に追加したワークベンチでコントラクトデプロイが常に
+      No contract foundで失敗する(workbenchSpec()にprofiles/ethereum/
+      contractsを/contractsへbind mountするbindsを追加。静的ワークベンチ
+      は元々マウント済みのため変更なし。実機検証で修正前の再現・修正後の
+      成功を確認済み。docs/worklog/issue-293.md参照)
+      [#293](https://github.com/morichikawa/chainviz/issues/293)
 
 ## 運用ルール（全ステップ共通）
 

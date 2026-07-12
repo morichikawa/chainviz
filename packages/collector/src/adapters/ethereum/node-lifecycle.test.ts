@@ -902,6 +902,20 @@ describe("EthereumNodeLifecycle workbench commands", () => {
     expect(wb.env?.ETH_RPC_URL).toBe(config.ethRpcUrl);
   });
 
+  it("mounts the sample contracts project so deployContract (forge create) can find it (Issue #293)", async () => {
+    // 動的に addWorkbench したコンテナには docker-compose.yml の静的
+    // `workbench` サービスと同じ /contracts bind mount が必要。無いと
+    // forge create --root /contracts が「No contract found」で必ず失敗する。
+    const ops = fakeOps();
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+    await lifecycle.addWorkbench("Alice");
+
+    const wb = ops.created[0];
+    expect(wb.binds).toContain(
+      `${config.profileDir}/contracts:/contracts`,
+    );
+  });
+
   it("maps the proxy hostname to Docker's host-gateway so the container can reach it", async () => {
     // 既定の ethRpcUrl は host.docker.internal（ホスト名）を指すため、
     // extra_hosts で host-gateway へのマッピングが必要（静的ワークベンチの
