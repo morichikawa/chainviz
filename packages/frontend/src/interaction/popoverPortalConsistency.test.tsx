@@ -18,6 +18,7 @@ import { ContractCard } from "../entities/ContractCard.js";
 import { ContractPopover } from "../entities/ContractPopover.js";
 import type { InfraEntity } from "../entities/infraNode.js";
 import { InfraPopover } from "../entities/InfraPopover.js";
+import { RibbonHoverProvider } from "../entities/RibbonHoverContext.js";
 import { TxLifecyclePopover } from "../entities/TxLifecyclePopover.js";
 import { WalletCard } from "../entities/WalletCard.js";
 import type { WalletFlowNode } from "../entities/walletNode.js";
@@ -56,7 +57,11 @@ const glossary: Glossary = {
 function providers(node: React.ReactNode, withReactFlow = false) {
   const inner = (
     <LanguageProvider initialLanguage="ja">
-      <GlossaryProvider glossary={glossary}>{node}</GlossaryProvider>
+      <GlossaryProvider glossary={glossary}>
+        {/* Issue #298: WalletCard/ContractCard は RibbonHoverContext を読む
+            ため、他のケースに影響が無い共通の Provider をここに置く。 */}
+        <RibbonHoverProvider transactions={[]}>{node}</RibbonHoverProvider>
+      </GlossaryProvider>
     </LanguageProvider>
   );
   return withReactFlow ? <ReactFlowProvider>{inner}</ReactFlowProvider> : inner;

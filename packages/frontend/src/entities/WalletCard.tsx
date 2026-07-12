@@ -4,6 +4,7 @@ import { useRef } from "react";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { useHoverPopover } from "../interaction/useHoverPopover.js";
+import { useRibbonHover } from "./RibbonHoverContext.js";
 import { shortHex, txChipLabel } from "./transaction.js";
 import { TxLifecyclePopover } from "./TxLifecyclePopover.js";
 import {
@@ -18,12 +19,17 @@ import { WalletPopover } from "./WalletPopover.js";
  * mempool → ブロック取り込みの4段階）を表示する（ARCHITECTURE.md §6.11、
  * Issue #212 単位D）。以前あった `title` 属性（hash のみのネイティブ
  * ツールチップ）はこのポップオーバーに置き換わったため無い。
+ *
+ * Issue #298 第2段階: このチップのホバーは同時にチェーンリボンの該当タイル
+ * （tx.blockHash が確定していれば）を強調させる（`RibbonHoverContext`
+ * 経由の逆方向ハイライト。ARCHITECTURE.md §9.1）。
  */
 function TxChip({ tx, isSettling }: { tx: TransactionEntity; isSettling: boolean }) {
   const { t } = useLanguage();
   // Issue #221: 隙間を通過する一瞬の mouseleave で消えないよう遅延クローズ。
   const { isOpen: hovered, onMouseEnter, onMouseLeave, onFocus, onBlur } =
     useHoverPopover();
+  const { setHoveredTxHash } = useRibbonHover();
   const label = txChipLabel(tx);
   const text = label.kind === "deploy" ? t("tx.chip.deploy") : label.text;
   // Issue #245: 隣接カードの下に隠れないよう body 直下へ portal 描画する。
@@ -40,8 +46,14 @@ function TxChip({ tx, isSettling }: { tx: TransactionEntity; isSettling: boolean
       data-testid={`wallet-tx-chip-${tx.hash}`}
       data-status={tx.status}
       data-label-kind={label.kind}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
+      onMouseEnter={() => {
+        onMouseEnter();
+        setHoveredTxHash(tx.hash);
+      }}
+      onMouseLeave={() => {
+        onMouseLeave();
+        setHoveredTxHash(null);
+      }}
       onFocus={onFocus}
       onBlur={onBlur}
     >
@@ -76,6 +88,10 @@ export function WalletCard({ data }: NodeProps<WalletFlowNode>) {
   const { isOpen: hovered, onMouseEnter, onMouseLeave } = useHoverPopover();
   // Issue #245: カード本体を WalletPopover の位置合わせの基準にする。
   const cardRef = useRef<HTMLDivElement>(null);
+  // Issue #298 第2段階: チェーンリボンのタイルホバーで、そのブロックに
+  // 取り込まれた tx の送信元/宛先だった場合に強調する（順方向ハイライト）。
+  const { highlightedAddresses } = useRibbonHover();
+  const ribbonHighlighted = highlightedAddresses.has(entity.address.toLowerCase());
 
   const kindTermKey = entity.isSmartAccount ? "smart-account" : "eoa";
   const kindLabel = entity.isSmartAccount
@@ -95,7 +111,9 @@ export function WalletCard({ data }: NodeProps<WalletFlowNode>) {
   return (
     <div
       ref={cardRef}
-      className="infra-card infra-card--wallet"
+      className={`infra-card infra-card--wallet${
+        ribbonHighlighted ? " infra-card--ribbon-highlight" : ""
+      }`}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       data-testid={`wallet-card-${entity.address}`}

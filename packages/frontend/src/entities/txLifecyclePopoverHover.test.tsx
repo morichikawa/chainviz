@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GlossaryProvider } from "../glossary/GlossaryProvider.js";
 import { LanguageProvider } from "../i18n/LanguageProvider.js";
 import { HOVER_POPOVER_CLOSE_DELAY_MS } from "../interaction/useHoverPopover.js";
+import { RibbonHoverProvider } from "./RibbonHoverContext.js";
 import { DEFAULT_RECENT_TX_LIMIT } from "./transaction.js";
 import { WalletCard } from "./WalletCard.js";
 import { WalletPopover } from "./WalletPopover.js";
@@ -63,7 +64,11 @@ function renderCard(data: WalletFlowNode["data"]) {
     <ReactFlowProvider>
       <LanguageProvider initialLanguage="ja">
         <GlossaryProvider glossary={{}}>
-          <WalletCard {...props} />
+          {/* Issue #298: WalletCard は RibbonHoverContext を読むため、
+              テストでも Provider 配下でレンダーする必要がある。 */}
+          <RibbonHoverProvider transactions={[]}>
+            <WalletCard {...props} />
+          </RibbonHoverProvider>
         </GlossaryProvider>
       </LanguageProvider>
     </ReactFlowProvider>,

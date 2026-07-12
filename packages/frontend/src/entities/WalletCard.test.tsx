@@ -4,6 +4,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { GlossaryProvider } from "../glossary/GlossaryProvider.js";
 import { LanguageProvider } from "../i18n/LanguageProvider.js";
+import { RibbonHoverProvider } from "./RibbonHoverContext.js";
 import { WalletCard } from "./WalletCard.js";
 import type { WalletFlowNode } from "./walletNode.js";
 
@@ -36,7 +37,11 @@ function renderCard(data: WalletFlowNode["data"]) {
     <ReactFlowProvider>
       <LanguageProvider initialLanguage="ja">
         <GlossaryProvider glossary={{}}>
-          <WalletCard {...props} />
+          {/* Issue #298: WalletCard は RibbonHoverContext を読むため、
+              テストでも Provider 配下でレンダーする必要がある。 */}
+          <RibbonHoverProvider transactions={[]}>
+            <WalletCard {...props} />
+          </RibbonHoverProvider>
         </GlossaryProvider>
       </LanguageProvider>
     </ReactFlowProvider>,
