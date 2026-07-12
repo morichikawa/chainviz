@@ -1272,3 +1272,43 @@ DOM ノード同一性を細かくポーリングして切り分けた。
   `probe-*` 5件）を `docker rm -f` で削除し、`docker ps -a` で残存が無いことを
   確認（正規7台＋genesis(Exited 0)のみ）。collector（4125）・vite（5275）の
   残プロセスが無いことも確認。正規スタックには一切手を付けていない。
+
+### 2026-07-12 Issue #298 QA差し戻し対応（frontend, UI-B-06 のビューポート外チップ）
+
+- 担当: frontend
+- ブランチ: issue-298-block-stacking-visualization
+- QA差し戻し要約: `addWorkbenchAndGetWallet` で受け取り用ワークベンチを
+  追加するとグリッドが下へ伸び、送信元ウォレットカードの tx チップが
+  ビューポート下端の外（y≈1272 > ビューポート高さ1200）へ押し出される。
+  React Flow はキャンバスを CSS transform でパンするため DOM上に
+  「スクロール可能な祖先」が存在せず、Playwright の `hover()` に内蔵された
+  自動スクロール（`scrollIntoViewIfNeeded` 相当）が効かず、`:hover` が
+  一切発火しない。凍結ロジック本体（`useFrozenRibbonTiles`/
+  `ChainRibbonCard`/`RibbonHoverContext`）は QA の手動検証で正しく機能する
+  ことを確認済みで変更不要、との判定。
+- 修正: `chain-ribbon.spec.ts` の「チェーンリボンで、tx を含むブロックの
+  タイルにホバーする」ステップの先頭で、tx チップをホバーする直前に
+  `page.click(".react-flow__controls-fitview")`（React Flow の Fit View
+  コントロール）を実行し、キャンバス全体をビューポート内へ収めてから
+  ホバーするように変更した。QA案の2候補（Fit View / `scrollIntoViewIfNeeded`
+  相当）のうち、後者はキャンバスパンがCSS transformで行われるため元々
+  効かない（今回の不具合の直接原因と同じ理由）と判断し、Fit View を採用
+  した。この1操作をホバー直前に挟むだけなので、included 検出からホバー
+  までの遅延はほぼ増えず、対象タイルが表示窓（直近8タイル≒16秒）内に
+  残っているうちに操作できることを実行時間の実測（後述）で確認した。
+- 検証（実Docker環境、正規スタックのみ・混雑無し）:
+  - `pnpm exec tsc --noEmit` / `pnpm eslint packages/e2e`: 成功
+  - `chain-ribbon.spec.ts` を `pnpm exec playwright test
+    src/ui/chain-ribbon.spec.ts --project=chromium` で**3回連続実行し、
+    3回ともUI-B-05・UI-B-06の両方が green**だった（所要時間: 1回目
+    UI-B-06 11.3秒、2回目23.9秒、3回目16.3秒。いずれも
+    `OPERATION_EFFECT_TIMEOUT_MS`(30秒)の範囲内で、表示窓16秒に対しても
+    十分な余裕があることを確認）
+  - `pnpm --filter @chainviz/frontend build && test`: 成功（132ファイル/
+    2011テスト）
+- 後片付け: 検証で作成されたワークベンチ由来コンテナ3件
+  （`e2e-ribbon-recipient-mrht*-1/2/3`。いずれもこのセッション自身の実行が
+  作成した、id が既知のもの）が停止済み（Exited）であることを確認した上で
+  `docker rm` で削除した（起動中のコンテナへの操作は行っていない）。正規
+  スタック（reth1-2/beacon1-2/validator1-2/workbench-1/genesis）には手を
+  付けていない。`docker ps -a` で残存が無いことを最終確認済み。
