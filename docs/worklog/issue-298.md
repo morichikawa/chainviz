@@ -263,3 +263,61 @@ UX観点からの見立てであり、正式なデータフロー・型設計は
   環境変数 `LD_LIBRARY_PATH=/home/zoe/chrome-deps/root/usr/lib/x86_64-linux-gnu`
   で起動できる（headless shell は libnspr4.so 欠落で起動不可）。
   スクリプトは module 解決の都合で `packages/e2e` 配下から実行する
+
+### 2026-07-12 Issue #298 チェーンリボンのデータフロー設計
+
+- 担当: designer
+- ブランチ: issue-298-block-stacking-visualization
+- 内容: 上記UX設計を受けて、実装前のデータフロー・型変更要否・collector/
+  frontend の作業分担を確定した。設計の本文は `docs/ARCHITECTURE.md` §9
+  （新設）に反映済み。UX設計メモが designer に委ねた2つの未決事項
+  （tx件数バッジのデータソース、store のブロック蓄積方針）へ回答した。
+  スコープは統括のユーザー確認により**第2段階（ホバー連動ハイライト）も
+  今回含める**。#296（フォーク色分け）との統合は含めない（単一連鎖前提）
+- 決定事項・注意点:
+  - **shared の型変更なし**。リボンはワールドステートのエンティティでは
+    なく、フロントが既存の `BlockEntity` 群から導出する表示物（React Flow
+    上は id `chain-ribbon` 固定の単一ノード）。`DiffEvent` も既存の
+    entityAdded / entityUpdated / entityRemoved で足りる（フロント store は
+    entityRemoved を汎用処理済みで、ブロック evict でタイルが自然に消える）
+  - **tx件数バッジは `BlockEntity.txCount` を足さず、フロントで
+    `TransactionEntity.blockHash` を数えて導出する**。根拠: collector の
+    `recordInclusion`（transactions.ts）は eth_getBlockReceipts の結果から
+    ブロック内の全 tx（pending 未追跡分も含む）を TransactionEntity として
+    配信しており、スナップショットにも入る。第2段階のホバー連動が
+    どのみち「blockHash → tx群」の索引を必要とするため、件数はその副産物。
+    status は included / failed の両方を数える（failed もブロックに
+    取り込まれている）。receipts 取得失敗時は件数 0 = バッジ非表示に
+    退行するが「省略 = 情報なし」の既存の流儀と整合
+  - **collector の `WorldStateStore.applyBlock` にブロック番号ベースの
+    保持窓を入れる**（`BLOCK_RETENTION = 32`）。観測済み最大ブロック番号
+    （単調増加）から窓を計算し、(a) 窓より古い番号の流入は取り込まず空の
+    差分を返す、(b) 窓から外れた既存ブロックは entityRemoved として配信
+    する。挿入順の evict にしない理由: addNode 直後の追いつき中ノードが
+    過去ブロックの newHeads を大量に流すと、挿入順 evict では正史の先端側
+    ブロックが押し出されてリボンが一時的に過去へ巻き戻る。番号窓なら
+    追いつきフラッドは (a) で弾かれる
+  - **固定値 32 の前提条件**（CLAUDE.md の固定値ルール。コードコメントにも
+    書くこと）: フロントのリボン表示件数（8）以上であること、フォークで
+    同一番号の複数ハッシュが共存する余地、`BlockPropagationTracker`
+    （200件保持のまま変更しない）からの遅延 receivedAt マージが窓内で
+    entityUpdated として反映される余裕を見込んだ値。表示件数 8 を大きく
+    増やす変更をするときは窓も併せて見直すこと
+  - タイル列の導出仕様（フロントの純粋関数 `entities/chainRibbon.ts`
+    想定）: 番号昇順・末尾8件。同一番号に複数ハッシュがある場合は
+    `latestReceiptTime` が最も遅いもの（同時刻なら hash 辞書順）を1つ選ぶ。
+    隣接タイルの連結線は `次.parentHash === 前.hash` が成立するときだけ
+    「連結」として描き、番号が飛んだ区間は切れ目を示す
+  - モック（`websocket/mockData.ts`）は現状 BlockEntity を一切流していない
+    （blockHeight の entityUpdated のみ）。リボンのオフライン確認のため、
+    スナップショットへの直近数件のブロック追加と、tick ごとの連なる
+    新ブロック entityAdded（receivedAt 付き）+ collector の保持窓と同様の
+    entityRemoved の送出をフロント作業に含める
+  - **作業分担と依存**: collector（store の保持窓 + ユニットテスト）と
+    frontend（リボン導出・カード・アニメーション・ホバー連動・i18n・
+    glossary 更新・モック・e2e）は互いに独立で並行着手できる。frontend は
+    「ブロックが無制限に届き続けても直近分だけ描く」導出なので、collector
+    の窓の有無に依存しない
+  - tx（TransactionEntity）の store 無制限蓄積は本 Issue の範囲外として
+    残る（表示が「直近N件」に閉じないため別途設計が要る）。バックログ
+    Issue 起票を統括に依頼する
