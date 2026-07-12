@@ -1355,3 +1355,77 @@ DOM ノード同一性を細かくポーリングして切り分けた。
     Fit View でも全体が収まらない理論的可能性がある。e2e は正規スタック
     （混雑無し）前提で、その前提は spec コメントと本 worklog に記録済み
 - 次工程: chainviz-qa による実 Docker 環境での最終検証に委ねる
+
+### 2026-07-12 Issue #298 QA最終検証（UI-B-06 Fit View 修正後・合格）
+
+- 担当: qa
+- ブランチ: issue-298-block-stacking-visualization（worktree、開始時 working tree clean）
+- 対象: コミット 9dd80c5（UI-B-06 のホバー直前に Fit View 操作を追加。tx チップが
+  ビューポート外へ押し出されて持続ホバーが成立しなかった問題への対応）。reviewer が
+  9dd80c5 を合格判定済み（前節）。実 Docker 環境での最終検証を実施した。
+- 判定: **合格**。第1段階（チェーンリボンの基本表示・タイル着地）・第2段階
+  （tx チップ⇔ブロックタイルのホバー連動ハイライト）ともに完了条件を満たすことを
+  実機で確認した。
+
+#### 検証環境
+
+- 既存稼働中の正規 Docker スタック（`profiles/ethereum`）を利用。`docker compose up -d`
+  で再確認（全コンテナ Running。genesis は one-shot で Exited 0）。`docker ps -a` で
+  正規構成（reth1-2 / beacon1-2 / validator1-2 / workbench-1 + genesis Exited 0）のみで
+  あり、混雑ノード（reth3+ 等）が存在しないことを確認済み。
+- reth1 の RPC（`eth_blockNumber`）で 2 秒スロットの進行を確認（14108→14110→14112 と
+  約3秒で2ブロック進行）。
+- globalSetup が collector（4125）・vite（5275、`VITE_COLLECTOR_URL=ws://127.0.0.1:4125`
+  で実 collector 接続）を起動し chromium から検証（モックではない）。ブラウザ起動には
+  system に無い NSS/NSPR 系ライブラリを `/home/zoe/chrome-deps` から `LD_LIBRARY_PATH`
+  で参照した（環境要因。アプリとは無関係）。
+
+#### 自動テスト（chain-ribbon.spec.ts）
+
+- `pnpm exec playwright test src/ui/chain-ribbon.spec.ts --project=chromium` を
+  **3回連続実行し、3回とも UI-B-05・UI-B-06 の両方が green**だった。
+  - 1回目: UI-B-05 5.0s / UI-B-06 23.8s（計43.2s）
+  - 2回目: UI-B-05 4.1s / UI-B-06 23.9s（計42.3s）
+  - 3回目: UI-B-05 5.6s / UI-B-06 14.2s（計34.1s）
+- 前回まで再現していた UI-B-06 の失敗（ビューポート外に押し出された tx チップに
+  ホバーできず `.chain-ribbon-tile--highlight` の `toHaveCount(1)` が 0 のまま
+  タイムアウト）は、Fit View 操作の追加により3回とも一切再発しなかった。
+
+#### 手動目視確認（一時プローブ spec で実施、実行後削除）
+
+- チェーンリボンカードの基本表示: ヘッダ「チェーン / 新しいブロックが右端に
+  積まれていきます」、最新ブロック番号（例 #14231）、左端の省略インジケータ（⋯）、
+  タイル（例 #14231 とハッシュ短縮 `0xecb7…cdc`）を確認。
+- タイル着地: 最新番号が #14231→#14232 へ増加し、新タイルが右端に追加され、
+  隣接タイル間に連結線が引かれることを確認。
+- タイルホバーのポップオーバー: ブロック番号 #14232・ハッシュ全文・親ブロック
+  `0xecb709…7cdc`・時刻 `2026-07-12 13:37:01 UTC`・取り込まれた tx（0 = 空ブロック）・
+  受信したノード（beacon2 +0ms / reth2 +0ms / beacon1 +2ms…）を確認。**親ブロック行の
+  ハッシュ `0xecb709…7cdc` が直前タイル #14231 のハッシュ `0xecb7…cdc` と一致**し、
+  parentHash の連なりが実物で確認できた（UX設計の学習上の要）。
+- ホバー連動ハイライト（第2段階）は UI-B-06（3回 green）で、逆方向（送信元ウォレット
+  の included tx チップ → 対応タイルが光る）・順方向（タイル → ウォレットカードに
+  `infra-card--ribbon-highlight` が付く）・ホバー解除で消える、をいずれも実機で確認。
+
+#### 完了条件との照合（docs/PLAN.md #298）
+
+- 常設チェーンリボンをキャンバス内カードとして追加: 満たす
+- 直近タイルが横一列に落下・着地・発光: 満たす（着地は最新番号の増加と新タイル
+  追加で確認）
+- 親ブロック行の強調で parentHash 連結を確認できる: 満たす（ポップオーバーで実確認）
+- collector 側 WorldStateStore の保持窓（BLOCK_RETENTION=32）: 既存 collector QA で
+  確認済み（本節ではリボン表示が保持窓と整合して動作することを確認）
+- 既存のブロック伝播パルス・tx ライフサイクル表示の維持: 対象ファイル未変更で、
+  UI-B-05/06 実行中にアプリがクラッシュせず既存表示と共存して描画されることを確認
+- ホバー連動ハイライト（第2段階）も green: 満たす（3回連続 green）
+
+#### 後片付け
+
+- 一時プローブ spec（`packages/e2e/src/ui/_tmp_ribbon_shot.spec.ts`）は削除済み
+  （`git status` clean を確認）。
+- UI-B-06 の実行で生成されたワークベンチ由来コンテナ3件
+  （`chainviz-ethereum-e2e-ribbon-recipient-mrhu4237-1` / `-mrhu568h-2` / `-mrhu6bon-3`。
+  いずれも finally の removeWorkbench 後 Exited 137 で残っていたもの）を `docker rm -f`
+  で削除し、`docker ps -a` で残存が無いことを確認した（正規7台＋genesis Exited 0 のみ）。
+- collector（4125）・vite（5275）の残プロセスが無いことも `ss -ltnp` で確認。
+- 正規スタックには一切手を付けていない。
