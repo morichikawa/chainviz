@@ -1,4 +1,5 @@
 import type {
+  BlockEntity,
   Command,
   ContractEntity,
   DiffEvent,
@@ -98,6 +99,70 @@ const CL_BOOTNODE_ID = "lighthouse-1";
 
 /** addWorkbench の RPC 接続先（実環境の既定 `ETH_RPC_URL` = reth1 と同じ）。 */
 const RPC_TARGET_NODE_ID = EL_BOOTNODE_ID;
+
+/**
+ * チェーンリボン（Issue #298。ARCHITECTURE.md §9）のオフライン確認用モック。
+ * `BlockEntity` は既定スナップショットに一切含まれていなかったため新規に
+ * 追加する。実環境の `receivedAt` キーは stableId（`${project}/${service}`）
+ * 形式だが、モック内の `NodeEntity.id` はこの独自の単純な id 体系
+ * （"reth-node-1" 等）を使っているため、それに合わせる（モック内の他の
+ * エンティティ・PeerEdge と同じ規約）。
+ */
+
+/** ブロック番号から16進表記の疑似ハッシュを作る（既存の rethNode()/
+ * bobIncludedTx() が使う `0x${高さ.toString(16).padStart(8,"0")}` と
+ * 同じ書式に揃える）。 */
+function blockHashFor(number: number): string {
+  return `0x${number.toString(16).padStart(8, "0")}`;
+}
+
+/**
+ * 初期スナップショットに含める直近ブロック件数。リボンの表示件数(8。
+ * `chainRibbon.ts` の RIBBON_TILE_COUNT)より少ない5件に絞る。「見ている
+ * そばから積み上がっていく」こと自体が体験の核なので(UX設計 §4.2)、初期に
+ * 8件フルで揃っている必要は無い。
+ */
+const INITIAL_MOCK_BLOCK_COUNT = 5;
+
+/**
+ * ブロックの保持窓のモック用サイズ。リボンの表示件数(8)より余裕を持たせた
+ * 値で、超過分は entityRemoved として掃除する（実環境の collector 側
+ * `WorldStateStore` の保持窓 `BLOCK_RETENTION=32`(ARCHITECTURE.md §9.2)とは
+ * 独立した、モック専用の小さい値。オフラインで evict の見た目を確認できれば
+ * 十分なため、実際の窓幅に合わせる必要はない)。
+ */
+const MOCK_BLOCK_RETENTION = 12;
+
+/**
+ * 初期スナップショット用のブロック列（`headBlockHeight` を最新として、
+ * そこから遡って `INITIAL_MOCK_BLOCK_COUNT` 件）。receivedAt は現在時刻より
+ * 十分に古い値にし、`isFreshBlock`（`blockPulse.ts`/`useRibbonLanding.ts`
+ * の既定閾値6000msの外側）にして、接続直後に伝播パルス・着地アニメーションが
+ * 一斉に走らないようにする（再接続スナップショットと同じ扱い。
+ * ARCHITECTURE.md §9.3）。
+ */
+function initialMockBlocks(headBlockHeight: number): BlockEntity[] {
+  const now = Date.now();
+  return Array.from({ length: INITIAL_MOCK_BLOCK_COUNT }, (_, i) => {
+    const number = headBlockHeight - INITIAL_MOCK_BLOCK_COUNT + 1 + i;
+    // 最新のブロックほど receivedAt を新しくしつつ、全件とも鮮度ガードの
+    // 外側(6000ms超前)に収める。
+    const receivedBase = now - (INITIAL_MOCK_BLOCK_COUNT - i) * 20_000;
+    const block: BlockEntity = {
+      kind: "block",
+      hash: blockHashFor(number),
+      number,
+      parentHash: blockHashFor(number - 1),
+      timestamp: Math.floor(now / 1000) - (INITIAL_MOCK_BLOCK_COUNT - i) * 12,
+      receivedAt: {
+        [CL_BOOTNODE_ID]: receivedBase,
+        [EL_BOOTNODE_ID]: receivedBase + 15,
+        "reth-node-2": receivedBase + 40,
+      },
+    };
+    return block;
+  });
+}
 
 /** 0x + 指定プレフィックス + ゼロ埋めで 40 桁のダミーアドレスを作る。 */
 function addr(prefix: string): string {
@@ -521,6 +586,9 @@ export function createMockSnapshot(): WorldStateSnapshot {
       chainvizTokenContract(),
       counterContract(),
       unknownContract(),
+      // チェーンリボン（Issue #298）のオフライン確認用。reth の初期
+      // blockHeight(128)に合わせた直近5件。
+      ...initialMockBlocks(128),
     ],
     // 2つの reth ノードが実行層 P2P で直接ピア接続している状態を表す。
     edges: [
@@ -731,6 +799,19 @@ export function createMockClient(
   let counter = 0;
   let entitySeq = 0;
 
+  // チェーンリボン（Issue #298）の live シミュレーション状態。初期
+  // スナップショットの直近 `INITIAL_MOCK_BLOCK_COUNT` 件（initialMockBlocks）
+  // に続く番号から積み上げる。
+  let latestBlockHash = blockHashFor(blockHeight);
+  // 現在配信済み（evict されていない）ブロック番号の履歴。
+  // `MOCK_BLOCK_RETENTION` を超えた古い番号から entityRemoved で掃除する
+  // （collector 側 `WorldStateStore` の番号ベース保持窓（ARCHITECTURE.md
+  // §9.2）と同じ「窓の形」だけをモックで模す）。
+  const liveBlockNumbers: number[] = Array.from(
+    { length: INITIAL_MOCK_BLOCK_COUNT },
+    (_, i) => blockHeight - INITIAL_MOCK_BLOCK_COUNT + 1 + i,
+  );
+
   // 追加・削除の判定に使う、現在存在するエンティティ id の集合。
   const nodeIds = new Set([
     "reth-node-1",
@@ -857,6 +938,57 @@ export function createMockClient(
     });
     for (const dropped of overflow) {
       diffs.push({ type: "entityRemoved", id: dropped });
+    }
+    return diffs;
+  }
+
+  /**
+   * チェーンリボン（Issue #298）を1 tick 分進める差分を返す。呼び出し時点で
+   * 既に `blockHeight` はインクリメント済みの前提（インターバルハンドラ側で
+   * `blockHeight += 1` した直後に呼ぶ）。新ブロックを `entityAdded` で追加し、
+   * 直後に beacon → reth への伝播を模した `receivedAt` の追記
+   * （`entityUpdated`）を続ける。これにより既存のブロック伝播パルス
+   * （`useBlockPulses.ts`）もオフラインで確認できる。
+   *
+   * `MOCK_BLOCK_RETENTION` を超えた古いブロックは `entityRemoved` として
+   * 掃除する（collector 側の保持窓と同じ「窓の形」をモックでも再現し、
+   * リボンの entityRemoved 処理をオフラインで確認できるようにする）。
+   */
+  function advanceChain(): DiffEvent[] {
+    const diffs: DiffEvent[] = [];
+    const number = blockHeight;
+    const hash = blockHashFor(number);
+    const parentHash = latestBlockHash;
+    const now = Date.now();
+
+    const newBlock: BlockEntity = {
+      kind: "block",
+      hash,
+      number,
+      parentHash,
+      timestamp: Math.floor(now / 1000),
+      receivedAt: { [CL_BOOTNODE_ID]: now },
+    };
+    diffs.push({ type: "entityAdded", entity: newBlock });
+    // beacon(CL) が最初に受信し、数十ms遅れて reth(EL) 側にも伝播する体で、
+    // 受信順リスト（「受信したノード」ポップオーバー欄）に差を持たせる。
+    diffs.push({
+      type: "entityUpdated",
+      id: hash,
+      patch: {
+        receivedAt: {
+          [CL_BOOTNODE_ID]: now,
+          [EL_BOOTNODE_ID]: now + 30,
+          "reth-node-2": now + 65,
+        },
+      },
+    });
+
+    latestBlockHash = hash;
+    liveBlockNumbers.push(number);
+    if (liveBlockNumbers.length > MOCK_BLOCK_RETENTION) {
+      const evictedNumber = liveBlockNumbers.shift()!;
+      diffs.push({ type: "entityRemoved", id: blockHashFor(evictedNumber) });
     }
     return diffs;
   }
@@ -1046,6 +1178,9 @@ export function createMockClient(
             // 活動パルスをオフラインで確認できるようにする（Issue #188）。
             mockNodeLinkActivity(),
             ...advanceTxLifecycle(),
+            // チェーンリボン（Issue #298）が積み上がっていく様子をオフラインで
+            // 確認できるようにする。
+            ...advanceChain(),
           ]);
         }, intervalMs);
       }
