@@ -92,7 +92,48 @@ describe("summarizeOperationError / known patterns", () => {
     const detail =
       "Error: Failed to estimate gas: server returned an error response: error code -32003: insufficient funds for gas * price + value: have 1000000000000000000000000000 want 999999999999999999999999999999999";
     expect(summarizeOperationError(detail)).toBe(
-      "insufficient balance for this transaction (have 1000000000000000000000000000, need 999999999999999999999999999999999)",
+      "insufficient balance for this transaction (have 1000000000.0 ETH, need 999999999999999.999999 ETH)",
+    );
+  });
+});
+
+describe("summarizeOperationError / insufficientFunds ETH formatting (Issue #295)", () => {
+  it("converts both the have and need wei values to ETH in one message", () => {
+    // 正規表現マッチ → formatWeiAsEther を have/need の両方に適用 →
+    // テンプレート組み立て、の一連が通ることを確認する。
+    const detail =
+      "Error: server returned an error response: error code -32003: insufficient funds for gas * price + value: have 5000000000000000000 want 10000000000000000000";
+    expect(summarizeOperationError(detail)).toBe(
+      "insufficient balance for this transaction (have 5.0 ETH, need 10.0 ETH)",
+    );
+  });
+
+  it("preserves a gas-level (1e-5) difference between have and need at 6-digit precision", () => {
+    // 5 ETH 保有・5 ETH + 21000 gas 分 (0.000021 ETH) が必要という、実運用で
+    // 起こりうる僅差。6桁表示だからこそ have と need が別の値として見える
+    // （worklog「6桁の根拠」の主眼）。4桁表示なら両方 5.0000 に潰れてしまう。
+    const detail =
+      "insufficient funds for gas * price + value: have 5000000000000000000 want 5000021000000000000";
+    expect(summarizeOperationError(detail)).toBe(
+      "insufficient balance for this transaction (have 5.0 ETH, need 5.000021 ETH)",
+    );
+  });
+
+  it("collapses sub-1e-6 wei amounts to 0.0 ETH (documented lossy boundary)", () => {
+    // コード内コメントの例 "have 100 want 999"。どちらも 1e-6 ETH 未満のため
+    // 0.0 ETH に潰れる（worklog で許容と明記された既知の挙動。生 wei は
+    // 呼び出し元が console.error に残す）。
+    const detail = "insufficient funds for gas * price + value: have 100 want 999";
+    expect(summarizeOperationError(detail)).toBe(
+      "insufficient balance for this transaction (have 0.0 ETH, need 0.0 ETH)",
+    );
+  });
+
+  it("keeps a whole-ETH need value showing a trailing .0 rather than a bare integer", () => {
+    const detail =
+      "insufficient funds for gas * price + value: have 1500000000000000000 want 2000000000000000000";
+    expect(summarizeOperationError(detail)).toBe(
+      "insufficient balance for this transaction (have 1.5 ETH, need 2.0 ETH)",
     );
   });
 });
