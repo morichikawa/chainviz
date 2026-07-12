@@ -315,3 +315,44 @@ collector には「Docker 観測から対象を列挙して観測する」購読
   移動を伴い破壊リスクが高いため、本 Issue のスコープ外の follow-up
   として別途対応するのが妥当。今回は既存の Issue #301 describe に追記する
   形に留めた。
+
+### 2026-07-13 レビュー（査読誠 / chainviz-reviewer）
+
+- 担当: reviewer（査読 誠）
+- 判定: **合格**（差し戻しなし）。以下の観点を静的に確認した。
+- 設計逸脱: 周期リコンサイル方式・`WsSubscriptionReconciler` の汎用設計
+  （`Subscription` にのみ依存し `ExecutionTarget` に非依存）・collector 単独
+  完結、の3点は設計メモどおり。唯一の逸脱点（`subscribeBlocks()` が初回 tick
+  だけ `await` する）は、既存の同期テスト（購読が返り値解決時点で確立済みで
+  あることを前提）との後方互換のための妥当な判断。コード・worklog の双方に
+  理由が明記されている。
+- `WsSubscriptionReconciler` の実装: 新規 open / 消滅 close / signature 変化
+  時の close→open、`currentKeys` による差集合の close、`closeAll()` の
+  Map クリアいずれも正しい。二重購読はキー存在で構造的に防止されている。
+- 潜在リーク解消: `reconcile` が観測から消えたノードの `Subscription.close()`
+  を呼び、`close()` は `closedByCaller=true` で内部再接続タイマーを止める
+  （`eth-ws-client.ts`）。テスト（removeNode 相当で dispose 前に
+  `ws.closed` に載ることを確認）で回帰も担保されており、死コンテナへの
+  無期限再接続は解消済み。
+- `open` 同期例外時の挙動（tester 申し送り）: 実 `subscribeNewHeads` は
+  `connect()` 内で `new WebSocket` を作り、接続失敗は非同期の `error`/`close`
+  イベント経由で `onError`・内部再接続に流れる設計のため同期例外を投げない。
+  仮に投げても `blockTick` の try/catch がログして次 tick で再試行し自己
+  修復する。バグではなく許容範囲の設計判断と確認した。
+- エラーの握りつぶし: `blockTick` の catch は `console.error` でログ、newHeads
+  の `onError` も `console.error` でログしており、握りつぶし箇所は無い。
+- 固定値: `BLOCK_SUBSCRIPTION_RECONCILE_INTERVAL_MS`（3000ms）は応答性のみを
+  決める値で、成立前提（他の Docker 再ポーリングループと同根）がコメント・
+  worklog に明記済み。CLAUDE.md の「観測状態依存の固定値を埋め込まない」に
+  抵触しない。
+- ビルド・lint・テスト: `pnpm build` / `pnpm lint` / `pnpm test`（collector
+  1407・frontend 2120）すべて green。
+- コミット粒度: design docs / reconciler feat / 実装+対応テスト fix /
+  worklog+PLAN docs / テスト強化 の5コミットに関心事が分離されており、
+  Conventional Commits 準拠。実装とその対応テストが同一コミットにあるのは
+  CLAUDE.md のルールどおり。
+- docs 整合: ARCHITECTURE.md §4/§9.5・PLAN.md・WORKLOG.md・worklog が実装を
+  正しく反映している。
+- follow-up 申し送り（`peer-block-adapter.test.ts` 3300 行超の分割）: 共有
+  fixture の広範な移動を伴い破壊リスクが高く、Issue #301 のスコープ外。
+  follow-up Issue として別途起票するのが妥当（統括へ起票を委ねる）。
