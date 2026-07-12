@@ -730,6 +730,18 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       見出しに層バッジを追加、用語`visualization-layers`を追加。
       packages/shared・collectorの変更なし。docs/worklog/issue-299.md参照)
       [#299](https://github.com/morichikawa/chainviz/issues/299)
+- [x] subscribeBlocksが起動時のみ対象列挙しaddNodeで追加したノードに
+      newHeads購読が張られない
+      (subscribeBlocksをsubscribePeers/subscribeNodeInternalsと同じ周期
+      リコンサイルループへ変更。新設した汎用WsSubscriptionReconciler
+      （stableIdキーの購読レジストリ）で毎tick executionTargetsを取り直し、
+      新規出現ノードには購読を開き、消滅ノードはcloseする。signature
+      （wsUrl+receivedAtKeys）が変われば張り直す。副次効果としてremoveNode
+      後に死んだコンテナへ無期限再接続していた潜在リークも解消。実機検証
+      でaddNode後に動的追加ノードへブロック伝播パルスが実際に届くこと、
+      removeNode後に再接続ログが繰り返されなくなることを確認済み。
+      packages/shared変更なし。docs/worklog/issue-301.md参照)
+      [#301](https://github.com/morichikawa/chainviz/issues/301)
 
 ## 運用ルール（全ステップ共通）
 

@@ -152,3 +152,109 @@ collector には「Docker 観測から対象を列挙して観測する」購読
     pending tx（mempool）も P2P でゴシップされ既存ノードの mempool に乗る。
   - リコンサイラを汎用に作っておけば移行は軽微。
   一緒に直す判断もありうる（機構が共通なため）。統括の判断を仰ぐ。
+
+### 2026-07-13 実装着手前の方針確認メモ（実装担当）
+
+- 担当: collector（収集 悟）
+- 統括の判断: `subscribeTransactions` は今回のスコープに含めない
+  （設計メモの推奨どおり）。本 Issue は `subscribeBlocks` のみ対応する。
+- 設計メモ・`docs/ARCHITECTURE.md`（§4 `subscribeBlocks`、§9.5）を読んだ
+  うえでの実装方針は設計メモの記述どおりで変更なし。要点を実装ファイル
+  構成に落とすと以下のとおり:
+  1. `packages/collector/src/adapters/ethereum/ws-subscription-reconciler.ts`
+     を新設。`Subscription`（`eth-ws-client.ts`）にのみ依存する汎用クラス
+     `WsSubscriptionReconciler<Target>` とする。コンストラクタに
+     `signatureOf: (target: Target) => string` と
+     `open: (target: Target) => Subscription` を受け取り、
+     `reconcile(targets: Target[], keyOf: (target: Target) => string): void`
+     で新規 open・消滅 close・signature 変化時の close→open を行う。
+     `closeAll(): void` も持つ。`Target` はジェネリクスにして
+     `ExecutionTarget` に依存させない（`subscribeTransactions` 移行時の
+     再利用を見込む設計メモの方針どおり）。
+  2. `index.ts` の `subscribeBlocks` を `subscribeNodeInternals` と同型の
+     ループ（`blockLoopRunning` / `blockTimer` / `blockTick`）に変更し、
+     `blockSubscriptions: NewHeadsSubscription[]` フィールドを
+     `blockReconciler: WsSubscriptionReconciler<ExecutionTarget>` に置き換える。
+     `open(target)` の中身（newHeads コールバック本体）は現状の実装を
+     そのまま使う。
+  3. `BLOCK_SUBSCRIPTION_RECONCILE_INTERVAL_MS`（既定 3000ms、
+     `PEER_POLL_INTERVAL_MS` / `NODE_INTERNALS_POLL_INTERVAL_MS` と同根）を
+     `EthereumAdapterDeps` 経由でテストから上書き可能にする。
+  4. `dispose()` の `for (const sub of this.blockSubscriptions) sub.close()`
+     を `this.blockReconciler.closeAll()` + ループ停止に置き換える。
+  5. テストは `ws-subscription-reconciler.test.ts`
+     （フェイク `open`／フェイク `Subscription` で新規・消滅・signature
+     変化・二重防止・closeAll を検証。実 WS 不要）と、
+     `index.test.ts` 側に「addNode 相当（対象追加）で購読が開く」
+     「対象消滅で close される」ケースを追加する想定。
+
+### 2026-07-13 実装結果
+
+- 担当: collector（収集 悟）
+- 実装は上記の方針どおり。差分:
+  - `packages/collector/src/adapters/ethereum/ws-subscription-reconciler.ts`
+    （新設）: `WsSubscriptionReconciler<Target>`。`keyOf` / `signatureOf` /
+    `open` を受け取り、`reconcile(targets)` で新規 open・消滅 close・
+    signature 変化時の close→open を行う。`closeAll()` は dispose 用。
+    `Subscription`（`eth-ws-client.ts`）にのみ依存し、`ExecutionTarget` 等
+    特定の型には依存しない汎用実装（`subscribeTransactions` 等での再利用を
+    見込む）。
+  - `packages/collector/src/adapters/ethereum/index.ts`:
+    `subscribeBlocks` を `blockLoopRunning` / `blockTimer` / `blockTick` の
+    周期ループへ変更。ループ本体は毎 tick `executionTargets(observations)`
+    を取り直し `blockReconciler.reconcile(targets)` を呼ぶだけ。newHeads
+    コールバック本体（`blockTracker.record` + `headTipCache.recordHead` +
+    `onBlock` 呼び出し）は `blockReconciler` の `open` として1箇所にまとめ、
+    `onBlock` は `subscribeTransactions` の `onTx` と同じ「フィールドに
+    保持してクロージャから最新値を参照する」流儀にした。
+    `BLOCK_SUBSCRIPTION_RECONCILE_INTERVAL_MS`（既定 3000ms）を新設し
+    `EthereumAdapterDeps.blockSubscriptionReconcileIntervalMs` で上書き
+    可能にした。`dispose()` は `blockReconciler.closeAll()` を呼ぶよう変更。
+  - **設計からの変更点1点**: `subscribeNodeInternals` は初回 tick も
+    fire-and-forget（呼び出し元は完了を待たない）だが、`subscribeBlocks`
+    は初回 tick の完了だけ `await` する実装にした。既存の同期テスト
+    （`head-block-hash.test.ts`・`peer-block-adapter.test.ts` の
+    `subscribeBlocks` 系）が「`await adapter.subscribeBlocks(...)` の直後に
+    `ws.emit(...)` すれば届く」という、購読が返り値解決時点で確立済みで
+    あることを前提にしていたため、後方互換のためにこの挙動をそのまま
+    維持した。2 回目以降のリコンサイルは `subscribeNodeInternals` と同じく
+    setTimeout 経由で非同期に回る。理由と挙動の違いはコード内コメント・
+    本ファイルの双方に明記した。
+  - テスト:
+    - `ws-subscription-reconciler.test.ts`（新設）: 新規・二重防止・
+      追加ノードの並行 open・消滅時 close・signature 変化での
+      close→reopen・closeAll・closeAll 後の reconcile が再オープンしない
+      こと、を検証。
+    - `peer-block-adapter.test.ts`: 既存の `subscribeBlocks` describe
+      内のテストに `adapter.dispose()` を追加（周期ループ化により real
+      timer が残ると次のテストへ影響しうるため）。新規
+      describe「`subscribeBlocks` dynamic node tracking (Issue #301)」で
+      `vi.useFakeTimers()` を使い、addNode 相当（対象追加で購読が開く）・
+      removeNode 相当（対象消滅で close される。dispose 前に close される
+      ことを直接確認＝潜在リーク解消の確認）・signature 不変時に
+      張り直さないこと・beacon 出現による signature 変化での張り直し（機能
+      的に receivedAt のキー変化も確認）・二重ループ防止（idempotent）、の
+      5 ケースを追加。
+    - `mutableClientFrom`（`peer-block-adapter.test.ts` に新設）と
+      `controllableWsClient` の `close()` 修正（close 済みハンドラを
+      `headHandlers` から実際に取り除く。実 WS の close 後は通知が届かない
+      挙動へ寄せた。張り直しテストで新旧ハンドラが両方発火してしまう
+      不具合を修正するために必要だった）。
+  - `pnpm --filter @chainviz/collector build` / `test` とも成功
+    （1392 tests）。
+- **実機検証（docker compose up -d + 実際の addNode/removeNode コマンド）**:
+  `profiles/ethereum` のスタックを起動し、collector を実プロセスとして
+  起動、WebSocket 経由で `addNode`（chainProfile: "ethereum"）コマンドを
+  送信。動的に追加された execution ノード（`chainviz-ethereum/reth3`）が
+  スナップショット・diff に現れた約 1 秒後にはブロック伝播パルス
+  （`entityAdded`/`entityUpdated` の block の `receivedAt` に当該ノードの
+  id が乗る）が実際に届くことを確認した。続けて `removeNode` を送信し、
+  対象ノードの newHeads 購読が「死んだコンテナへ再接続を試み続けて
+  ログが出続ける」ことなく、1 回だけの close ログ（接続確立前に close
+  したことによる ws ライブラリ由来の無害なログ）で収まり、以降 15 秒以上
+  待っても再接続の試行ログが増えないことを確認した（修正前に存在した
+  「removeNode 後に死んだコンテナへ無期限再接続を試み続ける」潜在リークの
+  解消を実測で確認）。
+- 統括への申し送り: `subscribeTransactions` の同型ギャップは今回のスコープ
+  外（統括の判断どおり）。将来対応する場合は本 Issue で新設した
+  `WsSubscriptionReconciler` をそのまま再利用できる見込み。
