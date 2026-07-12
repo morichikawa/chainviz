@@ -1,3 +1,7 @@
+import {
+  CHAIN_RIBBON_NODE_TYPE,
+  type ChainRibbonFlowNode,
+} from "./chainRibbonNode.js";
 import type { ConnectingFlowEdge } from "./connectingEdge.js";
 import type { ContractCallPulseFlowEdge } from "./contractCallPulseEdge.js";
 import type { ContractFlowNode } from "./contractNode.js";
@@ -20,12 +24,15 @@ import type { WalletFlowNode } from "./walletNode.js";
  * エッジ + C層拡張のtx確定パルスエッジ）の合併型。Canvas はこの合併型で
  * ノード/エッジを受け取り、種別ごとに nodeTypes / edgeTypes へ振り分ける。
  * D層拡張の内部リンクエッジ（`InternalLinkFlowEdge`。Issue #188）も含む。
+ * チェーンリボン（`ChainRibbonFlowNode`。Issue #298）はチェーン全体で常設
+ * 1本のカードで、コントラクトカードと同じくどのノードにも従属しない。
  */
 export type CanvasFlowNode =
   | InfraFlowNode
   | WalletFlowNode
   | ContractFlowNode
-  | GhostFlowNode;
+  | GhostFlowNode
+  | ChainRibbonFlowNode;
 
 export type CanvasFlowEdge =
   | PeerFlowEdge
@@ -46,9 +53,13 @@ export type CanvasFlowEdge =
  * ゴーストカード（仮カード）は `draggable: false` でドラッグ自体ができないため
  * 実際にはこの分岐に到達しないが、CanvasFlowNode の合併型を網羅するために
  * commandId をキーとして返す（永続化はされない）。
+ *
+ * チェーンリボン（Issue #298）はエンティティを持たず、固定 id
+ * （`CHAIN_RIBBON_ID`）自体が既に安定識別子なのでそのまま使う。
  */
 export function canvasNodeLayoutKey(node: CanvasFlowNode): string {
   if (node.type === GHOST_NODE_TYPE) return node.data.commandId;
+  if (node.type === CHAIN_RIBBON_NODE_TYPE) return node.id;
   const entity = node.data.entity;
   return entity.kind === "wallet" || entity.kind === "contract"
     ? entity.address

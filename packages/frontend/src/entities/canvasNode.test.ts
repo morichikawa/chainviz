@@ -1,5 +1,6 @@
 import type { ContractEntity, NodeEntity, WalletEntity } from "@chainviz/shared";
 import { describe, expect, it } from "vitest";
+import { CHAIN_RIBBON_ID, chainRibbonToFlowNode } from "./chainRibbonNode.js";
 import {
   type CanvasFlowNode,
   canvasNodeLayoutKey,
@@ -97,6 +98,17 @@ describe("canvasNodeLayoutKey", () => {
       index: 3,
     });
     expect(canvasNodeLayoutKey(ghost)).toBe("cmd-9");
+  });
+
+  it("uses the fixed chain-ribbon id for the chain ribbon card", () => {
+    const ribbonNode = chainRibbonToFlowNode({
+      tiles: [],
+      txCountByHash: new Map(),
+      nodeLabelById: new Map(),
+      landingHashes: new Set(),
+      layout: {},
+    });
+    expect(canvasNodeLayoutKey(ribbonNode)).toBe(CHAIN_RIBBON_ID);
   });
 
   it("gives ghosts sharing a containerName-like label distinct keys (keyed by commandId, not label)", () => {

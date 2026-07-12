@@ -1778,3 +1778,186 @@ body {
   color: var(--muted);
   cursor: not-allowed;
 }
+
+/* --- チェーンリボン（ブロックの連なり表示。ARCHITECTURE.md §9。Issue #298） ---
+   コントラクトカードと同じくどのノードにも従属しない常設カード。タイル列は
+   横一列（左が古い・右が最新）。着地アニメーションの発光色は既存の伝播パルス・
+   ノードカードの追従発光と同系色（--synced、緑）にし、同一の出来事だと
+   視覚的に結びつける（docs/worklog/issue-298.md §4.3）。ホバー連動ハイライト
+   （第2段階）は新着強調と同系の --accent（青）にし、「操作起点の強調」という
+   既存の意味付けと揃える。 --- */
+.chain-ribbon-card {
+  position: relative;
+  min-width: 420px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.chain-ribbon-card__header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.chain-ribbon-card__title {
+  font-weight: 600;
+}
+
+.chain-ribbon-card__latest {
+  margin-left: auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+
+.chain-ribbon-card__subtitle {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.chain-ribbon-card__empty {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.chain-ribbon-card__row {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+}
+
+.chain-ribbon-card__older {
+  color: var(--muted);
+  cursor: help;
+  padding: 0 2px;
+  flex: none;
+}
+
+.chain-ribbon-card__link {
+  width: 14px;
+  height: 0;
+  border-top: 2px solid var(--muted);
+  flex: none;
+}
+
+.chain-ribbon-card__link--broken {
+  border-top-style: dashed;
+  opacity: 0.5;
+}
+
+.chain-ribbon-tile {
+  position: relative;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 62px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+
+.chain-ribbon-tile__number {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+.chain-ribbon-tile__hash {
+  color: var(--muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chain-ribbon-tile__tx-badge {
+  font-size: 10px;
+  padding: 0 5px;
+  border-radius: 999px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+/* 新タイルの着地演出（数百ms。docs/worklog/issue-298.md §4.3）。 */
+.chain-ribbon-tile--landing {
+  animation: chain-ribbon-landing 0.6s ease-out;
+}
+
+@keyframes chain-ribbon-landing {
+  0% {
+    transform: translateY(-10px);
+    box-shadow: 0 0 0 0 rgba(56, 211, 159, 0.7);
+  }
+  40% {
+    transform: translateY(0);
+    box-shadow: 0 0 0 6px rgba(56, 211, 159, 0.35);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(56, 211, 159, 0);
+  }
+}
+
+/* タイルホバー連動ハイライト（第2段階。順方向=タイル自身のホバー、
+   逆方向=直前タイル強調・tx/活動チップからの逆方向ハイライトの両方で使う）。 */
+.chain-ribbon-tile--highlight {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(79, 157, 255, 0.35);
+}
+
+.chain-ribbon-popover__parent {
+  cursor: help;
+}
+
+.chain-ribbon-popover__received {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--divider);
+}
+
+.chain-ribbon-popover__received-label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.chain-ribbon-popover__received-empty {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.chain-ribbon-popover__received-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chain-ribbon-popover__received-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  padding: 2px 0;
+}
+
+.chain-ribbon-popover__received-offset {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ウォレット/コントラクトカード側の順方向ハイライト（リボンのタイル
+   ホバーで、そのブロックの tx に関わったカードを強調する）。既存の
+   `--accent` を使い、`.chain-ribbon-tile--highlight` と同一の出来事だと
+   視覚的に結びつける。 */
+.infra-card--ribbon-highlight {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(79, 157, 255, 0.35);
+}

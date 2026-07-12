@@ -37,10 +37,38 @@ function isInfraEntity(entity: WorldStateEntity): boolean {
  */
 const MAX_WALLET_RECENT_TX_HASHES = 20;
 
+/**
+ * store が保持する block エンティティの、観測済み最大ブロック番号からの
+ * 保持窓の幅（Issue #298）。放置すると `applyBlock` は block を一度入れたら
+ * 削除しないため、長時間稼働でスナップショットが際限なく肥大する。
+ *
+ * 挿入順の evict（古い順に間引く）ではなく番号窓にしているのは、addNode
+ * 直後の追いつき中ノードが過去ブロックの newHeads を大量に流すケースで、
+ * 挿入順 evict だと正史の先端タイルが一時的に押し出されてしまうため
+ * （番号窓なら追いつきフラッドは「窓より古い番号」として取り込み自体を
+ * 拒否できる。§ applyBlock 参照）。
+ *
+ * この固定値 32 が成立する前提条件（CLAUDE.md「今この瞬間に観測できる
+ * 状態に依存した固定値をロジックに埋め込まない」対応。値を変える場合は
+ * 以下も併せて見直すこと。詳細は docs/worklog/issue-298.md 参照）:
+ * - フロント（チェーンリボン）の表示件数（既定 8 件）以上であること
+ * - 同一番号で複数ハッシュが共存するフォークの余地を残すこと（#296）
+ * - `BlockPropagationTracker`（アダプタ内、200 件保持）からの遅延
+ *   receivedAt マージが、対象ブロックがまだ窓内にあるうちに
+ *   entityUpdated として反映される余裕があること
+ */
+const BLOCK_RETENTION = 32;
+
 export class WorldStateStore {
   private readonly entities = new Map<string, WorldStateEntity>();
   private edges: PeerEdge[] = [];
   private timestamp = Date.now();
+  /**
+   * これまでに `applyBlock` へ渡された block のうち観測済みの最大番号
+   * （単調増加）。block 保持窓の下限計算に使う。まだ 1 件も block を
+   * 取り込んでいなければ undefined。
+   */
+  private maxObservedBlockNumber: number | undefined;
 
   constructor(private readonly chainType: ChainType = "ethereum") {}
 
@@ -81,10 +109,57 @@ export class WorldStateStore {
   /**
    * B 層のブロック受信タイミング（BlockEntity）を取り込む。ブロックはハッシュを
    * キーとするエンティティなので、既存の同一ブロックとの差分だけを計算する
-   * （他のエンティティは触らない）。返り値は適用した差分イベント。
+   * （他のエンティティは触らない）。
+   *
+   * `BLOCK_RETENTION`（既定 32）によるブロック番号ベースの保持窓を適用する
+   * （Issue #298）:
+   * - 取り込みによって観測済み最大ブロック番号が更新された後の窓
+   *   （`newMax - BLOCK_RETENTION + 1` 以上）より古い番号のブロックは
+   *   取り込まず、空の差分を返す（エラーではない正常系。addNode 直後の
+   *   追いつき中ノードが過去ブロックの newHeads を大量に流すケースの対策）
+   * - 取り込みの結果、窓から外れた既存ブロックは削除し `entityRemoved` を
+   *   差分として配信する
+   * - 同一番号・別ハッシュ（フォーク）のブロックはどちらも窓内であれば
+   *   両方保持される（削除はブロック番号だけで判定し、ハッシュの同一性は
+   *   見ない）
+   *
+   * 返り値は適用した差分イベント（この block 自身の add/update に加えて、
+   * 窓から外れた既存ブロックの entityRemoved を含む）。
    */
   applyBlock(block: BlockEntity): DiffEvent[] {
-    return this.applyKeyed(block);
+    const newMax =
+      this.maxObservedBlockNumber === undefined
+        ? block.number
+        : Math.max(this.maxObservedBlockNumber, block.number);
+    const windowLowerBound = newMax - BLOCK_RETENTION + 1;
+
+    if (block.number < windowLowerBound) {
+      // 窓より古い番号の流入は破棄する。maxObservedBlockNumber は
+      // このブロックによっては動かない（newMax の計算上、この分岐に
+      // 入るのは block.number < 既存の maxObservedBlockNumber の場合のみ）。
+      return [];
+    }
+
+    this.maxObservedBlockNumber = newMax;
+    const diff = this.applyKeyed(block);
+    const evicted = this.evictBlocksBelow(windowLowerBound);
+    return evicted.length > 0 ? [...diff, ...evicted] : diff;
+  }
+
+  /**
+   * 保持窓の下限（`lowerBound`）未満のブロック番号を持つ block エンティティを
+   * 削除し、`entityRemoved` イベントとして返す。`applyBlock` からのみ呼ぶ。
+   */
+  private evictBlocksBelow(lowerBound: number): DiffEvent[] {
+    const events: DiffEvent[] = [];
+    for (const entity of this.entities.values()) {
+      if (entity.kind !== "block") continue;
+      if (entity.number >= lowerBound) continue;
+      const event: DiffEvent = { type: "entityRemoved", id: entityId(entity) };
+      this.applyEvent(event);
+      events.push(event);
+    }
+    return events;
   }
 
   /**

@@ -405,6 +405,35 @@ export const messages = {
     ja: "同期中: {stage} {checkpoint}",
     en: "Syncing: {stage} {checkpoint}",
   },
+  // --- チェーンリボン（ブロックの連なり表示。ARCHITECTURE.md §10。
+  // Issue #298） ---
+  "chainRibbon.title": { ja: "チェーン", en: "Chain" },
+  "chainRibbon.subtitle": {
+    ja: "新しいブロックが右端に積まれていきます",
+    en: "New blocks stack up on the right",
+  },
+  "chainRibbon.latest": { ja: "#{number}", en: "#{number}" },
+  "chainRibbon.older.tooltip": {
+    ja: "これより前のブロックは表示していません",
+    en: "Older blocks are not shown",
+  },
+  "chainRibbon.empty": {
+    ja: "ブロックの到着を待っています…",
+    en: "Waiting for the first block…",
+  },
+  "chainRibbon.txBadge": { ja: "{count} tx", en: "{count} tx" },
+  "chainRibbon.popover.number": { ja: "ブロック番号", en: "Block number" },
+  "chainRibbon.popover.hash": { ja: "ハッシュ", en: "Hash" },
+  "chainRibbon.popover.parent": { ja: "親ブロック", en: "Parent block" },
+  "chainRibbon.popover.time": { ja: "時刻", en: "Time" },
+  "chainRibbon.popover.includedTx": { ja: "取り込まれた tx", en: "Included txs" },
+  "chainRibbon.popover.includedTxEmpty": { ja: "0（空ブロック）", en: "0 (empty block)" },
+  "chainRibbon.popover.receivedBy": { ja: "受信したノード", en: "Received by" },
+  "chainRibbon.popover.receivedByEmpty": {
+    ja: "受信時刻をまだ観測していません",
+    en: "No receipt times observed yet",
+  },
+  "chainRibbon.popover.receivedByOffset": { ja: "+{ms}ms", en: "+{ms}ms" },
   // --- レイヤーレンズ（A〜D層のチップバー。Issue #299。
   // docs/worklog/issue-299.md §3.7 の初稿をそのまま採用） ---
   "layerFilter.label": { ja: "レイヤー", en: "Layers" },

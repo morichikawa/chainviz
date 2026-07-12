@@ -15,6 +15,8 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChainRibbonCard } from "../entities/ChainRibbonCard.js";
+import { CHAIN_RIBBON_NODE_TYPE } from "../entities/chainRibbonNode.js";
 import type { LayerFilter } from "../entities/canvasLayers.js";
 import { computeLayerVisibility, withLayerDimClassName } from "../entities/canvasLayers.js";
 import { ContractCallPulseEdge } from "../entities/ContractCallPulseEdge.js";
@@ -71,6 +73,7 @@ const nodeTypes: NodeTypes = {
   [WALLET_NODE_TYPE]: WalletCard,
   [CONTRACT_NODE_TYPE]: ContractCard,
   [GHOST_NODE_TYPE]: GhostNodeCard,
+  [CHAIN_RIBBON_NODE_TYPE]: ChainRibbonCard,
 };
 const edgeTypes: EdgeTypes = {
   [PEER_EDGE_TYPE]: PeerPropagationEdge,

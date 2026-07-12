@@ -7,6 +7,7 @@ import { PopoverPortal } from "../interaction/PopoverPortal.js";
 import type { ContractActivityChip } from "./contractActivity.js";
 import { ContractPopover } from "./ContractPopover.js";
 import type { ContractFlowNode } from "./contractNode.js";
+import { useRibbonHover } from "./RibbonHoverContext.js";
 import { shortHex } from "./transaction.js";
 
 /**
@@ -14,10 +15,16 @@ import { shortHex } from "./transaction.js";
  * 関数名/イベント名を、そうでなければ生の識別子の短縮表示を出す。ホバーで
  * 引数一覧（復号済み）または復号不能である旨（GlossaryTerm: abi）を出す。
  */
+/**
+ * Issue #298 第2段階: このチップのホバーは同時にチェーンリボンの該当タイル
+ * （由来 tx の blockHash が確定していれば）を強調させる（逆方向ハイライト。
+ * ARCHITECTURE.md §9.1。`WalletCard.tsx` の `TxChip` と同じ仕組み）。
+ */
 function ActivityChip({ chip }: { chip: ContractActivityChip }) {
   const { t } = useLanguage();
   // Issue #221: 隙間を通過する一瞬の mouseleave で消えないよう遅延クローズ。
   const { isOpen: hovered, onMouseEnter, onMouseLeave } = useHoverPopover();
+  const { setHoveredTxHash } = useRibbonHover();
   const hasDetail = chip.decoded ? chip.args.length > 0 : true;
   // Issue #245: 隣接カードの下に隠れないよう body 直下へ portal 描画する。
   // 位置合わせの基準はこのチップ自体（アンカー）。
@@ -33,8 +40,14 @@ function ActivityChip({ chip }: { chip: ContractActivityChip }) {
       ]
         .filter(Boolean)
         .join(" ")}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
+      onMouseEnter={() => {
+        onMouseEnter();
+        setHoveredTxHash(chip.txHash);
+      }}
+      onMouseLeave={() => {
+        onMouseLeave();
+        setHoveredTxHash(null);
+      }}
       data-testid={`contract-activity-chip-${chip.key}`}
       data-kind={chip.kind}
       data-decoded={chip.decoded}
@@ -89,6 +102,10 @@ export function ContractCard({ data }: NodeProps<ContractFlowNode>) {
   const { isOpen: hovered, onMouseEnter, onMouseLeave } = useHoverPopover();
   // Issue #245: カード本体を ContractPopover の位置合わせの基準にする。
   const cardRef = useRef<HTMLDivElement>(null);
+  // Issue #298 第2段階: チェーンリボンのタイルホバーで、そのブロックに
+  // 取り込まれた tx の呼び出し先/作成先だった場合に強調する（順方向）。
+  const { highlightedAddresses } = useRibbonHover();
+  const ribbonHighlighted = highlightedAddresses.has(entity.address.toLowerCase());
 
   const isUncataloged = entity.name === undefined;
   const name = entity.name ?? t("contract.unknown");
@@ -99,6 +116,7 @@ export function ContractCard({ data }: NodeProps<ContractFlowNode>) {
     isUncataloged ? "infra-card--contract-unknown" : "",
     isNew ? "infra-card--new" : "",
     flashKind ? `contract-card--settle-${flashKind}` : "",
+    ribbonHighlighted ? "infra-card--ribbon-highlight" : "",
   ]
     .filter(Boolean)
     .join(" ");

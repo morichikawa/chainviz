@@ -15,6 +15,11 @@ import { useCommands } from "../commands/useCommands.js";
 import { ToastStack } from "../notifications/Toast.js";
 import { useNotifications } from "../notifications/useNotifications.js";
 import { attachPulsesToEdges } from "../entities/blockPulse.js";
+import {
+  countTransactionsByBlockHash,
+  deriveRibbonTiles,
+} from "../entities/chainRibbon.js";
+import { chainRibbonToFlowNode } from "../entities/chainRibbonNode.js";
 import type { LayerFilter } from "../entities/canvasLayers.js";
 import { resolveBootNodes } from "../entities/connectionTargets.js";
 import { connectingEdgesToFlowEdges } from "../entities/connectingEdge.js";
@@ -38,6 +43,7 @@ import { peerEdgesToFlowEdges } from "../entities/peerEdge.js";
 import { ownershipEdgesToFlowEdges } from "../entities/ownershipEdge.js";
 import { operationTargetEdgesToFlowEdges } from "../entities/operationTargetEdge.js";
 import { ghostsToPendingConnectionEdges } from "../entities/pendingConnectionEdge.js";
+import { RibbonHoverProvider } from "../entities/RibbonHoverContext.js";
 import { stabilizeArrayReference, stabilizeNodes } from "../entities/nodeStability.js";
 import { indexTransactions } from "../entities/transaction.js";
 import { useBlockPulses } from "../entities/useBlockPulses.js";
@@ -46,6 +52,7 @@ import { useForkColorAssignment } from "../entities/useForkColors.js";
 import { useNewArrivalHighlight } from "../entities/useNewArrivalHighlight.js";
 import { useNodeLinkActivityPulses } from "../entities/useNodeLinkActivityPulses.js";
 import { useOperationPulses } from "../entities/useOperationPulses.js";
+import { useRibbonLanding } from "../entities/useRibbonLanding.js";
 import { useTxLifecycle } from "../entities/useTxLifecycle.js";
 import {
   type WalletFlowNode,
@@ -483,14 +490,47 @@ function AppShell({
     internalLinkBaseEdges,
   );
 
+  // チェーンリボン（Issue #298。ARCHITECTURE.md §9）。ワールドステートの
+  // エンティティではなく、既存の blocks/transactions/nodeEntities から
+  // フロントが導出する表示物（React Flow 上は id 固定の単一ノード）。
+  const ribbonTiles = useMemo(() => deriveRibbonTiles(blocks), [blocks]);
+  const ribbonLandingHashes = useRibbonLanding(ribbonTiles);
+  const ribbonTxCountByHash = useMemo(
+    () => countTransactionsByBlockHash(transactions),
+    [transactions],
+  );
+  const ribbonNodeLabelById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const n of nodeEntities) map.set(n.id, n.containerName);
+    return map;
+  }, [nodeEntities]);
+  const chainRibbonNode = useMemo(
+    () =>
+      chainRibbonToFlowNode({
+        tiles: ribbonTiles,
+        txCountByHash: ribbonTxCountByHash,
+        nodeLabelById: ribbonNodeLabelById,
+        landingHashes: ribbonLandingHashes,
+        layout,
+      }),
+    [ribbonTiles, ribbonTxCountByHash, ribbonNodeLabelById, ribbonLandingHashes, layout],
+  );
+
   const nodes = useMemo(
     () => [
       ...infraNodesWithForkColor,
       ...walletNodes,
       ...contractNodesWithHighlight,
+      chainRibbonNode,
       ...ghosts,
     ],
-    [infraNodesWithForkColor, walletNodes, contractNodesWithHighlight, ghosts],
+    [
+      infraNodesWithForkColor,
+      walletNodes,
+      contractNodesWithHighlight,
+      chainRibbonNode,
+      ghosts,
+    ],
   );
   const edges = useMemo(
     () => [
@@ -538,31 +578,38 @@ function AppShell({
       </header>
       <CommandActionsProvider actions={actions}>
         <OperationDataProvider value={{ walletCandidates, deployedContracts }}>
-          <main className="app__canvas">
-            <div className="canvas-overlay-top">
-              <CanvasToolbar
-                pendingAddNode={pendingAddNode}
-                pendingAddWorkbench={pendingAddWorkbench}
-                entities={entities}
-              />
-              <LayerFilterBar
-                value={layerFilter}
-                onChange={setLayerFilter}
-                layers={ETHEREUM_VISUALIZATION_LAYERS}
-              />
-            </div>
-            {nodes.length === 0 ? (
-              <p className="app__empty">{t("canvas.empty")}</p>
-            ) : (
-              <Canvas
-                nodes={nodes}
-                edges={edges}
-                onPersistPosition={persist}
-                layerFilter={layerFilter}
-              />
-            )}
-            <ToastStack notifications={notifications} onDismiss={dismiss} />
-          </main>
+          {/* Issue #298 第2段階: タイルホバー連動ハイライトの共有状態
+              （chain-ribbon のタイル ⇔ wallet/contract カードの相互強調）。
+              React Flow はノードを portal を介さず通常の子要素として描画する
+              ため、Canvas を包む Context Provider はそのままノード内部の
+              useRibbonHover まで届く（OperationDataProvider と同じ理由）。 */}
+          <RibbonHoverProvider transactions={transactions}>
+            <main className="app__canvas">
+              <div className="canvas-overlay-top">
+                <CanvasToolbar
+                  pendingAddNode={pendingAddNode}
+                  pendingAddWorkbench={pendingAddWorkbench}
+                  entities={entities}
+                />
+                <LayerFilterBar
+                  value={layerFilter}
+                  onChange={setLayerFilter}
+                  layers={ETHEREUM_VISUALIZATION_LAYERS}
+                />
+              </div>
+              {nodes.length === 0 ? (
+                <p className="app__empty">{t("canvas.empty")}</p>
+              ) : (
+                <Canvas
+                  nodes={nodes}
+                  edges={edges}
+                  onPersistPosition={persist}
+                  layerFilter={layerFilter}
+                />
+              )}
+              <ToastStack notifications={notifications} onDismiss={dismiss} />
+            </main>
+          </RibbonHoverProvider>
         </OperationDataProvider>
       </CommandActionsProvider>
     </div>

@@ -7,6 +7,7 @@ import { LanguageProvider } from "../i18n/LanguageProvider.js";
 import { HOVER_POPOVER_CLOSE_DELAY_MS } from "../interaction/useHoverPopover.js";
 import { ContractCard } from "./ContractCard.js";
 import type { ContractFlowNode } from "./contractNode.js";
+import { RibbonHoverProvider } from "./RibbonHoverContext.js";
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -32,7 +33,11 @@ function renderCard(data: ContractFlowNode["data"], lang: "ja" | "en" = "ja") {
     <ReactFlowProvider>
       <LanguageProvider initialLanguage={lang}>
         <GlossaryProvider glossary={{}}>
-          <ContractCard {...props} />
+          {/* Issue #298: ContractCard は RibbonHoverContext を読むため、
+              テストでも Provider 配下でレンダーする必要がある。 */}
+          <RibbonHoverProvider transactions={[]}>
+            <ContractCard {...props} />
+          </RibbonHoverProvider>
         </GlossaryProvider>
       </LanguageProvider>
     </ReactFlowProvider>,
