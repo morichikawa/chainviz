@@ -9,6 +9,7 @@ import { type ChainRibbonTile, deriveReceivedOrder } from "./chainRibbon.js";
 import type { ChainRibbonFlowNode } from "./chainRibbonNode.js";
 import { useRibbonHover } from "./RibbonHoverContext.js";
 import { shortHex } from "./transaction.js";
+import { useFrozenRibbonTiles } from "./useFrozenRibbonTiles.js";
 
 /**
  * タイル1件。着地アニメーション（`chain-ribbon-tile--landing`）・親ブロック
@@ -101,10 +102,19 @@ function ChainRibbonTileView({
  * カード内で完結する局所的な state（複数タイルにまたがる相互作用のため）。
  * ウォレット/コントラクトカードとの相互ハイライト（第2段階。tx/活動チップ
  * ⇔ タイル）は `RibbonHoverContext` 経由の `hoveredBlockHash` を使う。
+ *
+ * QA差し戻し対応（docs/worklog/issue-298.md）: ホバー中
+ * （`hoveredBlockHash !== null`）は `useFrozenRibbonTiles` で表示窓の前進を
+ * 一時停止する。実チェーン環境では2秒程度のブロック生成間隔で表示窓
+ * （直近8タイル）が前進し続けるため、他カードのチップホバーで一瞬点灯した
+ * ハイライトが、窓外へ流出したタイルとともに即座に失われ二度と復帰しない
+ * 不具合が実機検証で確認されたための対策。
  */
 export function ChainRibbonCard({ data }: NodeProps<ChainRibbonFlowNode>) {
-  const { tiles, txCountByHash, nodeLabelById, landingHashes } = data;
+  const { txCountByHash, nodeLabelById, landingHashes } = data;
   const { t } = useLanguage();
+  const { hoveredBlockHash } = useRibbonHover();
+  const tiles = useFrozenRibbonTiles(data.tiles, hoveredBlockHash !== null);
   const [parentHighlightHash, setParentHighlightHash] = useState<string | null>(
     null,
   );

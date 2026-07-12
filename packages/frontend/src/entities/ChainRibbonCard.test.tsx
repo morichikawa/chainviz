@@ -8,7 +8,24 @@ import { HOVER_POPOVER_CLOSE_DELAY_MS } from "../interaction/useHoverPopover.js"
 import { ChainRibbonCard } from "./ChainRibbonCard.js";
 import type { ChainRibbonTile } from "./chainRibbon.js";
 import type { ChainRibbonFlowNode } from "./chainRibbonNode.js";
-import { RibbonHoverProvider } from "./RibbonHoverContext.js";
+import { RibbonHoverProvider, useRibbonHover } from "./RibbonHoverContext.js";
+
+/**
+ * カード外（tx/活動チップ相当）からの逆方向ホバーを模す最小限のプローブ。
+ * `RibbonHoverContext.setHoveredBlockHash` を直接呼ぶことで、
+ * `ChainRibbonCard` 自身のタイル要素を経由しない「外部からの」ホバーを
+ * 再現する（`WalletCard`/`ContractCard` の tx/活動チップと同じ経路）。
+ */
+function ReverseHoverProbe({ blockHash }: { blockHash: string }) {
+  const { setHoveredBlockHash } = useRibbonHover();
+  return (
+    <span
+      data-testid="reverse-hover-probe"
+      onMouseEnter={() => setHoveredBlockHash(blockHash)}
+      onMouseLeave={() => setHoveredBlockHash(null)}
+    />
+  );
+}
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -30,9 +47,9 @@ function block(overrides: Partial<BlockEntity> & { hash: string }): BlockEntity 
   };
 }
 
-function renderCard(data: ChainRibbonFlowNode["data"]) {
-  const props = { data } as unknown as Parameters<typeof ChainRibbonCard>[0];
-  return render(
+function tree(d: ChainRibbonFlowNode["data"]) {
+  const props = { data: d } as unknown as Parameters<typeof ChainRibbonCard>[0];
+  return (
     <ReactFlowProvider>
       <LanguageProvider initialLanguage="ja">
         <GlossaryProvider glossary={{}}>
@@ -41,8 +58,12 @@ function renderCard(data: ChainRibbonFlowNode["data"]) {
           </RibbonHoverProvider>
         </GlossaryProvider>
       </LanguageProvider>
-    </ReactFlowProvider>,
+    </ReactFlowProvider>
   );
+}
+
+function renderCard(data: ChainRibbonFlowNode["data"]) {
+  return render(tree(data));
 }
 
 function tile(hash: string, overrides: Partial<BlockEntity> = {}, connectedToPrevious = true): ChainRibbonTile {
@@ -198,5 +219,83 @@ describe("ChainRibbonCard", () => {
     expect(screen.getByTestId("chain-ribbon-tile-0xparent-tile").className).not.toContain(
       "chain-ribbon-tile--highlight",
     );
+  });
+
+  describe("freezing the tile window while hovered (QA regression: highlight lost when the window advances mid-hover)", () => {
+    it("keeps the hovered tile visible and highlighted even after the window would otherwise have advanced past it", () => {
+      const tilesA = [tile("0x1", { number: 1 }), tile("0x2", { number: 2 })];
+      const { rerender } = render(tree(data({ tiles: tilesA })));
+
+      fireEvent.mouseEnter(screen.getByTestId("chain-ribbon-tile-0x2"));
+      expect(screen.getByTestId("chain-ribbon-tile-0x2").className).toContain(
+        "chain-ribbon-tile--highlight",
+      );
+
+      // 新しいブロックが届いて表示窓が前進した体（0x1 が窓外、0x3 が追加）。
+      const tilesB = [tile("0x2", { number: 2 }), tile("0x3", { number: 3 })];
+      rerender(tree(data({ tiles: tilesB })));
+
+      // 凍結中なのでホバー対象のタイルは消えず、ハイライトも保持され続ける。
+      expect(screen.getByTestId("chain-ribbon-tile-0x1")).toBeTruthy();
+      expect(screen.getByTestId("chain-ribbon-tile-0x2")).toBeTruthy();
+      expect(screen.getByTestId("chain-ribbon-tile-0x2").className).toContain(
+        "chain-ribbon-tile--highlight",
+      );
+      expect(screen.queryByTestId("chain-ribbon-tile-0x3")).toBeNull();
+    });
+
+    it("resumes tracking the latest tiles once the hover ends", () => {
+      const tilesA = [tile("0x1", { number: 1 }), tile("0x2", { number: 2 })];
+      const { rerender } = render(tree(data({ tiles: tilesA })));
+
+      const hoveredTile = screen.getByTestId("chain-ribbon-tile-0x2");
+      fireEvent.mouseEnter(hoveredTile);
+
+      const tilesB = [tile("0x2", { number: 2 }), tile("0x3", { number: 3 })];
+      rerender(tree(data({ tiles: tilesB })));
+      expect(screen.queryByTestId("chain-ribbon-tile-0x3")).toBeNull(); // まだ凍結中
+
+      fireEvent.mouseLeave(screen.getByTestId("chain-ribbon-tile-0x2"));
+      expect(screen.getByTestId("chain-ribbon-tile-0x3")).toBeTruthy();
+      expect(screen.queryByTestId("chain-ribbon-tile-0x1")).toBeNull();
+    });
+
+    it("also freezes for the reverse direction (hoveredBlockHash set from outside via context, not from this tile)", () => {
+      const tilesA = [tile("0x1", { number: 1 }), tile("0x2", { number: 2 })];
+
+      function Scene({ tiles }: { tiles: ChainRibbonTile[] }) {
+        const props = {
+          data: data({ tiles }),
+        } as unknown as Parameters<typeof ChainRibbonCard>[0];
+        return (
+          <ReactFlowProvider>
+            <LanguageProvider initialLanguage="ja">
+              <GlossaryProvider glossary={{}}>
+                <RibbonHoverProvider transactions={[]}>
+                  <ChainRibbonCard {...props} />
+                  {/* このカードの外からのホバー（tx/活動チップ相当）を模す
+                      最小限のプローブ要素。 */}
+                  <ReverseHoverProbe blockHash="0x2" />
+                </RibbonHoverProvider>
+              </GlossaryProvider>
+            </LanguageProvider>
+          </ReactFlowProvider>
+        );
+      }
+
+      const { rerender } = render(<Scene tiles={tilesA} />);
+      fireEvent.mouseEnter(screen.getByTestId("reverse-hover-probe"));
+      expect(screen.getByTestId("chain-ribbon-tile-0x2").className).toContain(
+        "chain-ribbon-tile--highlight",
+      );
+
+      const tilesB = [tile("0x2", { number: 2 }), tile("0x3", { number: 3 })];
+      rerender(<Scene tiles={tilesB} />);
+
+      expect(screen.getByTestId("chain-ribbon-tile-0x2")).toBeTruthy();
+      expect(screen.getByTestId("chain-ribbon-tile-0x2").className).toContain(
+        "chain-ribbon-tile--highlight",
+      );
+    });
   });
 });
