@@ -695,3 +695,47 @@ UX観点からの見立てであり、正式なデータフロー・型設計は
   - QA には、汚染されていない（またはこのタスクで使ったラベルが未使用の）
     状態で `pnpm test:e2e:ui -- chain-ribbon` を一度実行し、UI-B-06 が
     最後まで green になることの最終確認を依頼する
+
+### 2026-07-12 Issue #298 再レビュー（chainviz-reviewer, 差し戻し対応の確認）
+
+- 担当: chainviz-reviewer
+- 対象: コミット 54ab0d6（`chain-ribbon.spec.ts` の test.use() 配置修正 +
+  strict mode 違反修正）および a0be512（worklog 追記）
+- 判定: **合格**
+- 確認した内容:
+  - `test.use({ viewport: OPERATION_PANEL_VIEWPORT })` がテスト本体の
+    内側からモジュールトップレベル（定数定義の直後）へ移動されている
+    ことを確認。既存4ファイル（wallet-balance / token-balance /
+    contract-lifecycle / form-validation の各 spec、いずれも29行目付近の
+    トップレベル）と同じ配置パターン。前回差し戻しの欠陥（実行時エラーで
+    UI-B-06 が即死する）は静的には解消
+  - strict mode 違反修正の妥当性を実装側で裏取りした。
+    `packages/collector/src/world-state/store.ts` の
+    `linkTransactionToWallets()` は tx の from/to 両方に一致する
+    WalletEntity の `recentTxHashes` へ同じ hash を追加するため、
+    `wallet-tx-chip-<hash>` の testid が送信元・宛先の2枚のカードに
+    同時に存在しうるのは事実。testid `wallet-tx-chip-` を出力するのは
+    `WalletCard.tsx` のみ（WalletPopover / TxLifecyclePopover は CSS
+    クラスのみで testid を持たない）で、`wallet-card-<address>` 配下に
+    スコープすれば一意に定まる。修正は正しい
+  - リポジトリ全体で `pnpm lint` / `pnpm build` / `pnpm test`
+    （frontend 2003件を含む全パッケージ）がすべて green。
+    `playwright test src/ui/chain-ribbon.spec.ts --list` で UI-B-05 /
+    UI-B-06 の2件が登録されることも確認
+  - コミット粒度: 54ab0d6 は「test.use() 移動」と「strict mode 違反修正」
+    の2つの修正を含むが、後者は前者を直して初めて実行が到達・発覚した
+    同一ファイル内の欠陥で、いずれも「UI-B-06 を実行可能にする」という
+    同じ目的に属し、コミットメッセージにも両方が明記されている。
+    許容範囲と判断（ブロッカーとしない）
+- レビュー中に対応した事項:
+  - a0be512 の worklog 追記が前セクション末尾の1行手前に挿入されており、
+    結びの「ブロッカーとはしない）」が新セクションの末尾に取り残されて
+    いた（文の分断）。worklog はレビュー担当が記録を書き込むファイルで
+    あるため、レビュー側で該当行を元の文へ戻した（コミット 78192da）
+- 未確認事項（QAへの引き継ぎ）:
+  - UI-B-06 の実 Docker 環境での完全 green は本レビューでは未確認
+    （動作検証は QA の担当。実装担当も worklog で QA での実行を依頼
+    済み）。統括が残存コンテナ
+    `chainviz-ethereum-e2e-ribbon-recipient-*` を削除済みとのことなので、
+    QA は汚染のない状態で `chain-ribbon.spec.ts` を一度実行し、UI-B-06 が
+    最後まで green になることを確認すること
