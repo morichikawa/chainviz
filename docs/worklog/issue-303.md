@@ -254,3 +254,89 @@
     必ず blockHash を持つ」というアダプタの保証を前提としており、通常運転では
     到達しない。堅牢性を上げるなら分岐条件を status も見る形にする余地がある
     （今回はテスト追加のみの担当のため実装は変更していない）。
+
+### 2026-07-13 レビュー（reviewer）: 差し戻し
+
+- 担当: reviewer（横断レビュー・静的整合性）
+- ブランチ: issue-303-transaction-retention
+- 判定: **差し戻し**（下記1点の堅牢性ハードニングを実装担当へ依頼。現行コードは
+  アダプタが今実際に生成する入力に対しては正しく、機能上のバグではないが、
+  本 Issue の目的である「tx 蓄積の有界化の保証」に穴が残るため）。
+
+#### 差し戻しに至らない範囲での確認結果（いずれも問題なし）
+- ビルド・lint・テストはリポジトリ全体で green（shared 62 / collector 1408 /
+  e2e 158 / frontend 2120。lint・build も成功）。
+- 設計メモの決定事項からの逸脱なし。`evictBlocksBelow` の tx 同時削除、
+  `evictExcessPendingTransactions` の最古間引き、`hasTransaction` の新設と
+  `index.ts` の配線（取り込んだ場合のみ `linkTransactionToWallets` を呼ぶ）は
+  設計どおり。
+- `evictBlocksBelow` の tx 走査は `Set.has(undefined) === false` により pending を
+  自然に除外しており正しい。
+- エラーを握りつぶす箇所は無い（入口ガードで tx を捨てるのは設計上の正常系で、
+  worklog・コメントに理由が明記されている）。
+- 固定値 `PENDING_TX_RETENTION = 256` は前提条件がコメントと worklog の両方に
+  明記されており、CLAUDE.md の固定値ルールに沿う。
+- コミット粒度（設計 / 実装 / 実装 worklog / テスト強化の4コミット、
+  1 関心事 = 1 コミット）・Conventional Commits 準拠。
+- docs（ARCHITECTURE.md §10.4 / PLAN.md / WORKLOG.md / 本 worklog）は実装を
+  正しく反映している。
+
+#### 差し戻す論点: `applyTransaction` の分岐条件に `status` を含める
+tester 申し送りの潜在的な穴を精査した結果、堅牢性ハードニングとして差し戻す。
+
+- **不変条件の保証状況**: `status: "included" | "failed"` の TransactionEntity を
+  生成する箇所は `TransactionLifecycleTracker.recordInclusion`
+  （`adapters/ethereum/transactions.ts`）ただ1つで、そこでは `blockHash` を必ず
+  同時にセットしている。`recordPending` は pending のみ（blockHash なし）、
+  `updateContractEvents` は既存を spread して status/blockHash を保つ。よって
+  **実行時の不変条件「included/failed ⇒ blockHash あり」は単一チョークポイントで
+  保証されており、現状の通常運転で穴に到達することはない**。ただし
+  `packages/shared` の `TransactionEntity` 型は `status` と `blockHash?` が独立
+  フィールドで、この不変条件を型レベルでは強制していない。
+- **穴の実体**: store 内の2つの関数で「pending の判定基準」が食い違っている。
+  - `applyTransaction`: pending か否かを `tx.blockHash === undefined` で判定
+  - `evictExcessPendingTransactions`: pending か否かを `status === "pending"` で判定
+  この差の隙間（`status` が included/failed なのに `blockHash === undefined` の
+  不正入力）に落ちた tx は、pending 分岐に入って applyKeyed で取り込まれるが、
+  `status !== "pending"` のため pending cap にも数えられず、`blockHash` を持たない
+  ため block 連動でも削除されない。結果として**本 Issue が防ごうとした「tx の
+  無制限蓄積」が別の入口から静かに再発しうる**。
+- **差し戻す理由**（現行が「機能上正しい」ことを認めたうえで、なお修正を求める）:
+  1. 本 Issue の目的は tx 蓄積を有界化する保証を得ることであり、その保証が
+     「アダプタが型で強制されない不変条件を守る限り有界」という条件付きに
+     留まっているのは、Issue の趣旨（メモリ有界化）に対して弱い。型が不変条件を
+     強制していない以上、境界層である store は producer を無条件に信頼すべきで
+     ない。
+  2. store は既に境界で防御的に振る舞う設計になっている（`applyNodeInternals` は
+     未存在ノードをログして捨てる、`applyBlock` は窓外を捨てる、
+     `linkTransactionToWallets` はダングリング参照を skip）。`applyTransaction`
+     だけが「included ⇒ blockHash」を無防備に信頼するのは、同一モジュールの
+     防御スタイルと不整合。
+  3. CLAUDE.md はレビュー観点として「新チェーンプロファイル追加時・アダプタの
+     実装ミス」を明示的に挙げ、環境変化で静かに壊れる固定前提を戒めている。
+     不正入力を「メモリリークする分岐へ黙って誤ルーティングする」現状は、
+     「エラーを握りつぶさない」原則の趣旨に隣接する。
+  4. 修正は小さく、正常な入力に対して挙動を一切変えない（下記）。
+
+#### 実装担当（collector）への具体的な修正指示
+- `packages/collector/src/world-state/store.ts` の `applyTransaction` の分岐基準を、
+  `tx.blockHash` の有無ではなく **`tx.status`** に変える（`evictExcessPendingTransactions`
+  の判定基準と揃える）。具体的には:
+  - `tx.status !== "pending"`（= included / failed）の場合:
+    - `tx.blockHash === undefined` なら、これはアダプタ契約違反の不正入力。
+      `applyNodeInternals` と同じく具体的な hash を含めて `console.error` で
+      ログし、空差分を返して捨てる（黙って pending 分岐へ流さない）。
+    - `blockHash` があれば従来どおり block 存在の入口ガードを適用する。
+  - `tx.status === "pending"` の場合: 従来どおり applyKeyed + `evictExcessPendingTransactions`。
+  - この変更は、アダプタが実際に生成する全ての正常入力（included/failed は必ず
+    blockHash あり、pending は必ず blockHash なし）に対して現状と完全に等価。
+    差分が出るのは「included/failed かつ blockHash なし」という現状到達不能な
+    不正入力のみで、そこを無制限蓄積からログ付き破棄へ変える。
+- テスト（tester 依頼、または実装担当）: 「status が included/failed かつ
+  blockHash が undefined の tx を渡すと、取り込まれず（`hasTransaction` が false）、
+  pending cap にも数えられず蓄積しないこと」「その際 `console.error` でログされる
+  こと」を検証するケースを追加する。既存の正常系テスト（included tx は blockHash を
+  必ず持つ）は挙動が変わらないため影響しない見込み。
+- 併せて `docs/ARCHITECTURE.md` §10.4 の入口ガードの記述を「included/failed の
+  判定は status で行い、blockHash 欠落の不正入力はログして捨てる」旨に更新する。
+
