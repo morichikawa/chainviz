@@ -142,7 +142,9 @@ visualization-layers:
       どの高さから眺めるかを決めると理解しやすくなる。chainviz では既定で
       全レイヤーが同じキャンバスに同時に表示され、ツールバー下の「レイヤー」
       チップで1つを選ぶとその層に属する要素だけが通常表示のまま残り、他の
-      要素は薄く表示される（レイヤーレンズ）。
+      要素は薄く表示される（レイヤーレンズ）。このA〜D層という区分は見せ方
+      を整理するための便宜的な分類であり、chainviz の実装（コード構成）を
+      そのまま表すものではない。
     en: >-
       The four viewpoints chainviz uses to organize the screen. Layer A is
       infrastructure (containers and processes), Layer B is the P2P network
@@ -152,7 +154,9 @@ visualization-layers:
       picking which height to view from makes it easier to follow. chainviz
       shows all layers on the same canvas by default; selecting one of the
       "Layers" chips below the toolbar keeps that layer's elements at full
-      opacity while dimming the rest (the layer lens).
+      opacity while dimming the rest (the layer lens). This A–D grouping is
+      an informal convention for organizing the view, not a reflection of
+      chainviz's actual code structure.
   layer: a-infra
   relatedTerms: [container, el-client, cl-client]
 

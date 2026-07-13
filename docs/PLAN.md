@@ -753,6 +753,11 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       送金操作によるtxの正常な取り込み・ブロック退去に連動したtxの退去を
       確認済み。docs/worklog/issue-303.md参照)
       [#303](https://github.com/morichikawa/chainviz/issues/303)
+- [ ] 用語集パネル(サイドパネルでの全用語一覧・検索・ジャンプ)が未実装
+      (CONCEPT.mdに構想として記載されているが未着手。インラインの
+      ホバーポップオーバーのみだと定義文が長い用語が読みにくい。着手時は
+      まずchainviz-uxのUX設計から)
+      [#313](https://github.com/morichikawa/chainviz/issues/313)
 
 ## 運用ルール（全ステップ共通）
 
