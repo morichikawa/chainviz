@@ -356,3 +356,36 @@ collector には「Docker 観測から対象を列挙して観測する」購読
 - follow-up 申し送り（`peer-block-adapter.test.ts` 3300 行超の分割）: 共有
   fixture の広範な移動を伴い破壊リスクが高く、Issue #301 のスコープ外。
   follow-up Issue として別途起票するのが妥当（統括へ起票を委ねる）。
+
+### 2026-07-13 QA検証（検証大地 / chainviz-qa）
+
+- 担当: qa（検証 大地）
+- 判定: **合格**（差し戻しなし）。実機（docker compose 実起動 + collector 実プロセス
+  + WebSocket クライアント）で完了条件を満たすことを確認した。
+- 検証環境: `profiles/ethereum` を `docker compose up -d` で起動（reth1/2・
+  beacon1/2・validator1/2・workbench）。チェーンが進行することを workbench の
+  `cast block-number` で確認（増加を確認）。collector は
+  `CHAINVIZ_PROXY_TARGET=http://172.28.1.1:8545 node dist/index.js` で起動し、
+  ポート 4000 の WebSocket へ接続する検証用クライアントで観測した。
+- 手順と結果:
+  1. スナップショット時点で block の `receivedAt` キーに静的実行/合意ノード
+     （reth1・reth2・beacon1・beacon2）が載っていることを確認（既存ノードの
+     ブロック伝播パルスが機能）。
+  2. `addNode`（chainProfile: "ethereum"）を送信。約 7 秒後に動的ノード
+     `chainviz-ethereum/reth3`・`chainviz-ethereum/beacon3` が snapshot/diff に
+     出現。reth3 出現の約 0.8 秒後、block entity の `receivedAt` に
+     `chainviz-ethereum/reth3` が追加されることを確認した（＝動的追加ノードにも
+     newHeads 購読が張られ、ブロック伝播パルスが実際に届く。本 Issue の修正点を
+     実測で確認）。
+  3. `removeNode`（reth3）を送信。collector ログには reth3 に関する行が
+     「WebSocket was closed before the connection was established」の 1 行のみ
+     出力され（接続確立前に reconcile が close したことによる ws ライブラリ由来の
+     無害なログ。onError でログされる）、その後 45 秒以上経過しても reth3 への
+     再接続試行ログは 1 件も増えなかった（修正前に存在した「死んだコンテナへ
+     無期限再接続を試み続ける」潜在リークの解消を実測で確認）。
+  4. add/remove サイクル後に再接続してライブ観測（12 秒）した結果、新規ブロック
+     ごとに reth1・reth2・beacon1・beacon2 の全キーが `receivedAt` に載り続けて
+     おり、既存の静的ノードのブロック伝播パルスに退行が無いことを確認した。
+  5. 後片付け: removeNode により reth3・beacon3・validator3 は全て削除され、
+     `com.chainviz.managed` ラベルの managed コンテナは 0 件（孤児コンテナなし）。
+- PLAN.md の該当項目（#301）の完了条件を満たしていることを確認した。
