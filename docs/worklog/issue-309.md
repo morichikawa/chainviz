@@ -196,3 +196,43 @@ WebSocket 疎通)で新たに検証すべき動作は無い。QA の実質的な
 対象ブランチ上で `pnpm build && pnpm lint && pnpm test` が通ること、
 および分割後のテスト総数が84件で元(main)と一致することの確認に集約される。
 実機起動を伴う通常のQA手順は本Issueでは適用対象が無い旨を記録しておく。
+
+## QA検証記録(chainviz-qa, 2026-07-13)
+
+判定: 合格。
+
+本Issueはロジック・アサーションを変更しないテストファイルの再構成
+(1ファイル→7ファイル+共有ヘルパー6ファイルへの分割)であり、レビュー担当が
+全describeブロックのバイト等価性を検証済みのため、実機で新規に検証すべき
+機能動作は無い。QAの実質は下記の確認に集約される。
+
+### 確認内容
+
+- **静的ゲート**: 対象ブランチ(`issue-309-peer-block-adapter-test-split`、
+  作業ツリーはクリーン)で `pnpm build` / `pnpm lint` / `pnpm test` がいずれも
+  成功。collector のテストは64ファイル・1439件すべてグリーン。
+- **分割ファイルの存在**: 元の `peer-block-adapter.test.ts` は削除済み。
+  分割先7ファイル(`peer-poll` / `peer-subscribe` / `block-subscribe` /
+  `transaction-subscribe` / `contract-subscribe` / `node-internals` /
+  `adapter-sync-status`)と `test-helpers/` 配下の共有ヘルパー6ファイルが
+  存在する。
+- **テスト総数の一致**: 分割先7ファイルのみを `vitest run --reporter=verbose`
+  で実行し、84件(7ファイル)が通ることを確認。元ファイル(84件)と一致。
+- **PLAN.md**: `docs/PLAN.md` に #309 に対応するチェックボックスは存在せず、
+  「チェックボックス対象外」という実装・レビュー担当の判断どおりであることを
+  確認した(QAが付けるべきチェックは無い)。
+
+### 最小限の健全性確認(ビルド成果物の実動作)
+
+テスト再構成という性質上、通常の実機起動を伴うQA手順は本Issueでは検証対象が
+無いが、ビルド成果物が実際に動くことの最小確認として以下を実施した。
+
+- 既に起動済みの ethereum ノード環境(reth1/2・beacon1/2・validator1/2・
+  workbench の7コンテナ)に対し、ビルド済みの collector(`node dist/index.js`)
+  を起動。`WebSocket server listening on port 4000` / `logging proxy listening
+  on port 4001` のログを確認。
+- WebSocket(`ws://127.0.0.1:4000`)へ接続し、初回スナップショット(chainType:
+  ethereum、entities 40件=node 6・workbench 1・wallet 1・block 32)を受信。
+  その後12秒間で27件の差分メッセージ(type: diff)が流れ、ブロックが進行し続けて
+  いることを確認した。ビルド成果物が実データに対して正常動作することを確認。
+- 検証後、collector プロセスを停止しポート4000/4001の解放を確認した。
