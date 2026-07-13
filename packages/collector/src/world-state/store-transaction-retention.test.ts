@@ -6,7 +6,7 @@
 // docs/worklog/issue-303.md 参照）。
 
 import type { BlockEntity, TransactionEntity } from "@chainviz/shared";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { WorldStateStore } from "./store.js";
 
 function block(overrides: Partial<BlockEntity> = {}): BlockEntity {
@@ -294,6 +294,87 @@ describe("WorldStateStore tx retention (Issue #303)", () => {
         },
       ]);
       expect(store.hasTransaction("0xp0")).toBe(true);
+    });
+  });
+
+  describe("malformed input: status is included/failed but blockHash is missing (adapter contract violation)", () => {
+    // アダプタ（TransactionLifecycleTracker.recordInclusion）は included/failed
+    // に必ず blockHash を添える実行時保証を持つが、shared の型は status と
+    // blockHash が独立フィールドでこれを強制していない。この不正入力を
+    // pending 分岐に黙って誤ルーティングすると pending cap にも block 連動の
+    // 退去にも掛からず無制限蓄積が再発するため、判定基準を status に揃えて
+    // ログ付きで捨てることを検証する（差し戻しレビュー対応）。
+
+    it("drops an included tx with no blockHash and logs the hash", () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const store = new WorldStateStore();
+      const diff = store.applyTransaction(
+        tx({ hash: "0xmalformed-included", status: "included", blockHash: undefined }),
+      );
+      expect(diff).toEqual([]);
+      expect(store.hasTransaction("0xmalformed-included")).toBe(false);
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("0xmalformed-included"),
+      );
+      errorSpy.mockRestore();
+    });
+
+    it("drops a failed tx with no blockHash and logs the hash", () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const store = new WorldStateStore();
+      const diff = store.applyTransaction(
+        tx({ hash: "0xmalformed-failed", status: "failed", blockHash: undefined }),
+      );
+      expect(diff).toEqual([]);
+      expect(store.hasTransaction("0xmalformed-failed")).toBe(false);
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("0xmalformed-failed"),
+      );
+      errorSpy.mockRestore();
+    });
+
+    it("does not count the dropped malformed tx toward the pending cap", () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const store = new WorldStateStore();
+      // 不正入力を大量に流しても pending cap の枠を消費しない
+      // （もし旧実装のように blockHash 有無だけで判定していれば、この tx は
+      // pending 扱いにならず pending cap の判定対象外のまま無制限に蓄積した）。
+      for (let i = 0; i < 300; i++) {
+        store.applyTransaction(
+          tx({ hash: `0xmalformed${i}`, status: "included", blockHash: undefined }),
+        );
+      }
+      expect(storedTxHashes(store)).toEqual([]);
+
+      // pending は依然として 256 件まで通常どおり許容される。
+      for (let i = 0; i < 256; i++) {
+        store.applyTransaction(tx({ hash: `0xp${i}` }));
+      }
+      const diff = store.applyTransaction(tx({ hash: "0xp256" }));
+      expect(diff.some((e) => e.type === "entityRemoved" && e.id === "0xp0")).toBe(true);
+      errorSpy.mockRestore();
+    });
+
+    it("still admits an included tx with the same hash once it is redelivered with a valid blockHash", () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const store = new WorldStateStore();
+      store.applyTransaction(
+        tx({ hash: "0xtx1", status: "included", blockHash: undefined }),
+      );
+      expect(store.hasTransaction("0xtx1")).toBe(false);
+
+      store.applyBlock(block({ hash: "0xb1", number: 1 }));
+      const diff = store.applyTransaction(
+        tx({ hash: "0xtx1", status: "included", blockHash: "0xb1" }),
+      );
+      expect(diff).toEqual([
+        {
+          type: "entityAdded",
+          entity: tx({ hash: "0xtx1", status: "included", blockHash: "0xb1" }),
+        },
+      ]);
+      expect(store.hasTransaction("0xtx1")).toBe(true);
+      errorSpy.mockRestore();
     });
   });
 
