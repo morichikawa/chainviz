@@ -209,21 +209,37 @@ export class WorldStateStore {
    * キーとするエンティティなので、既存の同一 tx との差分だけを計算する
    * （pending → included の遷移は entityUpdated として出る）。
    *
-   * Issue #303: 種別に応じて 2 系統の保持窓を適用する。
-   * - included/failed tx（`blockHash` を持つ）: **入口ガード**として、その
-   *   `blockHash` を id に持つ block が store に存在するときだけ取り込む。
+   * Issue #303: 種別に応じて 2 系統の保持窓を適用する。種別の判定は
+   * `tx.status`（`evictExcessPendingTransactions` と揃える。差し戻しレビュー
+   * 対応。docs/worklog/issue-303.md 参照）で行う。
+   * - included/failed tx（`status !== "pending"`）: **入口ガード**として、
+   *   その `blockHash` を id に持つ block が store に存在するときだけ取り込む。
    *   存在しなければ空の差分を返して捨てる（addNode 直後の追いつきで届く
    *   過去ブロックの tx は、対応する block が番号窓で既に弾かれているため
    *   同じ窓で自動的に弾かれる。前提: block は対応する included/failed tx
    *   より先に store へ届く。docs/worklog/issue-303.md 参照）。取り込んだ
-   *   場合の退去は `applyBlock`/`evictBlocksBelow` が block 退去と同時に行う
-   * - pending tx（`blockHash` を持たない）: block 連動の対象外とし、代わりに
+   *   場合の退去は `applyBlock`/`evictBlocksBelow` が block 退去と同時に行う。
+   *   `status` が included/failed にもかかわらず `blockHash` が undefined の
+   *   tx は、アダプタ（`TransactionLifecycleTracker.recordInclusion`）が
+   *   保証すべき不変条件「included/failed ⇒ blockHash あり」への契約違反
+   *   （shared の型は `status` と `blockHash?` が独立フィールドでこれを
+   *   型レベルでは強制していない）。ここで黙って pending 枝へ流すと
+   *   pending cap にも block 連動の退去にも掛からず無制限蓄積が再発するため、
+   *   `applyNodeInternals` と同様に具体的な hash を含めて `console.error` で
+   *   ログし、空の差分を返して捨てる
+   * - pending tx（`status === "pending"`）: block 連動の対象外とし、代わりに
    *   `PENDING_TX_RETENTION` による件数上限を適用する
    *
    * 返り値は適用した差分イベント。
    */
   applyTransaction(tx: TransactionEntity): DiffEvent[] {
-    if (tx.blockHash !== undefined) {
+    if (tx.status !== "pending") {
+      if (tx.blockHash === undefined) {
+        console.error(
+          `[world-state] applyTransaction: tx ${tx.hash} has status "${tx.status}" but no blockHash; dropping malformed transaction observation`,
+        );
+        return [];
+      }
       const block = this.entities.get(tx.blockHash);
       if (!block || block.kind !== "block") return [];
       return this.applyKeyed(tx);
