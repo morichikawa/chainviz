@@ -742,6 +742,17 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       removeNode後に再接続ログが繰り返されなくなることを確認済み。
       packages/shared変更なし。docs/worklog/issue-301.md参照)
       [#301](https://github.com/morichikawa/chainviz/issues/301)
+- [x] WorldStateStoreのTransactionEntityが無制限蓄積しメモリを圧迫し得る
+      (種別ごとに2系統の保持窓を追加。included/failed tx(blockHash あり)は
+      applyTransactionの入口ガードで対応blockがstoreに存在するときだけ
+      取り込み、applyBlockのeviction(BLOCK_RETENTION=32)と同じ差分でblock
+      退去に連動して削除する。pending tx(blockHashなし)はblock eviction
+      対象外とし、件数上限PENDING_TX_RETENTION=256で挿入順に間引く。
+      linkTransactionToWalletsはapplyTransactionが取り込んだ場合のみ呼ぶ
+      よう配線を見直した。packages/shared・frontendの変更なし。実機検証で
+      送金操作によるtxの正常な取り込み・ブロック退去に連動したtxの退去を
+      確認済み。docs/worklog/issue-303.md参照)
+      [#303](https://github.com/morichikawa/chainviz/issues/303)
 
 ## 運用ルール（全ステップ共通）
 

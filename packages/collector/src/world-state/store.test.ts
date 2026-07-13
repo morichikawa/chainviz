@@ -553,6 +553,9 @@ describe("WorldStateStore.applyTransaction", () => {
   it("emits an update with only the changed fields on inclusion", () => {
     const store = new WorldStateStore();
     store.applyTransaction(tx());
+    // Issue #303 の入口ガード: included tx は blockHash が指す block が
+    // store に存在する必要があるため、先に block を取り込んでおく。
+    store.applyBlock(block({ hash: "0xblock" }));
     const diff = store.applyTransaction(
       tx({ status: "included", blockHash: "0xblock" }),
     );

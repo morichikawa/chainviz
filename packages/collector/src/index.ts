@@ -357,12 +357,18 @@ export async function main(port: number = DEFAULT_PORT): Promise<void> {
   // 併せて、この tx の from/to に一致する既存ウォレットの recentTxHashes
   // へ反映する（ウォレットカードの tx チップ表示。Issue #201 の E2E 実装で
   // 発覚した、この配線自体が欠落していたバグの修正）。
+  //
+  // `applyTransaction` は Issue #303 の入口ガードにより、対応する block を
+  // store がまだ持たない included/failed tx（addNode 直後の追いつきで届く
+  // 過去ブロックの tx 等）を空差分で捨てることがある。その場合は tx が store
+  // に存在しないため、`linkTransactionToWallets` は呼ばない（store に無い
+  // tx をウォレットの recentTxHashes に載せる無駄・紛らわしさを避ける）。
   adapter
     .subscribeTransactions((tx) => {
-      const diff = [
-        ...store.applyTransaction(tx),
-        ...store.linkTransactionToWallets(tx),
-      ];
+      const applied = store.applyTransaction(tx);
+      const diff = store.hasTransaction(tx.hash)
+        ? [...applied, ...store.linkTransactionToWallets(tx)]
+        : applied;
       server.broadcastDiff(diff);
     })
     .catch((err) =>
