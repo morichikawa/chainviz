@@ -51,7 +51,6 @@ import {
 import {
   createWsEthClient,
   type EthWsClient,
-  type NewHeadsSubscription,
   type Subscription,
 } from "./eth-ws-client.js";
 import { HeadTipCache } from "./head-tip-cache.js";
@@ -80,15 +79,28 @@ import {
   type BeaconTarget,
   type ExecutionMetricsTarget,
   type ExecutionPeerTarget,
+  type ExecutionTarget,
 } from "./targets.js";
 import { TransactionLifecycleTracker } from "./transactions.js";
 import {
   deriveWalletAddress,
   workbenchWalletIndex,
 } from "./wallet-derivation.js";
+import { WsSubscriptionReconciler } from "./ws-subscription-reconciler.js";
 
 /** ピアポーリングの既定間隔。 */
 export const PEER_POLL_INTERVAL_MS = 3000;
+
+/**
+ * `subscribeBlocks`（B層）の周期リコンサイル間隔の既定値（Issue #301）。
+ * addNode/removeNode で増減する execution ノードへの newHeads 購読を何 tick
+ * 以内に反映するかという応答性だけを決める値で、`PEER_POLL_INTERVAL_MS` /
+ * `NODE_INTERNALS_POLL_INTERVAL_MS` と同根（他の Docker 再ポーリングループと
+ * 同じ応答性でよいという判断。docs/worklog/issue-301.md 参照）。この値自体は
+ * WebSocket 購読の張り直し間隔ではない点に注意（張ったままの購読は
+ * signature が変わらない限り毎 tick 維持され、張り直されない）。
+ */
+export const BLOCK_SUBSCRIPTION_RECONCILE_INTERVAL_MS = 3000;
 
 /**
  * CL（Beacon API）側ピアポーリングの失敗ログを間引く周期（連続失敗回数
@@ -175,6 +187,12 @@ export interface EthereumAdapterDeps {
    * reth-metrics-tracker.ts のコメント参照）。
    */
   nodeInternalsPollIntervalMs?: number;
+  /**
+   * B層: `subscribeBlocks` の周期リコンサイル間隔（Issue #301）。未指定なら
+   * `BLOCK_SUBSCRIPTION_RECONCILE_INTERVAL_MS`（3000ms、前提条件は同定数の
+   * コメント参照）。テストで短縮/長縮するために差し替え可能にしている。
+   */
+  blockSubscriptionReconcileIntervalMs?: number;
 }
 
 /**
@@ -233,7 +251,46 @@ export class EthereumAdapter implements ChainAdapter {
 
   private peerTimer?: ReturnType<typeof setTimeout>;
   private peerLoopRunning = false;
-  private blockSubscriptions: NewHeadsSubscription[] = [];
+  // subscribeBlocks（B層）の周期リコンサイルループ用状態。subscribePeers /
+  // subscribeNodeInternals と同型（Issue #301）。
+  private blockTimer?: ReturnType<typeof setTimeout>;
+  private blockLoopRunning = false;
+  private readonly blockSubscriptionReconcileIntervalMs: number;
+  // subscribeBlocks で登録された onBlock コールバック。onContract/onTx と
+  // 同じ「フィールドに保持してクロージャから参照する」流儀（下の
+  // blockReconciler の open はコンストラクタ時点で作られるクロージャなので、
+  // 呼び出し時点の最新の onBlock をこのフィールド経由で参照する）。
+  private onBlock?: (block: BlockEntity) => void;
+  // Issue #301: `executionTargets` が毎 tick 返す対象集合と、既に開いている
+  // newHeads 購読を stableId キーで突き合わせ、新規出現には購読を開き、
+  // 観測から消えたノード（removeNode 等）の購読は close する。同じ stableId
+  // でも signature（wsUrl + receivedAtKeys）が変われば張り直す（addNode で
+  // reth が先に観測され beacon 無しで購読した後、次 tick で対応する beacon が
+  // 観測されるケースに追従するため）。close() は eth-ws-client.ts の
+  // 内部再接続タイマーも止めるため、removeNode 後に死んだコンテナへ無期限に
+  // 再接続を試み続けていた潜在リークも同時に解消される。
+  private readonly blockReconciler = new WsSubscriptionReconciler<ExecutionTarget>({
+    keyOf: (target) => target.stableId,
+    signatureOf: (target) => `${target.wsUrl}|${target.receivedAtKeys.join(",")}`,
+    open: (target) =>
+      this.ethWs.subscribeNewHeads(
+        target.wsUrl,
+        (header) => {
+          const block = this.blockTracker.record(
+            target.receivedAtKeys,
+            header,
+            this.now(),
+          );
+          this.headTipCache.recordHead(target.receivedAtKeys, header.hash);
+          this.onBlock?.(block);
+        },
+        (err) =>
+          console.error(
+            `[ethereum] newHeads subscription failed for ${target.stableId}:`,
+            err,
+          ),
+      ),
+  });
   private txSubscriptions: Subscription[] = [];
   // subscribeContracts で登録されたコールバック。未登録（subscribeContracts が
   // 呼ばれていない）場合は undefined で、ブロック取り込み処理内のコントラクト
@@ -316,6 +373,9 @@ export class EthereumAdapter implements ChainAdapter {
       deps.rethMetricsClient ?? createFetchRethMetricsClient();
     this.nodeInternalsPollIntervalMs =
       deps.nodeInternalsPollIntervalMs ?? NODE_INTERNALS_POLL_INTERVAL_MS;
+    this.blockSubscriptionReconcileIntervalMs =
+      deps.blockSubscriptionReconcileIntervalMs ??
+      BLOCK_SUBSCRIPTION_RECONCILE_INTERVAL_MS;
   }
 
   /**
@@ -673,39 +733,48 @@ export class EthereumAdapter implements ChainAdapter {
 
   /**
    * B 層: 各 Execution ノードの eth_subscribe(newHeads) を購読し、Collector が
-   * ブロックを受信した実時刻をブロック単位で束ねて onBlock へ渡す。到達対象は
-   * Docker の観測値から一度だけ列挙し、各ノードへ永続 WebSocket を張る。
-   * 受信 1 回につき target.receivedAtKeys の全キー（beacon と Execution
-   * 自身、または Execution 自身のみ）へ同一時刻で記録することで、CL エッジ・
-   * EL エッジの両方にブロック伝播パルスが乗るようにする（Issue #141）。
+   * ブロックを受信した実時刻をブロック単位で束ねて onBlock へ渡す。受信 1 回
+   * につき target.receivedAtKeys の全キー（beacon と Execution 自身、または
+   * Execution 自身のみ）へ同一時刻で記録することで、CL エッジ・EL エッジの
+   * 両方にブロック伝播パルスが乗るようにする（Issue #141）。
    *
    * 同じ受信 1 回で、同じ target.receivedAtKeys の全キーへ今回のヘッダの
    * ハッシュを tip として `headTipCache` にも記録する（Issue #296。追加の
    * RPC・購読は発生しない。書き込みは head-tip-cache.ts 参照）。
+   *
+   * 動的ノード追従（Issue #301）: `subscribePeers` / `subscribeNodeInternals`
+   * と同じ周期ループにし、毎 tick `executionTargets(observations)` を取り
+   * 直して `blockReconciler`（`WsSubscriptionReconciler`）へ渡す。新しく
+   * 現れたノードには WebSocket 購読を開き、観測から消えたノード
+   * （removeNode 等）の購読は close する（`eth-ws-client.ts` の内部再接続
+   * タイマーも止まるため、死んだコンテナへの無期限再接続という潜在リークも
+   * 併せて解消する）。他の周期ループ（`subscribeNodeInternals` 等）は初回
+   * tick も fire-and-forget（呼び出し元は完了を待たない）だが、
+   * `subscribeBlocks` は返り値の Promise が解決した時点で最初の対象集合への
+   * 購読が確立済みであることを呼び出し側が前提にできるよう、初回 tick の
+   * 完了だけは待ち合わせる（2 回目以降は setTimeout 経由で非同期に回る）。
    */
   async subscribeBlocks(onBlock: (block: BlockEntity) => void): Promise<void> {
-    const observations = await this.poller.pollOnce();
-    const targets = executionTargets(observations);
+    if (this.blockLoopRunning) return;
+    this.blockLoopRunning = true;
+    this.onBlock = onBlock;
+    await this.blockTick();
+  }
 
-    for (const target of targets) {
-      const subscription = this.ethWs.subscribeNewHeads(
-        target.wsUrl,
-        (header) => {
-          const block = this.blockTracker.record(
-            target.receivedAtKeys,
-            header,
-            this.now(),
-          );
-          this.headTipCache.recordHead(target.receivedAtKeys, header.hash);
-          onBlock(block);
-        },
-        (err) =>
-          console.error(
-            `[ethereum] newHeads subscription failed for ${target.stableId}:`,
-            err,
-          ),
+  private async blockTick(): Promise<void> {
+    if (!this.blockLoopRunning) return;
+    try {
+      const observations = await this.poller.pollOnce();
+      const targets = executionTargets(observations);
+      this.blockReconciler.reconcile(targets);
+    } catch (err) {
+      console.error("[ethereum] block subscription reconcile failed:", err);
+    }
+    if (this.blockLoopRunning) {
+      this.blockTimer = setTimeout(
+        () => void this.blockTick(),
+        this.blockSubscriptionReconcileIntervalMs,
       );
-      this.blockSubscriptions.push(subscription);
     }
   }
 
@@ -1237,8 +1306,12 @@ export class EthereumAdapter implements ChainAdapter {
       clearTimeout(this.peerTimer);
       this.peerTimer = undefined;
     }
-    for (const sub of this.blockSubscriptions) sub.close();
-    this.blockSubscriptions = [];
+    this.blockLoopRunning = false;
+    if (this.blockTimer) {
+      clearTimeout(this.blockTimer);
+      this.blockTimer = undefined;
+    }
+    this.blockReconciler.closeAll();
     for (const sub of this.txSubscriptions) sub.close();
     this.txSubscriptions = [];
     this.nodeInternalsLoopRunning = false;
