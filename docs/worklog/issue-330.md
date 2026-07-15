@@ -266,3 +266,42 @@
 - i18n は ja/en 両方あり。エラー握りつぶし該当なし（純関数のみ、catch なし）
 - コミット粒度: 8 コミット（設計 docs / ロジック / i18n+CSS / パネル+配線 /
   worklog / テスト2件 / worklog）で関心事ごとに適切に分割
+
+## 修正（chainviz-frontend、差し戻し対応）
+
+### 2026-07-16 `fromIsWallet` のアドレス表記照合バグを修正
+
+- 担当: frontend
+- レビューの提案どおり `MempoolTxEntry.fromIsWallet: boolean` を
+  `walletCardId: string | undefined` に置き換えた。
+  - `mempoolList.ts`: `buildMempoolTxEntries` の内部で
+    `addressCasing.ts` の `buildLowerCaseIndex(walletIds)` を使って
+    「小文字 → present 側の元表記」の索引を1度だけ作り、`tx.from` を
+    小文字化して引く。一致すればウォレットカード側の元の表記
+    （`walletCardId`）を、一致しなければ `undefined` を各エントリに
+    持たせる（`deployEdge.ts` と同型のパターン）。`buildMempoolTxEntries`
+    の第2引数の型は `ReadonlySet<string>` から `Iterable<string>` に
+    緩めた（`buildLowerCaseIndex` が `Iterable` を受けるため）。
+  - `MempoolPanel.tsx`: クリック可否の判定を
+    `entry.walletCardId === undefined` に変更し、クリック時は
+    `onSelectTx(entry.walletCardId)`（解決済みの表記）を渡す。
+  - `Canvas.tsx`: `handleJumpToMempoolTx` は元々受け取った文字列を
+    そのまま `getNode` に渡すだけだったため、呼び出し元
+    （`MempoolPanel`）が正しい表記を渡すようになったことで追加の変換は
+    不要だった。引数名を `from` から `walletCardId` に変え、コメントを
+    実態に合わせて更新した。
+- テスト:
+  - `mempoolList.test.ts`: 「`fromIsWallet` を casing 完全一致で判定する」
+    という誤った前提を固定していたテスト2件を、実環境の形
+    （`tx.from` が全小文字・ウォレットカード id がチェックサム表記、
+    およびその逆）で `walletCardId` が正しく解決されることを検証する
+    テストに書き換えた。
+  - `MempoolPanel.test.tsx`: クリック時に `onSelectTx` へ渡る値が
+    `entry.from` ではなく `entry.walletCardId`（casing が異なりうる）で
+    あることを検証するテストに変更した。
+- 検証: 修正前の実装（`walletIds.has(tx.from)` の完全一致）を一時的に
+  再現し、新規追加した casing 不一致のテスト2件が実際に失敗すること
+  （`walletCardId` が `undefined` になる）を確認したうえで、修正版に
+  戻して全テストが通ることを確認した。
+- 確認: `pnpm --filter @chainviz/frontend build`（成功）、
+  `pnpm --filter @chainviz/frontend test`（145ファイル / 2171件、全通過）。
