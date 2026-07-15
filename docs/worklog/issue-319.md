@@ -325,3 +325,57 @@ eth_getTransactionByHash レスポンス（nonce: "0x3"）
 - `TxLifecyclePopover`（tx 行ホバーの詳細）にも nonce を出すかは本 Issue の
   スコープ外とした（WalletPopover の一覧行で順序が追えれば目的は達成。
   必要なら別途 UX 判断）
+
+### 2026-07-16 Issue #319 実装レビュー（reviewer）
+
+- 担当: reviewer
+- ブランチ: issue-319-tx-nonce-display-frontend
+- 判定: **合格**（差し戻しなし・レビュアーによる修正なし）
+
+確認した内容:
+
+- **型設計**: `TransactionEntity.nonce?: number` は妥当。optional の理由
+  （旧スナップショット互換・取り込みのみ観測のtxでは取得不能）が doc コメントに
+  明記され、`WalletEntity.nonce`（次に使う値）との意味の違いも区別されている。
+  shared の doc コメントの「Ethereum アダプタでは…」「receipt 相当」という例示は
+  既存フィールド（syncStages・contractEvents 等）のコメントと同じ流儀で、
+  スキーマのフィールド名・frontend コードへのチェーン固有語彙の漏れはない
+  （frontend は `tx.nonce` を読むだけ）。
+- **collector**: `normalizeNonce` は欠落（正常系・黙って省略）と不正値
+  （非文字列・BigInt変換不能。`console.error` でtxハッシュ込みのログを出して省略）
+  を区別しており、エラーの握りつぶしはない。省略理由もコメントで明示。
+  `recordPending` はスプレッドで undefined 時にフィールド自体を省略、
+  `recordInclusion` は `existing?.nonce ?? tx.nonce`（nullish合体なので
+  nonce 0 は保持される）で既存優先。追加RPCを発行しない方針（Issue #86）も
+  コメント・ARCHITECTURE.md 両方に明記されている。環境状態依存の固定値の
+  持ち込みなし。
+- **frontend**: 表示条件 `tx.nonce !== undefined && tx.from.toLowerCase() ===
+  walletAddress.toLowerCase()` は falsy 判定禁止・大文字小文字無視の双方向対称を
+  満たす。CSS は `.wallet-popover__tx-nonce` にスコープされ、ul/li 構造・件数
+  制御には手を入れていない（Issue #320 との責務分割を遵守。frontend の変更は
+  span 1個の追加＋props 1個の追加に収まっている）。
+- **`nonce: 0` と undefined の区別**: shared のJSON往復テスト、collector の
+  `"0x0"`→0・recordPending/recordInclusion の nonce 0 保持テスト、frontend の
+  「nonce 0 を表示」テストと、全レイヤーでテストにより固定されている。
+- **テストの質**: 正常系だけでなく、null nonce・非文字列・変換不能値・
+  MAX_SAFE_INTEGER 超・空文字（BigInt("")===0n の現状挙動固定）・reorg相当の
+  再取り込み・送受信混在・空文字from・逆方向の大文字小文字、まで網羅。
+  worklog に「意図的に壊して落ちることを確認した」旨の回帰検出力の記録あり。
+  正規化を経由する end-to-end テスト（transaction-subscribe.test.ts）も追加
+  されており、実装の詳細をなぞるだけの無意味なテストは見当たらない。
+- **コミット粒度**: shared型追加 / frontend実装 / frontend設計メモdocs /
+  collector実装 / 設計docs / テスト強化 の6コミットに分かれており適切。
+- **lint/build/test**: リポジトリ全体で `pnpm lint` / `pnpm build` /
+  `pnpm test` すべて通過（shared 64 / collector 1458 / frontend 2129 /
+  e2e 158 テスト、全パス）。
+
+非ブロッキングの申し送り（統括向け）:
+
+- 本ブランチの分岐点は df35e87 で、main はその後2件のマージ（PR #331:
+  dev-up.sh 自動リビルド、PR #332: Issue #328 調査記録）分だけ進んでいる。
+  変更ファイルは重ならないためマージは衝突しない見込みだが、マージ時に留意。
+- 空文字 nonce が 0 になる件・MAX_SAFE_INTEGER 超で精度が落ちる件は、いずれも
+  想定外入力に対する現状挙動としてテストで固定済み（実運用の devnet では
+  発生しない）。将来 `normalizeNonce` を厳格化する場合はテストが検知する。
+- `docs/PLAN.md` のチェックボックスは未更新（QA・マージ後に統括が更新する
+  想定と worklog に記載あり）。
