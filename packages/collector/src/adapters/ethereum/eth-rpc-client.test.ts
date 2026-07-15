@@ -423,6 +423,115 @@ describe("getTransactionByHash", () => {
       expect(errorSpy).toHaveBeenCalledTimes(1);
       expect(errorSpy.mock.calls[0]?.[0]).toContain("0xtx");
     });
+
+    it("normalizes uppercase hex digits (BigInt is case-insensitive)", async () => {
+      // 一部のノード実装は "0x2A" のように大文字の桁を返し得る。
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          fakeResponse({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              result: {
+                hash: "0xtx",
+                from: "0xsender",
+                to: "0xrecipient",
+                nonce: "0x2A",
+              },
+            }),
+          }),
+        ),
+      );
+      const rpc = createFetchEthRpcClient();
+      const result = await getTransactionByHash(rpc, "http://x", "0xtx");
+      expect(result?.nonce).toBe(42);
+    });
+
+    it("omits nonce and logs when the value is explicitly null (distinct from missing)", async () => {
+      // JSON の null は undefined（フィールド欠落）とは異なり、想定外の値
+      // として扱われる（typeof null !== "string"）。黙って省略せずログする。
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          fakeResponse({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              result: {
+                hash: "0xtx",
+                from: "0xsender",
+                to: "0xrecipient",
+                nonce: null,
+              },
+            }),
+          }),
+        ),
+      );
+      const rpc = createFetchEthRpcClient();
+      const result = await getTransactionByHash(rpc, "http://x", "0xtx");
+      expect(result).not.toHaveProperty("nonce");
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      expect(errorSpy.mock.calls[0]?.[0]).toContain("0xtx");
+    });
+
+    it("keeps a nonce beyond Number.MAX_SAFE_INTEGER as a finite (imprecise) number, not NaN", async () => {
+      // nonce は理論上 2^64-1 まで取り得る。実運用の devnet では現実的な範囲に
+      // 収まるが、極端に大きい 16 進値でも BigInt→Number 変換は例外にならず
+      // 有限の（精度は落ちる）数値になる（NaN にはならない）。tx を捨てず
+      // nonce を保持する現状の挙動を固定する回帰テスト。
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          fakeResponse({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              result: {
+                hash: "0xtx",
+                from: "0xsender",
+                to: "0xrecipient",
+                nonce: "0xffffffffffffffffffffffff",
+              },
+            }),
+          }),
+        ),
+      );
+      const rpc = createFetchEthRpcClient();
+      const result = await getTransactionByHash(rpc, "http://x", "0xtx");
+      expect(result).toHaveProperty("nonce");
+      expect(Number.isFinite(result?.nonce)).toBe(true);
+      expect(Number.isNaN(result?.nonce)).toBe(false);
+      expect(result?.nonce).toBeGreaterThan(Number.MAX_SAFE_INTEGER);
+    });
+
+    it("treats an empty-string nonce as 0 (BigInt('') === 0n; documents current behavior)", async () => {
+      // 空文字は typeof === "string" を通り、BigInt("") が例外を投げず 0n に
+      // なるため、nonce 0 として記録される（欠落や不正値と異なりログは出ない）。
+      // 想定外だが実害の小さい既存挙動を明示的に固定しておく（将来 normalizeNonce
+      // を厳格化する場合はこのテストが変更を検知する）。
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          fakeResponse({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              result: {
+                hash: "0xtx",
+                from: "0xsender",
+                to: "0xrecipient",
+                nonce: "",
+              },
+            }),
+          }),
+        ),
+      );
+      const rpc = createFetchEthRpcClient();
+      const result = await getTransactionByHash(rpc, "http://x", "0xtx");
+      expect(result?.nonce).toBe(0);
+    });
   });
 
   it("returns null when the tx is unknown (result: null)", async () => {

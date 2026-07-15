@@ -1,5 +1,57 @@
 # Issue #319 ウォレットのtx履歴に各txのnonce値が表示されず送信順序が追いにくい
 
+### 2026-07-16 Issue #319 テスト強化（tester）
+
+- 担当: tester
+- ブランチ: issue-319-tx-nonce-display-frontend（collector/frontend実装が合流済み）
+- 目的: 実装担当が書いた基本テストに対し、異常系・境界値のケースを追加する
+  （実装ロジックは変更しない）。
+
+追加したテスト:
+
+- `packages/collector/src/adapters/ethereum/eth-rpc-client.test.ts`
+  （`normalizeNonce`経由の`getTransactionByHash`）:
+  - 大文字の16進桁（"0x2A"）を正しく数値化する（BigIntは桁の大小を区別しない）。
+  - 明示的な`null`のnonce（フィールド欠落=undefinedとは区別し、想定外値として
+    ログを出したうえで省略する）。
+  - `Number.MAX_SAFE_INTEGER`を超える極端に大きい16進値でも、BigInt→Number
+    変換は例外にならず有限の（精度は落ちる）数値になり、NaNにはならず nonce も
+    省略されない。現状挙動を固定する回帰テスト。
+  - 空文字のnonce（`BigInt("")===0n`のため0として記録され、欠落・不正値と
+    異なりログは出ない）。想定外だが実害の小さい既存挙動を明示的に固定した。
+- `packages/collector/src/adapters/ethereum/transactions.test.ts`
+  （`recordInclusion`のnonce保持）:
+  - pending時にnonceが無く（existingはあるがnonce欠落）、inclusionでも無い場合、
+    nonceフィールドをでっち上げず省略のまま保つ。
+  - 別ブロックへの再取り込み（reorg相当）を複数回またいでも、最初のpending
+    観測nonceを保持し続ける（existing優先が複数回のinclusionをまたいで効く）。
+  - 同一nonceを持つ複数tx（正常系では起きないが防御的に）を、hashごとに独立して
+    保持する。
+- `packages/frontend/src/entities/WalletPopover.nonce.test.tsx`
+  （`WalletPopoverTxItem`のnonce表示条件）:
+  - walletAddressが大文字・tx.fromが小文字という逆方向の大文字小文字混在でも
+    一致する（比較の対称性。既存テストはfrom側のみ大文字化していた）。
+  - tx.fromが空文字でも例外を投げず、一致しないため nonce を出さない。
+  - 送信txと受信txが混在する履歴で、送信txにのみ nonce を出し受信txには
+    出さない。
+  - 大きいnonce値をそのまま連結して表示する。
+
+回帰検出力の確認: frontendの比較を`walletAddress.toLowerCase()`から素の
+`walletAddress`へ意図的に壊すと逆方向テストが落ちること、collectorの
+`normalizeNonce`を`MAX_SAFE_INTEGER`超でNaNを返すよう壊すと大nonceテストが
+落ちることを確認してから元に戻した。
+
+確認結果:
+
+- `pnpm --filter @chainviz/collector build` / `pnpm --filter @chainviz/frontend build`:
+  いずれも成功。
+- `pnpm --filter @chainviz/collector test`: 64ファイル / 1458テスト（+7）全通過。
+- `pnpm --filter @chainviz/frontend test`: 144ファイル / 2129テスト（+4）全通過。
+
+実装のバグは見つからなかった。空文字nonceが0になる点・大nonceで精度が落ちる点は
+いずれも想定外入力に対する現状挙動で、実運用のdevnetでは発生しないため差し戻しは
+行わず、挙動固定のテストとして記録するに留めた。
+
 ### 2026-07-16 Issue #319 frontend実装 設計メモ・着手前
 - 担当: frontend
 - ブランチ: issue-319-tx-nonce-display-frontend

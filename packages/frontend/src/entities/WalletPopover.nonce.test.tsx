@@ -35,13 +35,16 @@ function tx(overrides: Partial<TransactionEntity> = {}): TransactionEntity {
   };
 }
 
-function wrap(transactions: TransactionEntity[]) {
+function wrap(
+  transactions: TransactionEntity[],
+  walletEntity: WalletEntity = wallet(),
+) {
   // PopoverPortal(Issue #245)の必須 prop anchorRef 用の detached 要素。
   const anchorRef = { current: document.createElement("div") };
   return render(
     <LanguageProvider initialLanguage="ja">
       <GlossaryProvider glossary={{}}>
-        <WalletPopover anchorRef={anchorRef} entity={wallet()} transactions={transactions} />
+        <WalletPopover anchorRef={anchorRef} entity={walletEntity} transactions={transactions} />
       </GlossaryProvider>
     </LanguageProvider>,
   );
@@ -77,5 +80,41 @@ describe("WalletPopoverTxItem nonce display (Issue #319)", () => {
   it("matches the wallet address case-insensitively", () => {
     wrap([tx({ hash: "0xmixedcase", from: WALLET_ADDRESS.toUpperCase(), nonce: 2 })]);
     expect(screen.getByTestId("wallet-tx-nonce-0xmixedcase")).toBeTruthy();
+  });
+
+  it("matches when the wallet address is uppercase and tx.from is lowercase (reverse direction)", () => {
+    // 大文字小文字の比較は双方向に対称であること。前テストは from を大文字化
+    // したが、こちらはウォレット側（walletAddress）を大文字化して逆方向を突く。
+    const upperWallet = wallet({ address: WALLET_ADDRESS.toUpperCase() });
+    wrap([tx({ hash: "0xrev", from: WALLET_ADDRESS, nonce: 8 })], upperWallet);
+    expect(screen.getByTestId("wallet-tx-nonce-0xrev")).toBeTruthy();
+  });
+
+  it("does not show a nonce (and does not crash) when tx.from is an empty string", () => {
+    // tx.from は型上 string だが、想定外に空文字が来ても toLowerCase() は
+    // 例外を投げず、ウォレットアドレスと一致しないため nonce を出さない。
+    wrap([tx({ hash: "0xempty", from: "", nonce: 1 })]);
+    expect(screen.queryByTestId("wallet-tx-nonce-0xempty")).toBeNull();
+  });
+
+  it("shows nonce only on sent txs when sent and received txs are mixed", () => {
+    // 送信 tx と受信 tx が同一ウォレットの履歴に混在するとき、送信 tx にのみ
+    // nonce を出し受信 tx には出さない（行の主語＝このウォレットの送信順序と
+    // 受信元の nonce を混同させない）。
+    wrap([
+      tx({ hash: "0xsent1", from: WALLET_ADDRESS, to: OTHER_ADDRESS, nonce: 10 }),
+      tx({ hash: "0xrecv1", from: OTHER_ADDRESS, to: WALLET_ADDRESS, nonce: 11 }),
+      tx({ hash: "0xsent2", from: WALLET_ADDRESS, to: OTHER_ADDRESS, nonce: 12 }),
+    ]);
+    expect(screen.getByTestId("wallet-tx-nonce-0xsent1").textContent).toBe("nonce 10");
+    expect(screen.queryByTestId("wallet-tx-nonce-0xrecv1")).toBeNull();
+    expect(screen.getByTestId("wallet-tx-nonce-0xsent2").textContent).toBe("nonce 12");
+  });
+
+  it("renders a large nonce value verbatim", () => {
+    // 極端に大きい nonce（collector 側で精度落ちしても有限値）でも、表示側は
+    // 受け取った数値をそのまま連結して出す。
+    wrap([tx({ hash: "0xbig", from: WALLET_ADDRESS, nonce: 1234567 })]);
+    expect(screen.getByTestId("wallet-tx-nonce-0xbig").textContent).toBe("nonce 1234567");
   });
 });

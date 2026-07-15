@@ -537,6 +537,47 @@ describe("TransactionLifecycleTracker.recordInclusion nonce (Issue #319)", () =>
     ]);
     expect(changed[0]).not.toHaveProperty("nonce");
   });
+
+  it("keeps nonce omitted when pending had no nonce and inclusion also has none (existing without nonce)", () => {
+    // pending を観測したが nonce が取れなかった（例: 正規化で省略された）tx を
+    // 取り込む場合、existing?.nonce も tx.nonce も undefined。フィールドを
+    // でっち上げず省略のままにする（existing はあるが nonce だけ無いケース）。
+    const tracker = new TransactionLifecycleTracker();
+    tracker.recordPending({ hash: "0xt1", from: "0xa", to: "0xb" });
+    const changed = tracker.recordInclusion("0xblock", [
+      { hash: "0xt1", from: "0xa", to: "0xb", status: "included" },
+    ]);
+    expect(changed[0]).not.toHaveProperty("nonce");
+  });
+
+  it("retains the pending nonce when a tx is re-included in a different block (reorg-like)", () => {
+    // 別ブロックへの付け替え（reorg 相当）でも nonce は tx 固有で不変のため、
+    // 最初の pending 観測値を保持し続ける（existing 優先が複数回の inclusion を
+    // またいでも効くこと）。
+    const tracker = new TransactionLifecycleTracker();
+    tracker.recordPending({ hash: "0xt1", from: "0xa", to: "0xb", nonce: 9 });
+    tracker.recordInclusion("0xblockA", [
+      { hash: "0xt1", from: "0xa", to: "0xb", status: "included" },
+    ]);
+    const changed = tracker.recordInclusion("0xblockB", [
+      { hash: "0xt1", from: "0xa", to: "0xb", status: "included" },
+    ]);
+    expect(changed[0].nonce).toBe(9);
+  });
+
+  it("tracks each tx's nonce independently when two txs share the same nonce value (defensive)", () => {
+    // 同一 nonce を持つ複数 tx は正常なチェーンでは起きない（同一アカウントの
+    // nonce は一意）が、防御的に hash ごとに独立して保持されることを確認する。
+    const tracker = new TransactionLifecycleTracker();
+    tracker.recordPending({ hash: "0xt1", from: "0xa", to: "0xb", nonce: 4 });
+    tracker.recordPending({ hash: "0xt2", from: "0xc", to: "0xd", nonce: 4 });
+    const changed = tracker.recordInclusion("0xblock", [
+      { hash: "0xt1", from: "0xa", to: "0xb", status: "included" },
+      { hash: "0xt2", from: "0xc", to: "0xd", status: "included" },
+    ]);
+    expect(changed.find((e) => e.hash === "0xt1")?.nonce).toBe(4);
+    expect(changed.find((e) => e.hash === "0xt2")?.nonce).toBe(4);
+  });
 });
 
 describe("TransactionLifecycleTracker eviction", () => {
