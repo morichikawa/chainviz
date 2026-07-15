@@ -1397,6 +1397,16 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* --- C層拡張: WalletPopoverTxItem の送信tx限定 nonce 表示（Issue #319）。
+   このtxを送信した時点の送信元アカウントの通し番号を、hash直後・statusチップ
+   の前に控えめな添え書きとして出す。 --- */
+.wallet-popover__tx-nonce {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 /* --- 用語インライン解説 --- */
 .glossary-term {
   position: relative;

@@ -55,13 +55,21 @@ function TxCallPreviewLine({
  * mempool → ブロック取り込みの4段階）を表示する（ARCHITECTURE.md §6.11、
  * Issue #212 単位D）。WalletCard の tx チップと同じポップオーバーを使う
  * ことで表示内容を一本化する。
+ *
+ * `walletAddress` はこの行を表示しているウォレット自身のアドレス（Issue
+ * #319）。`tx.nonce` はこのウォレットが**送信した**tx でのみ意味を持つ。
+ * 受信 tx に載っている nonce は送信元ウォレットのものであり、そのまま
+ * 出すとこのウォレットの送信順序と誤解されるため、送信 tx（`tx.from` が
+ * このウォレット自身）限定で表示する。
  */
 function WalletPopoverTxItem({
   tx,
   contractsByAddress,
+  walletAddress,
 }: {
   tx: TransactionEntity;
   contractsByAddress: ReadonlyMap<string, ContractEntity>;
+  walletAddress: string;
 }) {
   const { t } = useLanguage();
   // Issue #221: 隙間を通過する一瞬の mouseleave で消えないよう遅延クローズ。
@@ -70,6 +78,8 @@ function WalletPopoverTxItem({
   // Issue #245: 隣接カードの下に隠れないよう body 直下へ portal 描画する。
   // 位置合わせの基準はこの行自体（アンカー）。
   const itemRef = useRef<HTMLLIElement>(null);
+  const showNonce =
+    tx.nonce !== undefined && tx.from.toLowerCase() === walletAddress.toLowerCase();
 
   return (
     <li
@@ -82,6 +92,14 @@ function WalletPopoverTxItem({
       onBlur={onBlur}
     >
       <span className="wallet-popover__tx-hash">{shortHex(tx.hash)}</span>
+      {showNonce && (
+        <span
+          className="wallet-popover__tx-nonce"
+          data-testid={`wallet-tx-nonce-${tx.hash}`}
+        >
+          {t("field.nonce")} {tx.nonce}
+        </span>
+      )}
       <span className={`wallet-tx-chip wallet-tx-chip--${tx.status}`}>
         {t(TX_STATUS_MESSAGE_KEY[tx.status])}
       </span>
@@ -190,6 +208,7 @@ export function WalletPopover({
                 key={tx.hash}
                 tx={tx}
                 contractsByAddress={contractsByAddress}
+                walletAddress={entity.address}
               />
             ))}
           </ul>
