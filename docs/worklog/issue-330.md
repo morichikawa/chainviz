@@ -305,3 +305,34 @@
   戻して全テストが通ることを確認した。
 - 確認: `pnpm --filter @chainviz/frontend build`（成功）、
   `pnpm --filter @chainviz/frontend test`（145ファイル / 2171件、全通過）。
+
+## 再レビュー（chainviz-reviewer、差し戻し対応の確認）
+
+### 2026-07-16 合格
+
+- 差し戻した `fromIsWallet` の照合バグは解消されていることを確認した。
+  - `mempoolList.ts` の `buildMempoolTxEntries` は `buildLowerCaseIndex` で
+    索引を1度だけ作り `tx.from.toLowerCase()` で引く形になっており、
+    `deployEdge.ts`（`presentByLowerCase.get(deployer.toLowerCase())`）と
+    同型。返す値が present 側（ウォレットカード側）の元表記である点も
+    正しい（React Flow の `getNode` はカード id の表記で解決するため）。
+  - `Canvas.tsx` の `handleJumpToMempoolTx` は解決済みの `walletCardId` を
+    そのまま `getNode` に渡すだけで、`getNode` 未解決時の防御も残っている。
+    「ロジック変更不要」の判断は妥当。
+- テストの質: `mempoolList.test.ts` は casing 不一致の両方向
+  （from 全小文字 × カード id チェックサム表記、およびその逆）を検証し、
+  返り値が「カード側の表記」であることまで固定している。
+  `MempoolPanel.test.tsx` は `onSelectTx` に渡る値が `from` ではなく
+  `walletCardId` であることを、あえて casing の異なる2値で検証しており、
+  取り違えの回帰を検出できる。worklog には「実装を意図的に旧ロジックへ
+  戻してテストが失敗することを確認した」記録もあり、CLAUDE.md の
+  「直したはずで済ませない」ルールに沿っている。
+- 他の casing 問題の横断確認: `buildMempoolNodeEntries` は
+  `NodeEntity.id` / `containerName`（ノード id）での照合でありアドレス
+  ではないため対象外。`fromIsWallet` の残骸は grep で無いことを確認。
+  frontend の他の `.has()` 使用箇所はノード/ワークベンチ id の照合か、
+  既に `toLowerCase()` 済み（WalletCard/ContractCard 等）で問題なし。
+- 品質ゲート: worktree 上で `pnpm lint` / `pnpm build` / `pnpm test`
+  （shared 62 / collector 1439 / e2e 158 / frontend 2171 件）すべて通過。
+- コミット粒度: 修正 `af57571`（1関心事）+ worklog `c6fb389` で適切。
+- 結論: 合格。push / PR / マージは統括の判断に委ねる。
