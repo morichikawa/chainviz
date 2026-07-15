@@ -164,3 +164,46 @@
   - git非リポジトリ環境(通常想定しない)で0を返した場合、呼び出し元が
     「dist/は最新です」と表示するのは厳密には「判定不能」であり不正確。
     関数コメントに理由が明記されているため許容
+
+### 2026-07-16 Issue #325 QA(実環境検証)
+
+- 担当: qa
+- ブランチ: issue-325-auto-rebuild-on-stale-dist
+- 結論: 合格。Issue本文の要望(distが古いと判定した場合に自動で
+  `pnpm build` を実行する。最新なら従来通りスキップ。dirtyは警告のみ)を
+  すべて満たすことを実環境で確認した。
+- 検証環境の注意: メインworktreeが別途default port(4000/4001/5173)で
+  稼働していたため、衝突を避けて本検証は
+  `CHAINVIZ_COLLECTOR_PORT=4200 / CHAINVIZ_PROXY_PORT=4201 /
+  CHAINVIZ_FRONTEND_PORT=5273` のカスタムポートで実施した。docker compose
+  プロジェクト名は `chainviz-ethereum` で共有され、本worktreeからも
+  `docker compose ps -q` で既存スタックを検出できることを確認済み
+  (重複起動しない)。
+- 実施した検証と結果:
+  1. dist最新(marker hash == HEAD, clean): `scripts/dev-up.sh` を実行し
+     「[2/4] ビルド済みのcollectorを再利用します(dist/は最新です)」で
+     再ビルドがスキップされ起動した。pnpm buildは走らないことを確認。
+  2. distが古い(markerのhashを過去コミット df35e87 に書き換え, HEADは
+     3e45e02): dev-up.sh 実行で「dist/が古いため pnpm build を自動的に
+     再実行します(ビルド時: df35e87..., 現在: 3e45e02...)」と表示され、
+     実際に `pnpm -r build` が走り、マーカーがHEAD(3e45e02)に更新された
+     (=ビルドが実行された確証)。docker既存スタックは再利用。collector/
+     frontendとも正常起動。
+  3. dist dirty(marker hash == HEAD だが2行目が dirty): dev-up.sh 実行で
+     「警告: ...uncommittedな変更を含んだ状態でビルドされています...
+     自動リビルドは行いません」の警告のみ表示、「[2/4] ビルド済みの
+     collectorを再利用します」で自動ビルドされず起動。実行後もマーカーの
+     2行目が dirty のまま(作業ツリーはcleanなので、もしビルドが走れば
+     clean に書き換わるはず。書き換わらないことがビルド未実行の確証)。
+  4. 起動後の実動作: collector WebSocket(port 4200)に接続し、初回に
+     `snapshot`(type/payload、payload内に chainType・timestamp・entities
+     配列)、続いて `diff` メッセージが配信されることを確認。ロギング
+     プロキシ(port 4201)経由の `eth_blockNumber` RPCも疎通し、ブロックが
+     進行していることを確認(docker composeスタックとの疎通OK)。frontend
+     (vite, port 5273)も起動を確認。
+- 後片付け: 各シナリオ後に `scripts/dev-down.sh` でcollector/frontendを
+  停止。検証で書き換えたマーカーは最後に `pnpm build` を実行して
+  HEAD/clean の正常状態に復元済み。git status clean、カスタムポートに
+  残存プロセスなしを確認。dockerスタックは dev-down のデフォルト挙動に
+  従い停止せず残置。
+- 差し戻しなし。
