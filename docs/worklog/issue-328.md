@@ -278,3 +278,39 @@
     現状 `selected` を読んで見た目を変えるカードは無く React Flow 標準の
     選択枠が消えるのみだが、将来 `selected` に依存する機能を足す際は
     ドラッグ中以外の保全も必要になる
+
+## QA検証（実機確認、2026-07-16 chainviz-qa 検証大地）
+
+- 結論: 合格。Issue本文の不具合（ドラッグ中にWebSocket更新で位置がガクンと
+  ずれる/戻る）が実機で再現しないことを確認した。
+- 検証環境: 既存の共有Dockerスタック（chainviz-ethereum、稼働中のものを再利用）
+  に対し、他worktreeとのポート競合を避けるため collector=4100 / proxy=4101 /
+  frontend=5273 で `scripts/dev-up.sh` を起動。ブラウザ操作は Playwright
+  1.61.1 + chromium（headless、LD_LIBRARY_PATH で nss/nspr 共有ライブラリを
+  補って起動）。検証後は `scripts/dev-down.sh`（--docker なし）で自分の
+  collector/frontend のみ停止し、共有Dockerスタックは残した。
+- 事前確認:
+  - collector の WebSocket（ws://127.0.0.1:4100）で snapshot 1件のあと diff が
+    約2秒周期で流れることを確認。
+  - フロント（http://localhost:5273）は node/wallet/chain-ribbon 等のカードが
+    描画され、chain-ribbon のブロック番号が約1.7秒ごとに1つ進む（＝
+    ワールドステート差分が nodes 配列へ反映され Canvas.tsx の useEffect が
+    毎回発火する状態）。console error は 0 件。
+- 静止保持テスト（マウスを動かさずドラッグを保持）: reth2 カードをドラッグ位置
+  へ移動後、マウスを完全に静止させたまま7秒保持。保持中に chain-ribbon が
+  #1148→#1151 と進行（＝差分が複数回 nodes 配列へ適用され useEffect が反復
+  発火）したにもかかわらず、ドラッグ中ノードの位置は held 位置から偏差0で
+  完全に静止し続けた。修正前ならこの間に保存位置へ戻る（本ケースでは約239px
+  離れた位置へ跳ぶ）はずだが、それが発生しないことを確認。
+- 連続ドラッグテスト: カーソルを右下へ連続移動させながら約7秒ドラッグ（約4差分
+  分をまたぐ）。ノードの transform.x 軌跡は 0→207 まで単調増加で、カーソルと
+  逆方向へ動く「後退ステップ」は69ステップ中0件、最大後退量0px。差分到着時の
+  ガクンとした跳ね戻りは観測されなかった。
+- 永続化: mouseup 後もドラッグ位置（transform 158,281）を維持。ページを
+  リロードしても同位置が保持されることを確認（onNodeDragStop 由来の layout
+  保存が機能）。
+- デグレ確認（既存機能）: ドラッグ中も非ドラッグノードは WebSocket 更新を反映
+  し続けた（chain-ribbon のブロック追加が両テスト中に継続反映）。ドラッグ対象
+  以外のノード（reth1）の位置は変化せず安定。検証全体を通して console error 0件。
+- 補足: 実機確認見送りの理由だった「他worktreeとのDocker競合」は、共有スタックを
+  再利用しつつ collector/frontend のみ別ポートで立てることで回避できた。
