@@ -758,6 +758,11 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       ホバーポップオーバーのみだと定義文が長い用語が読みにくい。着手時は
       まずchainviz-uxのUX設計から)
       [#313](https://github.com/morichikawa/chainviz/issues/313)
+- [ ] ERC-721(NFT)の所有関係を可視化する
+      (各tokenIdとウォレットが1対1で対応する所有関係は、既存のERC-20残高
+      表示・秘密鍵の所有エッジとは異なる概念で未対応。着手時はまず
+      chainviz-designerの設計から)
+      [#315](https://github.com/morichikawa/chainviz/issues/315)
 
 ## 運用ルール（全ステップ共通）
 
