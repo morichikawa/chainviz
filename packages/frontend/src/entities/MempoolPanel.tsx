@@ -15,9 +15,9 @@ import { shortHex } from "./transaction.js";
  * （`NodeEntity.internals.mempool` のノード別実数）に対応する（§11.1）。
  * 行クリックで送信元ウォレットへパンする処理自体はこのコンポーネントの外
  * （Canvas.tsx）が持つ（`ContractListPanel` と同じ「onSelect は id を渡す
- * だけの薄いコールバック」の分離）。from がキャンバス上のウォレットカード
- * として存在しない行（`fromIsWallet === false`）はクリック不可として描画
- * する。
+ * だけの薄いコールバック」の分離）。from に対応するウォレットカードが
+ * キャンバス上に存在しない行（`walletCardId === undefined`）はクリック
+ * 不可として描画する。
  */
 export function MempoolPanel({
   txEntries,
@@ -33,7 +33,8 @@ export function MempoolPanel({
   /** ヘッダーに出す総 pending 件数（`txEntries` の元になった全件数）。 */
   totalPendingCount: number;
   nodeEntries: MempoolNodeEntry[];
-  onSelectTx: (from: string) => void;
+  /** クリックされた行の `walletCardId`（= 解決済みのウォレットカード id）を渡す。 */
+  onSelectTx: (walletCardId: string) => void;
 }) {
   const { t } = useLanguage();
 
@@ -95,7 +96,7 @@ function MempoolTxRow({
   onSelectTx,
 }: {
   entry: MempoolTxEntry;
-  onSelectTx: (from: string) => void;
+  onSelectTx: (walletCardId: string) => void;
 }) {
   const { t } = useLanguage();
   const content = (
@@ -112,7 +113,7 @@ function MempoolTxRow({
     </>
   );
 
-  if (!entry.fromIsWallet) {
+  if (entry.walletCardId === undefined) {
     return (
       <div
         className="mempool-panel__row mempool-panel__row--static"
@@ -123,13 +124,14 @@ function MempoolTxRow({
     );
   }
 
+  const walletCardId = entry.walletCardId;
   return (
     <button
       type="button"
       className="mempool-panel__row"
       data-testid={`mempool-tx-row-${entry.hash}`}
       title={t("mempoolPanel.jumpHint")}
-      onClick={() => onSelectTx(entry.from)}
+      onClick={() => onSelectTx(walletCardId)}
     >
       {content}
     </button>

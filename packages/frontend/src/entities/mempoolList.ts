@@ -1,4 +1,5 @@
 import type { NodeEntity, TransactionEntity } from "@chainviz/shared";
+import { buildLowerCaseIndex } from "./addressCasing.js";
 
 /**
  * mempool パネル（Issue #330。`docs/ARCHITECTURE.md` §11、
@@ -17,22 +18,36 @@ export interface MempoolTxEntry {
   /** `contractCall` から復号できた関数名（無ければ未定義）。 */
   functionName?: string;
   /**
-   * from が現在キャンバス上のウォレットカードとして存在するか
-   * （`walletNode.ts` の id = address）。false の行はパン先が無いため
-   * `MempoolPanel` 側でクリック不可として描画する。
+   * from に対応するウォレットカードが現在キャンバス上に存在する場合、その
+   * カードの id（= React Flow のノード id。`walletNode.ts` の id = address）。
+   * 存在しなければ undefined で、`MempoolPanel` 側でクリック不可として
+   * 描画する。
+   *
+   * `tx.from` はチェーン側の生の表記（Ethereum アダプタでは全小文字。
+   * `eth-rpc-client.ts` の `normalizeTransaction` は casing を正規化しない）
+   * である一方、ウォレットカード id（`WalletEntity.address`）は mnemonic
+   * から viem で導出した EIP-55 チェックサム表記になりうる
+   * (`wallet-derivation.ts`)。単純な文字列一致では常に不一致になるため、
+   * `from` そのものではなく大文字小文字を無視して解決済みのカード id を
+   * 持たせる（`deployEdge.ts` と同じ `addressCasing.ts` 経由の照合パターン。
+   * Issue #201 / #232 で同型の不具合が起きている）。
    */
-  fromIsWallet: boolean;
+  walletCardId: string | undefined;
 }
 
 /**
  * `TransactionEntity` のうち `status === "pending"` のものだけを抽出し、
  * パネル行データへ変換する（§11.1 上段 = C層）。並び順はここでは決めない
  * （呼び出し側が `sortMempoolTxEntriesByAppearance` で並べ替える）。
+ *
+ * `walletIds`（キャンバス上のウォレットカード id 群）との照合は大文字小文字を
+ * 無視して行う（`MempoolTxEntry.walletCardId` の JSDoc 参照）。
  */
 export function buildMempoolTxEntries(
   transactions: TransactionEntity[],
-  walletIds: ReadonlySet<string>,
+  walletIds: Iterable<string>,
 ): MempoolTxEntry[] {
+  const walletIdsByLowerCase = buildLowerCaseIndex(walletIds);
   return transactions
     .filter((tx) => tx.status === "pending")
     .map((tx) => ({
@@ -40,7 +55,7 @@ export function buildMempoolTxEntries(
       from: tx.from,
       to: tx.to,
       functionName: tx.contractCall?.functionName,
-      fromIsWallet: walletIds.has(tx.from),
+      walletCardId: walletIdsByLowerCase.get(tx.from.toLowerCase()),
     }));
 }
 

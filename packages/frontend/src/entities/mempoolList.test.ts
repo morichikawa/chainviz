@@ -84,14 +84,14 @@ describe("buildMempoolTxEntries", () => {
     expect(entry?.to).toBeNull();
   });
 
-  it("marks fromIsWallet true only when from is in the wallet id set", () => {
+  it("sets walletCardId to the matching wallet id only when from is in the wallet id set", () => {
     const transactions = [
       tx({ hash: "0x1", from: "0xaaa" }),
       tx({ hash: "0x2", from: "0xbbb" }),
     ];
     const entries = buildMempoolTxEntries(transactions, new Set(["0xaaa"]));
-    expect(entries.find((e) => e.hash === "0x1")?.fromIsWallet).toBe(true);
-    expect(entries.find((e) => e.hash === "0x2")?.fromIsWallet).toBe(false);
+    expect(entries.find((e) => e.hash === "0x1")?.walletCardId).toBe("0xaaa");
+    expect(entries.find((e) => e.hash === "0x2")?.walletCardId).toBeUndefined();
   });
 
   it("returns an empty array for an empty transaction list", () => {
@@ -108,27 +108,37 @@ describe("buildMempoolTxEntries", () => {
     expect(entries.map((e) => e.hash)).toEqual(["0x3", "0x1", "0x2"]);
   });
 
-  it("matches fromIsWallet case-sensitively (from and wallet ids must share casing)", () => {
-    // walletIds are wallet card ids (= address) taken verbatim from rfNodes, and
-    // tx.from is compared with Set.has (exact string match). A different casing
-    // does not match. Both sides are expected to already be normalized to the
-    // same casing upstream by the collector; this test pins that assumption.
-    const transactions = [tx({ hash: "0x1", from: "0xAAA" })];
-    const entries = buildMempoolTxEntries(transactions, new Set(["0xaaa"]));
-    expect(entries[0]?.fromIsWallet).toBe(false);
+  it("resolves walletCardId across a casing mismatch between tx.from and the wallet card id", () => {
+    // This is the real-world shape: tx.from comes straight from the RPC and is
+    // all-lowercase (Ethereum adapter's normalizeTransaction does not alter
+    // casing), while the wallet card id (WalletEntity.address) is derived via
+    // viem and is EIP-55 checksummed. buildMempoolTxEntries must match these
+    // case-insensitively and report the *wallet card's* casing (not from's),
+    // since that's the id React Flow's getNode() needs (see addressCasing.ts).
+    const checksummed = "0xAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAa";
+    const transactions = [tx({ hash: "0x1", from: checksummed.toLowerCase() })];
+    const entries = buildMempoolTxEntries(transactions, new Set([checksummed]));
+    expect(entries[0]?.walletCardId).toBe(checksummed);
   });
 
-  it("treats an empty from string as a wallet only if the set literally contains it", () => {
+  it("resolves walletCardId when tx.from is checksummed and the wallet id set is lowercase", () => {
+    const lower = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    const transactions = [tx({ hash: "0x1", from: "0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB" })];
+    const entries = buildMempoolTxEntries(transactions, new Set([lower]));
+    expect(entries[0]?.walletCardId).toBe(lower);
+  });
+
+  it("treats an empty from string as a wallet only if the set contains it (case-insensitively)", () => {
     const notWallet = buildMempoolTxEntries([tx({ hash: "0x1", from: "" })], new Set());
-    expect(notWallet[0]?.fromIsWallet).toBe(false);
+    expect(notWallet[0]?.walletCardId).toBeUndefined();
     const isWallet = buildMempoolTxEntries([tx({ hash: "0x2", from: "" })], new Set([""]));
-    expect(isWallet[0]?.fromIsWallet).toBe(true);
+    expect(isWallet[0]?.walletCardId).toBe("");
   });
 });
 
 describe("sortMempoolTxEntriesByAppearance", () => {
   function entry(hash: string): MempoolTxEntry {
-    return { hash, from: "0xfrom", to: "0xto", fromIsWallet: false };
+    return { hash, from: "0xfrom", to: "0xto", walletCardId: undefined };
   }
 
   it("orders entries with the newest (highest order value) first", () => {
@@ -187,7 +197,7 @@ describe("limitMempoolTxEntries", () => {
       hash: `0x${i}`,
       from: "0xfrom",
       to: "0xto",
-      fromIsWallet: false,
+      walletCardId: undefined,
     }));
   }
 

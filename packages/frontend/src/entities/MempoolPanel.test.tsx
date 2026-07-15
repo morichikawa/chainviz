@@ -30,7 +30,7 @@ function wrap(props: {
   overflowCount?: number;
   totalPendingCount?: number;
   nodeEntries?: MempoolNodeEntry[];
-  onSelectTx?: (from: string) => void;
+  onSelectTx?: (walletCardId: string) => void;
   lang?: "ja" | "en";
 }) {
   const {
@@ -57,11 +57,14 @@ function wrap(props: {
 }
 
 function txEntry(overrides: Partial<MempoolTxEntry> = {}): MempoolTxEntry {
+  const from = overrides.from ?? `0x${"b".repeat(40)}`;
   return {
     hash: `0x${"a".repeat(64)}`,
-    from: `0x${"b".repeat(40)}`,
+    from,
     to: `0x${"c".repeat(40)}`,
-    fromIsWallet: true,
+    // 既定ではクリック可能（walletCardId = from とみなす）にしておき、
+    // 個々のテストで undefined を渡してクリック不可のケースを検証する。
+    walletCardId: from,
     ...overrides,
   };
 }
@@ -107,16 +110,20 @@ describe("MempoolPanel", () => {
     expect(screen.getByTestId("mempool-tx-row-0x1").textContent).toContain("デプロイ");
   });
 
-  it("calls onSelectTx with the from address when a clickable row is clicked", () => {
+  it("calls onSelectTx with walletCardId (not from) when a clickable row is clicked", () => {
+    // walletCardId is the resolved wallet card id, which may use different
+    // casing than tx.from (see mempoolList.ts / addressCasing.ts). The panel
+    // must forward walletCardId, not from, so that Canvas.tsx's getNode()
+    // resolves the correct React Flow node.
     const onSelectTx = vi.fn();
-    const entry = txEntry({ hash: "0x1", from: "0xaaa", fromIsWallet: true });
+    const entry = txEntry({ hash: "0x1", from: "0xaaa", walletCardId: "0xAAA" });
     wrap({ txEntries: [entry], onSelectTx });
     fireEvent.click(screen.getByTestId("mempool-tx-row-0x1"));
-    expect(onSelectTx).toHaveBeenCalledWith("0xaaa");
+    expect(onSelectTx).toHaveBeenCalledWith("0xAAA");
   });
 
   it("renders a non-clickable row (not a button) when from has no wallet card", () => {
-    const entry = txEntry({ hash: "0x1", fromIsWallet: false });
+    const entry = txEntry({ hash: "0x1", walletCardId: undefined });
     const onSelectTx = vi.fn();
     wrap({ txEntries: [entry], onSelectTx });
     const row = screen.getByTestId("mempool-tx-row-0x1");
@@ -126,7 +133,7 @@ describe("MempoolPanel", () => {
   });
 
   it("renders a static row (no crash) when a non-wallet entry has an empty from", () => {
-    const entry = txEntry({ hash: "0x1", from: "", fromIsWallet: false });
+    const entry = txEntry({ hash: "0x1", from: "", walletCardId: undefined });
     const onSelectTx = vi.fn();
     wrap({ txEntries: [entry], onSelectTx });
     const row = screen.getByTestId("mempool-tx-row-0x1");

@@ -406,14 +406,17 @@ function CanvasInner({
   );
 
   // mempool パネルの tx 行クリック（§11.3「行クリックで from のウォレット
-  // カードへパンする」）。`MempoolPanel` 自身は `fromIsWallet === false` の
-  // 行を非クリック化するため、ここで渡ってくる from は既にウォレットカード
-  // が存在する前提だが、`getNode` の未存在防御はハンドラ側にも残す
-  // （handleJumpToContract と同じ「消えたカードへの防御」パターン。行クリック
-  // からパン先が消える猶予はごくわずかだが起こりうるため）。
+  // カードへパンする」）。`MempoolPanel` 自身は `walletCardId === undefined`
+  // の行を非クリック化し、クリック可能な行は `mempoolList.ts` の
+  // `buildMempoolTxEntries` が大文字小文字を無視して解決済みの
+  // `walletCardId`（React Flow のノード id とそのまま一致する表記）を渡す
+  // ため、ここで追加の casing 変換は不要。`getNode` の未存在防御は
+  // ハンドラ側にも残す（handleJumpToContract と同じ「消えたカードへの防御」
+  // パターン。行クリックからパン先が消える猶予はごくわずかだが起こりうる
+  // ため）。
   const handleJumpToMempoolTx = useCallback(
-    (from: string) => {
-      const node = getNode(from);
+    (walletCardId: string) => {
+      const node = getNode(walletCardId);
       if (!node) return;
       const center = resolveNodeCenter(node.position, node.measured);
       setCenter(center.x, center.y, { zoom: getZoom(), duration: 400 });
