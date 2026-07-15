@@ -158,3 +158,82 @@
 - `docs/PLAN.md`のIssue #320チェックボックスは、collector側の変更が
   合流し両方揃って初めてIssue全体の完了条件を満たすため、このコミット
   時点ではまだチェックしていない（統括の合流作業後に更新する想定）。
+
+**collector（chainviz-collector）**
+
+- `packages/collector/src/world-state/store.ts` の
+  `MAX_WALLET_RECENT_TX_HASHES` を **20 → 32 に引き上げ**、コメントを更新する。
+  - 根拠: フロントが「保持分を全件表示」するようになるため、この定数が
+    そのまま履歴の実効上限になる。一方、included/failed tx エンティティは
+    block の保持窓（`BLOCK_RETENTION` = 32）と連動して掃除されるため
+    （Issue #298/#303）、32 ブロックより古い tx は hash が残っていても
+    フロントで解決できない（`resolveWalletTransactions` が除外する）。
+    1 ブロック 1 tx 程度の典型的なデモ操作では「解決可能な上限 ≒
+    BLOCK_RETENTION」なので、それに揃えた 32 が無駄なく最大。
+  - 固定値の前提条件（CLAUDE.md のルールに従いコード内コメントにも書く）:
+    `BLOCK_RETENTION` 以上に増やしても、1 ブロックに複数 tx が積まれる
+    バースト時以外は解決不能な hash が増えるだけ。`BLOCK_RETENTION` を
+    変える場合はこの値も併せて見直すこと。
+  - `packages/shared` の型変更は**不要**（`recentTxHashes: string[]` のまま。
+    件数はデータの長さの問題であり型に現れない）。
+
+### 決めた事項（判断に迷ったら統括へ）
+
+- ポップオーバーの表示件数に**フロント側の固定上限は設けない**（保持されて
+  いる分 = collector の上限 32 件がそのまま上限）。「システムが保持している
+  ものは全部見せる、保持ウィンドウ自体は CONCEPT.md の決定（tx 履歴は
+  アニメーション再生に足りる直近ウィンドウのみ保持、それ以前は保持しない。
+  CONCEPT.md 190 行目付近）に従う」という整理。無限の履歴を遡る機能に
+  拡張しない。
+- 「もっと見る」ボタンや遅延読み込みは**作らない**（保持上限が 32 件なら
+  一括描画で性能上の問題は無い。先回り実装をしない原則）。
+- 下端フェード等の追加のスクロールヒントは**入れない**（常時表示の
+  スクロールバー + 見出しの件数表示で足りると判断。過剰装飾を避ける）。
+- キーボード操作: 行の `tabIndex=0` は既存のまま。フォーカス移動で
+  ブラウザが自動的にスクロール追従するため追加実装しない。なお
+  「ポップオーバー自体がホバーでしか開かない」問題は既存の制約で、
+  この Issue のスコープ外。
+
+### Issue #319 との関係（競合しないことの確認）
+
+#319（マージ済み）は行の中身（`WalletPopoverTxItem` に `walletAddress`
+prop・nonce 表示・`wallet-popover__tx-nonce`）、#320 は一覧のコンテナ
+（件数と `wallet-popover__tx-list` の CSS）と上流のデータ量を変える。
+現在の `WalletPopover.tsx` を読んだ上で、#320 で `WalletPopoverTxItem` は
+変更しない設計にした（ARCHITECTURE.md §6.12 の分担どおり）。
+
+### 実装担当への注意点
+
+- ARCHITECTURE.md に §6.13 として本設計（スクロール対応・保持上限 32 への
+  変更）を追記すること（sync-docs）。
+- テスト観点: `resolveWalletTransactions` の limit 省略/Infinity の挙動、
+  WalletCard のチップが 6 件で切れること・pending 件数が全件基準なこと、
+  WalletPopover が 7 件以上を全件描画すること、見出しの件数表示。
+  collector 側は `linkTransactionToWallets` の上限 32 への既存テストの追随。
+- QA 観点: 実環境（`pnpm dev:up`）でウォレットから tx を 7 件以上送り、
+  ポップオーバー内へマウスを移してスクロールで 7 件目以降が見えること、
+  スクロール中もポップオーバーが閉じないこと、ホイールでキャンバスが
+  ズームしないことを確認する。
+
+### 2026-07-16 collector 側実装（収集悟）
+
+- 対象: `packages/collector/src/world-state/store.ts` の
+  `MAX_WALLET_RECENT_TX_HASHES` を 20 → 32 に変更。
+- コメントを設計メモの根拠（included/failed tx は `BLOCK_RETENTION`（32）と
+  連動して掃除されるため、それ以上増やしても解決不能な hash が増えるだけ）
+  に沿って書き換えた。`BLOCK_RETENTION` を変更する際はこの値も見直すよう
+  明記した。
+- `docs/ARCHITECTURE.md` 内の `MAX_WALLET_RECENT_TX_HASHES = 20` という
+  古い記述（tx 保持窓のセクション）も 32 に更新した（sync-docs）。
+  §6.13 としての本設計全体の追記は、frontend 側の実装と合わせて別途
+  行われる想定（このコミットでは collector 変更に直接関係する箇所のみ
+  修正）。
+- テスト: `store-transaction-wallet-link.test.ts` の
+  「caps recentTxHashes and drops the oldest entries beyond the limit」を
+  新しい上限（32）に合わせて更新（投入件数を 25 → 37、期待される保持件数を
+  20 → 32、先頭ハッシュの期待値を `0x24` → `0x36` に修正）。他のテストは
+  上限値に依存しないため変更不要。
+- 確認: `pnpm --filter @chainviz/collector build` / `pnpm --filter
+  @chainviz/collector test` ともに成功（64 ファイル 1458 テスト全て pass）。
+- `packages/shared` の型変更は無し（設計メモどおり `recentTxHashes:
+  string[]` のまま）。
