@@ -123,3 +123,44 @@
   (chainviz-tester)は対象外(Issue本文・CLAUDE.mdの方針通り、シェル
   スクリプト単体でbash用テスト基盤が無いため)。git push / PR作成 /
   マージ / Issueクローズは行っていない(統括の判断に委ねる)
+
+### 2026-07-16 Issue #325 実装レビュー
+
+- 担当: reviewer
+- ブランチ: issue-325-auto-rebuild-on-stale-dist
+- 内容: `scripts/dev-up.sh` の自動リビルド実装(コミット f0e88b0)と
+  docs更新(d9c8b53)をレビューした。結果は**合格**
+- 確認したこと:
+  - `set -euo pipefail` 下での終了ステータスの扱い: `elif check_build_freshness; then`
+    の条件式呼び出しは `set -e` の対象外であり、else節先頭の
+    `freshness_status=$?` が条件式の終了コードを正しく取得することを
+    実際のbashで検証した(status=1/2の両方)。裸呼び出し禁止の注意書きも
+    関数コメントに明記されている
+  - 関数を抽出して5パターン(マーカー不在/hash不一致/hash一致+dirty/
+    hash一致+clean/中身破損)の終了コードが仕様通り(2/1/2/0/2)であること、
+    git非リポジトリ環境で0(従来通り何もしない)を返すことを確認した
+  - 呼び出し元の3方向分岐をpnpmモックで4シナリオ実行し、hash不一致の
+    場合のみ `pnpm build` が呼ばれ、他は起動を止めずに継続することを確認した
+  - マーカー書式(1行目hash/2行目dirty|clean)が書き込み側
+    `packages/collector/src/build-info/build-marker.ts` の定義と一致する
+  - エラーの握りつぶし: `git rev-parse` / `sed` の `|| true` はいずれも
+    直後に空チェック+警告出力または意図を説明するコメントがあり、
+    無言で失敗を隠す箇所は無い。判定不能ケースはすべて警告メッセージを
+    stderrに出している
+  - 決め打ち定数の追加は無い。マーカー不在/破損時・dirtyビルド時に
+    自動ビルドしない理由は設計メモに明記されており妥当
+    (不明な状態をstale側に倒さない保守的設計、hash一致dirtyは再ビルド
+    しても鮮度が変わらない)
+  - コミット分割は「実装(dev-up.shのみ)」「docs(PLAN.md+worklog)」の
+    2コミットで1変更1コミットの方針に沿う。Conventional Commits形式も準拠
+  - `pnpm lint` / `pnpm build` / `pnpm test` をリポジトリ全体で実行し
+    全件通過(テスト2120件)を確認した
+  - docsとの齟齬なし(`docs/ARCHITECTURE.md`・`docs/CONCEPT.md` に
+    dev-up.shの鮮度チェック挙動の記述は無く、矛盾は生じない)
+- 軽微な指摘(非ブロッキング。修正必須とはしない):
+  - `check_build_freshness` が elif の条件式として「==> [2/4]」ヘッダの
+    出力**前**に評価されるため、警告メッセージ(stderr)がヘッダより先に
+    表示される。従来(ヘッダ→警告)と順序が逆になるが、実害は無い
+  - git非リポジトリ環境(通常想定しない)で0を返した場合、呼び出し元が
+    「dist/は最新です」と表示するのは厳密には「判定不能」であり不正確。
+    関数コメントに理由が明記されているため許容
