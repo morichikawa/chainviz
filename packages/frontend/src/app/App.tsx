@@ -605,6 +605,7 @@ function AppShell({
                   edges={edges}
                   onPersistPosition={persist}
                   layerFilter={layerFilter}
+                  transactions={transactions}
                 />
               )}
               <ToastStack notifications={notifications} onDismiss={dismiss} />
