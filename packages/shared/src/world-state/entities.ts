@@ -349,6 +349,18 @@ export interface TransactionEntity {
   status: "pending" | "included" | "failed";
   blockHash?: string;
   /**
+   * この tx が使った送信元アカウントの通し番号（送信順序を示す連番。
+   * WalletEntity.nonce は「次に使う値」、こちらは「この tx が消費した値」）。
+   * アダプタが tx 本体を観測できた場合のみ入る（Ethereum アダプタでは
+   * pending 検知時の tx 詳細取得から得る。pending を経ずブロック取り込み
+   * だけを観測した tx では、取り込み結果（receipt 相当）に含まれないため
+   * 省略されることがある。contractCall と同じ性質）。省略 = 情報なしで、
+   * フロントは nonce 表示自体を出さない側に倒す。旧スナップショットとの
+   * 互換のためにも optional とする。値 0 は「最初の送信」という意味のある
+   * 観測値であり、省略と取り違えないこと（Issue #319）。
+   */
+  nonce?: number;
+  /**
    * この tx がコントラクト関数呼び出しである場合の呼び出し内容。追跡中の
    * コントラクト宛てで、かつ入力データを観測できた場合のみ入る（pending を
    * 経ずブロック取り込みだけを観測した tx では省略されることがある）。

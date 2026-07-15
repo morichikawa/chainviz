@@ -947,6 +947,45 @@ describe("world-state entities", () => {
     expect(dangling.drivesNodeId).toBe("node-does-not-exist");
   });
 
+  it("carries the tx nonce across JSON, preserving a falsy 0 (最初の送信)", () => {
+    // Issue #319: nonce は「この tx が消費した送信元アカウントの通し番号」。
+    // 0 は「そのアカウントの最初の送信」という意味のある観測値で、falsy でも
+    // JSON 往復でキーごと欠落しないことを確認する。
+    const firstSend: TransactionEntity = {
+      kind: "transaction",
+      hash: "0x1111",
+      from: "0x0000000000000000000000000000000000a11ce",
+      to: "0x0000000000000000000000000000000000000b0b",
+      status: "pending",
+      nonce: 0,
+    };
+    const serialized = JSON.stringify(firstSend);
+    expect(serialized).toContain('"nonce":0');
+    const roundTripped = JSON.parse(serialized) as TransactionEntity;
+    expect(roundTripped.nonce).toBe(0);
+    expect(roundTripped.nonce).not.toBeUndefined();
+  });
+
+  it("treats an omitted tx nonce as unobserved (旧スナップショット・取り込みのみ観測)", () => {
+    // pending を経ずブロック取り込みだけを観測した tx（receipt 相当に nonce は
+    // 含まれない）や旧スナップショットでは省略される。JSON.stringify が
+    // undefined を落とすためキー自体が現れず、フロントは nonce 表示を出さない
+    // 側に安全に倒れる（contractCall の省略と同じ流儀）。
+    const inclusionOnly: TransactionEntity = {
+      kind: "transaction",
+      hash: "0x2222",
+      from: "0x0000000000000000000000000000000000a11ce",
+      to: "0x0000000000000000000000000000000000000b0b",
+      status: "included",
+      blockHash: "0xabc",
+      nonce: undefined,
+    };
+    const serialized = JSON.stringify(inclusionOnly);
+    expect(serialized).not.toContain("nonce");
+    const parsed = JSON.parse(serialized) as TransactionEntity;
+    expect(parsed.nonce).toBeUndefined();
+  });
+
   it("distinguishes an included tx with no events (empty array) from an undecoded tx", () => {
     // ブロック取り込み確定後にイベントが 1 件も無い tx は contractEvents: []。
     // これは「まだ確定前でイベント情報が無い（省略）」と意味が異なる。
