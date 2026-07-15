@@ -79,6 +79,7 @@ function cardData(txs: TransactionEntity[]): WalletFlowNode["data"] {
   return {
     entity: wallet({ recentTxHashes: txs.map((t) => t.hash) }),
     transactions: txs,
+    popoverTransactions: txs,
     settlingHashes: [],
     ownerPresent: true,
     contractsByAddress: new Map(),

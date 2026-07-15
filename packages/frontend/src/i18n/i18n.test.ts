@@ -183,6 +183,20 @@ describe("operation panel message keys (Issue #167)", () => {
   });
 });
 
+describe("wallet tx history message keys (Issue #320)", () => {
+  it("has non-empty, distinct ja/en translations for wallet.recentTxCount", () => {
+    const entry = messages["wallet.recentTxCount"];
+    expect(entry.ja.length).toBeGreaterThan(0);
+    expect(entry.en.length).toBeGreaterThan(0);
+    expect(entry.ja).not.toBe(entry.en);
+  });
+
+  it("keeps the {count} placeholder in both languages of wallet.recentTxCount", () => {
+    expect(messages["wallet.recentTxCount"].ja).toContain("{count}");
+    expect(messages["wallet.recentTxCount"].en).toContain("{count}");
+  });
+});
+
 describe("format", () => {
   it("replaces a single placeholder", () => {
     expect(format("hello {name}", { name: "world" })).toBe("hello world");

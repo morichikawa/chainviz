@@ -195,6 +195,7 @@ describe("PopoverPortal is applied consistently to all 8 hover popovers (Issue #
     const data = {
       entity: wallet({ recentTxHashes: [t.hash] }),
       transactions: [t],
+      popoverTransactions: [t],
       settlingHashes: [],
       ownerPresent: true,
       contractsByAddress: new Map(),

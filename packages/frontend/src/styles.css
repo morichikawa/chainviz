@@ -1407,6 +1407,47 @@ body {
   white-space: nowrap;
 }
 
+/* --- C層拡張: WalletPopover の tx 一覧をスクロールで遡れるようにする
+   （Issue #320）。`.infra-popover` と併記して使う修飾クラスで、ポップオーバー
+   全体の横幅をトークン残高・呼び出しプレビュー行と揃えるために固定する。 --- */
+.wallet-popover {
+  max-width: 360px;
+}
+
+.wallet-popover__tx-list {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 220px;
+  overflow-y: auto;
+  /* Firefox: 常時細いスクロールバーを表示する。 */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+/* WebKit / Blink 系: Firefox の scrollbar-width と同等の見た目を常時表示する。 */
+.wallet-popover__tx-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.wallet-popover__tx-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.wallet-popover__tx-list::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.wallet-popover__tx-item {
+  padding: 3px 0;
+  border-bottom: 1px solid var(--divider);
+}
+
+.wallet-popover__tx-item:last-child {
+  border-bottom: none;
+}
+
 /* --- 用語インライン解説 --- */
 .glossary-term {
   position: relative;

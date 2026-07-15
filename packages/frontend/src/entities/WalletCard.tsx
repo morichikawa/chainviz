@@ -81,8 +81,14 @@ function TxChip({ tx, isSettling }: { tx: TransactionEntity; isSettling: boolean
  * 参照）。
  */
 export function WalletCard({ data }: NodeProps<WalletFlowNode>) {
-  const { entity, transactions, settlingHashes, ownerPresent, contractsByAddress } =
-    data;
+  const {
+    entity,
+    transactions,
+    popoverTransactions,
+    settlingHashes,
+    ownerPresent,
+    contractsByAddress,
+  } = data;
   const { t } = useLanguage();
   // Issue #221: 隙間を通過する一瞬の mouseleave で消えないよう遅延クローズ。
   const { isOpen: hovered, onMouseEnter, onMouseLeave } = useHoverPopover();
@@ -193,7 +199,7 @@ export function WalletCard({ data }: NodeProps<WalletFlowNode>) {
         <WalletPopover
           anchorRef={cardRef}
           entity={entity}
-          transactions={transactions}
+          transactions={popoverTransactions}
           contractsByAddress={contractsByAddress}
         />
       )}

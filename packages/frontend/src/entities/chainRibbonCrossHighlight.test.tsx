@@ -89,6 +89,7 @@ function walletData(): WalletFlowNode["data"] {
   return {
     entity: wallet(),
     transactions: [tx()],
+    popoverTransactions: [tx()],
     settlingHashes: [],
     ownerPresent: true,
     contractsByAddress: new Map(),

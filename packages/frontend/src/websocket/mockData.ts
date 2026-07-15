@@ -211,6 +211,13 @@ const BOB_UNTRACKED_TOKEN_BALANCE_WEI = ethWei(999n);
 /** Alice ウォレットの初期状態（createMockSnapshot と live 更新で共有）。 */
 const INITIAL_ALICE_NONCE = 3;
 const INITIAL_ALICE_BALANCE_WEI = 5n * 10n ** 18n;
+/**
+ * Alice の `recentTxHashes` をモック live 更新（advanceTxLifecycle）で
+ * 何件まで保持するか。Issue #320（WalletPopover のスクロール対応）を
+ * モックモード（オフライン）でも確認できるよう、フロントのカード表示件数
+ * （`DEFAULT_RECENT_TX_LIMIT` = 6）より十分多い値にしている。
+ */
+const MOCK_ALICE_RECENT_TX_LIMIT = 20;
 
 const workbench: WorkbenchEntity = {
   kind: "workbench",
@@ -1096,8 +1103,8 @@ export function createMockClient(
     diffs.push({ type: "entityAdded", entity: tx });
 
     const nextRecent = [hash, ...aliceRecent];
-    const overflow = nextRecent.slice(6);
-    aliceRecent = nextRecent.slice(0, 6);
+    const overflow = nextRecent.slice(MOCK_ALICE_RECENT_TX_LIMIT);
+    aliceRecent = nextRecent.slice(0, MOCK_ALICE_RECENT_TX_LIMIT);
     diffs.push({
       type: "entityUpdated",
       id: ALICE_WALLET,
