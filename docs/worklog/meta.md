@@ -1894,7 +1894,7 @@
   (`docs/`配下・`.claude/agents/`配下のみの変更は`chainviz-reviewer`の
   合格のみで`chainviz-qa`を省略してよい)に従い、レビューのみを通す。
 
-### 2026-07-13 サブエージェントのモデル指定をopusからfableへ再度戻す
+### 2026-07-15 サブエージェントのモデル指定をopusからfableへ再度戻す
 
 - 担当: 統括
 - ブランチ: chore-agent-model-fable
