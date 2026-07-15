@@ -379,3 +379,73 @@ eth_getTransactionByHash レスポンス（nonce: "0x3"）
   発生しない）。将来 `normalizeNonce` を厳格化する場合はテストが検知する。
 - `docs/PLAN.md` のチェックボックスは未更新（QA・マージ後に統括が更新する
   想定と worklog に記載あり）。
+
+## QA検証記録（chainviz-qa 検証大地）
+
+実施日: 2026-07-16。ブランチ `issue-319-tx-nonce-display-frontend` を
+既存worktree上で実際に起動して検証した。
+
+### 検証環境
+
+- `scripts/dev-up.sh` で起動。docker スタックは他worktreeと共有中の
+  `chainviz-ethereum`（同一プロジェクト名）を再利用（新規 `docker compose up` は
+  走らせていない）。collector を本ブランチの dist（build-commit ea4865d、
+  以降は docs のみのため collector ソースを反映）から port 4000 で起動、
+  frontend(vite) を port 5173 で起動。いずれも既存の他worktreeプロセスと
+  ポート衝突なし。
+- 検証後は `scripts/dev-down.sh`（--docker なし）で collector/frontend のみ停止し、
+  共有 docker スタックは残した。
+
+### 検証内容と結果
+
+WebSocket（ws://127.0.0.1:4000）に接続し、`runWorkbenchOperation`(transfer)で
+実際に tx を送信して、collector が配信する TransactionEntity を live で観測した。
+
+1. 環境起動: docker/collector/frontend いずれも正常起動。collector ログに
+   pending 検知・inclusion 観測・ブロック進行を確認。合格。
+2. tx 送信 → nonce 付与: ワークベンチウォレット(0x2BB7…)から連続送信した
+   tx が、いずれも `entityAdded` の TransactionEntity として `nonce` 付きで
+   届いた（例: nonce=8,9,10,11,12）。合格。
+3. nonce 値が送信順に増加: 5連続送信で nonce が 8→9→10→11→12 と
+   送信順に単調増加することを実データで確認。ウォレットの現在 nonce の
+   進行とも整合。合格。
+4. 送信 tx 限定の仕様（受信側では非表示）: フロントの表示条件
+   `tx.nonce !== undefined && tx.from.toLowerCase() === walletAddress` に
+   より、受信 tx（tx.from が別ウォレット）では nonce span を出さない。
+   この分岐は WalletPopover.nonce.test.tsx（受信 tx で testid が出ない・
+   送受信混在で送信 tx のみ表示）で網羅され、9件全パス。TransactionEntity
+   自体は送信元の nonce を常に保持しており、フロント側で from 一致時のみ
+   描画する実装であることを確認。合格。
+5. nonce 0 の表示: addWorkbench で新規ウォレット(0xfCd9…, nonce 0)を作り、
+   その初回送信 tx を観測。TransactionEntity.nonce が number 型の 0 として
+   届く（typeof=number, value=0）ことを確認。省略（undefined）と取り違えず
+   保持されている。フロントの「nonce 0 を表示」テストも通過。合格。
+
+### フロント描画（実ブラウザ）についての注記
+
+本環境（WSL）は Playwright の chromium が依存する system ライブラリ
+（libnspr4.so 等）を欠くためヘッドレスブラウザを起動できず、実ブラウザでの
+ホバー→WalletPopover の DOM 目視確認はできなかった（環境制約であり実装の
+問題ではない）。代替として、実コンポーネントを DOM へ描画する
+WalletPopover.nonce.test.tsx（testing-library, 9ケース）が hash 直後・
+status チップ前の span 配置、`t("field.nonce")`+値の文言（"nonce 0"/"nonce 10"）、
+送受信の出し分け、大文字小文字非依存、nonce 0 表示までを網羅しており全パス。
+i18n ラベル（field.nonce: ja "nonce" / en "Nonce"）・CSS クラス
+（.wallet-popover__tx-nonce）・DOM 上の配置順（hash → nonce → status）も
+ソースで確認済み。
+
+### 判定
+
+Issue #319 の「期待する対応（tx 一覧の各項目に nonce 値を表示する）」を
+満たしていると判断する（合格）。データ側（collector → shared → WS 配信）は
+実環境で live に検証済み、フロント描画は実コンポーネントの単体テストで検証済み。
+
+### 申し送り
+
+- `docs/PLAN.md` 773行目の #319 チェックボックスは未更新のまま。マージ後に
+  統括が更新する運用（worklog 上部の記載どおり）。
+- 検証中に `removeWorkbench` が addWorkbench で追加したはずのワークベンチに
+  対し「was not added via addWorkbench and cannot be removed」を返す挙動を
+  観測したが、これは #319 と無関係。対応する docker コンテナは残っておらず
+  実害なし（collector 停止で該当エンティティも消える）。気になる場合は
+  別 Issue として切り分け推奨。
