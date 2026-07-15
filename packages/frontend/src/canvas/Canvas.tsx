@@ -381,8 +381,13 @@ function CanvasInner({
       {/* colorMode="dark" にすると React Flow が --xy-background-color-default
           (#141414) を定義し、Background 既定色がその無彩色グレーになる。
           アプリのパレット（紺色 --bg #0f1420）から色相が外れるため、
-          bgColor を明示してキャンバス背景をアプリ側と揃える（Issue #32）。 */}
-      <Background bgColor="var(--bg)" />
+          bgColor を明示してキャンバス背景をアプリ側と揃えていた（Issue #32）。
+          Issue #327 では「静かな夜のガラス」デザインの一環でキャンバス実背景に
+          淡い色光のラジアルグラデーションを敷くため、bgColor は transparent に
+          し、実際の塗りは styles.css の `.app__canvas .react-flow` に持たせる
+          （そちらのコメントで `.react-flow` 自体が敷く #141414 の上書きも
+          説明している）。 */}
+      <Background bgColor="transparent" />
       <Controls />
       <MiniMap pannable zoomable />
       <PeerNetworkLegend edges={peerEdges} />
