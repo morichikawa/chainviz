@@ -790,10 +790,9 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       待ち時間前提・Issue #286のgenesis年齢判定閾値への影響を要確認。
       着手時はまずchainviz-designerの設計から)
       [#322](https://github.com/morichikawa/chainviz/issues/322)
-- [ ] dev-up.shがdist鮮度の警告のみでpnpm buildを自動実行しない
+- [x] dev-up.shがdist鮮度の警告のみでpnpm buildを自動実行しない
       (check_build_freshnessがdist古と判定した場合に自動でpnpm buildを
-      実行するよう変更する。dist/が存在しない場合と同様の自動化。着手は
-      後日)
+      実行するよう変更した。dist/が存在しない場合と同様の自動化)
       [#325](https://github.com/morichikawa/chainviz/issues/325)
 - [ ] UI全体に透明感・グラデーションを意識したビジュアルデザインを
       取り入れる
