@@ -233,3 +233,48 @@
   `pnpm --filter @chainviz/frontend test`(143ファイル/2136件)がいずれも成功。
   `npx eslint` を変更したテストファイルに対して実行しエラー無しを確認した
 - 実装バグの疑いは検出されなかった(実装は変更していない)
+
+### 2026-07-16 Issue #328 実装レビュー
+- 担当: reviewer
+- ブランチ: issue-328-drag-position-jitter(コミット3件をレビュー)
+- 内容: `preserveDraggingState` の追加と Canvas.tsx への適用、テスト強化
+  (計15ケース)、worklog/PLAN.md 更新をレビューした。結果は**合格**
+- 確認したこと:
+  - 実装の正しさ: `previous` 側で `dragging === true` のノードのみ
+    `position`・`dragging`・`selected` を引き継ぎ、`data` は常に `next` を
+    使う純粋関数。id ベースの突き合わせで next に無いノードを復活させず、
+    next の順序・他ノードの参照同一性も保つ。detective が特定した根本原因
+    (useEffect による rfNodes 丸ごと置き換えでのドラッグ状態破棄)に
+    過不足なく対応している
+  - 合成の妥当性: `preserveDraggingState(preserveMeasuredDimensions(nodes, current), current)`
+    は両関数が触るフィールドが独立(measured vs position/dragging/selected)
+    しており順序依存が無い。合成テストでも measured/position/data がそれぞれ
+    意図した側から来ることを検証済み
+  - 設計判断: `onNodeDragStart`/`onNodeDragStop` での独自 id 追跡を避け、
+    `applyNodeChanges` が反映する `dragging`/`selected` フラグを信頼する
+    判断は妥当。React Flow 内部実装の該当箇所まで確認した根拠が worklog に
+    記録されており、二重管理によるズレの温床を作らない
+  - テストの回帰検出力: レビュー側でも `preserveDraggingState` を一時的に
+    no-op(`return next`)へ差し替えて実行し、37ケース中8ケースが実際に
+    失敗すること、復元後に全件通ることを独立に確認した(worklog の実装担当・
+    tester の確認記録とも整合)
+  - リポジトリ全体で `pnpm lint` / `pnpm build` / `pnpm test` を実行し
+    全件通過(frontend は 143ファイル/2136件)
+  - コミット粒度: fix(実装+基本テスト)/docs(worklog+PLAN.md)/test(強化)の
+    3コミットに分かれており、1変更1コミットの規約に沿う。fix コミットに
+    `Closes #328` が含まれる
+  - エラー握りつぶし・環境依存の固定値: 該当なし(純粋関数のみで catch も
+    タイムアウト定数も無い。「約2秒周期」はコメント内の背景説明であり
+    コード上の定数ではない)
+  - 境界・チェーンプロファイル独立性: frontend 内で完結し、チェーン固有
+    語彙の漏れも無い
+- 決定事項・注意点:
+  - 実機(Playwright)確認の見送りは妥当と判断した。並行 worktree が同一
+    Docker デーモンを共有しており `dev-up.sh` 再実行が他セッションの
+    スタックを壊すおそれがあるため。実機での最終確認は chainviz-qa の
+    通常工程に委ねる(レビュー側でも同じ理由で実機起動は行っていない)
+  - 既知の残課題(本Issueのスコープ外): クリックで選択しただけ(ドラッグ中で
+    ない)のノードの `selected` は、従来どおり WebSocket 更新のたびに失われる。
+    現状 `selected` を読んで見た目を変えるカードは無く React Flow 標準の
+    選択枠が消えるのみだが、将来 `selected` に依存する機能を足す際は
+    ドラッグ中以外の保全も必要になる
