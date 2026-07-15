@@ -169,3 +169,35 @@
 - 確認: `pnpm --filter @chainviz/frontend build`・
   `pnpm --filter @chainviz/frontend test`（145ファイル / 2150件、全通過）・
   `eslint`（変更ファイルのみ対象、警告なし）。
+
+## テスト強化（chainviz-tester）
+
+実装担当が書いた基本テスト（ハッピーパス中心）に、異常系・境界値の
+観点でケースを追加した。新機能の実装・既存ロジックの変更は行っていない。
+
+- `mempoolList.test.ts`（純粋関数、+14件）:
+  - `buildMempoolTxEntries`: 空入力、入力順の保持、`fromIsWallet` が
+    大文字小文字を区別する完全一致であること（from とウォレット id 集合が
+    同じ casing である前提を固定）、from が空文字のときの `fromIsWallet` の
+    両分岐。
+  - `sortMempoolTxEntriesByAppearance`: 空入力、同一 order 値を持つ行の
+    安定順序、全 hash が order マップに無いときの挿入順維持。
+  - `limitMempoolTxEntries`: 0 件入力、境界の 9 件（→8件表示・overflow 1）、
+    limit=0（全件 overflow）、切り出し時に入力配列を破壊しないこと。
+  - `buildMempoolNodeEntries`: 空ノード列、`internals` はあるが `mempool`
+    が無いノードの除外、mempool 報告ノードと非報告ノードが混在する場合の
+    絞り込み、同一件数のノードでも入力順が保たれること。
+- `MempoolPanel.test.tsx`（コンポーネント、+4件）:
+  - 非ウォレット行の from が空文字でもクラッシュせず静的行として描画され
+    クリックで `onSelectTx` を呼ばないこと。
+  - 複数行が渡された順に描画されること。
+  - 0 件（空状態）では `overflowCount > 0` でも overflow ヒントを出さない
+    こと（overflow 表示が非空分岐の内側にあることの回帰防止）。
+  - tx が 0 件でもノード別セクションは描画され、空メッセージとノード行が
+    共存すること。同一件数のノードが別々の行として描画されること。
+- `Canvas.tsx` の `handleJumpToMempoolTx`（対象カードが消えている場合の
+  `getNode` 未存在防御）は、React Flow の実レンダリングを要し既存の
+  `handleJumpToContract` と同様に単体テスト対象外とする既存方針を踏襲。
+  非クリック行が `onSelectTx` を呼ばないことはパネル単体テストで担保済み。
+- 確認: `pnpm --filter @chainviz/frontend test`（145ファイル / 2170件、
+  全通過）・`pnpm --filter @chainviz/frontend build`（成功）。
