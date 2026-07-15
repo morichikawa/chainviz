@@ -1893,3 +1893,15 @@
   コード・スキーマへの影響は無い。CLAUDE.mdの例外規定
   (`docs/`配下・`.claude/agents/`配下のみの変更は`chainviz-reviewer`の
   合格のみで`chainviz-qa`を省略してよい)に従い、レビューのみを通す。
+
+### 2026-07-15 サブエージェントのモデル指定をopusからfableへ再度戻す
+
+- 担当: 統括
+- ブランチ: chore-agent-model-fable
+- 内容: ユーザーからの指示で、上記でopusへ変更した同じ4エージェント定義
+  (chainviz-detective・chainviz-reviewer・chainviz-designer・
+  chainviz-ux)を `model: fable` へ戻した。fableの課金体系についての
+  ユーザー側の認識更新(従量課金制ではないとのこと)を受けた判断。
+  他のエージェント定義には変更なし。
+- 決定事項・注意点: 前回同様frontmatterのみの変更。CLAUDE.mdの例外規定に
+  従いレビューのみを通す。
