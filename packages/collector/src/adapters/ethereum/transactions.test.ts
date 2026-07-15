@@ -479,6 +479,66 @@ describe("TransactionLifecycleTracker.recordInclusion contractCall/contractEvent
   });
 });
 
+describe("TransactionLifecycleTracker.recordPending nonce (Issue #319)", () => {
+  it("attaches the observed nonce", () => {
+    const tracker = new TransactionLifecycleTracker();
+    const entity = tracker.recordPending({
+      hash: "0xt1",
+      from: "0xa",
+      to: "0xb",
+      nonce: 5,
+    });
+    expect(entity?.nonce).toBe(5);
+  });
+
+  it("attaches nonce 0 as a meaningful value, not an omission", () => {
+    const tracker = new TransactionLifecycleTracker();
+    const entity = tracker.recordPending({
+      hash: "0xt1",
+      from: "0xa",
+      to: "0xb",
+      nonce: 0,
+    });
+    expect(entity).toHaveProperty("nonce", 0);
+  });
+
+  it("omits nonce when not provided (tx detail unavailable)", () => {
+    const tracker = new TransactionLifecycleTracker();
+    const entity = tracker.recordPending({ hash: "0xt1", from: "0xa", to: "0xb" });
+    expect(entity).not.toHaveProperty("nonce");
+  });
+});
+
+describe("TransactionLifecycleTracker.recordInclusion nonce (Issue #319)", () => {
+  it("carries forward the nonce recorded at pending time when a tx is included", () => {
+    const tracker = new TransactionLifecycleTracker();
+    tracker.recordPending({ hash: "0xt1", from: "0xa", to: "0xb", nonce: 7 });
+    const changed = tracker.recordInclusion("0xblock", [
+      { hash: "0xt1", from: "0xa", to: "0xb", status: "included" },
+    ]);
+    expect(changed[0].nonce).toBe(7);
+  });
+
+  it("carries forward a pending nonce of 0 (falsy-but-meaningful value)", () => {
+    const tracker = new TransactionLifecycleTracker();
+    tracker.recordPending({ hash: "0xt1", from: "0xa", to: "0xb", nonce: 0 });
+    const changed = tracker.recordInclusion("0xblock", [
+      { hash: "0xt1", from: "0xa", to: "0xb", status: "included" },
+    ]);
+    expect(changed[0]).toHaveProperty("nonce", 0);
+  });
+
+  it("does not invent a nonce for a tx that was never observed pending (pending-skip constraint)", () => {
+    // pending を経ずに取り込みだけを観測した tx は receipt に nonce が含まれ
+    // ないため付与できない（Issue #86 の方針。追加 RPC で埋めない）。
+    const tracker = new TransactionLifecycleTracker();
+    const changed = tracker.recordInclusion("0xblock", [
+      { hash: "0xnew", from: "0xa", to: "0xb", status: "included" },
+    ]);
+    expect(changed[0]).not.toHaveProperty("nonce");
+  });
+});
+
 describe("TransactionLifecycleTracker eviction", () => {
   it("drops the oldest tracked txs once maxTxs is exceeded", () => {
     const tracker = new TransactionLifecycleTracker(2);

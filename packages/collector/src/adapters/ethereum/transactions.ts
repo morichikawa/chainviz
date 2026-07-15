@@ -21,6 +21,15 @@ export interface TxDetail {
    * または input に関数セレクタが無い場合は省略する（Issue #162）。
    */
   contractCall?: ContractCall;
+  /**
+   * この tx が使った送信元アカウントの通し番号（Issue #319）。呼び出し側
+   * （EthereumAdapter）が pending 検知時に eth_getTransactionByHash から
+   * 取得した RpcTransaction.nonce をそのまま渡す。tx 詳細を観測できな
+   * かった（取り込みのみ観測）場合は省略する。値 0 は「最初の送信」という
+   * 意味のある観測値であり、省略と区別する（TransactionEntity.nonce と
+   * 同じ判定方針。falsy 判定禁止）。
+   */
+  nonce?: number;
 }
 
 /** ブロック取り込み時に確定した tx の情報（from/to に加え確定ステータスを持つ）。 */
@@ -66,6 +75,7 @@ export class TransactionLifecycleTracker {
       from: detail.from,
       to: detail.to,
       status: "pending",
+      ...(detail.nonce !== undefined ? { nonce: detail.nonce } : {}),
       ...(detail.contractCall ? { contractCall: detail.contractCall } : {}),
     };
     this.put(entity);
@@ -86,6 +96,12 @@ export class TransactionLifecycleTracker {
    * createdContractAddress として entity に載せる。一度確定した作成先アドレスは
    * ブロックが変わらない限り変化しないため、以後の重複通知で省略されても
    * （= undefined/null が来ても）既存の値を保持する（from/to の扱いと同様）。
+   *
+   * nonce（Issue #319）は pending 検知時にしか観測できない（receipt には
+   * 含まれない）ため、既存値をそのまま引き継ぐ（tx.nonce は常に undefined
+   * だが、from/to・createdContractAddress と同じ「既存優先」の流儀で書く）。
+   * pending を経ず取り込みだけを観測した tx は nonce 省略のままとなる
+   * （意図的にブロックあたりの RPC を増やさない。Issue #86 の方針）。
    *
    * contractCall（pending 検知時にカタログ ABI で復号した関数呼び出し。
    * Issue #162）は、ここでは再計算せず既存の値をそのまま引き継ぐ（inclusion
@@ -110,6 +126,10 @@ export class TransactionLifecycleTracker {
         continue;
       }
       const createdContractAddress = tx.contractAddress ?? existing?.createdContractAddress;
+      // nonce は pending 検知時にしか観測できない（receipt には含まれない）ため
+      // 既存値を優先する。tx.nonce は常に undefined だが、from/to と同じ
+      // 「既存優先」の流儀に揃えるため existing?.nonce ?? tx.nonce の形で書く。
+      const nonce = existing?.nonce ?? tx.nonce;
       const entity: TransactionEntity = {
         kind: "transaction",
         hash: tx.hash,
@@ -118,6 +138,7 @@ export class TransactionLifecycleTracker {
         to: existing ? existing.to : tx.to,
         status: tx.status,
         blockHash,
+        ...(nonce !== undefined ? { nonce } : {}),
         ...(createdContractAddress ? { createdContractAddress } : {}),
         ...(existing?.contractCall ? { contractCall: existing.contractCall } : {}),
         ...(tx.contractEvents && tx.contractEvents.length > 0

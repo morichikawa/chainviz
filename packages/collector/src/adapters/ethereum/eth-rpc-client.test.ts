@@ -210,6 +210,8 @@ describe("getTransactionByHash", () => {
         from: "0xsender",
         to: "0xrecipient",
         input: "0xa9059cbb",
+        // nonce: "0x0" は数値の 0 になる（省略ではなく明示的な値。Issue #319）。
+        nonce: 0,
       },
     );
     // JSON-RPC の method/params が正しく組まれている。
@@ -301,6 +303,125 @@ describe("getTransactionByHash", () => {
       const rpc = createFetchEthRpcClient();
       const result = await getTransactionByHash(rpc, "http://x", "0xtx");
       expect(result?.input).toBe(input);
+    });
+  });
+
+  describe("nonce (sender account tx counter, Issue #319)", () => {
+    it("normalizes a hex nonce into a number", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          fakeResponse({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              result: {
+                hash: "0xtx",
+                from: "0xsender",
+                to: "0xrecipient",
+                nonce: "0x2a",
+              },
+            }),
+          }),
+        ),
+      );
+      const rpc = createFetchEthRpcClient();
+      const result = await getTransactionByHash(rpc, "http://x", "0xtx");
+      expect(result?.nonce).toBe(42);
+    });
+
+    it("normalizes '0x0' to 0 (a meaningful value, not omission)", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          fakeResponse({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              result: {
+                hash: "0xtx",
+                from: "0xsender",
+                to: "0xrecipient",
+                nonce: "0x0",
+              },
+            }),
+          }),
+        ),
+      );
+      const rpc = createFetchEthRpcClient();
+      const result = await getTransactionByHash(rpc, "http://x", "0xtx");
+      expect(result?.nonce).toBe(0);
+      expect(result).toHaveProperty("nonce");
+    });
+
+    it("omits nonce when the field is missing (not an error)", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          fakeResponse({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              result: { hash: "0xtx", from: "0xsender", to: "0xrecipient" },
+            }),
+          }),
+        ),
+      );
+      const rpc = createFetchEthRpcClient();
+      const result = await getTransactionByHash(rpc, "http://x", "0xtx");
+      expect(result).not.toHaveProperty("nonce");
+    });
+
+    it("omits nonce and logs when the field is not a string (defensive)", async () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          fakeResponse({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              result: {
+                hash: "0xtx",
+                from: "0xsender",
+                to: "0xrecipient",
+                nonce: 42,
+              },
+            }),
+          }),
+        ),
+      );
+      const rpc = createFetchEthRpcClient();
+      const result = await getTransactionByHash(rpc, "http://x", "0xtx");
+      expect(result).not.toHaveProperty("nonce");
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      expect(errorSpy.mock.calls[0]?.[0]).toContain("0xtx");
+    });
+
+    it("omits nonce and logs when the value is unparsable as BigInt (defensive)", async () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          fakeResponse({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              result: {
+                hash: "0xtx",
+                from: "0xsender",
+                to: "0xrecipient",
+                nonce: "not-a-hex-number",
+              },
+            }),
+          }),
+        ),
+      );
+      const rpc = createFetchEthRpcClient();
+      const result = await getTransactionByHash(rpc, "http://x", "0xtx");
+      expect(result).not.toHaveProperty("nonce");
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      expect(errorSpy.mock.calls[0]?.[0]).toContain("0xtx");
     });
   });
 
