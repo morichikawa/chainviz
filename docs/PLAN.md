@@ -770,6 +770,26 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       chainviz-uxのUX設計から。Issue #313(用語集パネル)とパネル機構を
       共有できないか検討の余地あり)
       [#317](https://github.com/morichikawa/chainviz/issues/317)
+- [ ] ウォレットのtx履歴に各txのnonce値が表示されず送信順序が追いにくい
+      (nonceは現在値が1つ表示されるのみで、各tx項目には表示されていない。
+      packages/sharedの型追加・collector側の観測追加が必要になる可能性あり)
+      [#319](https://github.com/morichikawa/chainviz/issues/319)
+- [ ] ウォレットのtx履歴が直近6件に固定されスクロールで遡れない
+      (DEFAULT_RECENT_TX_LIMIT=6件で絞られスクロール未対応。着手時はまず
+      chainviz-uxまたはchainviz-designerの設計から。#319と同じ
+      WalletPopoverTxItemを触るため実装順序の調整を検討)
+      [#320](https://github.com/morichikawa/chainviz/issues/320)
+- [ ] デプロイされたコントラクトのソースコードを直接見れるようにする
+      (現状ABI・カタログ情報のみで、Solidityソース自体は見られない。
+      着手時はまずchainviz-designerの設計から。#313/#317と同様の別パネル
+      UIの共有を検討する余地あり)
+      [#321](https://github.com/morichikawa/chainviz/issues/321)
+- [ ] slot timeを現実のEthereum値(12秒)に戻し、ブロック生成タイミングの
+      インジケータを追加する
+      (現状2秒に短縮しているが非現実的で混乱を招く懸念。E2Eテストの
+      待ち時間前提・Issue #286のgenesis年齢判定閾値への影響を要確認。
+      着手時はまずchainviz-designerの設計から)
+      [#322](https://github.com/morichikawa/chainviz/issues/322)
 
 ## 運用ルール（全ステップ共通）
 
