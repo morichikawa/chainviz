@@ -201,3 +201,68 @@
   非クリック行が `onSelectTx` を呼ばないことはパネル単体テストで担保済み。
 - 確認: `pnpm --filter @chainviz/frontend test`（145ファイル / 2170件、
   全通過）・`pnpm --filter @chainviz/frontend build`（成功）。
+
+## レビュー（chainviz-reviewer）
+
+### 2026-07-16 静的レビュー: 差し戻し（要修正1件）
+
+- 担当: reviewer
+- 確認内容: 設計メモ・ARCHITECTURE.md §11 との整合、mempoolList.ts の純関数
+  ロジック、MempoolPanel の常設表示仕様、Canvas.tsx の配線とレイアウト、
+  glossary 導線、i18n（ja/en）、エラー握りつぶしの有無、コミット粒度、
+  `pnpm lint` / `pnpm build` / `pnpm test`（145ファイル / 2170件）の再実行
+  （全通過）。
+
+#### 要修正: `fromIsWallet` のアドレス表記照合バグ（機能が実環境で死ぬ）
+
+- `buildMempoolTxEntries`（`mempoolList.ts:43`）は `walletIds.has(tx.from)`
+  の大文字小文字を区別する完全一致で照合しているが、両者の表記は実環境では
+  一致しない:
+  - `TransactionEntity.from` は RPC 由来の全小文字。collector は casing を
+    正規化しない（`eth-rpc-client.ts` の `normalizeTransaction` は素通し）
+  - ウォレットカードの id（= `WalletEntity.address`）は viem
+    `mnemonicToAccount` 由来の EIP-55 チェックサム表記（大文字混じり。
+    `wallet-derivation.ts`）
+- そのため実環境では全行が `fromIsWallet: false` になり非クリック化し、
+  「行クリックで送信元ウォレットへパン」（§11.3）が常に機能しない。
+  仮に一致しても `Canvas.tsx` の `handleJumpToMempoolTx` が小文字の from を
+  そのまま `getNode` に渡すため、チェックサム表記 id のウォレットカードは
+  見つからない（二重に壊れている）
+- これは Issue #201 / #232 で既に2回起きた既知のバグパターンで、
+  `packages/frontend/src/entities/addressCasing.ts`（`resolvePresentId` /
+  `buildLowerCaseIndex`）がまさにこの照合のために存在する（同ファイル冒頭
+  コメントが「単純な文字列一致(Set.has等)では常に不一致になり」と明記）。
+  collector の store 側も同じ理由で `linkTransactionToWallets`
+  （`store.ts:311-321`）で小文字化して比較している
+- tester が追加したテスト（`mempoolList.test.ts` の「matches fromIsWallet
+  case-sensitively」）は「両者は collector 側で同じ casing に正規化済みの
+  前提」を固定しているが、この前提は事実に反する（そのような正規化は
+  存在しない）。壊れた挙動を仕様として固定するテストになっているため、
+  実装と併せて書き換えが必要
+- 修正方針の提案（差し戻し先: chainviz-frontend。テスト書き換え含む）:
+  - `MempoolTxEntry.fromIsWallet: boolean` を、present 側の表記に解決済みの
+    `walletCardId: string | undefined` に置き換える
+  - `buildMempoolTxEntries` は `buildLowerCaseIndex`（addressCasing.ts）で
+    照合し、見つかった present 側の元表記を `walletCardId` に入れる
+  - `MempoolPanel` のクリックは `walletCardId` を `onSelectTx` に渡し、
+    `Canvas.tsx` はそれをそのまま `getNode` へ渡す
+  - テストは「大文字小文字を無視して照合し、present 側の表記に解決する」
+    仕様（deployEdge.ts と同型）を検証する形に改める
+
+#### 上記以外は問題なし
+
+- 設計メモ・§11 との整合: 常設ミニパネル、0 件でも表示（空文言あり）、
+  上段 C層 / 下段 D層 の二段構成、全ノード集約、shared/collector 変更なし、
+  表示上限 8 件 + 「他 n 件」、いずれも設計どおり
+- 「0 件でも常設表示」が ContractListPanel と逆仕様である点は、設計メモに
+  理由（健全な devnet では pending がほぼ常に 0 件のため、消すと見る場所が
+  なくなる）が明記されており妥当と判断
+- `bottom: 385px` は ContractListPanel の実 CSS 値（left:15 / bottom:150 /
+  max-height:220）+ 隙間 15 の導出値で、前提条件が CSS コメントと worklog の
+  両方に明記済み（CLAUDE.md の固定値ルールに適合）。ContractListPanel 側の
+  値を変えるとズレる結合はあるが、コメントで追跡可能な範囲
+- glossary 導線: `mempool`（c-transaction.yaml）・`txpool`（d-internal.yaml）
+  とも用語データが実在し、GlossaryTerm の張り方も既存パネルと同型
+- i18n は ja/en 両方あり。エラー握りつぶし該当なし（純関数のみ、catch なし）
+- コミット粒度: 8 コミット（設計 docs / ロジック / i18n+CSS / パネル+配線 /
+  worklog / テスト2件 / worklog）で関心事ごとに適切に分割
