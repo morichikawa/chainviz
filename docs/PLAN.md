@@ -770,7 +770,7 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       chainviz-uxのUX設計から。Issue #313(用語集パネル)とパネル機構を
       共有できないか検討の余地あり)
       [#317](https://github.com/morichikawa/chainviz/issues/317)
-- [ ] ウォレットのtx履歴に各txのnonce値が表示されず送信順序が追いにくい
+- [x] ウォレットのtx履歴に各txのnonce値が表示されず送信順序が追いにくい
       (nonceは現在値が1つ表示されるのみで、各tx項目には表示されていない。
       packages/sharedの型追加・collector側の観測追加が必要になる可能性あり)
       [#319](https://github.com/morichikawa/chainviz/issues/319)
@@ -790,10 +790,9 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       待ち時間前提・Issue #286のgenesis年齢判定閾値への影響を要確認。
       着手時はまずchainviz-designerの設計から)
       [#322](https://github.com/morichikawa/chainviz/issues/322)
-- [ ] dev-up.shがdist鮮度の警告のみでpnpm buildを自動実行しない
+- [x] dev-up.shがdist鮮度の警告のみでpnpm buildを自動実行しない
       (check_build_freshnessがdist古と判定した場合に自動でpnpm buildを
-      実行するよう変更する。dist/が存在しない場合と同様の自動化。着手は
-      後日)
+      実行するよう変更した。dist/が存在しない場合と同様の自動化)
       [#325](https://github.com/morichikawa/chainviz/issues/325)
 - [ ] UI全体に透明感・グラデーションを意識したビジュアルデザインを
       取り入れる
@@ -801,12 +800,24 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       chainviz-uxで方向性を検討してからchainviz-frontendに引き継ぐ。
       着手は後日)
       [#327](https://github.com/morichikawa/chainviz/issues/327)
-- [ ] ノード/コンポーネントをドラッグ中にWebSocket更新で位置がガクンと
+- [x] ノード/コンポーネントをドラッグ中にWebSocket更新で位置がガクンと
       ずれる/戻る
-      (原因未調査。着手時はまずchainviz-detectiveに原因切り分けを依頼し、
-      特定でき次第標準パイプラインで対応するIssueとして仕切り直す。
-      着手は後日)
+      (chainviz-detectiveが原因を特定: Canvas.tsxのuseEffectが親から渡された
+      nodesでrfNodesを丸ごと置き換え、ドラッグ中のローカルposition・
+      draggingフラグが破棄されていた。preserveMeasuredDimensionsと同系の
+      マージ関数preserveDraggingStateを追加し、ドラッグ中ノードのみ
+      position・dragging・selectedを直前のReact Flow内部状態から引き継ぐ
+      よう修正)
       [#328](https://github.com/morichikawa/chainviz/issues/328)
+- [ ] mempool(未承認tx)全体を俯瞰できるビューが無い
+      (pending txは局所表示のみでmempool全体を見せるビューが無い。
+      設計完了・実装はレビュー指摘の修正中)
+      [#330](https://github.com/morichikawa/chainviz/issues/330)
+- [ ] removeWorkbenchがaddWorkbenchで追加したワークベンチに対しても
+      「追加されていない」エラーを返すことがある
+      (Issue #319のQA検証中に偶発的に観測。再現手順未調査。着手時はまず
+      chainviz-detectiveに原因調査を依頼)
+      [#334](https://github.com/morichikawa/chainviz/issues/334)
 
 ## 運用ルール（全ステップ共通）
 

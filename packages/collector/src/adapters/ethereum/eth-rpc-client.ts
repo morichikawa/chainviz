@@ -25,6 +25,15 @@ export interface RpcTransaction {
    * （呼び出しデータなし）として扱う。
    */
   input: string;
+  /**
+   * 送信元アカウントの通し番号（Issue #319）。レスポンスの nonce（16 進
+   * 文字列）を数値化したもの。フィールドが欠落・非文字列・BigInt 変換
+   * 不能な場合は省略する（tx 全体は捨てず、nonce だけ情報なし扱いにする。
+   * input の "0x" フォールバックと同じ防御的姿勢）。`fetchNonce` と同じ
+   * 変換だが、こちらは「この tx が使った値」であり次に使う値ではない点に
+   * 注意（TransactionEntity.nonce のコメント参照）。
+   */
+  nonce?: number;
 }
 
 /**
@@ -74,6 +83,7 @@ interface RawTransaction {
   from?: unknown;
   to?: unknown;
   input?: unknown;
+  nonce?: unknown;
 }
 
 interface RawReceipt {
@@ -169,6 +179,33 @@ export async function fetchNonce(
   return Number(BigInt(hex));
 }
 
+/**
+ * raw の nonce（16 進文字列のはず）を数値化する（Issue #319）。フィールドが
+ * 欠落しているのは「このノード実装/レスポンスには元々含まれない」という
+ * 正常系なので黙って省略する。一方、フィールドは存在するのに非文字列・
+ * BigInt 変換不能（想定外のノード実装のバグ等）な場合はエラーとしてログを
+ * 残した上で省略する（tx 全体は捨てず、nonce だけ情報なしにする防御的姿勢。
+ * CLAUDE.md「エラーを握りつぶさない」に従い、想定外ケースは必ずログする）。
+ */
+function normalizeNonce(txHash: string, rawNonce: unknown): number | undefined {
+  if (rawNonce === undefined) return undefined;
+  if (typeof rawNonce !== "string") {
+    console.error(
+      `[ethereum] tx ${txHash} has a non-string nonce (${typeof rawNonce}); omitting nonce`,
+    );
+    return undefined;
+  }
+  try {
+    return Number(BigInt(rawNonce));
+  } catch (err) {
+    console.error(
+      `[ethereum] tx ${txHash} has an unparsable nonce "${rawNonce}"; omitting nonce:`,
+      err,
+    );
+    return undefined;
+  }
+}
+
 /** 生の JSON-RPC tx オブジェクトを RpcTransaction へ正規化する（不正なら null）。 */
 function normalizeTransaction(raw: unknown): RpcTransaction | null {
   if (typeof raw !== "object" || raw === null) return null;
@@ -178,7 +215,8 @@ function normalizeTransaction(raw: unknown): RpcTransaction | null {
   // input が欠落・非文字列（想定外のノード実装等）の場合は「呼び出しデータなし」
   // と同じ "0x" にフォールバックする（復号側は関数呼び出しではないと解釈する）。
   const input = typeof tx.input === "string" ? tx.input : "0x";
-  return { hash: tx.hash, from: tx.from, to, input };
+  const nonce = normalizeNonce(tx.hash, tx.nonce);
+  return { hash: tx.hash, from: tx.from, to, input, ...(nonce !== undefined ? { nonce } : {}) };
 }
 
 /**

@@ -72,6 +72,7 @@ import {
   type CanvasFlowEdge,
   type CanvasFlowNode,
   canvasNodeLayoutKey,
+  preserveDraggingState,
   preserveMeasuredDimensions,
 } from "../entities/canvasNode.js";
 import type { Position } from "../layout/layoutStore.js";
@@ -175,8 +176,18 @@ function CanvasInner({
   // サイクルに入り、一瞬 visibility を hidden にする(Issue #119)。直前まで
   // rfNodes が持っていた実測値を引き継いでから反映することでこれを防ぐ
   // (詳細は canvasNode.ts の preserveMeasuredDimensions を参照)。
+  //
+  // さらに、ドラッグ中のノードは親から渡された position(layout由来。
+  // onNodeDragStop でのみ更新される)ではなく、直前の rfNodes 側の
+  // position・dragging・selected を優先する。そうしないと約2秒周期で届く
+  // WebSocket 差分のたびにドラッグ中の位置が保存位置へ描き戻り、位置が
+  // 「ガクン」と往復して見える(Issue #328。詳細は preserveDraggingState を
+  // 参照)。両関数は触るフィールドが独立している(measured vs
+  // position/dragging/selected)ため適用順序に依存関係は無い。
   useEffect(() => {
-    setRfNodes((current) => preserveMeasuredDimensions(nodes, current));
+    setRfNodes((current) =>
+      preserveDraggingState(preserveMeasuredDimensions(nodes, current), current),
+    );
   }, [nodes]);
 
   // ピア接続の追加・削除で親が edges を再計算したら反映する。

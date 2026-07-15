@@ -479,6 +479,107 @@ describe("TransactionLifecycleTracker.recordInclusion contractCall/contractEvent
   });
 });
 
+describe("TransactionLifecycleTracker.recordPending nonce (Issue #319)", () => {
+  it("attaches the observed nonce", () => {
+    const tracker = new TransactionLifecycleTracker();
+    const entity = tracker.recordPending({
+      hash: "0xt1",
+      from: "0xa",
+      to: "0xb",
+      nonce: 5,
+    });
+    expect(entity?.nonce).toBe(5);
+  });
+
+  it("attaches nonce 0 as a meaningful value, not an omission", () => {
+    const tracker = new TransactionLifecycleTracker();
+    const entity = tracker.recordPending({
+      hash: "0xt1",
+      from: "0xa",
+      to: "0xb",
+      nonce: 0,
+    });
+    expect(entity).toHaveProperty("nonce", 0);
+  });
+
+  it("omits nonce when not provided (tx detail unavailable)", () => {
+    const tracker = new TransactionLifecycleTracker();
+    const entity = tracker.recordPending({ hash: "0xt1", from: "0xa", to: "0xb" });
+    expect(entity).not.toHaveProperty("nonce");
+  });
+});
+
+describe("TransactionLifecycleTracker.recordInclusion nonce (Issue #319)", () => {
+  it("carries forward the nonce recorded at pending time when a tx is included", () => {
+    const tracker = new TransactionLifecycleTracker();
+    tracker.recordPending({ hash: "0xt1", from: "0xa", to: "0xb", nonce: 7 });
+    const changed = tracker.recordInclusion("0xblock", [
+      { hash: "0xt1", from: "0xa", to: "0xb", status: "included" },
+    ]);
+    expect(changed[0].nonce).toBe(7);
+  });
+
+  it("carries forward a pending nonce of 0 (falsy-but-meaningful value)", () => {
+    const tracker = new TransactionLifecycleTracker();
+    tracker.recordPending({ hash: "0xt1", from: "0xa", to: "0xb", nonce: 0 });
+    const changed = tracker.recordInclusion("0xblock", [
+      { hash: "0xt1", from: "0xa", to: "0xb", status: "included" },
+    ]);
+    expect(changed[0]).toHaveProperty("nonce", 0);
+  });
+
+  it("does not invent a nonce for a tx that was never observed pending (pending-skip constraint)", () => {
+    // pending を経ずに取り込みだけを観測した tx は receipt に nonce が含まれ
+    // ないため付与できない（Issue #86 の方針。追加 RPC で埋めない）。
+    const tracker = new TransactionLifecycleTracker();
+    const changed = tracker.recordInclusion("0xblock", [
+      { hash: "0xnew", from: "0xa", to: "0xb", status: "included" },
+    ]);
+    expect(changed[0]).not.toHaveProperty("nonce");
+  });
+
+  it("keeps nonce omitted when pending had no nonce and inclusion also has none (existing without nonce)", () => {
+    // pending を観測したが nonce が取れなかった（例: 正規化で省略された）tx を
+    // 取り込む場合、existing?.nonce も tx.nonce も undefined。フィールドを
+    // でっち上げず省略のままにする（existing はあるが nonce だけ無いケース）。
+    const tracker = new TransactionLifecycleTracker();
+    tracker.recordPending({ hash: "0xt1", from: "0xa", to: "0xb" });
+    const changed = tracker.recordInclusion("0xblock", [
+      { hash: "0xt1", from: "0xa", to: "0xb", status: "included" },
+    ]);
+    expect(changed[0]).not.toHaveProperty("nonce");
+  });
+
+  it("retains the pending nonce when a tx is re-included in a different block (reorg-like)", () => {
+    // 別ブロックへの付け替え（reorg 相当）でも nonce は tx 固有で不変のため、
+    // 最初の pending 観測値を保持し続ける（existing 優先が複数回の inclusion を
+    // またいでも効くこと）。
+    const tracker = new TransactionLifecycleTracker();
+    tracker.recordPending({ hash: "0xt1", from: "0xa", to: "0xb", nonce: 9 });
+    tracker.recordInclusion("0xblockA", [
+      { hash: "0xt1", from: "0xa", to: "0xb", status: "included" },
+    ]);
+    const changed = tracker.recordInclusion("0xblockB", [
+      { hash: "0xt1", from: "0xa", to: "0xb", status: "included" },
+    ]);
+    expect(changed[0].nonce).toBe(9);
+  });
+
+  it("tracks each tx's nonce independently when two txs share the same nonce value (defensive)", () => {
+    // 同一 nonce を持つ複数 tx は正常なチェーンでは起きない（同一アカウントの
+    // nonce は一意）が、防御的に hash ごとに独立して保持されることを確認する。
+    const tracker = new TransactionLifecycleTracker();
+    tracker.recordPending({ hash: "0xt1", from: "0xa", to: "0xb", nonce: 4 });
+    tracker.recordPending({ hash: "0xt2", from: "0xc", to: "0xd", nonce: 4 });
+    const changed = tracker.recordInclusion("0xblock", [
+      { hash: "0xt1", from: "0xa", to: "0xb", status: "included" },
+      { hash: "0xt2", from: "0xc", to: "0xd", status: "included" },
+    ]);
+    expect(changed.find((e) => e.hash === "0xt1")?.nonce).toBe(4);
+    expect(changed.find((e) => e.hash === "0xt2")?.nonce).toBe(4);
+  });
+});
+
 describe("TransactionLifecycleTracker eviction", () => {
   it("drops the oldest tracked txs once maxTxs is exceeded", () => {
     const tracker = new TransactionLifecycleTracker(2);
