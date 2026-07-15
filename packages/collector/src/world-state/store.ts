@@ -30,12 +30,23 @@ function isInfraEntity(entity: WorldStateEntity): boolean {
 }
 
 /**
- * `WalletEntity.recentTxHashes` に保持する tx hash 数の上限。フロント側
- * （`entities/transaction.ts` の `DEFAULT_RECENT_TX_LIMIT`、既定 6）が表示
- * 件数を絞るため、ここでは無制限に増やさない程度の余裕を持たせるだけの
- * 上限（フロントの表示件数と厳密に一致させる必要はない）。
+ * `WalletEntity.recentTxHashes` に保持する tx hash 数の上限（Issue #320）。
+ * フロント側の WalletPopover は保持されている分を全件描画するようになった
+ * ため、この定数がそのまま履歴の実効上限になる。
+ *
+ * この固定値 32 が成立する前提条件（CLAUDE.md「固定値を使う場合はその値が
+ * 成立する前提条件をコメントに明記する」対応。詳細は
+ * docs/worklog/issue-320.md 参照）:
+ * included/failed の TransactionEntity は block の保持窓
+ * （`BLOCK_RETENTION`、下記）と連動して掃除される（Issue #298/#303）ため、
+ * `BLOCK_RETENTION` より古い block の tx は hash が `recentTxHashes` に
+ * 残っていてもフロントで解決できない（`resolveWalletTransactions` が除外
+ * する）。1 ブロックあたり 1 tx 程度の典型的な操作では「解決可能な hash 数
+ * ≒ BLOCK_RETENTION」なので、それを超えて増やしても 1 ブロックに複数 tx
+ * が積まれるバースト時以外は解決不能な hash が増えるだけ。`BLOCK_RETENTION`
+ * を変える場合はこの値も併せて見直すこと。
  */
-const MAX_WALLET_RECENT_TX_HASHES = 20;
+const MAX_WALLET_RECENT_TX_HASHES = 32;
 
 /**
  * store が保持する block エンティティの、観測済み最大ブロック番号からの

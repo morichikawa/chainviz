@@ -2177,7 +2177,7 @@ CLAUDE.md の固定前提の明記）。
 - **`index.ts` の配線**: `linkTransactionToWallets` は `applyTransaction` が
   tx を取り込んだ場合にだけ呼ぶ（入口ガードで捨てた追いつきの過去 tx を
   ウォレットの `recentTxHashes` に載せない。`recentTxHashes` 自体は
-  `MAX_WALLET_RECENT_TX_HASHES = 20` で有界なのでメモリ問題ではないが、
+  `MAX_WALLET_RECENT_TX_HASHES = 32`（Issue #320）で有界なのでメモリ問題ではないが、
   store に無い tx を載せるのは無駄・紛らわしいため）
 - アダプタ内の `TransactionLifecycleTracker`（`maxTxs = 1000`）は変更しない。
   あちらは pending → included 遷移を差分化するための作業メモリで、store の
