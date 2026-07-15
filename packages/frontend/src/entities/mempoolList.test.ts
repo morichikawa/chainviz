@@ -93,6 +93,37 @@ describe("buildMempoolTxEntries", () => {
     expect(entries.find((e) => e.hash === "0x1")?.fromIsWallet).toBe(true);
     expect(entries.find((e) => e.hash === "0x2")?.fromIsWallet).toBe(false);
   });
+
+  it("returns an empty array for an empty transaction list", () => {
+    expect(buildMempoolTxEntries([], new Set(["0xaaa"]))).toEqual([]);
+  });
+
+  it("preserves the input order of pending transactions", () => {
+    const transactions = [
+      tx({ hash: "0x3" }),
+      tx({ hash: "0x1" }),
+      tx({ hash: "0x2" }),
+    ];
+    const entries = buildMempoolTxEntries(transactions, new Set());
+    expect(entries.map((e) => e.hash)).toEqual(["0x3", "0x1", "0x2"]);
+  });
+
+  it("matches fromIsWallet case-sensitively (from and wallet ids must share casing)", () => {
+    // walletIds are wallet card ids (= address) taken verbatim from rfNodes, and
+    // tx.from is compared with Set.has (exact string match). A different casing
+    // does not match. Both sides are expected to already be normalized to the
+    // same casing upstream by the collector; this test pins that assumption.
+    const transactions = [tx({ hash: "0x1", from: "0xAAA" })];
+    const entries = buildMempoolTxEntries(transactions, new Set(["0xaaa"]));
+    expect(entries[0]?.fromIsWallet).toBe(false);
+  });
+
+  it("treats an empty from string as a wallet only if the set literally contains it", () => {
+    const notWallet = buildMempoolTxEntries([tx({ hash: "0x1", from: "" })], new Set());
+    expect(notWallet[0]?.fromIsWallet).toBe(false);
+    const isWallet = buildMempoolTxEntries([tx({ hash: "0x2", from: "" })], new Set([""]));
+    expect(isWallet[0]?.fromIsWallet).toBe(true);
+  });
 });
 
 describe("sortMempoolTxEntriesByAppearance", () => {
@@ -126,6 +157,27 @@ describe("sortMempoolTxEntriesByAppearance", () => {
     ]);
     sortMempoolTxEntriesByAppearance(entries, order);
     expect(entries.map((e) => e.hash)).toEqual(["0x1", "0x2"]);
+  });
+
+  it("returns an empty array for empty input", () => {
+    expect(sortMempoolTxEntriesByAppearance([], new Map())).toEqual([]);
+  });
+
+  it("keeps a stable relative order for entries sharing the same order value", () => {
+    const entries = [entry("0x1"), entry("0x2"), entry("0x3")];
+    const order = new Map([
+      ["0x1", 5],
+      ["0x2", 5],
+      ["0x3", 5],
+    ]);
+    const sorted = sortMempoolTxEntriesByAppearance(entries, order);
+    expect(sorted.map((e) => e.hash)).toEqual(["0x1", "0x2", "0x3"]);
+  });
+
+  it("preserves insertion order when every hash is missing from the order map", () => {
+    const entries = [entry("0x3"), entry("0x1"), entry("0x2")];
+    const sorted = sortMempoolTxEntriesByAppearance(entries, new Map());
+    expect(sorted.map((e) => e.hash)).toEqual(["0x3", "0x1", "0x2"]);
   });
 });
 
@@ -163,6 +215,30 @@ describe("limitMempoolTxEntries", () => {
     expect(result.visible).toHaveLength(MEMPOOL_TX_DISPLAY_LIMIT);
     expect(result.overflowCount).toBe(1);
   });
+
+  it("returns an empty result with zero overflow for empty input", () => {
+    const result = limitMempoolTxEntries(entries(0), 8);
+    expect(result.visible).toEqual([]);
+    expect(result.overflowCount).toBe(0);
+  });
+
+  it("truncates 9 entries to 8 with overflow 1 (boundary just over the limit)", () => {
+    const result = limitMempoolTxEntries(entries(9), 8);
+    expect(result.visible).toHaveLength(8);
+    expect(result.overflowCount).toBe(1);
+  });
+
+  it("treats a limit of 0 as everything overflowing", () => {
+    const result = limitMempoolTxEntries(entries(3), 0);
+    expect(result.visible).toEqual([]);
+    expect(result.overflowCount).toBe(3);
+  });
+
+  it("does not mutate the input array when truncating", () => {
+    const input = entries(10);
+    limitMempoolTxEntries(input, 8);
+    expect(input).toHaveLength(10);
+  });
 });
 
 describe("buildMempoolNodeEntries", () => {
@@ -195,5 +271,36 @@ describe("buildMempoolNodeEntries", () => {
     ];
     const entries = buildMempoolNodeEntries(nodes);
     expect(entries).toEqual([{ nodeId: "n1", label: "reth-1", pending: 0, queued: 0 }]);
+  });
+
+  it("returns an empty array for an empty node list", () => {
+    expect(buildMempoolNodeEntries([])).toEqual([]);
+  });
+
+  it("excludes a node whose internals object exists but omits mempool", () => {
+    const nodes = [nodeEntity({ id: "n1", internals: {} })];
+    expect(buildMempoolNodeEntries(nodes)).toEqual([]);
+  });
+
+  it("keeps only the mempool-reporting nodes when they are mixed with others", () => {
+    const nodes = [
+      nodeEntity({ id: "n0" }),
+      nodeEntity({ id: "n1", containerName: "reth-1", internals: { mempool: { pending: 2, queued: 0 } } }),
+      nodeEntity({ id: "n2", containerName: "beacon-1", internals: { syncStages: [] } }),
+      nodeEntity({ id: "n3", containerName: "reth-2", internals: { mempool: { pending: 5, queued: 1 } } }),
+    ];
+    const entries = buildMempoolNodeEntries(nodes);
+    expect(entries.map((e) => e.nodeId)).toEqual(["n1", "n3"]);
+  });
+
+  it("preserves input order even when nodes report identical counts", () => {
+    const counts = { mempool: { pending: 4, queued: 2 } };
+    const nodes = [
+      nodeEntity({ id: "n3", containerName: "reth-3", internals: counts }),
+      nodeEntity({ id: "n1", containerName: "reth-1", internals: counts }),
+      nodeEntity({ id: "n2", containerName: "reth-2", internals: counts }),
+    ];
+    const entries = buildMempoolNodeEntries(nodes);
+    expect(entries.map((e) => e.nodeId)).toEqual(["n3", "n1", "n2"]);
   });
 });
