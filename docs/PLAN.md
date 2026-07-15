@@ -794,11 +794,13 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       (check_build_freshnessがdist古と判定した場合に自動でpnpm buildを
       実行するよう変更した。dist/が存在しない場合と同様の自動化)
       [#325](https://github.com/morichikawa/chainviz/issues/325)
-- [ ] UI全体に透明感・グラデーションを意識したビジュアルデザインを
+- [x] UI全体に透明感・グラデーションを意識したビジュアルデザインを
       取り入れる
-      (見た目のトーンという主観的判断を伴うため、着手時はまず
-      chainviz-uxで方向性を検討してからchainviz-frontendに引き継ぐ。
-      着手は後日)
+      (chainviz-uxが「静かな夜のガラス」方針を設計し、chainviz-frontendが
+      実装。オーバーレイパネル・ポップオーバー・トーストにすりガラス
+      (backdrop-filter)、カード群には縦グラデーション+上端ハイライト、
+      背景に淡い色光のラジアルグラデーションを適用。役割別の枠色・エッジ色・
+      状態色の意味体系は変更なし)
       [#327](https://github.com/morichikawa/chainviz/issues/327)
 - [ ] ノード/コンポーネントをドラッグ中にWebSocket更新で位置がガクンと
       ずれる/戻る

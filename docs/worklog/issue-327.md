@@ -1,5 +1,100 @@
 # Issue #327 UI全体に透明感・グラデーションを意識したビジュアルデザインを取り入れる
 
+### 2026-07-16 「静かな夜のガラス」実装（chainviz-frontend）
+
+- 担当: frontend
+- ブランチ: issue-327-visual-design
+- 設計メモ: 本ファイル下方の「2026-07-16 UX/ビジュアルデザイン設計」節
+  （chainviz-ux）に従って実装した。実装着手前の追加の設計判断は以下のみ。
+
+#### 実装着手前の設計メモ
+
+- 変更は `packages/frontend/src/styles.css` が中心。ロジック変更に該当する
+  のは以下2点のみで、いずれもユニットテスト新規追加の対象外
+  （見た目のみの調整のため。ロジック分岐や状態管理は伴わない）:
+  - `Canvas.tsx` の `<Background bgColor>` を `"var(--bg)"` から
+    `"transparent"` に変更（キャンバス実背景の塗りを CSS 側の
+    `.app__canvas .react-flow` に持たせるため）
+  - `entities/peerEdge.ts` の `NETWORK_COLORS` コメント内、背景色を前提にした
+    コントラスト計算の説明文を、背景に色光グラデーションが乗ったことを
+    踏まえた記述に更新（数値の再計算はしていない。色光の中心が画面外に
+    あり画面内はより暗いため、既存の計算結果は実用上有効という設計メモ
+    §4 の結論をそのまま踏襲）
+  - `.react-flow` への背景グラデーション適用は、React Flow が
+    `colorMode="dark"` 時に `.react-flow.dark`（詳細度: クラス2つ）で
+    `#141414` を敷くため、それと同等以上の詳細度（`.app__canvas .react-flow`）
+    かつ `@xyflow/react/dist/style.css` の読み込み（`main.tsx`）より後に
+    定義することで確実に上書きする設計にした
+
+#### 実施内容
+
+- デザイントークン追加: `--glass-bg` `--glass-popover-bg` `--glass-border`
+  `--glass-highlight`（`:root`）
+- 背景: `Canvas.tsx` の `bgColor` を `transparent` にし、
+  `.app__canvas .react-flow` に淡い色光のラジアルグラデーション（アクセント
+  青α0.10 + インディゴα0.09、設計メモの上限値どおり）を敷いた
+- オーバーレイパネル（`.canvas-toolbar` `.layer-filter-bar`
+  `.p2p-legend` `.contract-list-panel` `.toast`／`.toast--error`）を
+  `var(--glass-bg)` + `backdrop-filter: blur(14px) saturate(140%)` に変更
+- ポップオーバー（`.infra-popover` `.glossary-popover` `.peer-popover`
+  `.deploy-popover` `.internal-link-popover` `.operation-target-popover`
+  `.tx-lifecycle-popover` `.contract-activity-chip__popover`
+  `.operation-panel`）を `var(--glass-popover-bg)` +
+  `backdrop-filter: blur(16px) saturate(130%)` に変更。枠色（役割別の
+  border-color）は変更していない
+- カード（`.infra-card` `.chain-ribbon-card` `.chain-ribbon-tile`）は
+  backdrop-filter を使わず、縦グラデーション（α0.96〜0.97）+ 上端1px
+  ハイライト（inset box-shadow）に変更。役割別 border-color・
+  `.infra-card--fork-*` 等の一時強調用 box-shadow は変更していない
+  （設計メモの「余裕があれば統一してよい」は今回見送り。理由: 一時的な
+  強調状態でしか発動せず優先度が低いため）
+- ボタン・チップ（`.canvas-toolbar__button` `.language-toggle`
+  `.infra-card__operate` `.layer-filter-bar__chip`）に微グラデーション、
+  ホバー時にアクセントグロー（`box-shadow`）を追加。既存の
+  `border-color: var(--accent)` ホバー挙動は維持
+- 送信ボタン（`.operation-form__submit`）にアクセントグラデーションを追加
+  （`:disabled` 時のフラットな見た目は変更なし）
+- ヘッダー（`.app__header`）に縦グラデーション、タイトル（`.app__title`）に
+  グラデーションテキストを追加。`background-clip: text` 非対応環境向けに
+  `@supports` で通常の `--text` 色にフォールバックする分岐を追加
+- backdrop-filter 非対応環境向けに `@supports not ((backdrop-filter:
+  blur(1px)) or (-webkit-backdrop-filter: blur(1px)))` でオーバーレイ
+  パネル・ポップオーバーの背景を Issue #327 以前の不透明値に戻す
+  フォールバックを追加
+
+#### 確認したこと
+
+- `pnpm --filter @chainviz/frontend build` / `test`（vitest、144ファイル
+  2129件）が通ることを確認
+- `npx eslint` を変更した `.tsx`/`.ts` ファイルに対して実行し、エラー無し
+  （lint script は frontend パッケージ単独には無いため直接実行）
+- モックモード（`pnpm --filter @chainviz/frontend dev`）を起動し、
+  Playwright（chromium headless、chainviz-ux が使ったのと同じ
+  `/home/zoe/chrome-deps/root` の展開済みライブラリを `LD_LIBRARY_PATH`
+  経由で利用）でスクリーンショットを取得し、以下を目視確認した:
+  - キャンバス実背景に淡い色光グラデーションが乗っていること
+    （`.react-flow.dark` の `#141414` に上書きされていないこと）
+  - ツールバー・レイヤーレンズ・コントラクト一覧パネルがすりガラス化
+    され、背後のカードがうっすら透けて見えること
+  - ノードカードにホバーしてポップオーバー（`.infra-popover`）を開いた際、
+    ダークガラス地で背後のチェーンリボンカードが透けて見え、本文の可読性
+    （文字色 `--text`/`--muted`）が保たれていること
+  - コンソールエラーが出ていないこと（既存の favicon 404 のみで、本変更
+    起因のエラーは無し）
+
+#### 決定事項・注意点
+
+- `.toast--error` の背景は元の不透明な赤褐色 `#2a1a20` を alpha 0.72 の
+  半透明（`rgba(42, 26, 32, 0.72)`）に変えた。この具体的な alpha 値は
+  設計メモに明記が無く、他のガラスパネルと揃える目的でこちらで決めた
+  （`.toast` 本体と同じ透過率）
+- タイトルのグラデーションテキスト（設計メモで「判断を確認したい点」と
+  されていた箇所）はそのまま採用した。不要であれば `.app__title` の
+  グラデーション部分だけを元の単色 `color` に戻せば他への影響はない
+- 視認性はモックモードでの目視確認のみ行い、WCAG コントラスト比の
+  再計算はしていない（設計メモ §4 の検算値をそのまま踏襲する実装のため）。
+  厳密な検算・実機での確認は chainviz-qa に委ねる
+
 ### 2026-07-16 UX/ビジュアルデザイン設計（chainviz-ux）
 
 - 担当: ux
