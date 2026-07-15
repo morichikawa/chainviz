@@ -125,6 +125,32 @@ describe("MempoolPanel", () => {
     expect(onSelectTx).not.toHaveBeenCalled();
   });
 
+  it("renders a static row (no crash) when a non-wallet entry has an empty from", () => {
+    const entry = txEntry({ hash: "0x1", from: "", fromIsWallet: false });
+    const onSelectTx = vi.fn();
+    wrap({ txEntries: [entry], onSelectTx });
+    const row = screen.getByTestId("mempool-tx-row-0x1");
+    expect(row.tagName).not.toBe("BUTTON");
+    fireEvent.click(row);
+    expect(onSelectTx).not.toHaveBeenCalled();
+  });
+
+  it("renders multiple rows in the given order", () => {
+    wrap({
+      txEntries: [
+        txEntry({ hash: "0x1" }),
+        txEntry({ hash: "0x2" }),
+        txEntry({ hash: "0x3" }),
+      ],
+    });
+    const rows = screen.getAllByTestId(/^mempool-tx-row-/);
+    expect(rows.map((r) => r.getAttribute("data-testid"))).toEqual([
+      "mempool-tx-row-0x1",
+      "mempool-tx-row-0x2",
+      "mempool-tx-row-0x3",
+    ]);
+  });
+
   it("shows the overflow hint with the count when overflowCount > 0", () => {
     wrap({ txEntries: [txEntry({ hash: "0x1" })], overflowCount: 5 });
     expect(screen.getByTestId("mempool-overflow").textContent).toContain("5");
@@ -133,6 +159,16 @@ describe("MempoolPanel", () => {
   it("does not show the overflow hint when overflowCount is 0", () => {
     wrap({ txEntries: [txEntry({ hash: "0x1" })], overflowCount: 0 });
     expect(screen.queryByTestId("mempool-overflow")).toBeNull();
+  });
+
+  it("does not show the overflow hint in the empty state even if overflowCount > 0", () => {
+    // The overflow hint lives inside the non-empty branch, so an empty tx list
+    // must never surface it regardless of the passed overflowCount.
+    wrap({ txEntries: [], overflowCount: 3 });
+    expect(screen.queryByTestId("mempool-overflow")).toBeNull();
+    expect(screen.getByTestId("mempool-panel").textContent).toContain(
+      "保留中の tx はありません",
+    );
   });
 
   it("renders a node-count row per node entry", () => {
@@ -154,6 +190,32 @@ describe("MempoolPanel", () => {
   it("omits the node section entirely when there are no node entries", () => {
     wrap({ txEntries: [], nodeEntries: [] });
     expect(screen.queryByTestId(/^mempool-node-row-/)).toBeNull();
+  });
+
+  it("still renders node rows while the tx list is empty (empty message and node section coexist)", () => {
+    wrap({
+      txEntries: [],
+      nodeEntries: [{ nodeId: "n1", label: "reth-1", pending: 7, queued: 2 }],
+    });
+    expect(screen.getByTestId("mempool-panel").textContent).toContain(
+      "保留中の tx はありません",
+    );
+    const row = screen.getByTestId("mempool-node-row-n1");
+    expect(row.textContent).toContain("reth-1");
+    expect(row.textContent).toContain("7");
+    expect(row.textContent).toContain("2");
+  });
+
+  it("renders distinct rows for nodes that report identical counts", () => {
+    wrap({
+      txEntries: [],
+      nodeEntries: [
+        { nodeId: "n1", label: "reth-1", pending: 4, queued: 1 },
+        { nodeId: "n2", label: "reth-2", pending: 4, queued: 1 },
+      ],
+    });
+    expect(screen.getByTestId("mempool-node-row-n1").textContent).toContain("reth-1");
+    expect(screen.getByTestId("mempool-node-row-n2").textContent).toContain("reth-2");
   });
 
   it("localizes to English", () => {
