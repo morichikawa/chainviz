@@ -800,11 +800,14 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       chainviz-uxで方向性を検討してからchainviz-frontendに引き継ぐ。
       着手は後日)
       [#327](https://github.com/morichikawa/chainviz/issues/327)
-- [ ] ノード/コンポーネントをドラッグ中にWebSocket更新で位置がガクンと
+- [x] ノード/コンポーネントをドラッグ中にWebSocket更新で位置がガクンと
       ずれる/戻る
-      (原因未調査。着手時はまずchainviz-detectiveに原因切り分けを依頼し、
-      特定でき次第標準パイプラインで対応するIssueとして仕切り直す。
-      着手は後日)
+      (chainviz-detectiveが原因を特定: Canvas.tsxのuseEffectが親から渡された
+      nodesでrfNodesを丸ごと置き換え、ドラッグ中のローカルposition・
+      draggingフラグが破棄されていた。preserveMeasuredDimensionsと同系の
+      マージ関数preserveDraggingStateを追加し、ドラッグ中ノードのみ
+      position・dragging・selectedを直前のReact Flow内部状態から引き継ぐ
+      よう修正)
       [#328](https://github.com/morichikawa/chainviz/issues/328)
 
 ## 運用ルール（全ステップ共通）
