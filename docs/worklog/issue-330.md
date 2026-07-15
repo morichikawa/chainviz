@@ -336,3 +336,53 @@
   （shared 62 / collector 1439 / e2e 158 / frontend 2171 件）すべて通過。
 - コミット粒度: 修正 `af57571`（1関心事）+ worklog `c6fb389` で適切。
 - 結論: 合格。push / PR / マージは統括の判断に委ねる。
+
+## QA検証（chainviz-qa、実環境での動作確認）
+
+### 2026-07-16 合格
+
+`scripts/dev-up.sh` で共有中の profiles/ethereum Docker スタック
+（他 worktree と共有。project 名 `chainviz-ethereum`）を再利用し、
+collector（port 4000）・frontend（port 5173）を起動して検証した。
+検証は WebSocket 経由でワールドステートを観測するクライアントと、
+実データを本物の `mempoolList.ts` 関数へ通す使い捨て検証、
+既存 vitest 一式（51件）で行った。
+
+確認できた項目:
+
+- 0件表示: `MempoolPanel` は Canvas 上で無条件に描画され、pending が
+  0件でも空メッセージ付きで常設表示される（`MempoolPanel.test.tsx` の
+  「renders even when there are zero pending entries」等でも担保）。
+- pending tx の表示: ワークベンチから `transfer` を実行し、ブロック
+  取り込み前の `TransactionEntity`（`status: "pending"`、from/to 付き）が
+  ワールドステートの diff として流れることを実測で確認した。
+- ノード別 pending/queued: reth ノードの `internals.mempool`
+  （例: reth3 で `{pending:0, queued:1}`）が届いており、
+  `buildMempoolNodeEntries` がノード別実数の行へ変換することを確認した。
+- 行クリックのパン（大文字小文字差異の実ケース）: 実環境では
+  ワークベンチのウォレットカード id が EIP-55 チェックサム表記
+  （`0x2BB7DcEeB1964D1c2EdbCbB04Cd7893F6619d4c0`）である一方、pending tx の
+  `from` はチェーン生表記の全小文字（`0x2bb7dceeb1964d1c2edbcbb04cd7893f6619d4c0`）
+  で届く、という差し戻し修正が対象とした状況が実際に発生していた。
+  本物の `buildMempoolTxEntries` にこの実データを通し、`walletCardId` が
+  チェックサム表記のカード id へ正しく解決されること（および
+  `handleJumpToMempoolTx` がその id を `getNode` に渡してパンできること）を
+  確認した。ウォレットカードが存在しない from は `walletCardId` が
+  undefined になり非クリック行になることも確認した。
+- レイアウト非重なり: `mempool-panel` は `bottom:385px`、
+  `contract-list-panel` は `bottom:150px` + `max-height:220px`（最大 370px）
+  で 15px の間隔があり、重ならない。
+- 用語集導線: `mempool`（`glossary/ethereum/terms/c-transaction.yaml`）・
+  `txpool`（`glossary/ethereum/terms/d-internal.yaml`）の両用語が存在し、
+  `GlossaryTerm` の `termKey="mempool"` / `termKey="txpool"` で解決する。
+
+結論: Issue #330 の要望「mempool 全体を俯瞰できるビューを追加する」を
+満たしている。合格。
+
+補足（検証環境の後始末）: 検証中に `addNode`×2・`addWorkbench` で追加した
+動的コンテナ（reth3/reth4/beacon3/beacon4・qa-wb ワークベンチ）は、他
+worktree と共有する Docker スタックを元の状態へ戻すため collector の
+`removeNode` / `removeWorkbench` で撤去し、`scripts/dev-down.sh`（--docker
+無し）で collector/frontend のみ停止した。基盤の 7 コンテナは維持している。
+
+push / PR / マージ / Issue クローズは統括の判断に委ねる。
