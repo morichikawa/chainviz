@@ -118,3 +118,54 @@
 - `MempoolPanel.tsx`: 0 件時も描画されること（空文言）、行クリックで
   `onSelect` が from アドレスで呼ばれること、from がウォレットに無い行は
   クリック対象にならないこと
+
+### 2026-07-16 実装（frontend）
+
+- 担当: frontend
+- 内容: 設計どおり `entities/mempoolList.ts`（純粋なデータ変換）+
+  `entities/MempoolPanel.tsx`（表示コンポーネント）を新規追加し、
+  `Canvas.tsx` / `App.tsx` / `styles.css` / `i18n/messages.ts` を変更した。
+  glossary の `mempool` / `txpool` は既に用語データが存在していたため
+  新規追加は不要で、`GlossaryTerm` の導線だけを張った。
+- データフロー: `TransactionEntity`（pending）は React Flow ノードとして
+  キャンバスに現れない（ウォレットカードの tx チップに埋め込まれるだけ）
+  ため、`ContractListPanel` のように rfNodes だけから組み立てることが
+  できなかった。そのため `Canvas.tsx` に新規 prop `transactions?:
+  TransactionEntity[]` を追加し、App.tsx が既に持っている
+  `transactions`（全 entities から `kind === "transaction"` を抽出した
+  もの）をそのまま渡す構成にした。一方、ノード別実数
+  （`NodeEntity.internals.mempool`）は既存の infra rfNodes（`data.entity`）
+  から `kind === "node"` のものを filter するだけで揃うため、こちらは
+  `contractListEntries` と同じ「rfNodes だけで完結」パターンを踏襲した
+  （新規 prop 不要）。
+- 行クリックのパン先判定（from がウォレットカードとして存在するか）は
+  `MempoolTxEntry.fromIsWallet`（`buildMempoolTxEntries` の第2引数
+  `walletIds`、Canvas.tsx が rfNodes 上のウォレットカード id 集合から作る）
+  として純粋関数側に持たせ、`MempoolPanel` は `fromIsWallet` を見て
+  ボタン（クリック可）か静的な `div`（クリック不可）かを出し分ける。
+  テストで「非クリック行はボタン要素でなくクリックしても onSelectTx が
+  呼ばれない」ことを確認済み。
+- 表示上限は設計メモの推奨どおり `MEMPOOL_TX_DISPLAY_LIMIT = 8` とし、
+  超過分は `limitMempoolTxEntries` が `overflowCount` を返し、パネルに
+  「他 n 件」を出す。並び順は `ContractListPanel` と同じ
+  `useAppearanceOrder`（新しいものが上）を tx hash キーで再利用（同型の
+  `sortMempoolTxEntriesByAppearance` を別関数として用意。`nodeId` キーの
+  `sortEntriesByAppearance` とはフィールド名が違うため使い回さず、1
+  ファイル1責務のまま分離した）。
+- ノード別セクションの折りたたみは設計メモどおり見送り（現状ノード数が
+  少なく密度問題が出ていないため）。パネル自体の配置は左下、
+  `ContractListPanel`（`left:15px; bottom:150px; max-height:220px`）の
+  真上に固定オフセット（`bottom:385px` = 150 + 220 + 15px の隙間）で
+  縦積みした。`ContractListPanel` は 0 件で非表示になるため両パネルが
+  同時に最大高さで重なることはないが、`ContractListPanel` が伸びきった
+  状態でも重ならない安全側の値にしてある。
+- テスト: `mempoolList.test.ts`（純粋関数、pending 抽出・0件・上限切り出し・
+  ノード別件数の絞り込みを個別に検証）、`MempoolPanel.test.tsx`（0件描画・
+  行クリック・非クリック行・overflow表示・ノード別行・日英ローカライズ）
+  を追加。`Canvas.tsx` 側の `getNode`/`setCenter` によるパン処理自体は
+  `handleJumpToContract` と同じく単体テスト対象外（既存の踏襲。実際の
+  React Flow レンダリングを要するため、パネル単体テストとキャンバス側の
+  ロジックの薄さで許容している既存方針を踏襲した）。
+- 確認: `pnpm --filter @chainviz/frontend build`・
+  `pnpm --filter @chainviz/frontend test`（145ファイル / 2150件、全通過）・
+  `eslint`（変更ファイルのみ対象、警告なし）。
