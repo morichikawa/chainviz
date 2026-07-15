@@ -763,6 +763,13 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       表示・秘密鍵の所有エッジとは異なる概念で未対応。着手時はまず
       chainviz-designerの設計から)
       [#315](https://github.com/morichikawa/chainviz/issues/315)
+- [ ] ノード間のリクエスト・レスポンスをログとして別タブで監視できるように
+      する
+      (キャンバスのカード・パルスは「今の状態」を見せるのに適するが、
+      時系列に流れるログとして遡って追うことはできない。着手時はまず
+      chainviz-uxのUX設計から。Issue #313(用語集パネル)とパネル機構を
+      共有できないか検討の余地あり)
+      [#317](https://github.com/morichikawa/chainviz/issues/317)
 
 ## 運用ルール（全ステップ共通）
 
