@@ -809,6 +809,15 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       position・dragging・selectedを直前のReact Flow内部状態から引き継ぐ
       よう修正)
       [#328](https://github.com/morichikawa/chainviz/issues/328)
+- [ ] mempool(未承認tx)全体を俯瞰できるビューが無い
+      (pending txは局所表示のみでmempool全体を見せるビューが無い。
+      設計完了・実装はレビュー指摘の修正中)
+      [#330](https://github.com/morichikawa/chainviz/issues/330)
+- [ ] removeWorkbenchがaddWorkbenchで追加したワークベンチに対しても
+      「追加されていない」エラーを返すことがある
+      (Issue #319のQA検証中に偶発的に観測。再現手順未調査。着手時はまず
+      chainviz-detectiveに原因調査を依頼)
+      [#334](https://github.com/morichikawa/chainviz/issues/334)
 
 ## 運用ルール（全ステップ共通）
 
