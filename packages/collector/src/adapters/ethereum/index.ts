@@ -828,15 +828,20 @@ export class EthereumAdapter implements ChainAdapter {
   }
 
   /**
-   * newPendingTransactions で得た tx ハッシュの詳細（from/to/input）を HTTP
-   * JSON-RPC で取得し、pending として記録する。まだ伝播していない等で詳細が
-   * 取れない場合は何もしない。取得失敗はログして握り、購読自体は継続させる。
+   * newPendingTransactions で得た tx ハッシュの詳細（from/to/input/nonce）を
+   * HTTP JSON-RPC で取得し、pending として記録する。まだ伝播していない等で
+   * 詳細が取れない場合は何もしない。取得失敗はログして握り、購読自体は継続させる。
    *
    * 宛先（to）が追跡中のコントラクトであれば、input をカタログ照合の有無に
    * 関わらず TransactionEntity.contractCall へ反映する（カタログ未照合なら
    * rawFunctionId のみを持つ ContractCall になる。詳細は resolveContractCall
    * 参照。Issue #162）。追加の RPC 呼び出しは発生しない（input は既に
    * 呼んでいる eth_getTransactionByHash のレスポンスに含まれる）。
+   *
+   * nonce（送信元アカウントの通し番号。Issue #319）も同じレスポンスに含まれる
+   * ため追加の RPC は発生しない。取り込みのみ観測した tx（pending 通知を
+   * 取りこぼした場合等）には receipt に nonce が無いため付与できず、意図的に
+   * 追加 RPC で埋めない（Issue #86 の「ブロックあたり RPC を増やさない」方針）。
    */
   private async handlePendingTx(
     rpcUrl: string,
@@ -851,6 +856,7 @@ export class EthereumAdapter implements ChainAdapter {
         hash: detail.hash,
         from: detail.from,
         to: detail.to,
+        ...(detail.nonce !== undefined ? { nonce: detail.nonce } : {}),
         ...(contractCall ? { contractCall } : {}),
       });
       if (entity) onTx(entity);

@@ -770,7 +770,7 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       chainviz-uxのUX設計から。Issue #313(用語集パネル)とパネル機構を
       共有できないか検討の余地あり)
       [#317](https://github.com/morichikawa/chainviz/issues/317)
-- [ ] ウォレットのtx履歴に各txのnonce値が表示されず送信順序が追いにくい
+- [x] ウォレットのtx履歴に各txのnonce値が表示されず送信順序が追いにくい
       (nonceは現在値が1つ表示されるのみで、各tx項目には表示されていない。
       packages/sharedの型追加・collector側の観測追加が必要になる可能性あり)
       [#319](https://github.com/morichikawa/chainviz/issues/319)

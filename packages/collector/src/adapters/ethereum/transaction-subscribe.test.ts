@@ -70,6 +70,43 @@ describe("EthereumAdapter.subscribeTransactions", () => {
     ]);
   });
 
+  it("carries the observed nonce through to the pending TransactionEntity (Issue #319)", async () => {
+    // stubRpcClient の txs フィクスチャは正規化後の RpcTransaction 型で
+    // 固定されており nonce（16 進文字列 → 数値）の正規化を経由できないため、
+    // ここでは eth_getTransactionByHash の生レスポンス（nonce: 16進文字列）を
+    // 返す EthRpcClient を直接組み立て、正規化を含めた end-to-end を確認する。
+    const poller = new DockerPoller(
+      clientFrom([rethFixture("reth1", "172.28.1.1")]),
+    );
+    const ws = controllableWsClient();
+    const rpc: EthRpcClient = {
+      async call<T>(_url: string, method: string): Promise<T> {
+        if (method === "eth_getTransactionByHash") {
+          return {
+            hash: "0xt1",
+            from: "0xa",
+            to: "0xb",
+            input: "0x",
+            nonce: "0x2a",
+          } as T;
+        }
+        throw new Error(`unexpected RPC method ${method}`);
+      },
+    };
+    const adapter = new EthereumAdapter(poller, {
+      ethWsClient: ws.client,
+      ethRpcClient: rpc,
+    });
+    const txs: TransactionEntity[] = [];
+
+    await adapter.subscribeTransactions((t) => txs.push(t));
+    ws.emitPending("ws://172.28.1.1:8546", "0xt1");
+    await flushAsync();
+
+    expect(txs).toHaveLength(1);
+    expect(txs[0].nonce).toBe(42);
+  });
+
   it("does not emit when the pending tx detail is not yet available", async () => {
     const poller = new DockerPoller(
       clientFrom([rethFixture("reth1", "172.28.1.1")]),
