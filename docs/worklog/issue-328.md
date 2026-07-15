@@ -197,3 +197,39 @@
     現状このアプリには `selected` を読んで見た目を変えるカードコンポー
     ネントは無い(React Flow 標準の選択枠のみ)ため、体感できる変化は
     ドラッグ中のガクツキ解消が主)
+
+### 2026-07-16 Issue #328 テスト強化(異常系・境界値)
+- 担当: tester
+- ブランチ: issue-328-drag-position-jitter
+- 内容: `preserveDraggingState` の既存6ケースに異常系・境界値の観点で
+  9ケースを追加した(`packages/frontend/src/entities/canvasNode.test.ts` の
+  `preserveDraggingState` describe ブロック)。追加した観点:
+  - マルチセレクトドラッグ(複数ノードが同時に dragging: true)で全ノードの
+    position/dragging/selected が保全されること
+  - ドラッグ中のノードが WebSocket 更新で next から消えた場合(ドラッグ中に
+    エンティティ削除)、previous 側の dragging: true に引きずられて復活
+    させず、結果にも現れないこと
+  - `dragging: undefined` を false と同じく保全対象外として扱うこと
+    (判定が `dragging === true` の厳密比較のため両者に差が無いこと)
+  - previous.selected が undefined(未選択)のとき、next.selected が true でも
+    undefined で上書きすること(ドラッグ中は previous の操作状態を正とする)
+  - ドラッグ中ノードは新しいオブジェクトとして返し、next を破壊せず
+    previous の参照とも同一でないこと(純粋関数としての不変性)
+  - ドラッグ中でも next 配列の順序を維持すること
+  - next が空配列でも(previous にドラッグ中ノードがあっても)空配列を返すこと
+  - infra/wallet 混在配列で id ベースにドラッグ中カードのみ保全すること
+  - Canvas.tsx と同じ合成
+    (`preserveDraggingState(preserveMeasuredDimensions(nodes, current), current)`)で、
+    measured は preserveMeasuredDimensions が、position/dragging/selected は
+    preserveDraggingState が previous から引き継ぎ、data は next の最新値が
+    残ること(両関数が触るフィールドが独立で相互干渉しないこと)
+- 回帰検出力の確認: `preserveDraggingState` を一時的に `return next` の no-op に
+  差し替えると、追加分のうち5ケース(マルチセレクト・selected undefined 上書き・
+  新オブジェクト返却・混在配列・合成)が実際に失敗することを確認した。残り
+  4ケース(削除ノード非復活・undefined 非保全・順序維持・空配列)は no-op でも
+  成立する不変条件を明文化するガードテストであり、意図どおり緑のまま。確認後、
+  実装を元に戻し全ケースが通ることを確認した
+- 確認結果: `pnpm --filter @chainviz/frontend build`・
+  `pnpm --filter @chainviz/frontend test`(143ファイル/2136件)がいずれも成功。
+  `npx eslint` を変更したテストファイルに対して実行しエラー無しを確認した
+- 実装バグの疑いは検出されなかった(実装は変更していない)
