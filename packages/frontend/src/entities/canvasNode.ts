@@ -104,3 +104,53 @@ export function preserveMeasuredDimensions<TNode extends CanvasFlowNode>(
     return measured ? { ...node, measured } : node;
   });
 }
+
+/**
+ * ドラッグ中のノードの `position`・`dragging`・`selected` を、ワールドステート
+ * 更新で親（App.tsx）が再計算した `next` ではなく、直前の React Flow 内部
+ * 状態（`previous`）から引き継ぐ（Issue #328）。
+ *
+ * 親の `nodes` の `position` は `layout`（localStorage 由来。
+ * `onNodeDragStop` でのみ更新）から組み立てられる。約2秒周期で届く
+ * WebSocket 差分のたびに Canvas.tsx の useEffect が `rfNodes` を丸ごと
+ * `next` へ置き換えると、ドラッグ中のカードが「ドラッグ開始前の保存位置」へ
+ * 一瞬描き戻り、次の pointermove で再びカーソル位置へ動くため位置が
+ * 「ガクン」と往復して見えていた。
+ *
+ * `@xyflow/react` はドラッグ開始・移動・終了のたびに `type: "position"` の
+ * `NodeChange` に `dragging: true`(開始・移動中)/`dragging: false`(終了)を
+ * 積んで `onNodesChange` 経由でディスパッチし、`applyNodeChanges` がそれを
+ * そのまま `node.dragging` へ反映する。そのため Canvas.tsx の `rfNodes`
+ * （＝この関数の `previous`）は常に「今どのノードがドラッグ中か」を正しく
+ * 保持しており、`onNodeDragStart`/`onNodeDragStop` で id を別途追跡しなくても
+ * `previous` 側の `dragging` フラグだけで判定できる（`selected` も
+ * select/unselect change を通じて同様に反映される）。
+ *
+ * マージするのは見た目・操作状態に関わる3フィールドのみで、`data` は常に
+ * `next`（最新の WorldState 由来）を優先する。ドラッグ中でも残高やブロック高
+ * などのカード内容は従来どおり更新され続けるべきで、止めたいのは位置周りの
+ * ちらつきだけのため。ドラッグ中でないノードには一切手を加えないため、他
+ * ノードの追加・移動などの WebSocket 更新は従来どおり即座に反映され続ける。
+ */
+export function preserveDraggingState<TNode extends CanvasFlowNode>(
+  next: TNode[],
+  previous: TNode[],
+): TNode[] {
+  if (previous.length === 0) return next;
+
+  const draggingById = new Map(
+    previous.filter((node) => node.dragging === true).map((node) => [node.id, node]),
+  );
+  if (draggingById.size === 0) return next;
+
+  return next.map((node) => {
+    const draggingNode = draggingById.get(node.id);
+    if (!draggingNode) return node;
+    return {
+      ...node,
+      position: draggingNode.position,
+      dragging: draggingNode.dragging,
+      selected: draggingNode.selected,
+    };
+  });
+}

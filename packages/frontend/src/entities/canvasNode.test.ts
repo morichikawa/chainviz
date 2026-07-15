@@ -4,6 +4,7 @@ import { CHAIN_RIBBON_ID, chainRibbonToFlowNode } from "./chainRibbonNode.js";
 import {
   type CanvasFlowNode,
   canvasNodeLayoutKey,
+  preserveDraggingState,
   preserveMeasuredDimensions,
 } from "./canvasNode.js";
 import type { ContractFlowNode } from "./contractNode.js";
@@ -293,5 +294,90 @@ describe("preserveMeasuredDimensions", () => {
     const result = preserveMeasuredDimensions<CanvasFlowNode>(next, previous);
     expect(result[0].measured).toEqual({ width: 200, height: 77 });
     expect(result[1].measured).toEqual(walletMeasured);
+  });
+});
+
+describe("preserveDraggingState", () => {
+  it("returns next unchanged when there is no previous state (initial mount)", () => {
+    const next = [infraNode()];
+    expect(preserveDraggingState(next, [])).toBe(next);
+  });
+
+  it("returns next unchanged when no previous node is currently dragging", () => {
+    const previous = [infraNode({ position: { x: 10, y: 10 } })];
+    const next = [infraNode({ position: { x: 999, y: 999 } })];
+    expect(preserveDraggingState(next, previous)).toBe(next);
+  });
+
+  it(
+    "keeps the previous position/dragging/selected for a node currently being " +
+      "dragged, instead of the new position from a WebSocket-driven update " +
+      "(Issue #328)",
+    () => {
+      // ドラッグ中: previous(直前の rfNodes)はカーソル位置・dragging: true を
+      // 持つ。next(WebSocket diff 後に親が再計算した nodes)は layout 由来の
+      // 「ドラッグ開始前の保存位置」のまま。
+      const previous = [
+        infraNode({
+          position: { x: 240, y: 180 },
+          dragging: true,
+          selected: true,
+        }),
+      ];
+      const next = [infraNode({ position: { x: 0, y: 0 } })];
+      const result = preserveDraggingState(next, previous);
+      expect(result[0].position).toEqual({ x: 240, y: 180 });
+      expect(result[0].dragging).toBe(true);
+      expect(result[0].selected).toBe(true);
+    },
+  );
+
+  it("uses next's position for a node that is not dragging, even if other nodes are (WebSocket updates for other nodes still apply)", () => {
+    const previous = [
+      infraNode({ id: "a", position: { x: 100, y: 100 }, dragging: true }),
+      infraNode({ id: "b", position: { x: 5, y: 5 } }),
+    ];
+    const next = [
+      infraNode({ id: "a", position: { x: 0, y: 0 } }),
+      infraNode({ id: "b", position: { x: 50, y: 50 } }),
+    ];
+    const result = preserveDraggingState(next, previous);
+    expect(result.find((n) => n.id === "a")?.position).toEqual({ x: 100, y: 100 });
+    expect(result.find((n) => n.id === "b")?.position).toEqual({ x: 50, y: 50 });
+  });
+
+  it("keeps next's data (WorldState-derived content) even for a dragging node, only overriding position/dragging/selected", () => {
+    const draggedEntity = { ...node, blockHeight: 999 };
+    const previous: CanvasFlowNode[] = [
+      infraNode({ position: { x: 240, y: 180 }, dragging: true }),
+    ];
+    const next: CanvasFlowNode[] = [
+      infraNode({ position: { x: 0, y: 0 }, data: { entity: draggedEntity } }),
+    ];
+    const result = preserveDraggingState(next, previous);
+    expect(result[0].position).toEqual({ x: 240, y: 180 });
+    expect((result[0] as InfraFlowNode).data.entity).toBe(draggedEntity);
+  });
+
+  it("restores next's position once dragging has stopped (previous.dragging is false after onNodeDragStop)", () => {
+    const previous = [
+      infraNode({ position: { x: 240, y: 180 }, dragging: false, selected: true }),
+    ];
+    const next = [infraNode({ position: { x: 300, y: 300 } })];
+    const result = preserveDraggingState(next, previous);
+    expect(result[0]).toBe(next[0]);
+    expect(result[0].position).toEqual({ x: 300, y: 300 });
+  });
+
+  it("leaves a newly added node (no matching previous id) untouched even while another node is dragging", () => {
+    const previous = [
+      infraNode({ id: "existing", position: { x: 240, y: 180 }, dragging: true }),
+    ];
+    const next = [
+      infraNode({ id: "existing", position: { x: 0, y: 0 } }),
+      infraNode({ id: "brand-new", position: { x: 50, y: 50 } }),
+    ];
+    const result = preserveDraggingState(next, previous);
+    expect(result[1]).toBe(next[1]);
   });
 });
