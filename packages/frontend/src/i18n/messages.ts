@@ -338,6 +338,19 @@ export const messages = {
     ja: "クリックでキャンバス上のカードへ移動",
     en: "Click to jump to the card on the canvas",
   },
+  // --- C層拡張: mempool パネル（Issue #330。ARCHITECTURE.md §11、
+  // docs/worklog/issue-330.md 参照） ---
+  "mempoolPanel.title": { ja: "mempool", en: "Mempool" },
+  "mempoolPanel.empty": {
+    ja: "保留中の tx はありません（滞りなく取り込まれています）",
+    en: "No pending transactions — everything is being included promptly.",
+  },
+  "mempoolPanel.jumpHint": {
+    ja: "クリックで送信元ウォレットのカードへ移動",
+    en: "Click to jump to the sender wallet's card",
+  },
+  "mempoolPanel.overflow": { ja: "他 {count} 件", en: "+{count} more" },
+  "mempoolPanel.nodesTitle": { ja: "ノード別 txpool", en: "Txpool by node" },
   // --- D層: 内部リンクエッジ・活動パルス（ARCHITECTURE.md §7.6.3/§7.6.4。
   // Issue #188） ---
   "edge.internalLink": { ja: "内部リンク（Engine API）", en: "Internal link (Engine API)" },
