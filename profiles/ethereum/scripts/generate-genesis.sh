@@ -51,15 +51,20 @@ GENESIS_TIMESTAMP_FILE=/data/.genesis-timestamp
 #     ジッタ耐性を持つ。60秒以内の新鮮さは「生存の証明」にはならない
 #     (down 直後の up も同じ見え方になる。#286 の教訓)ため、実際の生存
 #     判定は下記のサンプリングに委ねる。
-#   GENESIS_MAX_REBUILD_GAP_SEC(既定 600秒 = 300 slot分。
-#     旧 GENESIS_DOWNTIME_RESET_SEC から改名。判定量が「停止時間」から
-#     「genesis 年齢(=次回起動時に再構築を要する最大 slot 数)」に変わった
-#     ため):
+#   GENESIS_MAX_REBUILD_GAP_SEC(既定 600秒。実時間ベースの値であり
+#     SLOT_DURATION_IN_SECONDS には依存しない。slot 数換算は values.env の
+#     設定値によって変わる(例: 12秒 slot なら 50 slot 分、2秒 slot なら
+#     300 slot 分)。旧 GENESIS_DOWNTIME_RESET_SEC から改名。判定量が
+#     「停止時間」から「genesis 年齢(=次回起動時に再構築を要する実時間)」
+#     に変わったため):
 #     genesis 年齢がこれを超える場合のみ再生成を検討する(超えなければ、
 #     稼働中でも全停止後でも安全に追いつける)。#139 の QA 実測(20 vCPU で
-#     1350 slot を約90秒で追いつき、ハングは3200 slot以上でのみ観測)を
-#     踏まえ、観測ハング点の1/10以下に取った安全側の値。CPU 性能に依存する
-#     値であり、特定環境の実測値ぎりぎりに合わせたものではない。
+#     1350 slot ≒ 2700 秒(当時の 2秒 slot)を約90秒で追いつき、ハングは
+#     3200 slot 以上でのみ観測)を踏まえ、観測ハング点の1/10以下に取った
+#     安全側の値。CPU 性能に依存する値であり、特定環境の実測値ぎりぎりに
+#     合わせたものではない。slot time を変更しても値そのものは変わらない
+#     (Issue #322。600秒あたりの再構築 slot 数が減る方向にしか動かないため
+#     安全側)。
 LIVE_THRESHOLD_SEC="${GENESIS_LIVE_THRESHOLD_SEC:-60}"
 MAX_REBUILD_GAP_SEC="${GENESIS_MAX_REBUILD_GAP_SEC:-600}"
 # ハートビート書き込み間隔(reth-node.sh / lighthouse-bn.sh と同じ既定値。
