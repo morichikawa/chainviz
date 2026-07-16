@@ -381,6 +381,32 @@ export interface TransactionEntity {
 }
 
 /**
+ * カタログ同梱コントラクトのソースコード（表示用。Issue #321）。
+ *
+ * チェーン上に置かれるのはコンパイル済みバイトコードだけでソースは載らない
+ * ため、ソースの出どころはチェーンプロファイルのコントラクトカタログ
+ * （デプロイに使う実物の Solidity ソース等をカタログが同梱する）。
+ * カタログで特定できないコントラクトはこの情報を持たず、フロントは
+ * 「ソースが手元に無いため表示できない」ことを明示する。
+ *
+ * ABI と違いこれは表示用の不透明なテキストであり、フロントへ渡しても
+ * ChainAdapter 境界（復号ロジックをアダプタ内に閉じる）は破らない。
+ */
+export interface ContractSourceCode {
+  /** 表示用のファイル名（例: "ChainvizToken.sol"）。 */
+  fileName: string;
+  /**
+   * ソースの言語を表す生の識別子（例: "solidity"）。解釈（シンタックス
+   * ハイライトの方式など）はフロントのチェーンプロファイル表現セットの
+   * 責務（OperationEdge.operation / SyncStageProgress.stage と同じ扱い）。
+   * 表現セットが知らない言語は装飾なしのプレーンテキストで表示する。
+   */
+  language: string;
+  /** ソースコード全文。 */
+  code: string;
+}
+
+/**
  * チェーン上にデプロイされたスマートコントラクト。特定の 1 ノードの中で
  * 動くものではなく「チェーンに複製され、全ノードが同じ実行をするプログラム」
  * であり、WalletEntity と同じくチェーン側の状態なので、ノード・ワークベンチの
@@ -413,6 +439,13 @@ export interface ContractEntity {
    * WalletEntity.tokenBalances の amount はこの decimals で解釈する。
    */
   token?: { symbol: string; decimals: number };
+  /**
+   * カタログ同梱のソースコード（表示用。Issue #321）。カタログで特定でき、
+   * かつカタログがソースを同梱している場合のみ入る。省略 = ソースが手元に
+   * 無い（未知のコントラクト・ソース未同梱のカタログエントリ・旧スナップ
+   * ショット）で、フロントは「表示できない」ことを明示する側に倒す。
+   */
+  sourceCode?: ContractSourceCode;
 }
 
 export interface UserOperationEntity {
