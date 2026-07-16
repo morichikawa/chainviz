@@ -1,5 +1,70 @@
 # Issue #327 UI全体に透明感・グラデーションを意識したビジュアルデザインを取り入れる
 
+### 2026-07-16 実装レビュー（chainviz-reviewer）
+
+- 担当: reviewer
+- ブランチ: issue-327-visual-design
+- 結果: **合格**（実装内容自体に差し戻し事項なし）。ただしマージ前に
+  対応が必要な注意事項が1件ある（下記A）
+
+#### 確認したこと
+
+- 設計メモ遵守: すりガラス（`--glass-bg`/`--glass-popover-bg` +
+  backdrop-filter）の適用先はオーバーレイパネル5種（canvas-toolbar /
+  layer-filter-bar / p2p-legend / contract-list-panel / toast）と
+  ポップオーバー9種に限定され、カード群（.infra-card / .chain-ribbon-card /
+  .chain-ribbon-tile）は backdrop-filter 不使用で縦グラデーション+上端1px
+  ハイライトのみ。設計メモ§2〜3のとおり。役割別の枠色（border-color）・
+  エッジ色・状態色は一切変更されていないことを diff 全体で確認した
+- 視認性: 設計メモ§4のWCAGコントラスト比を独立に再計算し、全て一致
+  （丸め誤差程度）。カード上端 vs --muted 6.46、ガラスパネル地（明るい
+  カードが背後の最悪ケース）vs --muted 7.47、ポップオーバー地 vs --text
+  15.67、送信ボタン最暗部 vs 文字色 5.21 で、テキスト系は全て AA(4.5) を
+  上回る。背景色光による --border 境界コントラストの低下（2.56→2.22〜2.30）
+  は設計メモがα上限とセットで許容範囲として明記済みの範囲内
+- Canvas.tsx との連動: main.tsx の import 順（`@xyflow/react/dist/style.css`
+  → `./styles.css`）を確認。`.app__canvas .react-flow`（詳細度0,2,0）が
+  `.react-flow.dark`（同0,2,0）を後勝ちで上書きする設計は正しい。
+  `bgColor="transparent"` により実背景の塗りはCSS側の1枚のみで、二重塗り・
+  透過漏れ（#141414 の露出）は静的には無い（実描画の確認はQAに委ねる）
+- peerEdge.ts: 変更はコメント追記のみ。NETWORK_COLORS は静的パレットで、
+  コントラスト計算は設計時の分析でありランタイムロジックではない。
+  「色光の中心は画面外にあり画面内はより暗い」という追記コメントの主張も
+  再計算で妥当と確認（画面内最明部でもα実効値≈0.08）。ロジック変更なしの
+  ため chainviz-tester 省略・新規ユニットテスト不要の判断は妥当
+- フォールバック: `@supports not ((backdrop-filter: blur(1px)) or
+  (-webkit-backdrop-filter: blur(1px)))` は設計メモの単一条件版より正確
+  （-webkit- 接頭辞のみ対応の環境を誤ってフォールバックさせない）。
+  対象セレクタはガラス化した5パネル+9ポップオーバーと過不足なく一致。
+  タイトルの background-clip: text 非対応時のフォールバック（@supports で
+  機能検出し通常の --text 色）も適切
+- 取り残し確認: 旧様式の背景が残るのは `.status-badge`（今回の対象外）と
+  `.operation-form__submit:disabled`（設計メモで「変更しない」と明記）のみ
+- `pnpm lint` / `pnpm build` / `pnpm test` をリポジトリ全体で実行し全通過
+  （frontend 144ファイル2129件を含む）
+- コミット粒度: 設計メモ（bcd3ee1）/ 実装（5256cd8）/ worklog+PLAN更新
+  （7df7027）の3コミットで、1変更1コミットの規約に適合
+- docs 齟齬: ARCHITECTURE.md / CONCEPT.md にキャンバス背景色の記述はなく
+  齟齬なし。PLAN.md のチェックと括弧書き、WORKLOG.md 索引も確認済み
+
+#### 注意事項
+
+- **A（マージ前に要対応）**: 本ブランチのベース（3d65012）は main より
+  古く、その後 main に Issue #328（PR #335）・Issue #330（PR #337、
+  mempool パネル）等がマージ済み。両者とも styles.css を変更しているため
+  マージ時にコンフリクトの可能性が高い。さらに main で追加された
+  `.mempool-panel` は旧様式 `rgba(26, 32, 48, 0.9)` のフラット塗りのままで、
+  本デザインの「浮遊オーバーレイパネル」に該当するのに未適用。main 取り込み
+  後に `.mempool-panel` へ canvas-toolbar 等と同じガラス処理（+ファイル末尾
+  フォールバック節への追加）を施す追補が必要（chainviz-frontend の作業。
+  実装時点で main に存在しなかったものなので実装担当の落ち度ではない）
+- B（軽微・対応不要）: フォールバックの `.toast` 背景 `rgba(26,32,48,0.92)`
+  は #327 以前のトースト背景（不透明 `#1a2030`）と厳密には一致しない
+  （α0.92）。視認上の影響は無視できる
+- C（記録済み・妥当）: `.toast--error` のα0.72 は設計メモに明記の無い
+  実装者判断だが、`.toast` 本体と透過率を揃える理由が worklog に記録
+  されており妥当
+
 ### 2026-07-16 「静かな夜のガラス」実装（chainviz-frontend）
 
 - 担当: frontend
