@@ -562,3 +562,167 @@ node-env 記録(+ 本レビュー記録)」の時系列順に再構成する。
   依頼どおり対応不要(履歴修正まで求めない)と扱う
 
 QA(chainviz-qa)への引き継ぎ・push/PR/マージは統括の判断に委ねる。
+
+### 2026-07-16 Issue #322 実環境検証(QA)
+
+- 担当: qa
+- ブランチ: issue-322-slot-time-and-indicator-e2e
+- 対象: slot time を 12 秒に戻す変更の実機検証。node-env 実装・E2E 追従・
+  レビュー(最終合格)まで完了済みの状態を、実際に Docker スタックを起動して
+  確認した。
+- 使用スタック: 同一 Docker デーモンを共有する他 worktree との衝突に注意。
+  compose の `name: chainviz-ethereum` は全 worktree 共通のため、本検証では
+  同 Issue の node-env ブランチ(`issue-322-slot-time-and-indicator`,
+  worktree agent-a807...)が残していた 12 秒 genesis スタックを、本 worktree の
+  compose で `down -v && up -d` により作り直して引き継いだ。他 Issue の
+  worktree に稼働中の Docker スタックは無く、巻き込みは無い。
+
+#### 検証結果(完了条件との照合)
+
+1. **フル genesis 再生成で 12 秒間隔(合格)**: `profiles/ethereum` で
+   `docker compose down -v && docker compose up -d`。オンチェーンのブロック
+   タイムスタンプ(`eth_getBlockByNumber`)を block 1〜8 で採取し、block 2 以降
+   すべて +12 秒(1784191267 → 1279 → 1291 → …)。ポーリングのジッターでは
+   なくブロック自身の時刻なので確定的。GENESIS_DELAY=20 の後、約 40 秒で
+   最初のブロックが出た。
+2. **up -d 再実行で genesis 再利用・進行継続(合格。#56/#286 回帰なし)**:
+   稼働中スタックへ `docker compose up -d` を再実行。genesis サービスのログに
+   「genesis 年齢 132秒 <= MAX_REBUILD_GAP(600秒)…再生成せずスキップする」
+   「既存の genesis を再利用する」を確認。既存コンテナは全て Running のまま
+   (再作成なし)、ブロックは 9 → 10 → 11 → 12 と途切れず進行。
+3. **プロトコル層 E2E 全通過(合格)**: `pnpm test:e2e` = 7 ファイル 14 テスト
+   全通過。所要 274.89 秒(約 4 分 35 秒。稼働中スタック再利用、コールド
+   スタート無し)。`d-layer.test.ts` の nodeLinkActivity(Engine API 活動)も
+   12 秒 slot で 10 秒で観測できた。
+4. **UI 層 node-internals.spec.ts(2/3 合格、1 件は #322 無関係の既存不具合)**:
+   Playwright chromium のシステムライブラリ(libnspr4 等)が本ホストに未導入
+   のため、`/home/zoe/chrome-deps/root/...`(既存の展開済みライブラリ)を
+   `LD_LIBRARY_PATH` に足して実行した(ARCHITECTURE §8.6 が warning 済みの
+   ホスト前提)。
+   - UI-D-01(内部リンクエッジ常設表示): 合格
+   - UI-D-02(Engine API 活動パルスが流れ続ける = 本 Issue のパルス待ち
+     タイムアウト修正 `SECOND_PULSE_TIMEOUT_MS` の検証箇所): **合格**。
+     12 秒 slot で修正後のタイムアウトが十分に機能することを確認。
+   - UI-D-03(ノード詳細に同期ステージ・txpool 内訳): **失敗**(再現性あり)。
+     ただし失敗箇所は `card.hover()` で「element is outside of the viewport」
+     (Test timeout 102s)。これは reth1 のカードが 1280×720 の初期ビュー
+     ポート外に配置され、React Flow の CSS transform キャンバス上のノードに
+     Playwright の実座標ホバーが届かないという**テスト設計・描画側の問題**で、
+     slot time とは無関係。#322 の node-internals.spec.ts への変更(コミット
+     1f0d7c9)は UI-D-02 のパルスタイムアウト導出のみで UI-D-03 の hover には
+     触れていないため、main でも同様に失敗する既存不具合と判断する
+     (UI-D-02 が同種の問題を避けるため座標非依存の `dispatchHover` を使って
+     いるのに対し、UI-D-03 は実 `card.hover()` を使っている点が差)。
+     tester 記録(§本ファイル)のとおり UI 層は本パイプラインで実 Docker
+     に対して未実行だったため、この既存の脆さは今回初めて表面化した。
+     **#322 のブロッカーにはしない**。別途 frontend/e2e の Issue として
+     `card.hover()` を `dispatchHover` 等の座標非依存手段へ置き換える追従を
+     推奨する。
+5. **collector 起動での syncStatus・D層パルス(合格)**: collector を
+   ポート 4100/4101 で起動し WebSocket でスナップショット・差分を観測。
+   - syncStatus: reth1/reth2/beacon1/beacon2 = **synced**。validator1/
+     validator2 = syncing。後者は `adapters/ethereum/index.ts` の設計どおり
+     「validator(VC)は P2P 非参加で syncStatusCache/beaconSyncStatusCache
+     いずれの対象でもなく、既定プレースホルダ syncing のまま」(#187/#274)
+     という既存挙動で、slot time 非依存。同期対象の EL/CL 4 ノードは全て
+     synced で完了条件を満たす。
+   - D層パルス: beacon1→reth1 / beacon2→reth2 の両リンクで nodeLinkActivity
+     が継続的に流れ、engine_newPayloadV4 / engine_forkchoiceUpdatedV3 /
+     engine_getPayloadV4 の増分を確認。パルスは「きっちり 12 秒周期」では
+     なく 1 slot(12 秒)内で 5〜15 秒間隔の複数回に分かれて出た。これは
+     Engine API 呼び出しがブロック取り込み+次 slot のペイロード準備など
+     slot 内の複数タイミングで発生し、collector の 3 秒ポーリングが複数の
+     観測窓で増分を捉えるためで、実際の Engine API 活動を正しく反映した挙動
+     (worklog §5 の「slot ごと約 12 秒間隔」は近似の見立て)。パルスが停止・
+     欠落する事象は無い。
+
+#### 実行時間(ARCHITECTURE §8.6 更新用の実測値。統括が反映)
+
+- プロトコル層 `pnpm test:e2e`: 14 テストで **274.89 秒(約 4 分 35 秒)**、
+  稼働中スタック再利用時。従来の 2 秒 slot 実測(2026-07-08、21 テストで
+  コールドスタート込み 3 分 07 秒)からの純増は、テスト数・起動条件が
+  異なるため直接比較はできないが、設計メモ §6.5 の「+2〜5 分」見積もりの
+  範囲に収まる伸び。
+- UI 層 node-internals.spec.ts(3 テスト中 2 通過): 約 3.1 分
+  (UI-D-03 の 102 秒タイムアウト失敗を含む)。
+
+#### 判定
+
+Issue #322 の期待する対応(slot time を現実の 12 秒へ戻す)は満たしている。
+1・2・3・5 は完了条件を満たし合格。4 のうちパルス待ちタイムアウト修正の
+検証箇所(UI-D-02)も合格。UI-D-03 の失敗は slot time 非依存の既存の描画・
+テスト設計上の脆さであり #322 のブロッカーとはしない(別 Issue での追従を
+推奨)。PLAN.md の #322 チェックボックスは実装フェーズで既に完了記入済みの
+ため QA での追加チェックは無し。
+
+### 2026-07-16 Issue #322 UI層E2Eフルスイートの追加検証(QA・追記)
+
+- 担当: qa
+- 位置づけ: 上記の検証(1〜5)完了後、UI層(Playwright)は node-internals.spec.ts
+  のみ実行していたため、UI層フルスイート(`pnpm test:e2e:ui`、13 spec / 35 テスト)
+  も 12 秒 genesis スタックに対して実行した。目的は #322(slot=12秒)による
+  回帰の有無を UI 全体で確認すること。
+- 注意: chromium のシステムライブラリ未導入ホストのため、既存の展開済み
+  ライブラリを `LD_LIBRARY_PATH` に足して実行(ARCHITECTURE §8.6 の既知前提)。
+  途中 VSCode 再起動でフルラン自体は中断したが、失敗したテストは後述のとおり
+  spec ファイル単位で個別に再実行して確定させた。
+
+#### フルラン(中断あり)で失敗したもの → 個別再実行での切り分け
+
+単一プロセスのフルランは前段のテストがワールドステート(addNode で足した
+ノード等)を残すためクロステスト汚染が起きうる。汚染を除くため、失敗した
+spec を 1 ファイルずつ(ファイルごとに globalSetup を分けて)クリーンな
+ベーススタックに対し個別再実行した。結果:
+
+| テスト | フルラン | 個別再実行 | 判定 |
+| --- | --- | --- | --- |
+| UI-B-05(リボン連なり) | ✓ | ✓ | 合格 |
+| UI-B-06(タイルホバー連動) | ✘ | **✓** | フルランの汚染/flakyな誤検出。実害なし |
+| UI-C-03(デプロイでカード出現) | ✘ | **✓**(4.7s) | 同上。tx 取り込み・カード出現は 12 秒で正常 |
+| UI-C-04(呼び出しの可視化) | - | ✘ | ホバー系(下記)。slot 非依存 |
+| UI-CMD-05/06(WB 追加) | ✓ | ✓ | 合格 |
+| UI-CMD-07(WB 削除) | ✘ | ✘ | 削除ボタンが stable にならない(下記)。slot 非依存 |
+| UI-ERR-01(切断バッジ) | ✓ | ✓ | 合格 |
+| UI-ERR-02(停止中の追加エラー伝達) | ✘ | ✘ | エラー要素 0 件(下記)。チェーン非関与 |
+| UI-D-01/D-02(内部リンク・活動パルス) | - | ✓ | 合格(§前節。UI-D-02 = 本 Issue の修正箇所) |
+| UI-D-03(ノード詳細ホバー) | - | ✘ | ホバー/ビューポート(§前節)。slot 非依存 |
+| その他(connection, commands-node 等) | ✓ | - | 合格 |
+
+#### 個別でも再現する失敗の性質(いずれも #322=slot 非依存)
+
+- **UI-C-04**: `callChip`(呼び出しチップ「increment」)・`eventChip`
+  (イベントチップ「Incremented」)の出現までは合格しており、tx 取り込みと
+  可視化は 12 秒 slot で正常に動く(#322 が延ばした `OPERATION_EFFECT_TIMEOUT_MS`
+  が実際に機能した)。失敗は最後の `eventChip.hover()` によるポップオーバー
+  表示(line 151、5000ms)。UI-D-03 と同じ実 `.hover()` 依存の問題。
+- **UI-CMD-07**: 削除ボタン自体は解決でき(`aria-busy=false`)、「visible,
+  enabled and stable」の stable 判定が永久に成立しない(102 秒タイムアウト)。
+  カードが描画フレーム間で位置変動し続けている疑い(既存 Issue #328
+  「ドラッグ位置の jitter」と同系の可能性)。slot 非依存。
+- **UI-ERR-02**: collector 停止中のエラー表示要素が 0 件のまま(14 回リトライ)。
+  チェーン進行に一切関与しないシナリオで slot 非依存。エラー表示経路の
+  既存の脆さ、または環境要因。
+- **UI-D-03**: `card.hover()` がビューポート外(§前節)。
+
+共通点は「実 `.hover()`」「描画の安定性(stable)」「停止中のエラー表示」で、
+いずれもチェーン進行の待ち時間(slot 依存部分)ではない。#322 が唯一触れた
+tx 取り込み系タイムアウト(`OPERATION_EFFECT_TIMEOUT_MS`・`SECOND_PULSE_TIMEOUT_MS`
+等)は UI-C-03/UI-C-04 前半・UI-D-02 で実際に機能することを確認した。合格した
+UI テスト(UI-B-05/06、UI-CMD-01〜06、UI-C-03/06、connection 系、UI-D-01/02)は
+基本描画・dispatchHover・tx 取り込みが健全であることを示す。
+
+#### 判定(UI層追加分)
+
+UI層フルスイートに複数の失敗があるが、個別再現するものは全て slot time 非依存
+(ホバー/描画安定性/エラー表示)であり、**#322(slot=12秒)による回帰ではない**。
+これらは UI層 E2E がこれまで本パイプラインで実 Docker に対して未実行だった
+ため今回初めて表面化した既存のテスト脆さ(実 `.hover()` 依存・#328 系の
+jitter 疑い等)、および chromium を LD_LIBRARY_PATH で組み立てた実行環境の
+影響が混在している可能性がある。厳密な pre-existing 確認(2 秒 slot の main
+での再実行)は共有スタックの破壊的再構築を伴うため実施していない。
+
+対応の推奨(#322 とは分離): 実 `.hover()` を使う UI テスト(UI-D-03/UI-C-04
+のポップオーバー、必要なら UI-B-06)を UI-D-02 と同様に座標非依存の
+`dispatchHover` へ寄せる追従、UI-CMD-07 の削除ボタン stable 化(#328 との
+関連調査)、UI-ERR-02 のエラー表示経路の確認を、それぞれ別 Issue(frontend/e2e)
+として起票することを推奨する。**いずれも #322 のマージはブロックしない。**
