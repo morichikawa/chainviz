@@ -91,4 +91,76 @@ describe("ContractTracker sourceCode transcription (Issue #321)", () => {
     });
     expect(entity?.sourceCode).not.toBe(catalogWithSource.ChainvizToken.source);
   });
+
+  it("gives each of two deployments of the same catalog key its own sourceCode", () => {
+    // 同一カタログキー（同じ Solidity ソース）を別アドレスに 2 回デプロイした
+    // 場合、それぞれ独立した ContractEntity として sourceCode を持つ。カタログ
+    // 照合が複数回走ってもソースが片方に偏らず両方に転記されることを固定する。
+    const tracker = new ContractTracker("ethereum", catalogWithSource);
+    tracker.registerDeployment("0xaaa", "ChainvizToken");
+    tracker.registerDeployment("0xbbb", "ChainvizToken");
+    const first = tracker.recordDeployment({
+      address: "0xaaa",
+      deployerAddress: "0xdeployer",
+      createdByTxHash: "0xtx1",
+    });
+    const second = tracker.recordDeployment({
+      address: "0xbbb",
+      deployerAddress: "0xdeployer",
+      createdByTxHash: "0xtx2",
+    });
+    const expected = {
+      fileName: "ChainvizToken.sol",
+      language: "solidity",
+      code: "contract ChainvizToken {}",
+    };
+    expect(first?.sourceCode).toEqual(expected);
+    expect(second?.sourceCode).toEqual(expected);
+    // 2 つのエンティティが sourceCode オブジェクトを共有していないこと。
+    expect(first?.sourceCode).not.toBe(second?.sourceCode);
+  });
+
+  it("keeps sourceCode intact when the same catalog key is re-registered (idempotent no-op)", () => {
+    // 同じアドレス・同じカタログキーで registerDeployment が再度呼ばれた場合、
+    // 2 回目は「変化なし」で null を返すが、追跡中のエンティティの sourceCode は
+    // そのまま維持される（重複登録で消えたりしない）。
+    const tracker = new ContractTracker("ethereum", catalogWithSource);
+    tracker.registerDeployment("0xnew", "ChainvizToken");
+    tracker.recordDeployment({
+      address: "0xnew",
+      deployerAddress: "0xdeployer",
+      createdByTxHash: "0xtx1",
+    });
+    const again = tracker.registerDeployment("0xnew", "ChainvizToken");
+    expect(again).toBeNull();
+    expect(tracker.get("0xnew")?.sourceCode).toEqual({
+      fileName: "ChainvizToken.sol",
+      language: "solidity",
+      code: "contract ChainvizToken {}",
+    });
+  });
+
+  it("keeps sourceCode intact when a duplicate deployment detection is ignored", () => {
+    // 複数ノードが同一ブロックを重複通知するなどで recordDeployment が同じ
+    // アドレスに 2 回来た場合、2 回目は null（変化なし）。1 回目で埋めた
+    // sourceCode が保持される。
+    const tracker = new ContractTracker("ethereum", catalogWithSource);
+    tracker.registerDeployment("0xnew", "ChainvizToken");
+    tracker.recordDeployment({
+      address: "0xnew",
+      deployerAddress: "0xdeployer",
+      createdByTxHash: "0xtx1",
+    });
+    const duplicate = tracker.recordDeployment({
+      address: "0xnew",
+      deployerAddress: "0xdeployer",
+      createdByTxHash: "0xtx1",
+    });
+    expect(duplicate).toBeNull();
+    expect(tracker.get("0xnew")?.sourceCode).toEqual({
+      fileName: "ChainvizToken.sol",
+      language: "solidity",
+      code: "contract ChainvizToken {}",
+    });
+  });
 });

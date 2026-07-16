@@ -119,6 +119,25 @@ describe("ContractSourceView", () => {
     );
   });
 
+  it("renders the source block (not the unavailable message) when sourceCode is present but code is empty", () => {
+    // sourceCode があるかどうかで分岐するため、code が空文字でも「ソース有り」
+    // 扱いになる（「ソース無し」の説明文には倒れない）。空ソースは 1 行分の
+    // 空行として表示され、ファイル名は出る。境界（code: ""）の表示を固定する。
+    const { container } = wrap(
+      contract({
+        name: "Empty",
+        sourceCode: { fileName: "Empty.sol", language: "solidity", code: "" },
+      }),
+    );
+    expect(screen.queryByTestId("contract-source-unavailable")).toBeNull();
+    expect(screen.getByTestId("contract-source-code")).toBeTruthy();
+    expect(screen.getByText("Empty.sol")).toBeTruthy();
+    const lineNumbers = Array.from(
+      container.querySelectorAll(".contract-source-view__line-number"),
+    ).map((el) => el.textContent);
+    expect(lineNumbers).toEqual(["1"]);
+  });
+
   it("renders the header labels in English when the language is English", () => {
     wrap(contract({ name: undefined }), "en");
     expect(screen.getByText("Unknown contract")).toBeTruthy();

@@ -99,3 +99,76 @@ describe("tokenizeSolidity", () => {
     expect(tokenizeSolidity("")).toEqual([]);
   });
 });
+
+// 異常・境界的な入力（Solidity として不正だが、表示対象として渡されうる文字列）。
+// トークナイザは「装飾」であり正しさの保証はしないが、（1）例外を投げない、
+// （2）連結すると元のソースに一致する（splitTokensIntoLines が前提とする不変
+// 条件）、（3）コメント・文字列の内側のキーワード風語を分類しない、の 3 点は
+// 崩れてはならない。
+describe("tokenizeSolidity (adversarial / malformed input)", () => {
+  /** どんな入力でも「全 text を連結すると元のソースに一致する」不変条件を確認。 */
+  function expectRoundTrip(code: string) {
+    expect(texts(code).join("")).toBe(code);
+  }
+
+  it("does not classify keyword-like words inside a line comment", () => {
+    const tokens = tokenizeSolidity("// contract function public");
+    expect(tokens).toEqual([
+      { kind: "comment", text: "// contract function public" },
+    ]);
+  });
+
+  it("does not classify keyword-like words inside a string literal", () => {
+    const tokens = tokenizeSolidity('"contract Foo public"');
+    expect(tokens).toEqual([{ kind: "string", text: '"contract Foo public"' }]);
+  });
+
+  it("closes a nested-looking block comment at the first */ (Solidity does not nest comments)", () => {
+    // Solidity のブロックコメントは入れ子非対応で、最初の */ で閉じる。
+    // トークナイザも同じ挙動（最初の */ まで）にし、以降は通常のコードとして
+    // 分類する。round-trip が保たれることも確認する。
+    const code = "/* a /* b */ c */";
+    const tokens = tokenizeSolidity(code);
+    expect(tokens[0]).toEqual({ kind: "comment", text: "/* a /* b */" });
+    expectRoundTrip(code);
+  });
+
+  it("degrades gracefully on an unterminated string (no throw, round-trip preserved)", () => {
+    const code = '"abc';
+    expect(() => tokenizeSolidity(code)).not.toThrow();
+    // 閉じ引用符が無いので string トークンにはならない。
+    expect(tokenizeSolidity(code).some((t) => t.kind === "string")).toBe(false);
+    expectRoundTrip(code);
+  });
+
+  it("degrades gracefully on an unterminated block comment (no throw, round-trip preserved)", () => {
+    const code = "/* abc";
+    expect(() => tokenizeSolidity(code)).not.toThrow();
+    expect(tokenizeSolidity(code).some((t) => t.kind === "comment")).toBe(false);
+    expectRoundTrip(code);
+  });
+
+  it("does not treat a digit run glued to letters as a number token", () => {
+    // "123abc" は \b 境界が無く number にならない。壊れず round-trip すること。
+    const code = "123abc";
+    expect(tokenizeSolidity(code).some((t) => t.kind === "number")).toBe(false);
+    expectRoundTrip(code);
+  });
+
+  it("keeps tabs and non-ASCII (Unicode) text intact as plain, preserving round-trip", () => {
+    const code = "uint256\t日本語 count; // café ☕";
+    const tokens = tokenizeSolidity(code);
+    expect(tokens[0]).toEqual({ kind: "type", text: "uint256" });
+    // 非 ASCII 識別子（日本語）は識別子パターンに合致せず plain として残る。
+    expect(tokens.some((t) => t.kind === "plain" && t.text.includes("日本語"))).toBe(
+      true,
+    );
+    expectRoundTrip(code);
+  });
+
+  it("handles a string ending in an escaped backslash without swallowing the closing quote", () => {
+    const code = '"a\\\\"';
+    expect(tokenizeSolidity(code)).toEqual([{ kind: "string", text: code }]);
+    expectRoundTrip(code);
+  });
+});
