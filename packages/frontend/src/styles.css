@@ -50,6 +50,17 @@
      区別する（.infra-card--fork-2/3、下記）ため、2色で4枝まで表現できる。 */
   --fork-color-a: #ffcc00;
   --fork-color-b: #00e0ff;
+  /* 「静かな夜のガラス」デザイン方針（Issue #327）のガラス表現トークン。
+     すりガラス（半透明 + backdrop-filter）は重なりが発生する浮遊要素
+     （オーバーレイパネル・ポップオーバー・トースト）にのみ使う。カード群
+     （.infra-card 等）は React Flow の transform 内で数が多く、パン/ズーム中の
+     再描画コストとレンダリング不具合のリスクがあるため backdrop-filter を
+     使わず、縦グラデーション + 上端ハイライトだけで透明感を表現する
+     （docs/worklog/issue-327.md §3(a)(e)）。 */
+  --glass-bg: rgba(26, 32, 48, 0.72); /* オーバーレイパネルの地 */
+  --glass-popover-bg: rgba(10, 15, 24, 0.88); /* ポップオーバーの地 */
+  --glass-border: rgba(201, 212, 232, 0.18); /* ガラスの縁 */
+  --glass-highlight: rgba(255, 255, 255, 0.07); /* 上端1pxのハイライト */
   font-family:
     "Inter", system-ui, -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN",
     "Noto Sans JP", sans-serif;
@@ -77,18 +88,34 @@ body {
   height: 100vh;
 }
 
+/* Issue #327: ヘッダーにも縦グラデーションを添える。 */
 .app__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 12px 20px;
-  background: var(--panel);
+  background: linear-gradient(180deg, #1d2436 0%, #161c2b 100%);
   border-bottom: 1px solid var(--divider);
 }
 
+/* タイトルをグラデーションテキストにする（Issue #327）。
+   background-clip: text は color: transparent と組み合わせて文字を
+   くり抜く仕組みのため、-webkit-background-clip/background-clip の
+   どちらも対応しない環境では文字が消える。@supports で機能検出し、
+   非対応環境では通常の --text 色に戻す。 */
 .app__title {
   font-size: 18px;
   margin: 0;
+  color: var(--text);
+}
+
+@supports (-webkit-background-clip: text) or (background-clip: text) {
+  .app__title {
+    background: linear-gradient(90deg, #e7ecf4 30%, #9cc4ff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
 }
 
 .app__subtitle {
@@ -119,8 +146,11 @@ body {
   color: var(--syncing);
 }
 
+/* Issue #327: ボタン・チップ類は控えめな縦グラデーション + ホバー時の
+   アクセントグローで質感を底上げする（既存の border-color: --accent
+   ホバー挙動は維持）。 */
 .language-toggle {
-  background: var(--panel-2);
+  background: linear-gradient(180deg, #2a3450, #222a3e);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -131,11 +161,32 @@ body {
 
 .language-toggle:hover {
   border-color: var(--accent);
+  box-shadow: 0 2px 10px rgba(79, 157, 255, 0.25);
 }
 
 .app__canvas {
   flex: 1;
   position: relative;
+}
+
+/* --- キャンバス背景の淡い色光（Issue #327「静かな夜のガラス」） ---
+   React Flow は colorMode="dark" にすると `.react-flow.dark` が
+   `--xy-background-color-default: #141414` を敷き、これが `.react-flow` 要素
+   自身の background-color になる（`@xyflow/react/dist/style.css`）。
+   `<Background bgColor="transparent">`（Canvas.tsx）で Background コンポーネント
+   側の塗りを透明にしても、その下の `.react-flow` 自体の #141414 は残るため、
+   ここで `.react-flow` の background を直接上書きする。セレクタの詳細度は
+   `.react-flow.dark`（クラス2つ）と同じ `.app__canvas .react-flow`（クラス2つ）
+   にし、`@xyflow/react/dist/style.css` より後に読み込まれる本ファイル
+   （main.tsx の import 順）内で定義することで確実に上書きする。
+   α は背景色光がカード境界（--border）とのコントラストを大きく損なわない
+   よう、青0.10・インディゴ0.09を上限に据え置く（docs/worklog/issue-327.md
+   §4 の検算値）。 */
+.app__canvas .react-flow {
+  background:
+    radial-gradient(1100px 700px at 12% -8%, rgba(79, 157, 255, 0.1), transparent 60%),
+    radial-gradient(900px 650px at 105% 108%, rgba(111, 125, 234, 0.09), transparent 55%),
+    var(--bg);
 }
 
 .app__empty {
@@ -161,7 +212,11 @@ body {
   gap: 8px;
 }
 
-/* --- キャンバス操作ツールバー（ノード/ワークベンチ追加） --- */
+/* --- キャンバス操作ツールバー（ノード/ワークベンチ追加） ---
+   Issue #327「静かな夜のガラス」: 重なりが発生する浮遊オーバーレイパネルの
+   1つとしてすりガラス化する（背景 --glass-bg + backdrop-filter）。
+   backdrop-filter 非対応環境向けの不透明フォールバックはファイル末尾の
+   `@supports not (backdrop-filter: blur(1px))` にまとめている。 */
 .canvas-toolbar {
   display: flex;
   align-items: center;
@@ -169,9 +224,13 @@ body {
   flex-wrap: wrap;
   padding: 8px;
   border-radius: 12px;
-  background: rgba(26, 32, 48, 0.9);
-  border: 1px solid var(--divider);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid var(--glass-border);
+  box-shadow:
+    0 8px 28px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 var(--glass-highlight);
 }
 
 .canvas-toolbar__workbench {
@@ -180,8 +239,9 @@ body {
   gap: 6px;
 }
 
+/* Issue #327: language-toggle と同じ質感（微グラデーション + ホバーグロー）。 */
 .canvas-toolbar__button {
-  background: var(--panel-2);
+  background: linear-gradient(180deg, #2a3450, #222a3e);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -193,6 +253,7 @@ body {
 
 .canvas-toolbar__button:hover {
   border-color: var(--accent);
+  box-shadow: 0 2px 10px rgba(79, 157, 255, 0.25);
 }
 
 .canvas-toolbar__input {
@@ -263,7 +324,8 @@ body {
   border-top: 1px solid var(--divider);
 }
 
-/* --- レイヤーレンズのチップバー（Issue #299。canvas-toolbar の直下） --- */
+/* --- レイヤーレンズのチップバー（Issue #299。canvas-toolbar の直下） ---
+   Issue #327: canvas-toolbar と同じすりガラス化。 */
 .layer-filter-bar {
   display: flex;
   align-items: center;
@@ -271,9 +333,13 @@ body {
   flex-wrap: wrap;
   padding: 6px 8px;
   border-radius: 999px;
-  background: rgba(26, 32, 48, 0.9);
-  border: 1px solid var(--divider);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid var(--glass-border);
+  box-shadow:
+    0 8px 28px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 var(--glass-highlight);
 }
 
 .layer-filter-bar__label {
@@ -283,8 +349,10 @@ body {
   white-space: nowrap;
 }
 
+/* Issue #327: canvas-toolbar__button と同じ質感。選択中(--active)の淡い塗りは
+   変更しない。 */
 .layer-filter-bar__chip {
-  background: var(--panel-2);
+  background: linear-gradient(180deg, #2a3450, #222a3e);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -334,15 +402,27 @@ body {
   white-space: nowrap;
 }
 
-/* --- インフラカード --- */
+/* --- インフラカード ---
+   Issue #327「静かな夜のガラス」: カードは React Flow の transform 内で
+   数が多く、パン/ズーム中の再描画コストとレンダリング不具合のリスクが
+   あるため backdrop-filter は使わない。代わりに縦グラデーション（α0.96〜
+   0.97）+ 上端1pxハイライト（inset）+ 深めの影で透明感を表現する。役割別の
+   border-color（ワークベンチ紫・ウォレット琥珀・コントラクトインディゴ等）
+   は変更しない。 */
 .infra-card {
   position: relative;
   min-width: 190px;
   padding: 12px 14px;
   border-radius: 12px;
-  background: var(--panel-2);
+  background: linear-gradient(
+    180deg,
+    rgba(40, 48, 68, 0.96) 0%,
+    rgba(31, 38, 55, 0.97) 100%
+  );
   border: 1px solid var(--border);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 var(--glass-highlight);
 }
 
 .infra-card__remove {
@@ -560,6 +640,11 @@ body {
 /* 位置決めは PopoverPortal が anchorRef から計算して body 直下へ描画する
    （Issue #245）。z-index は入れ子のポップオーバー（GlossaryTerm 等）との
    相対的な重なり順のためだけに残す。 */
+/* Issue #327: ポップオーバー群は共通してダークガラス化する（背景
+   --glass-popover-bg + backdrop-filter）。枠色（--border/役割色）は
+   「枠色=役割」の意味体系を維持するため変更しない。PopoverPortal で
+   body 直下に描画され同時表示数も少ないため、backdrop-filter の
+   パフォーマンス影響はない。 */
 .contract-activity-chip__popover {
   z-index: 25;
   display: flex;
@@ -569,9 +654,13 @@ body {
   max-width: 240px;
   padding: 6px 8px;
   border-radius: 8px;
-  background: #0c1119;
+  background: var(--glass-popover-bg);
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
   border: 1px solid var(--border);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 var(--glass-highlight);
   font-size: 11px;
   white-space: normal;
   text-align: left;
@@ -630,9 +719,13 @@ body {
   max-width: 260px;
   padding: 8px 10px;
   border-radius: 10px;
-  background: #0c1119;
+  background: var(--glass-popover-bg);
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
   border: 1px solid var(--contract-edge);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 var(--glass-highlight);
   font-size: 11px;
 }
 
@@ -935,9 +1028,13 @@ body {
   max-width: 300px;
   padding: 8px 10px;
   border-radius: 10px;
-  background: #0c1119;
+  background: var(--glass-popover-bg);
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
   border: 1px solid var(--internal-edge);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 var(--glass-highlight);
   font-size: 11px;
 }
 
@@ -982,6 +1079,7 @@ body {
 /* キャンバス右下、MiniMap(既定 200x150、外枠15pxマージン)の上に重ならない
    よう底からのオフセットを確保する。ピアエッジが1本も無いときは
    PeerNetworkLegend 自体が null を返すため出ない。 */
+/* Issue #327: 浮遊オーバーレイパネルとして canvas-toolbar と同じすりガラス化。 */
 .p2p-legend {
   position: absolute;
   right: 15px;
@@ -991,9 +1089,13 @@ body {
   max-width: 260px;
   padding: 8px 10px;
   border-radius: 10px;
-  background: rgba(26, 32, 48, 0.9);
-  border: 1px solid var(--divider);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid var(--glass-border);
+  box-shadow:
+    0 8px 28px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 var(--glass-highlight);
   font-size: 11px;
 }
 
@@ -1022,7 +1124,8 @@ body {
 /* キャンバス左下、Controls(既定 bottom-left、ズームイン/アウト/フィット/
    ロックの4ボタン、実測高さ約110px+マージン15px)の上に重ならないよう
    底からのオフセットを確保する。デプロイ済み・デプロイ中のコントラクトが
-   1件も無いときは ContractListPanel 自体が null を返すため出ない。 */
+   1件も無いときは ContractListPanel 自体が null を返すため出ない。
+   Issue #327: 浮遊オーバーレイパネルとして canvas-toolbar と同じすりガラス化。 */
 .contract-list-panel {
   position: absolute;
   left: 15px;
@@ -1034,9 +1137,13 @@ body {
   overflow-y: auto;
   padding: 8px 10px;
   border-radius: 10px;
-  background: rgba(26, 32, 48, 0.9);
-  border: 1px solid var(--divider);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid var(--glass-border);
+  box-shadow:
+    0 8px 28px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 var(--glass-highlight);
   font-size: 11px;
 }
 
@@ -1110,7 +1217,9 @@ body {
    異なり0件でも常に描画するため、bottom オフセットは
    「ContractListPanel の bottom(150) + ContractListPanel の最大高さ(220) +
    隙間(15)」で固定し、ContractListPanel がどこまで伸びても重ならないように
-   する。 */
+   する。
+   Issue #327 追補: 浮遊オーバーレイパネルとして contract-list-panel と
+   同じすりガラス化。 */
 .mempool-panel {
   position: absolute;
   left: 15px;
@@ -1122,9 +1231,13 @@ body {
   overflow-y: auto;
   padding: 8px 10px;
   border-radius: 10px;
-  background: rgba(26, 32, 48, 0.9);
-  border: 1px solid var(--divider);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid var(--glass-border);
+  box-shadow:
+    0 8px 28px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 var(--glass-highlight);
   font-size: 11px;
 }
 
@@ -1257,9 +1370,13 @@ button.mempool-panel__row:hover {
   max-width: 260px;
   padding: 8px 10px;
   border-radius: 10px;
-  background: #0c1119;
+  background: var(--glass-popover-bg);
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
   border: 1px solid var(--border);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 var(--glass-highlight);
   font-size: 11px;
 }
 
@@ -1355,9 +1472,13 @@ button.mempool-panel__row:hover {
   max-width: 300px;
   padding: 8px 10px;
   border-radius: 10px;
-  background: #0c1119;
+  background: var(--glass-popover-bg);
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
   border: 1px solid var(--op-edge);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 var(--glass-highlight);
   font-size: 11px;
 }
 
@@ -1410,9 +1531,13 @@ button.mempool-panel__row:hover {
   min-width: 220px;
   padding: 10px 12px;
   border-radius: 10px;
-  background: #0c1119;
+  background: var(--glass-popover-bg);
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
   border: 1px solid var(--border);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 var(--glass-highlight);
 }
 
 /* 層バッジ(Issue #299)を添える見出し行。InfraPopover/WalletPopover/
@@ -1552,9 +1677,13 @@ button.mempool-panel__row:hover {
   width: 260px;
   padding: 10px 12px;
   border-radius: 10px;
-  background: #0c1119;
+  background: var(--glass-popover-bg);
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
   border: 1px solid var(--accent);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 var(--glass-highlight);
   text-align: left;
   white-space: normal;
 }
@@ -1590,9 +1719,13 @@ button.mempool-panel__row:hover {
   width: 260px;
   padding: 10px 12px;
   border-radius: 10px;
-  background: #0c1119;
+  background: var(--glass-popover-bg);
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
   border: 1px solid var(--border);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 var(--glass-highlight);
   text-align: left;
   white-space: normal;
   font-size: 12px;
@@ -1681,15 +1814,23 @@ button.mempool-panel__row:hover {
   max-width: 360px;
 }
 
+/* Issue #327: 浮遊オーバーレイの1つとしてすりガラス化。ポップオーバー地
+   （--glass-popover-bg）は他の地に対して重ねると視認性検算（不透明フォール
+   バックとの整合）が煩雑になるため使わず、canvas-toolbar 等と同じ
+   --glass-bg を使う。 */
 .toast {
   display: flex;
   align-items: flex-start;
   gap: 10px;
   padding: 10px 12px;
   border-radius: 10px;
-  background: #1a2030;
-  border: 1px solid var(--border);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid var(--glass-border);
+  box-shadow:
+    0 8px 28px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 var(--glass-highlight);
   font-size: 13px;
   /* flex item のデフォルト min-width は auto で、中身のコンテンツが持つ
      最小幅（改行できない最長の連続文字列の幅）を下回って縮まない。将来
@@ -1699,9 +1840,12 @@ button.mempool-panel__row:hover {
   min-width: 0;
 }
 
+/* エラー系トーストは元の不透明な赤褐色(#2a1a20)を、.toast のガラス地と
+   同じ透過率(0.72)を保ったまま赤み方向へ寄せた rgba に置き換える
+   （R42 G26 B32 = #2a1a20 の値そのまま、alpha だけ 0.72 にする）。 */
 .toast--error {
   border-color: #ff6b6b;
-  background: #2a1a20;
+  background: rgba(42, 26, 32, 0.72);
 }
 
 .toast__message {
@@ -1757,9 +1901,10 @@ button.mempool-panel__row:hover {
   display: block;
 }
 
+/* Issue #327: canvas-toolbar__button と同じ質感。 */
 .infra-card__operate {
   width: 100%;
-  background: var(--panel-2);
+  background: linear-gradient(180deg, #2a3450, #222a3e);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1770,6 +1915,7 @@ button.mempool-panel__row:hover {
 
 .infra-card__operate:hover {
   border-color: var(--accent);
+  box-shadow: 0 2px 10px rgba(79, 157, 255, 0.25);
 }
 
 /* 送信直後〜commandResult までの保留表示（canvas-toolbar__button--pending と
@@ -1800,9 +1946,13 @@ button.mempool-panel__row:hover {
   width: 260px;
   padding: 10px 12px;
   border-radius: 10px;
-  background: #0c1119;
+  background: var(--glass-popover-bg);
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
   border: 1px solid var(--border);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 var(--glass-highlight);
   font-size: 12px;
 }
 
@@ -1893,8 +2043,10 @@ button.mempool-panel__row:hover {
   font-size: 11px;
 }
 
+/* Issue #327: 唯一のアクセント寄りの送信ボタンにグラデーションを添える
+   （disabled 時はフラットな --panel-2 のまま変更しない）。 */
 .operation-form__submit {
-  background: var(--accent);
+  background: linear-gradient(135deg, #6db1ff, #3f86e8);
   color: #0c1119;
   border: none;
   border-radius: 8px;
@@ -1917,14 +2069,22 @@ button.mempool-panel__row:hover {
    視覚的に結びつける（docs/worklog/issue-298.md §4.3）。ホバー連動ハイライト
    （第2段階）は新着強調と同系の --accent（青）にし、「操作起点の強調」という
    既存の意味付けと揃える。 --- */
+/* Issue #327: infra-card と同じく縦グラデーション + 上端ハイライトで
+   透明感を表現する（backdrop-filter は使わない）。 */
 .chain-ribbon-card {
   position: relative;
   min-width: 420px;
   padding: 12px 14px;
   border-radius: 12px;
-  background: var(--panel-2);
+  background: linear-gradient(
+    180deg,
+    rgba(40, 48, 68, 0.96) 0%,
+    rgba(31, 38, 55, 0.97) 100%
+  );
   border: 1px solid var(--border);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 var(--glass-highlight);
 }
 
 .chain-ribbon-card__header {
@@ -1983,6 +2143,7 @@ button.mempool-panel__row:hover {
   opacity: 0.5;
 }
 
+/* Issue #327: chain-ribbon-card 内のタイル群も同系の縦グラデーション。 */
 .chain-ribbon-tile {
   position: relative;
   flex: none;
@@ -1993,7 +2154,7 @@ button.mempool-panel__row:hover {
   min-width: 62px;
   padding: 6px 8px;
   border-radius: 8px;
-  background: var(--panel);
+  background: linear-gradient(180deg, rgba(32, 39, 58, 0.9), rgba(24, 30, 46, 0.95));
   border: 1px solid var(--border);
 }
 
@@ -2091,4 +2252,37 @@ button.mempool-panel__row:hover {
 .infra-card--ribbon-highlight {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(79, 157, 255, 0.35);
+}
+
+/* --- Issue #327 フォールバック ---
+   backdrop-filter 非対応環境では var(--glass-bg)/var(--glass-popover-bg) の
+   半透明地だけが残り、ぼかしが効かない分ちらつき・可読性低下につながる
+   （後ろのカード模様が透けて見える）。backdrop-filter 自体が使えない環境を
+   @supports で検出し、オーバーレイパネル・ポップオーバーの地を
+   Issue #327 以前の不透明な値に戻す。 */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .canvas-toolbar,
+  .layer-filter-bar,
+  .p2p-legend,
+  .contract-list-panel,
+  .mempool-panel,
+  .toast {
+    background: rgba(26, 32, 48, 0.92);
+  }
+
+  .toast--error {
+    background: #2a1a20;
+  }
+
+  .contract-activity-chip__popover,
+  .deploy-popover,
+  .internal-link-popover,
+  .peer-popover,
+  .operation-target-popover,
+  .infra-popover,
+  .glossary-popover,
+  .tx-lifecycle-popover,
+  .operation-panel {
+    background: #0c1119;
+  }
 }
