@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GlossaryProvider } from "../glossary/GlossaryProvider.js";
 import { LanguageProvider } from "../i18n/LanguageProvider.js";
 import { HOVER_POPOVER_CLOSE_DELAY_MS } from "../interaction/useHoverPopover.js";
+import { SidePanelProvider, useSidePanel } from "../side-panel/SidePanelContext.js";
 import { ContractCard } from "./ContractCard.js";
 import type { ContractFlowNode } from "./contractNode.js";
 import { RibbonHoverProvider } from "./RibbonHoverContext.js";
@@ -36,7 +37,51 @@ function renderCard(data: ContractFlowNode["data"], lang: "ja" | "en" = "ja") {
           {/* Issue #298: ContractCard は RibbonHoverContext を読むため、
               テストでも Provider 配下でレンダーする必要がある。 */}
           <RibbonHoverProvider transactions={[]}>
-            <ContractCard {...props} />
+            {/* Issue #321: ContractCard はサイドパネルを開くために
+                SidePanelContext を読むため、テストでも Provider 配下で
+                レンダーする必要がある。 */}
+            <SidePanelProvider>
+              <ContractCard {...props} />
+            </SidePanelProvider>
+          </RibbonHoverProvider>
+        </GlossaryProvider>
+      </LanguageProvider>
+    </ReactFlowProvider>,
+  );
+}
+
+/** テスト内でのみ使う、現在の SidePanelView を可視化するプローブ。
+ * useEffect 等の副作用を挟まず、レンダー結果（DOM）としてそのまま出す
+ * ことで、`screen.getByTestId("opened-view")` から素直に読める。 */
+function OpenedViewProbe() {
+  const { view } = useSidePanel();
+  return (
+    <span data-testid="opened-view">
+      {view ? `${view.kind}:${view.address}` : ""}
+    </span>
+  );
+}
+
+/**
+ * 「ソースコードを見る」ボタンを押すと `useSidePanel().open` が正しい
+ * kind/address で呼ばれることを確認するためのテスト用ハーネス
+ * （SidePanelHost 自体は別ファイルでテストするため、ここでは
+ * ContractCard → SidePanelContext への配線だけを見る）。
+ */
+function renderCardWithPanelSpy(
+  data: ContractFlowNode["data"],
+  lang: "ja" | "en" = "ja",
+) {
+  const props = { data } as unknown as Parameters<typeof ContractCard>[0];
+  return render(
+    <ReactFlowProvider>
+      <LanguageProvider initialLanguage={lang}>
+        <GlossaryProvider glossary={{}}>
+          <RibbonHoverProvider transactions={[]}>
+            <SidePanelProvider>
+              <OpenedViewProbe />
+              <ContractCard {...props} />
+            </SidePanelProvider>
           </RibbonHoverProvider>
         </GlossaryProvider>
       </LanguageProvider>
@@ -388,5 +433,46 @@ describe("ContractCard", () => {
     const { container } = renderCard(data());
     expect(container.querySelector(".contract-card--settle-success")).toBeNull();
     expect(container.querySelector(".contract-card--settle-failed")).toBeNull();
+  });
+
+  // --- コントラクトソースビューを開くボタン(Issue #321) ---
+
+  it("shows the 'view source' button even for an unknown contract (no sourceCode)", () => {
+    // 隠すより「なぜ見られないか」を学べる方を優先する設計判断
+    // (docs/worklog/issue-321.md §12.3)。ボタン自体は常に出す。
+    renderCard(data({ entity: contract({ name: undefined }) }));
+    expect(
+      screen.getByTestId(`contract-view-source-${contract().address}`),
+    ).toBeTruthy();
+  });
+
+  it("shows the 'view source' button for a cataloged contract with sourceCode", () => {
+    renderCard(
+      data({
+        entity: contract({
+          name: "ChainvizToken",
+          sourceCode: { fileName: "ChainvizToken.sol", language: "solidity", code: "" },
+        }),
+      }),
+    );
+    expect(
+      screen.getByTestId(`contract-view-source-${contract().address}`),
+    ).toBeTruthy();
+  });
+
+  it("opens the contract-source side panel for this card's address on click", () => {
+    renderCardWithPanelSpy(data({ entity: contract({ name: "ChainvizToken" }) }));
+    expect(screen.getByTestId("opened-view").textContent).toBe("");
+    fireEvent.click(
+      screen.getByTestId(`contract-view-source-${contract().address}`),
+    );
+    expect(screen.getByTestId("opened-view").textContent).toBe(
+      `contractSource:${contract().address}`,
+    );
+  });
+
+  it("renders the view-source button label in English when the language is English", () => {
+    renderCard(data(), "en");
+    expect(screen.getByText("View source code")).toBeTruthy();
   });
 });

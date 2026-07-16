@@ -4,6 +4,7 @@ import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { useHoverPopover } from "../interaction/useHoverPopover.js";
 import { PopoverPortal } from "../interaction/PopoverPortal.js";
+import { useSidePanel } from "../side-panel/SidePanelContext.js";
 import type { ContractActivityChip } from "./contractActivity.js";
 import { ContractPopover } from "./ContractPopover.js";
 import type { ContractFlowNode } from "./contractNode.js";
@@ -98,6 +99,8 @@ function ActivityChip({ chip }: { chip: ContractActivityChip }) {
 export function ContractCard({ data }: NodeProps<ContractFlowNode>) {
   const { entity, activity, isNew, flashKind } = data;
   const { t } = useLanguage();
+  // Issue #321: サイドパネル（コントラクトソースビュー）を開く。
+  const { open: openSidePanel } = useSidePanel();
   // Issue #221: 隙間を通過する一瞬の mouseleave で消えないよう遅延クローズ。
   const { isOpen: hovered, onMouseEnter, onMouseLeave } = useHoverPopover();
   // Issue #245: カード本体を ContractPopover の位置合わせの基準にする。
@@ -194,6 +197,19 @@ export function ContractCard({ data }: NodeProps<ContractFlowNode>) {
           )}
         </div>
       </div>
+      {/* Issue #321: コントラクトソースビューを開くボタン。未知のコントラクト
+          （sourceCode を持たない）にも出す。押すとパネル側で「なぜ見られない
+          か」を明示する（見出しを隠すより学べる方を優先。ARCHITECTURE.md
+          §6.4 と同じ方針）。React Flow のドラッグ開始を拾わないよう nodrag
+          を付ける（infra-card__remove 等と同じ）。 */}
+      <button
+        type="button"
+        className="contract-card__view-source nodrag"
+        onClick={() => openSidePanel({ kind: "contractSource", address: entity.address })}
+        data-testid={`contract-view-source-${entity.address}`}
+      >
+        {t("contract.viewSource")}
+      </button>
       {hovered && <ContractPopover anchorRef={cardRef} entity={entity} />}
     </div>
   );

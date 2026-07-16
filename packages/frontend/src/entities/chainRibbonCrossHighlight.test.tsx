@@ -14,6 +14,7 @@ import { ContractCard } from "./ContractCard.js";
 import type { ContractFlowNode } from "./contractNode.js";
 import { GlossaryProvider } from "../glossary/GlossaryProvider.js";
 import { LanguageProvider } from "../i18n/LanguageProvider.js";
+import { SidePanelProvider } from "../side-panel/SidePanelContext.js";
 import { RibbonHoverProvider } from "./RibbonHoverContext.js";
 import { WalletCard } from "./WalletCard.js";
 import type { WalletFlowNode } from "./walletNode.js";
@@ -129,9 +130,14 @@ function renderScene() {
       <LanguageProvider initialLanguage="ja">
         <GlossaryProvider glossary={{}}>
           <RibbonHoverProvider transactions={[tx()]}>
-            <ChainRibbonCard {...ribbonProps} />
-            <WalletCard {...walletProps} />
-            <ContractCard {...contractProps} />
+            {/* Issue #321: ContractCard は SidePanelContext を読むため、
+                テストでも Provider 配下でレンダーする必要がある
+                （ContractCard.test.tsx と同じ理由）。 */}
+            <SidePanelProvider>
+              <ChainRibbonCard {...ribbonProps} />
+              <WalletCard {...walletProps} />
+              <ContractCard {...contractProps} />
+            </SidePanelProvider>
           </RibbonHoverProvider>
         </GlossaryProvider>
       </LanguageProvider>
