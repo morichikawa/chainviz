@@ -822,6 +822,11 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       (Issue #319のQA検証中に偶発的に観測。再現手順未調査。着手時はまず
       chainviz-detectiveに原因調査を依頼)
       [#334](https://github.com/morichikawa/chainviz/issues/334)
+- [ ] 英語モードでp2p-legendの凡例文が日英混在になっている
+      (Issue #327のQA検証中に偶発的に観測。原因はglossary/ではなく、
+      legend.hint.suffixの意図的な空文字en訳とpickLocale()の空文字
+      フォールバック仕様の衝突。#327のCSS変更とは無関係の既存不具合)
+      [#341](https://github.com/morichikawa/chainviz/issues/341)
 
 ## 運用ルール（全ステップ共通）
 
