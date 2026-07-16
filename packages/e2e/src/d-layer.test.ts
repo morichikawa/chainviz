@@ -24,11 +24,14 @@ const DRIVEN_RETH = "reth1";
 
 // D層のノード内部メトリクスは NODE_INTERNALS_POLL_INTERVAL_MS（既定 3000ms。
 // packages/collector/src/adapters/ethereum/reth-metrics-tracker.ts）間隔で
-// ポーリングされる。SLOT_DURATION_MS（既定 2000ms。profiles/ethereum/values.env）
-// ごとに Engine API 呼び出し（newPayload/forkchoiceUpdated）が発生するため、
-// 1 ポーリング間隔の中に必ず 1 回以上の呼び出しが増分として乗る前提。
-// 待ち時間は「初回反映」を待つ他の A/D 層テストと同じ桁数（数十秒）に、
-// ネットワーク・スクレイプの揺らぎ分の余裕を足した値。
+// ポーリングされる。SLOT_DURATION_IN_SECONDS（profiles/ethereum/values.env、
+// 現実の Ethereum に合わせ 12 秒）ごとに Engine API 呼び出し
+// （newPayload/forkchoiceUpdated）が発生する。slot 時間がスクレイプ間隔より
+// 長いため、Engine API 呼び出しの増分は毎スクレイプではなく slot ごとに
+// （＝数回に1回のスクレイプで）増分として乗る。ここで待つのは「初回反映」で
+// あり、待ち上限（60 秒）の中で必ず複数 slot 分が経過するため、この増分間隔
+// でも初回観測は十分間に合う。値は他の A/D 層テストと同じ桁数（数十秒）に、
+// ネットワーク・スクレイプの揺らぎ分の余裕を足したもの。
 const INTERNALS_TIMEOUT_MS = 60_000;
 const LINK_ACTIVITY_TIMEOUT_MS = 60_000;
 

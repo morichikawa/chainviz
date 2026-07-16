@@ -7,6 +7,7 @@
 
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { SLOT_DURATION_MS } from "../helpers/slot-time.js";
 import { serviceEntityId } from "./support/serviceIds.js";
 
 /** B層のピア接続ポーリング間隔(`PEER_POLL_INTERVAL_MS`,
@@ -16,19 +17,19 @@ import { serviceEntityId } from "./support/serviceIds.js";
 const PEER_EDGE_TIMEOUT_MS = 30_000;
 
 /**
- * ブロック伝播パルス(UI-B-03)の待ち上限。`profiles/ethereum/values.env` の
- * `SLOT_DURATION_IN_SECONDS=2`（1スロット=2秒）を根拠に、その15倍を待ち
- * 上限にする。パルスは新しいブロックが2ノード以上に受信されるたびに毎
- * スロット発生しうるため理論上は次スロットで観測できるが、Playwright の
- * expect ポーリング間隔・パルスの表示時間フロア(`MIN_PULSE_DURATION_MS` =
- * 450ms、`entities/blockPulse.ts`)を踏まえて余裕を持たせている。
+ * ブロック伝播パルス(UI-B-03)の待ち上限。パルスは新しいブロックが2ノード
+ * 以上に受信されるたびに毎スロット発生しうるため、理論上は次スロットで
+ * 観測できる。待ち上限は「次スロットまで(最大1スロット)+コールドスタートや
+ * Playwright の expect ポーリング間隔・パルスの表示時間フロア
+ * (`MIN_PULSE_DURATION_MS` = 450ms、`entities/blockPulse.ts`)分の固定
+ * オーバーヘッド」で構成する。
  *
- * 前提条件: この倍率(15倍)は `SLOT_DURATION_IN_SECONDS=2` を前提にした
- * ものなので、プロファイルのスロット時間を変える場合はこの倍率を保った
- * まま値を見直すこと(固定秒数そのものを使い回さない)。
+ * slot time は `helpers/slot-time.ts` が values.env から導出する単一の値
+ * (`SLOT_DURATION_MS`)を使う。slot 待ち分は slot time に比例させ、固定
+ * オーバーヘッド分は slot time に依らない一定値として加える(slot=2秒なら
+ * 従来の30秒に近い約26秒、slot=12秒なら約56秒)。
  */
-const SLOT_DURATION_SECONDS = 2;
-const BLOCK_PULSE_TIMEOUT_MS = SLOT_DURATION_SECONDS * 1000 * 15;
+const BLOCK_PULSE_TIMEOUT_MS = SLOT_DURATION_MS * 3 + 20_000;
 
 /** 2つのエンティティ間のピアエッジ(`data-id` が `peer-` で始まる)のロケータ。 */
 function peerEdgeBetween(page: Page, a: string, b: string) {

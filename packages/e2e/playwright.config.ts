@@ -9,6 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, devices } from "@playwright/test";
 import { UI_E2E_COLLECTOR_PORT } from "./src/helpers/playwright-global-setup.js";
+import { SLOT_DURATION_MS } from "./src/helpers/slot-time.js";
 
 const repoRoot = path.resolve(
   fileURLToPath(new URL("../..", import.meta.url)),
@@ -33,7 +34,13 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   reporter: "list",
-  timeout: 60_000,
+  // 1テストあたりの上限。操作系(送金・デプロイ)を含むテストは tx の
+  // ブロック取り込み待ち(=slot 時間依存)が支配的なため、slot 時間に比例して
+  // 伸ばす。多段の操作を伴うテスト(chain-ribbon UI-B-06 等)は各テストが
+  // 個別に `test.setTimeout` で更に緩める。既定の 60 秒を下限にして、slot を
+  // 短くしても従来の余裕を割り込まないようにする(slot=2秒で60秒、slot=12秒で
+  // 約102秒)。slot 時間は `helpers/slot-time.ts` が values.env から導出する。
+  timeout: Math.max(60_000, SLOT_DURATION_MS * 6 + 30_000),
   globalSetup: "./src/helpers/playwright-global-setup.ts",
   use: {
     baseURL: `http://127.0.0.1:${UI_E2E_FRONTEND_PORT}`,

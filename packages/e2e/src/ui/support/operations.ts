@@ -10,6 +10,7 @@
 
 import type { Locator, Page } from "@playwright/test";
 import { expect } from "@playwright/test";
+import { SLOT_DURATION_MS } from "../../helpers/slot-time.js";
 import { serviceEntityId } from "./serviceIds.js";
 
 /** compose 起動の静的ワークベンチの entity id(プリセットウォレット持ち)。 */
@@ -27,14 +28,21 @@ export const ENTITY_APPEAR_TIMEOUT_MS = 30_000;
  * 定型操作(送金・デプロイ・呼び出し)の実行結果(残高/nonce/コントラクト
  * カード/アクティビティチップ等)がUIへ反映されるまでの待ち上限。
  *
- * 前提: `profiles/ethereum/values.env` の `SLOT_DURATION_IN_SECONDS=2`
- * (1ブロック=約2秒)。`cast`/`forge` は tx の receipt を待ってから終了する
- * ため、docker exec 自体に最低1スロット分(約2秒)+ collector のブロック
- * 購読(newHeads)からWS配信までのオーバーヘッドがかかる。実行環境の負荷
- * 変動を見込んで安全側に、既存の `ADD_NODE_CARD_TIMEOUT_MS`/
- * `ADD_WORKBENCH_CARD_TIMEOUT_MS` と同じ実績値(30秒)を踏襲する。
+ * `cast`/`forge` は tx の receipt を待ってから終了するため、この待ちは slot
+ * 時間に依存する。tx が次のブロックに取り込まれるまで最大1 slot、jitter を
+ * 見込んで2 slot 分を slot 時間に比例させ、加えて collector のブロック購読
+ * (newHeads)からWS配信までのオーバーヘッド・実行環境の負荷変動分を固定
+ * オーバーヘッドとして足す。slot 時間は `helpers/slot-time.ts` が values.env
+ * から導出する単一の値(`SLOT_DURATION_MS`)を使う。
+ *
+ * 下限は、slot 由来ではない `ADD_NODE_CARD_TIMEOUT_MS`/
+ * `ADD_WORKBENCH_CARD_TIMEOUT_MS`(いずれもA/C層ポーリング3秒由来の実績値
+ * 30秒)を割り込まないよう 30 秒とする(slot=2秒でも30秒、slot=12秒なら44秒)。
  */
-export const OPERATION_EFFECT_TIMEOUT_MS = 30_000;
+export const OPERATION_EFFECT_TIMEOUT_MS = Math.max(
+  30_000,
+  SLOT_DURATION_MS * 2 + 20_000,
+);
 
 /**
  * 定型操作パネルを開くテストで使う、既定より大きいビューポート。
