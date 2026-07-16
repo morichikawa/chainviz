@@ -1,5 +1,37 @@
 # Issue #327 UI全体に透明感・グラデーションを意識したビジュアルデザインを取り入れる
 
+### 2026-07-16 追補レビュー（chainviz-reviewer）
+
+- 担当: reviewer
+- ブランチ: issue-327-visual-design（worktree 上でレビュー）
+- 対象: main取り込みマージコミット `5ecd3fe`、追補コミット `1bd967f`
+  （styles.css）、worklog コミット `8da5d13`。結果は**最終合格**
+- 確認したこと:
+  - 前回レビューで指摘した2点（mainの取り込み、`.mempool-panel` への
+    ガラス処理適用）が両方解消されている。`git merge-base --is-ancestor`
+    で main が本ブランチの祖先になっていることを確認した
+  - `.mempool-panel` の背景・backdrop-filter（`-webkit-` 接頭辞含む）・
+    枠・影が `.contract-list-panel`（styles.css 1140〜1146行）と完全に
+    同一の値であることを実CSSの突き合わせで確認した
+  - ファイル末尾の `@supports not ((backdrop-filter: blur(1px)) or
+    (-webkit-backdrop-filter: blur(1px)))` フォールバック節の
+    オーバーレイパネル用ルール（`rgba(26, 32, 48, 0.92)`）に
+    `.mempool-panel` が追加されており、条件・位置とも既存の
+    `.contract-list-panel` 等と揃っていることを確認した
+  - 追補コミットの diff がパネル容器の地・枠・影とフォールバック・
+    説明コメントのみであり、mempool パネル特有の役割別配色
+    （`.mempool-panel__fn` の `var(--accent)`、`__hash`/`__count` の
+    `var(--muted)` 等）に変更が無いことを確認した
+  - コミット粒度: style 変更（`1bd967f`）と worklog 追記（`8da5d13`）が
+    分かれており「1変更=1コミット」に沿っている
+  - `pnpm lint` / `pnpm build` / `pnpm test` をリポジトリ全体で実行し
+    全件通過を確認した（shared 64件・collector 1458件・frontend 2196件・
+    e2e 158件。collector のテスト実行中に出る `failed to decode ...` 等の
+    ログは異常系テストの期待出力であり失敗ではない）
+- 注意点: CSSのみの変更でロジックを伴わないため新規ユニットテスト不要と
+  いう判断は妥当。実際の描画確認（ガラス質感の見え方）は次工程の
+  chainviz-qa に委ねる
+
 ### 2026-07-16 `.mempool-panel` への追補（chainviz-frontend）
 
 - 担当: frontend
