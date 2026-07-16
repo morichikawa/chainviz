@@ -511,9 +511,21 @@ function AppShell({
         txCountByHash: ribbonTxCountByHash,
         nodeLabelById: ribbonNodeLabelById,
         landingHashes: ribbonLandingHashes,
+        // ブロック生成タイミングのインジケータ（Issue #343。ARCHITECTURE.md
+        // §10.5）の導出に使う。表示件数（8）に絞られた `ribbonTiles` では
+        // 差分の冗長性が足りないため、窓全体（store 保持分）の `blocks` を
+        // そのまま渡す。
+        blocks,
         layout,
       }),
-    [ribbonTiles, ribbonTxCountByHash, ribbonNodeLabelById, ribbonLandingHashes, layout],
+    [
+      ribbonTiles,
+      ribbonTxCountByHash,
+      ribbonNodeLabelById,
+      ribbonLandingHashes,
+      blocks,
+      layout,
+    ],
   );
 
   const nodes = useMemo(

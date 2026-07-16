@@ -13,6 +13,7 @@ describe("chainRibbonToFlowNode", () => {
       txCountByHash: new Map(),
       nodeLabelById: new Map(),
       landingHashes: new Set(),
+      blocks: [],
       layout: {},
     });
     expect(node.id).toBe(CHAIN_RIBBON_ID);
@@ -25,6 +26,7 @@ describe("chainRibbonToFlowNode", () => {
       txCountByHash: new Map(),
       nodeLabelById: new Map(),
       landingHashes: new Set(),
+      blocks: [],
       layout: {},
     });
     expect(node.position).toEqual(CHAIN_RIBBON_DEFAULT_POSITION);
@@ -36,12 +38,13 @@ describe("chainRibbonToFlowNode", () => {
       txCountByHash: new Map(),
       nodeLabelById: new Map(),
       landingHashes: new Set(),
+      blocks: [],
       layout: { [CHAIN_RIBBON_ID]: { x: 42, y: 99 } },
     });
     expect(node.position).toEqual({ x: 42, y: 99 });
   });
 
-  it("passes through the tiles/txCountByHash/nodeLabelById/landingHashes as-is", () => {
+  it("passes through the tiles/txCountByHash/nodeLabelById/landingHashes/blocks as-is", () => {
     const tiles = [
       {
         block: {
@@ -58,16 +61,19 @@ describe("chainRibbonToFlowNode", () => {
     const txCountByHash = new Map([["0x1", 3]]);
     const nodeLabelById = new Map([["n1", "chainviz-reth-1"]]);
     const landingHashes = new Set(["0x1"]);
+    const blocks = [tiles[0].block];
     const node = chainRibbonToFlowNode({
       tiles,
       txCountByHash,
       nodeLabelById,
       landingHashes,
+      blocks,
       layout: {},
     });
     expect(node.data.tiles).toBe(tiles);
     expect(node.data.txCountByHash).toBe(txCountByHash);
     expect(node.data.nodeLabelById).toBe(nodeLabelById);
     expect(node.data.landingHashes).toBe(landingHashes);
+    expect(node.data.blocks).toBe(blocks);
   });
 });

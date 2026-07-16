@@ -82,6 +82,7 @@ function ribbonData(): ChainRibbonFlowNode["data"] {
     txCountByHash: new Map([[BLOCK_HASH, 1]]),
     nodeLabelById: new Map(),
     landingHashes: new Set(),
+    blocks: [tile.block],
   };
 }
 

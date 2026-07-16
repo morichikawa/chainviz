@@ -790,10 +790,11 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       よう修正、Issue #286の閾値は変更不要(安全側にしか動かない)。
       インジケータ部分はIssue #343へ分割済み)
       [#322](https://github.com/morichikawa/chainviz/issues/322)
-- [ ] ブロック生成タイミングのインジケータをチェーンリボンに追加する
+- [x] ブロック生成タイミングのインジケータをチェーンリボンに追加する
       (Issue #322から分割。フロント側のみでBlockEntity.timestampの差分から
-      導出、shared型変更・collector観測追加なし。#322を先にマージしてから
-      着手推奨)
+      GCDでinterval/anchorを導出しチェーンリボンカードのヘッダにカウント
+      ダウン+進捗バーを表示、shared型変更・collector観測追加なし。E2E
+      (SCENARIOS.md追記・Playwrightテスト)はフロント実装完了後に別途対応)
       [#343](https://github.com/morichikawa/chainviz/issues/343)
 - [x] dev-up.shがdist鮮度の警告のみでpnpm buildを自動実行しない
       (check_build_freshnessがdist古と判定した場合に自動でpnpm buildを

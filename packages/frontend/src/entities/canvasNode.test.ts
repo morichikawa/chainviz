@@ -108,6 +108,7 @@ describe("canvasNodeLayoutKey", () => {
       txCountByHash: new Map(),
       nodeLabelById: new Map(),
       landingHashes: new Set(),
+      blocks: [],
       layout: {},
     });
     expect(canvasNodeLayoutKey(ribbonNode)).toBe(CHAIN_RIBBON_ID);

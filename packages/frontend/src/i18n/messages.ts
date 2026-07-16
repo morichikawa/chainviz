@@ -454,6 +454,16 @@ export const messages = {
     en: "No receipt times observed yet",
   },
   "chainRibbon.popover.receivedByOffset": { ja: "+{ms}ms", en: "+{ms}ms" },
+  // --- ブロック生成タイミングのインジケータ（チェーンリボンカードのヘッダ。
+  // ARCHITECTURE.md §10.5。Issue #343） ---
+  "ribbon.nextBlockCountdown": {
+    ja: "次のブロックまで {seconds} 秒",
+    en: "Next block in {seconds}s",
+  },
+  "ribbon.blockProductionStalled": {
+    ja: "ブロック生成が停滞しています",
+    en: "Block production stalled",
+  },
   // --- レイヤーレンズ（A〜D層のチップバー。Issue #299。
   // docs/worklog/issue-299.md §3.7 の初稿をそのまま採用） ---
   "layerFilter.label": { ja: "レイヤー", en: "Layers" },

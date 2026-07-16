@@ -7,6 +7,7 @@ import { useHoverPopover } from "../interaction/useHoverPopover.js";
 import { ChainRibbonPopover } from "./ChainRibbonPopover.js";
 import { type ChainRibbonTile, deriveReceivedOrder } from "./chainRibbon.js";
 import type { ChainRibbonFlowNode } from "./chainRibbonNode.js";
+import { useBlockCadence } from "./useBlockCadence.js";
 import { useRibbonHover } from "./RibbonHoverContext.js";
 import { shortHex } from "./transaction.js";
 import { useFrozenRibbonTiles } from "./useFrozenRibbonTiles.js";
@@ -111,7 +112,7 @@ function ChainRibbonTileView({
  * 不具合が実機検証で確認されたための対策。
  */
 export function ChainRibbonCard({ data }: NodeProps<ChainRibbonFlowNode>) {
-  const { txCountByHash, nodeLabelById, landingHashes } = data;
+  const { txCountByHash, nodeLabelById, landingHashes, blocks } = data;
   const { t } = useLanguage();
   const { hoveredBlockHash } = useRibbonHover();
   const tiles = useFrozenRibbonTiles(data.tiles, hoveredBlockHash !== null);
@@ -119,6 +120,9 @@ export function ChainRibbonCard({ data }: NodeProps<ChainRibbonFlowNode>) {
     null,
   );
   const latest = tiles.length > 0 ? tiles[tiles.length - 1] : undefined;
+  // ブロック生成タイミングのインジケータ（Issue #343。ARCHITECTURE.md §10.5）。
+  // チェーン全体で1つ、ヘッダに表示する（ノードカードごとには出さない）。
+  const cadence = useBlockCadence(blocks);
 
   return (
     <div className="chain-ribbon-card" data-testid="chain-ribbon-card">
@@ -132,6 +136,38 @@ export function ChainRibbonCard({ data }: NodeProps<ChainRibbonFlowNode>) {
             data-testid="chain-ribbon-latest"
           >
             {format(t("chainRibbon.latest"), { number: String(latest.block.number) })}
+          </span>
+        )}
+        {cadence && (
+          <span className="chain-ribbon-card__cadence" data-testid="chain-ribbon-cadence">
+            {cadence.stalled ? (
+              <span
+                className="chain-ribbon-card__cadence-stalled"
+                data-testid="chain-ribbon-cadence-stalled"
+              >
+                {t("ribbon.blockProductionStalled")}
+              </span>
+            ) : (
+              <>
+                <span
+                  className="chain-ribbon-card__cadence-bar"
+                  data-testid="chain-ribbon-cadence-bar"
+                >
+                  <span
+                    className="chain-ribbon-card__cadence-bar-fill"
+                    style={{ width: `${Math.round(cadence.progress * 100)}%` }}
+                  />
+                </span>
+                <span
+                  className="chain-ribbon-card__cadence-countdown"
+                  data-testid="chain-ribbon-cadence-countdown"
+                >
+                  {format(t("ribbon.nextBlockCountdown"), {
+                    seconds: String(Math.max(0, Math.ceil(cadence.remainingMs / 1000))),
+                  })}
+                </span>
+              </>
+            )}
           </span>
         )}
       </div>
