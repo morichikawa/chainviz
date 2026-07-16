@@ -78,6 +78,50 @@ describe("useBlockCadence", () => {
     expect(result.current?.progress ?? 1).toBeLessThan(midProgress);
   });
 
+  it("enters the stalled state after 3x the interval with no new block, then recovers when a fresh block arrives", () => {
+    const nowSec = Math.floor(Date.now() / 1000);
+    const initialBlocks = [block(1, nowSec - 12), block(2, nowSec)];
+    const { result, rerender } = renderHook(
+      ({ blocks }: { blocks: BlockEntity[] }) => useBlockCadence(blocks),
+      { initialProps: { blocks: initialBlocks } },
+    );
+    expect(result.current?.stalled).toBe(false);
+
+    // interval(12s) の3倍を少し超えて新ブロックが来ないと停滞状態に入る。
+    advance(12_000 * 3 + 1_000);
+    expect(result.current?.stalled).toBe(true);
+
+    // 新しいブロックが「今」到着すると、cadence 変化直後の即時 setNow により
+    // tick を待たずに停滞が解消され、カウントダウンが再開する。
+    const freshBlocks = [...initialBlocks, block(3, Math.floor(Date.now() / 1000))];
+    rerender({ blocks: freshBlocks });
+    expect(result.current?.stalled).toBe(false);
+    expect(result.current?.remainingMs).toBeGreaterThan(0);
+  });
+
+  it("immediately syncs `now` to the fresh anchor when cadence first becomes derivable (no tick was running while null)", () => {
+    // 導出不成立（1件）の間は tick タイマーが起動しないため、内部の `now` は
+    // マウント時刻のまま据え置かれる。時間が経ってから有効なブロック集合が
+    // 届いたとき、即時 setNow が無いと `now`（マウント時刻）が新 anchor
+    // （現在時刻）を大きく下回り、剰余正規化で progress が周期の末尾へ飛ぶ。
+    // 即時 setNow により now が anchor へ揃い progress はほぼ 0 に戻る。
+    const nowSec = Math.floor(Date.now() / 1000);
+    const { result, rerender } = renderHook(
+      ({ blocks }: { blocks: BlockEntity[] }) => useBlockCadence(blocks),
+      { initialProps: { blocks: [block(1, nowSec)] as BlockEntity[] } },
+    );
+    expect(result.current).toBeNull();
+
+    // cadence が null の間はタイマーが無いので、この 5 秒の間 `now` は進まない。
+    advance(5_000);
+
+    const freshSec = Math.floor(Date.now() / 1000);
+    rerender({ blocks: [block(1, freshSec - 12), block(2, freshSec)] });
+    expect(result.current).not.toBeNull();
+    expect(result.current?.progress ?? 1).toBeLessThan(0.1);
+    expect(result.current?.remainingMs).toBeGreaterThan(11_000);
+  });
+
   it("stops updating (no throw) once unmounted mid-countdown", () => {
     const nowSec = Math.floor(Date.now() / 1000);
     const blocks = [block(1, nowSec - 12), block(2, nowSec)];

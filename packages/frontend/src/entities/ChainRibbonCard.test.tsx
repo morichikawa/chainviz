@@ -357,5 +357,44 @@ describe("ChainRibbonCard", () => {
       expect(screen.getByTestId("chain-ribbon-cadence-stalled")).toBeTruthy();
       expect(screen.queryByTestId("chain-ribbon-cadence-countdown")).toBeNull();
     });
+
+    it("hides the indicator region when a previously-derived cadence stops being derivable (blocks reduced)", () => {
+      const goodData = data({
+        blocks: [blockAt("0x1", 1, -24), blockAt("0x2", 2, -12), blockAt("0x3", 3, 0)],
+      });
+      const { rerender } = render(tree(goodData));
+      expect(screen.getByTestId("chain-ribbon-cadence")).toBeTruthy();
+
+      // ブロックが1件に減る（導出成立 -> 不成立への遷移）。領域ごと消える。
+      rerender(tree(data({ blocks: [blockAt("0x1", 1, 0)] })));
+      expect(screen.queryByTestId("chain-ribbon-cadence")).toBeNull();
+      expect(screen.queryByTestId("chain-ribbon-cadence-bar")).toBeNull();
+      expect(screen.queryByTestId("chain-ribbon-cadence-countdown")).toBeNull();
+    });
+
+    it("switches from the stalled message back to a countdown when a fresh block arrives", () => {
+      const staleData = data({ blocks: [blockAt("0x1", 1, -12), blockAt("0x2", 2, 0)] });
+      const { rerender } = render(tree(staleData));
+
+      act(() => {
+        vi.advanceTimersByTime(12_000 * 3 + 500);
+      });
+      expect(screen.getByTestId("chain-ribbon-cadence-stalled")).toBeTruthy();
+
+      // 新しいブロックが「今」到着する体。停滞表示からカウントダウンへ戻る。
+      rerender(
+        tree(
+          data({
+            blocks: [
+              blockAt("0x1", 1, -12),
+              blockAt("0x2", 2, 0),
+              blockAt("0x3", 3, 0),
+            ],
+          }),
+        ),
+      );
+      expect(screen.queryByTestId("chain-ribbon-cadence-stalled")).toBeNull();
+      expect(screen.getByTestId("chain-ribbon-cadence-countdown")).toBeTruthy();
+    });
   });
 });
