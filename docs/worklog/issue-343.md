@@ -245,3 +245,46 @@ CLAUDE.md の固定値ルール上も安全(この根拠をコード上のコメ
 - i18n キー `ribbon.nextBlockCountdown` / `ribbon.blockProductionStalled`
   の最終的な文言・キー名は chainviz-i18n のレビュー待ち（既存の
   `chainRibbon.*` 名前空間との統一を検討する余地がある）
+
+### 2026-07-16 テスト強化（tester）
+
+- 担当: tester
+- ブランチ: issue-343-block-cadence-indicator
+- 目的: 実装担当が用意した基本テストに対し、異常系・境界値・遷移の観点で
+  ケースを追加する（実装ロジックは変更しない）。
+
+#### 追加したテスト
+
+- `blockCadence.test.ts`（+6 件）
+  - `deriveBlockCadence`
+    - 差分が最小値の単純な倍数関係でないケースで GCD が正しく縮約されること
+      （差分 [6, 9, 12] → interval 3 秒）。既存は差分がすべて最小値の倍数で
+      GCD が最小差分に一致するケースのみだったため補完
+    - number 昇順に並べると timestamp が逆行する区間（reorg 相当）で、負の
+      差分が捨てられ anchor は timestamp 最大ではなく number 最大で決まること
+    - interval が 600 秒ちょうど（上限の境界、許容）と 601 秒（上限超過、null）
+    - 同一 timestamp のブロックが大量（20 件）に存在し、重複除去後に差分が
+      1 件も残らず null になること
+  - `computeBlockCadenceProgress`
+    - now が anchor より過去（時計が巻き戻った場合）に、剰余を [0, interval)
+      へ正規化して負の remaining や NaN を出さないこと（progress 0.75 を確認）
+- `useBlockCadence.test.ts`（+2 件）
+  - 3 倍 interval 超過で停滞状態に入り、新しいブロック到着で停滞が解消して
+    カウントダウンが再開すること
+  - cadence が null（1 件のみ）でタイマー未起動の間に時間が経過し、その後
+    有効なブロック集合が届いたとき、即時 setNow により内部の now が新 anchor
+    へ揃い progress がほぼ 0 に戻ること（即時 setNow の行を外すと落ちることを
+    確認済みの回帰テスト）
+- `ChainRibbonCard.test.tsx`（+2 件）
+  - 導出成立 → 不成立（ブロックが 1 件に減る）への遷移でインジケータ領域が
+    丸ごと消えること
+  - 停滞表示 → 新しいブロック到着でカウントダウン表示へ戻ること
+
+#### 確認結果
+
+- `pnpm --filter @chainviz/frontend test`: 153 files / 2252 tests 全て成功
+  （実装時の 2242 から +10 件）
+- `pnpm --filter @chainviz/frontend build`: 成功
+- `pnpm exec eslint`（追加した 3 テストファイル対象）: エラーなし
+- 即時 setNow の回帰テストは、実装の該当行を一時的に削除すると当該テストが
+  失敗すること、元に戻すと成功することを確認した
