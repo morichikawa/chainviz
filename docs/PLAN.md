@@ -774,10 +774,10 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       (nonceは現在値が1つ表示されるのみで、各tx項目には表示されていない。
       packages/sharedの型追加・collector側の観測追加が必要になる可能性あり)
       [#319](https://github.com/morichikawa/chainviz/issues/319)
-- [ ] ウォレットのtx履歴が直近6件に固定されスクロールで遡れない
-      (DEFAULT_RECENT_TX_LIMIT=6件で絞られスクロール未対応。着手時はまず
-      chainviz-uxまたはchainviz-designerの設計から。#319と同じ
-      WalletPopoverTxItemを触るため実装順序の調整を検討)
+- [x] ウォレットのtx履歴が直近6件に固定されスクロールで遡れない
+      (ポップオーバーは保持されている分を全件描画しスクロール対応、
+      カード面のチップ表示は6件のまま維持。collector側の保持上限も
+      20→32に引き上げ)
       [#320](https://github.com/morichikawa/chainviz/issues/320)
 - [ ] デプロイされたコントラクトのソースコードを直接見れるようにする
       (現状ABI・カタログ情報のみで、Solidityソース自体は見られない。
