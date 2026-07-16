@@ -63,6 +63,7 @@ describe("canvasNodeLayoutKey", () => {
       data: {
         entity: wallet,
         transactions: [],
+        popoverTransactions: [],
         settlingHashes: [],
         ownerPresent: false,
         contractsByAddress: new Map(),
@@ -248,6 +249,7 @@ describe("preserveMeasuredDimensions", () => {
       data: {
         entity: wallet,
         transactions: [],
+        popoverTransactions: [],
         settlingHashes: [],
         ownerPresent: false,
         contractsByAddress: new Map(),
@@ -270,6 +272,7 @@ describe("preserveMeasuredDimensions", () => {
         data: {
           entity: wallet,
           transactions: [],
+          popoverTransactions: [],
           settlingHashes: [],
           ownerPresent: false,
           contractsByAddress: new Map(),
@@ -285,6 +288,7 @@ describe("preserveMeasuredDimensions", () => {
         data: {
           entity: wallet,
           transactions: [],
+          popoverTransactions: [],
           settlingHashes: [],
           ownerPresent: false,
           contractsByAddress: new Map(),
@@ -469,6 +473,7 @@ describe("preserveDraggingState", () => {
       data: {
         entity: wallet,
         transactions: [],
+        popoverTransactions: [],
         settlingHashes: [],
         ownerPresent: false,
         contractsByAddress: new Map(),
@@ -487,6 +492,7 @@ describe("preserveDraggingState", () => {
         data: {
           entity: wallet,
           transactions: [],
+          popoverTransactions: [],
           settlingHashes: [],
           ownerPresent: false,
           contractsByAddress: new Map(),

@@ -116,9 +116,9 @@ describe("WorldStateStore.linkTransactionToWallets", () => {
   it("caps recentTxHashes and drops the oldest entries beyond the limit", () => {
     const store = new WorldStateStore();
     seedWallet(store, "0xsender");
-    // 上限(20)を超える数の tx を反映させ、古いものから切り捨てられることを
-    // 確認する(store.ts の MAX_WALLET_RECENT_TX_HASHES)。
-    for (let i = 0; i < 25; i++) {
+    // 上限(32、Issue #320)を超える数の tx を反映させ、古いものから切り捨て
+    // られることを確認する(store.ts の MAX_WALLET_RECENT_TX_HASHES)。
+    for (let i = 0; i < 37; i++) {
       store.linkTransactionToWallets(tx({ hash: `0x${i}` }));
     }
     const wallet = store
@@ -126,9 +126,9 @@ describe("WorldStateStore.linkTransactionToWallets", () => {
       .entities.find((e) => e.kind === "wallet" && e.address === "0xsender") as {
       recentTxHashes: string[];
     };
-    expect(wallet.recentTxHashes).toHaveLength(20);
-    // 最新(0x24)が先頭、最も古い5件(0x0〜0x4)は切り捨てられている。
-    expect(wallet.recentTxHashes[0]).toBe("0x24");
+    expect(wallet.recentTxHashes).toHaveLength(32);
+    // 最新(0x36)が先頭、最も古い5件(0x0〜0x4)は切り捨てられている。
+    expect(wallet.recentTxHashes[0]).toBe("0x36");
     expect(wallet.recentTxHashes).not.toContain("0x0");
     expect(wallet.recentTxHashes).not.toContain("0x4");
   });

@@ -52,6 +52,7 @@ function data(overrides: Partial<WalletFlowNode["data"]> = {}): WalletFlowNode["
   return {
     entity: wallet(),
     transactions: [],
+    popoverTransactions: [],
     settlingHashes: [],
     ownerPresent: true,
     contractsByAddress: new Map(),

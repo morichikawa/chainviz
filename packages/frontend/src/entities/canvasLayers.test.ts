@@ -91,6 +91,7 @@ function walletNode(overrides: Partial<WalletFlowNode> = {}): WalletFlowNode {
     data: {
       entity: walletEntity,
       transactions: [],
+      popoverTransactions: [],
       settlingHashes: [],
       ownerPresent: false,
       contractsByAddress: new Map(),

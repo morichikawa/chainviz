@@ -2,6 +2,7 @@ import type { ContractEntity, TransactionEntity, WalletEntity } from "@chainviz/
 import type { RefObject } from "react";
 import { useRef } from "react";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
+import { format } from "../i18n/i18n.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { useHoverPopover } from "../interaction/useHoverPopover.js";
 import { PopoverPortal } from "../interaction/PopoverPortal.js";
@@ -125,6 +126,12 @@ function WalletPopoverTxItem({
  * React Flow のノードはそれぞれ独立したスタッキングコンテキストを持つため、
  * `PopoverPortal` でこのカードを基準位置に body 直下へ描画し、隣接カードの
  * 下に隠れないようにする。
+ *
+ * `transactions` はカード面と異なり全件（呼び出し側が
+ * `WalletNodeData.popoverTransactions` を渡す）を受け取り、
+ * `.wallet-popover__tx-list` の CSS スクロール（`max-height` +
+ * `overflow-y: auto`）で遡れるようにする（Issue #320）。見出しには
+ * `wallet.recentTxCount` で件数を添える。
  */
 export function WalletPopover({
   anchorRef,
@@ -144,7 +151,12 @@ export function WalletPopover({
   );
 
   return (
-    <PopoverPortal anchorRef={anchorRef} gapPx={8} className="infra-popover" role="tooltip">
+    <PopoverPortal
+      anchorRef={anchorRef}
+      gapPx={8}
+      className="infra-popover wallet-popover"
+      role="tooltip"
+    >
       <div className="infra-popover__heading">
         <LayerBadge layer="c" />
       </div>
@@ -197,7 +209,13 @@ export function WalletPopover({
       )}
       <div className="wallet-popover__tx">
         <span className="infra-field__label">
-          <GlossaryTerm termKey="transaction">{t("field.recentTx")}</GlossaryTerm>
+          <GlossaryTerm termKey="transaction">
+            {transactions.length > 0
+              ? format(t("wallet.recentTxCount"), {
+                  count: String(transactions.length),
+                })
+              : t("field.recentTx")}
+          </GlossaryTerm>
         </span>
         {transactions.length === 0 ? (
           <span className="infra-field__value">{t("wallet.noTx")}</span>

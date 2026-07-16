@@ -44,6 +44,13 @@ export const messages = {
   "field.nonce": { ja: "nonce", en: "Nonce" },
   "field.owner": { ja: "所有者", en: "Owner" },
   "field.recentTx": { ja: "直近の tx", en: "Recent tx" },
+  // Issue #320: WalletPopover の tx 一覧見出しに件数を添える。tx が1件以上
+  // あるときだけ `field.recentTx` の代わりにこちらを使う（0件時は
+  // `wallet.noTx` のみで件数行は出さない）。
+  "wallet.recentTxCount": {
+    ja: "直近の tx（{count}件）",
+    en: "Recent tx ({count})",
+  },
   "tx.status.pending": { ja: "保留中（mempool）", en: "Pending (mempool)" },
   "tx.status.included": { ja: "取り込み済み", en: "Included" },
   "tx.status.failed": { ja: "失敗", en: "Failed" },

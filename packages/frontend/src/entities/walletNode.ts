@@ -18,8 +18,19 @@ import type { LayoutMap } from "../layout/layoutStore.js";
 
 export interface WalletNodeData extends Record<string, unknown> {
   entity: WalletEntity;
-  /** カードに載せる直近 tx（新しい順、実在するものだけ解決済み）。 */
+  /**
+   * カード面の tx チップに載せる直近 tx（新しい順、実在するものだけ解決済み、
+   * `DEFAULT_RECENT_TX_LIMIT` 件まで）。カード面は表示密度の都合でこの件数に
+   * 絞ったままにする（Issue #320。`popoverTransactions` と役割分担）。
+   */
   transactions: TransactionEntity[];
+  /**
+   * ポップオーバーの tx 一覧に載せる全件（新しい順、実在するものだけ解決済み。
+   * 件数上限なし）。ポップオーバー側はスクロール対応済みのため全件出せる
+   * （Issue #320）。実際に遡れる件数は `WalletEntity.recentTxHashes` の
+   * collector 側保持上限に依存する。
+   */
+  popoverTransactions: TransactionEntity[];
   /** いま確定フラッシュ演出中の tx hash 集合（useTxLifecycle 由来）。 */
   settlingHashes: string[];
   /**
@@ -110,6 +121,15 @@ export function walletsToFlowNodes(
     const saved = ctx.layout[entity.address];
     const position = saved ?? defaultGridPosition(index, grid);
     const transactions = resolveWalletTransactions(entity, ctx.txByHash);
+    // ポップオーバーは全件をスクロールで見せる（Issue #320）。
+    // Number.POSITIVE_INFINITY は「上限なし」を表す意図的な値であり、環境
+    // 依存で成立が崩れる決め打ち定数ではない（実際に返る件数は
+    // WalletEntity.recentTxHashes の長さで自然に頭打ちになる）。
+    const popoverTransactions = resolveWalletTransactions(
+      entity,
+      ctx.txByHash,
+      Number.POSITIVE_INFINITY,
+    );
     const settlingHashes = transactions
       .filter((tx) => ctx.settling.has(tx.hash))
       .map((tx) => tx.hash);
@@ -120,7 +140,14 @@ export function walletsToFlowNodes(
       id: entity.address,
       type: WALLET_NODE_TYPE,
       position: { x: position.x, y: position.y },
-      data: { entity, transactions, settlingHashes, ownerPresent, contractsByAddress },
+      data: {
+        entity,
+        transactions,
+        popoverTransactions,
+        settlingHashes,
+        ownerPresent,
+        contractsByAddress,
+      },
     };
   });
 }
@@ -152,6 +179,10 @@ export function isSameWalletNode(
     previous.position.x === next.position.x &&
     previous.position.y === next.position.y &&
     sameByReference(previous.data.transactions, next.data.transactions) &&
+    sameByReference(
+      previous.data.popoverTransactions,
+      next.data.popoverTransactions,
+    ) &&
     sameByReference(previous.data.settlingHashes, next.data.settlingHashes)
   );
 }
