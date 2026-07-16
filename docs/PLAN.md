@@ -784,12 +784,17 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       着手時はまずchainviz-designerの設計から。#313/#317と同様の別パネル
       UIの共有を検討する余地あり)
       [#321](https://github.com/morichikawa/chainviz/issues/321)
-- [ ] slot timeを現実のEthereum値(12秒)に戻し、ブロック生成タイミングの
-      インジケータを追加する
-      (現状2秒に短縮しているが非現実的で混乱を招く懸念。E2Eテストの
-      待ち時間前提・Issue #286のgenesis年齢判定閾値への影響を要確認。
-      着手時はまずchainviz-designerの設計から)
+- [x] slot timeを現実のEthereum値(12秒)に戻す
+      (values.envの3変数を12に変更、genesis再生成後に実機で12秒間隔の
+      ブロック生成を確認。E2Eの固定待ち時間をslot timeから動的導出する
+      よう修正、Issue #286の閾値は変更不要(安全側にしか動かない)。
+      インジケータ部分はIssue #343へ分割済み)
       [#322](https://github.com/morichikawa/chainviz/issues/322)
+- [ ] ブロック生成タイミングのインジケータをチェーンリボンに追加する
+      (Issue #322から分割。フロント側のみでBlockEntity.timestampの差分から
+      導出、shared型変更・collector観測追加なし。#322を先にマージしてから
+      着手推奨)
+      [#343](https://github.com/morichikawa/chainviz/issues/343)
 - [x] dev-up.shがdist鮮度の警告のみでpnpm buildを自動実行しない
       (check_build_freshnessがdist古と判定した場合に自動でpnpm buildを
       実行するよう変更した。dist/が存在しない場合と同様の自動化)
