@@ -1,5 +1,45 @@
 # Issue #327 UI全体に透明感・グラデーションを意識したビジュアルデザインを取り入れる
 
+### 2026-07-16 `.mempool-panel` への追補（chainviz-frontend）
+
+- 担当: frontend
+- ブランチ: issue-327-visual-design
+- 背景: 実装レビュー（下記2026-07-16「実装レビュー」節の注意事項A）で
+  指摘された未対応箇所への追補。本ブランチのベースが main より古かった
+  時点では `.mempool-panel`（Issue #330、mempool 可視化パネル）が
+  存在せず、main 取り込み後もその旧様式（`rgba(26, 32, 48, 0.9)` の
+  フラット塗り、border は `var(--divider)`）がそのまま残っていた。
+  `.mempool-panel` は `.contract-list-panel` と同様、キャンバス左下に
+  浮遊する常設のオーバーレイパネルであり、「静かな夜のガラス」の
+  対象（浮遊オーバーレイパネル）に該当する
+
+#### 実施内容
+
+- `.mempool-panel` の背景・枠・影を `.contract-list-panel` と同一の値に
+  変更: `background: var(--glass-bg)` /
+  `backdrop-filter: blur(14px) saturate(140%)`（`-webkit-` 接頭辞も同様）/
+  `border: 1px solid var(--glass-border)` /
+  `box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45), inset 0 1px 0 var(--glass-highlight)`
+- ファイル末尾の `@supports not ((backdrop-filter: blur(1px)) or
+  (-webkit-backdrop-filter: blur(1px)))` フォールバック節に
+  `.mempool-panel` を追加し、`.contract-list-panel` 等と同じ不透明値
+  `rgba(26, 32, 48, 0.92)` に戻るようにした
+- mempool パネル特有の色使い（`.mempool-panel__fn` の `var(--accent)`
+  等、行内の役割別配色）は変更していない
+
+#### 確認したこと
+
+- `pnpm --filter @chainviz/frontend build` / `test`（146ファイル
+  2196件）が通ることを確認
+- CSS の見た目のみの変更でロジック変更を伴わないため、新規ユニット
+  テストは追加していない（`MempoolPanel.test.tsx` にCSS内容を検査する
+  既存テストは無いことを確認済み）
+- モックモード（`pnpm --filter @chainviz/frontend dev`）を起動し、
+  Playwright（chromium headless、既存の `LD_LIBRARY_PATH` 経由の手順）で
+  スクリーンショットを取得し、mempool パネルと直下の contract-list パネルが
+  同様のガラス質感（半透明+ぼかしで背後のカードがうっすら透ける）に
+  そろっていることを目視確認した
+
 ### 2026-07-16 実装レビュー（chainviz-reviewer）
 
 - 担当: reviewer
