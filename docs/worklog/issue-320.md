@@ -237,3 +237,61 @@ prop・nonce 表示・`wallet-popover__tx-nonce`）、#320 は一覧のコンテ
   @chainviz/collector test` ともに成功（64 ファイル 1458 テスト全て pass）。
 - `packages/shared` の型変更は無し（設計メモどおり `recentTxHashes:
   string[]` のまま）。
+
+### 2026-07-16 レビュー（査読誠）
+
+結果: **合格**（軽微な指摘1件はレビュー担当が処置済み）。
+
+確認した内容:
+
+- 設計メモの決定事項の遵守: フロント側の固定表示上限なし
+  （`Number.POSITIVE_INFINITY`。実件数は `recentTxHashes` の長さで自然に
+  頭打ち）、「もっと見る」ボタン・下端フェード不採用、
+  `WalletPopoverTxItem` 非変更（Issue #319 との競合なし。diff で
+  実際に確認。変更は import 追加・`WalletPopover` の doc コメント・
+  見出し・className のみ）— すべて遵守。
+- `format()` ヘルパー採用の判断: 妥当。`t()` がプレースホルダ非対応という
+  制約とは矛盾しない（`t()` で取得したテンプレート文字列を `format()` に
+  通す構成で、`ChainRibbonCard` の `chainRibbon.txBadge` と同じ既存
+  パターン）。日本語では「（{count}件）」と文中に値を埋め込む必要があり
+  単純な前後結合では対応できない、という worklog 記載の理由も正当。
+- `popoverTransactions` の配線: `WalletCard` はカード面チップに
+  `data.transactions`（6件）、`WalletPopover` へは
+  `data.popoverTransactions`（全件）を渡しており正しい。
+  `WalletCard.popoverTransactionsIntegration.test.tsx` が配線ミスの再発を
+  検出できる構成になっている。
+- collector 側 `MAX_WALLET_RECENT_TX_HASHES = 32` のコメント:
+  `BLOCK_RETENTION` との連動という前提条件がコード内コメントと worklog の
+  両方に明記されており、CLAUDE.md の固定値ルールに適合。
+- テストの質: 異常系（未解決 hash の除外・空配列・0件時フォールバック）・
+  境界値（1件・上限ちょうど・超過）をカバー。`isSameWalletNode` の
+  新フィールド比較テストは、比較を意図的に削除する変異確認で実際に
+  fail することを確認した（確認後に復元済み）。`walletPopoverStyles.test.ts`
+  は jsdom がカスケードを評価できない制約への合理的な対処
+  （`peerEdge.test.ts` の前例踏襲）。
+- エラー握りつぶし・チェーン固有語彙の境界漏れ・環境状態依存の決め打ち
+  定数: 該当なし（`POSITIVE_INFINITY` と 220px/360px は環境依存の値では
+  ない。32 は前提条件明記済み）。
+- `pnpm lint` / `pnpm build` / `pnpm test`: 全通過（shared 64 / collector
+  1458 / e2e 158 / frontend 2169）。
+- コミット粒度: frontend 実装 / frontend worklog / collector 実装 /
+  collector worklog の4コミットに分離されており適切。
+
+指摘と処置:
+
+- **`docs/ARCHITECTURE.md` §6.13 が未追記だった**。設計メモの
+  「実装担当への注意点」で §6.13 としての追記（sync-docs）が明示されて
+  おり、collector 側 worklog も「frontend 側の実装と合わせて別途行われる
+  想定」としていたが、frontend 実装では実施されていなかった。内容は
+  設計メモ・実装確認済みの事実の文書化のみであるため、差し戻さず
+  レビュー担当が §6.13 を追記した（このレビューのコミットに含む）。
+
+注意点（統括・QA向け）:
+
+- 本ブランチは Issue #330（mempool パネル）マージ前の main から分岐して
+  いる。`styles.css`・`i18n/messages.ts` は #330 でも変更されているため、
+  main への合流時にコンフリクト解消（または事前の main 取り込み）が
+  必要になる可能性がある。
+- chainviz-tester によるテスト強化は未実施のままレビューに進んだ経緯
+  だが、実装担当のテストが異常系・境界値まで概ねカバーしているため、
+  追加のテスト強化は必須ではないと判断する（最終判断は統括に委ねる）。
