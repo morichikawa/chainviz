@@ -1933,3 +1933,37 @@
   - この記録を issue-322.md ではなく meta.md に置いたのは、同名ファイル
     が設計ブランチに未マージで存在し、add/add 競合を避けるため
     (PLAN.md 自体の更新は meta.md という docs/WORKLOG.md の規定にも合致)
+
+### 2026-07-16 CLAUDE.md「Issueごとにブランチを切る」への gh issue develop 運用追記のレビュー
+
+- 担当: reviewer
+- ブランチ: docs-gh-issue-develop-workflow
+- 内容: 着手時のブランチ作成を `git checkout -b` ではなく
+  `gh issue develop <番号> --name issue-<番号>-<スラッグ> --checkout` で
+  行い Issue にリンクさせる運用の CLAUDE.md 追記(CLAUDE.md のみの変更、
+  packages/* のコード変更なし)をレビューした。結果は合格。
+  - コマンド構文の妥当性: 本環境の gh 2.63.2 で `gh issue develop` の
+    `--name` / `--checkout` / `--base` フラグの存在をヘルプで確認した。
+    読み取り専用の `gh issue develop --list`(Issue #343・#320)で
+    API 認証・疎通も確認済み(exit 0)
+  - 実際のブランチ作成は「リモートに新規ブランチを作らない・push しない」
+    という依頼の制約上実行していない(下記注意点参照)。初回の実運用が
+    事実上の動作確認になる
+  - 文体・粒度は同節の他項目(太字の規則+括弧書きの理由説明)と一貫
+  - 「cherry-pick 合流用の別名ブランチはリンク不要」の記述は、実運用の
+    別名ブランチ(例: `issue-320-tx-history-scroll-frontend`、PR #340 で
+    マージ済み)と整合している
+  - CLAUDE.md「ブランチ作成自体は main に影響しない操作」の既存記述とも
+    矛盾しない(下記のとおりリモート操作にはなるが main には触れない)
+- 決定事項・注意点:
+  - `gh issue develop` は**ブランチをまずリモート(GitHub)側に作成し、
+    `--checkout` でローカルに取得する**コマンド。素の `checkout -b` と
+    違い、着手時点でリモートにブランチが現れる(リンク表示のためには
+    必要な挙動)。「ローカルだけで作って後で push」ではなくなる点を
+    運用者は認識しておくこと
+  - 新ブランチの基点は既定で**リモートの既定ブランチ(origin/main)**。
+    本プロジェクトは PR マージにより origin/main が正であるため通常は
+    問題ないが、ローカル main に未 push のコミットがある状態では
+    それが含まれない。必要なら `--base` で指定できる
+  - CLAUDE.md のみの変更のため pnpm build/lint/test は省略した(コードに
+    影響する差分が無いことは git status/diff で確認済み)
