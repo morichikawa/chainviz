@@ -65,18 +65,33 @@ echo '{}' > "$TMP_CATALOG"
 #        情報源にして、キー変換ロジックによる取り違えを避ける)
 #   $2 = トークンメタ情報(symbol/decimals)の JSON。ERC20 系でなければ
 #        空文字列を渡す(token フィールド自体を省略する)
+#
+# ソースコードは src/<name>.sol をそのまま埋め込む
+# (source: { fileName, language, code })。src/ を唯一の真実の情報源とし、
+# フロントへ渡すのは常にこのビルド時点のコピー(ContractEntity.sourceCode。
+# docs/worklog/issue-321.md 参照)。
 add_entry() {
   contract_name="$1"
   token_json="$2"
   abi_path="${OUT_DIR}/${contract_name}.sol/${contract_name}.json"
+  src_file_name="${contract_name}.sol"
+  src_path="${SCRIPT_DIR}/src/${src_file_name}"
 
   if [ ! -f "$abi_path" ]; then
     echo "[build-catalog] エラー: ${abi_path} が見つからない(forge build に失敗しているか、コントラクト名の指定が誤っている)" >&2
     exit 1
   fi
 
+  if [ ! -f "$src_path" ]; then
+    echo "[build-catalog] エラー: ${src_path} が見つからない(ソースファイル名がコントラクト名と一致しているか確認すること)" >&2
+    exit 1
+  fi
+
   abi="$(jq '.abi' "$abi_path")"
-  entry="$(jq -n --arg name "$contract_name" --argjson abi "$abi" '{name: $name, abi: $abi}')"
+  source_json="$(jq -n --arg fileName "$src_file_name" --arg language "solidity" --rawfile code "$src_path" \
+    '{fileName: $fileName, language: $language, code: $code}')"
+  entry="$(jq -n --arg name "$contract_name" --argjson abi "$abi" --argjson source "$source_json" \
+    '{name: $name, abi: $abi, source: $source}')"
   if [ -n "$token_json" ]; then
     entry="$(printf '%s' "$entry" | jq --argjson token "$token_json" '. + {token: $token}')"
   fi
