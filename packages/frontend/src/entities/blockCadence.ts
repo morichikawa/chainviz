@@ -97,7 +97,7 @@ export function deriveBlockCadence(
 
 /** 表示側が毎 tick 計算する、カウントダウン・進捗・停滞状態。 */
 export interface BlockCadenceProgress {
-  /** 次のブロックまでの残り時間（ms）。0以上、intervalMs未満。 */
+  /** 次のブロックまでの残り時間（ms）。0より大きく、intervalMs以下。 */
   remainingMs: number;
   /** 現在の周期内の経過率（0以上1未満）。 */
   progress: number;
