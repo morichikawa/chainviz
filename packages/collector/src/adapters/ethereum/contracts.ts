@@ -157,6 +157,15 @@ export class ContractTracker {
       name: catalogEntry.name,
       catalogKey: contractKey,
       ...(catalogEntry.token ? { token: catalogEntry.token } : {}),
+      ...(catalogEntry.source
+        ? {
+            sourceCode: {
+              fileName: catalogEntry.source.fileName,
+              language: catalogEntry.source.language,
+              code: catalogEntry.source.code,
+            },
+          }
+        : {}),
     };
   }
 }

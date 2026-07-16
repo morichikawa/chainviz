@@ -1,4 +1,4 @@
-import type { NodeEntity, TransactionEntity } from "@chainviz/shared";
+import type { ContractEntity, NodeEntity, TransactionEntity } from "@chainviz/shared";
 import {
   Background,
   Controls,
@@ -76,6 +76,7 @@ import {
   preserveMeasuredDimensions,
 } from "../entities/canvasNode.js";
 import type { Position } from "../layout/layoutStore.js";
+import { SidePanelHost } from "../side-panel/SidePanelHost.js";
 
 // nodeTypes / edgeTypes は再レンダーごとに作り直すと React Flow が警告するため外に出す。
 const nodeTypes: NodeTypes = {
@@ -391,6 +392,19 @@ function CanvasInner({
     [nodeEntitiesForMempool],
   );
 
+  // Issue #321: サイドパネル(コントラクトソースビュー)が対象アドレスの
+  // `ContractEntity` を引くための索引。コントラクトカードと同じ
+  // 「rfNodes を filter するだけ」の流儀(nodeEntitiesForMempool 参照)。
+  const contractsByAddress = useMemo(() => {
+    const map = new Map<string, ContractEntity>();
+    for (const node of rfNodes) {
+      if (node.type === CONTRACT_NODE_TYPE) {
+        map.set(node.data.entity.address, node.data.entity);
+      }
+    }
+    return map;
+  }, [rfNodes]);
+
   const { getNode, setCenter, getZoom } = useReactFlow();
 
   // コントラクト一覧パネルの行クリック。対象カードへパンし（ズーム倍率は
@@ -501,6 +515,7 @@ function CanvasInner({
         nodeEntries={mempoolNodeEntries}
         onSelectTx={handleJumpToMempoolTx}
       />
+      <SidePanelHost contractsByAddress={contractsByAddress} />
     </ReactFlow>
   );
 }

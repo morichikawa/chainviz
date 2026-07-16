@@ -498,6 +498,16 @@ export const messages = {
   "layerBadge.b": { ja: "B層", en: "Layer B" },
   "layerBadge.c": { ja: "C層", en: "Layer C" },
   "layerBadge.d": { ja: "D層", en: "Layer D" },
+  // --- 汎用サイドパネル機構（Issue #321。docs/ARCHITECTURE.md §12.2） ---
+  "sidePanel.close": { ja: "閉じる", en: "Close" },
+  // --- コントラクトソースビュー（kind: "contractSource"。Issue #321。
+  // docs/ARCHITECTURE.md §12.3） ---
+  "contract.viewSource": { ja: "ソースコードを見る", en: "View source code" },
+  "contractSource.title": { ja: "ソースコード", en: "Source code" },
+  "contractSource.unavailable": {
+    ja: "このコントラクトのソースコードは chainviz の手元にありません。チェーン上にあるのはコンパイル済みのバイトコードだけで、そこから元のソースコード（関数やイベントの意味 = ABI を含む）は復元できません。カタログに載っているコントラクトだけソースを表示できます",
+    en: "chainviz does not have this contract's source code on hand. What lives on the chain is only compiled bytecode, from which the original source (including the meaning of functions and events, i.e. the ABI) cannot be recovered. Source is only available for contracts listed in the catalog.",
+  },
 } as const satisfies Record<string, Localized>;
 
 export type MessageKey = keyof typeof messages;

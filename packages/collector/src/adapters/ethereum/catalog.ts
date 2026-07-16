@@ -10,6 +10,16 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
+/** カタログ同梱のソースコード（catalog.json の source フィールド。Issue #321）。 */
+export interface CatalogSource {
+  /** 表示用のファイル名（例: "ChainvizToken.sol"）。 */
+  fileName: string;
+  /** ソースの言語を表す生の識別子（例: "solidity"）。解釈はフロント側の責務。 */
+  language: string;
+  /** ソースコード全文。 */
+  code: string;
+}
+
 /** カタログ 1 件（catalog.json の値部分）。 */
 export interface CatalogEntry {
   /** 人が読める表示名（ContractEntity.name にそのまま入る）。 */
@@ -18,6 +28,13 @@ export interface CatalogEntry {
   abi: unknown[];
   /** トークンコントラクトの場合のみ。ContractEntity.token にそのまま入る。 */
   token?: { symbol: string; decimals: number };
+  /**
+   * カタログ同梱のソースコード（Issue #321）。ContractEntity.sourceCode に
+   * そのまま転記される（contracts.ts の applyCatalog 参照）。build-catalog.sh
+   * が同梱しなかった（または不正な形の）場合は undefined になり、カタログの
+   * エントリ自体は生かしたまま「ソース無し」として扱う（下記 isValidSource 参照）。
+   */
+  source?: CatalogSource;
 }
 
 /** カタログキー（PascalCase のコントラクト名）→ CatalogEntry のマップ。 */
@@ -28,6 +45,23 @@ function isValidEntry(value: unknown): value is CatalogEntry {
   if (typeof value !== "object" || value === null) return false;
   const entry = value as Record<string, unknown>;
   return typeof entry.name === "string" && Array.isArray(entry.abi);
+}
+
+/**
+ * source フィールドが fileName/language/code の 3 つとも string であるかを
+ * 検証する。token と異なりここで実際に検証する（設計メモの決定）: ソースは
+ * 人間が読む全文テキストであり、想定外の形（例: code が文字列でない）を
+ * そのままフロントへ渡すと表示が壊れるため。不正な場合はエントリ自体は
+ * 落とさず、source だけ無い扱いにする（呼び出し側で理由をログに残す）。
+ */
+function isValidSource(value: unknown): value is CatalogSource {
+  if (typeof value !== "object" || value === null) return false;
+  const source = value as Record<string, unknown>;
+  return (
+    typeof source.fileName === "string" &&
+    typeof source.language === "string" &&
+    typeof source.code === "string"
+  );
 }
 
 /**
@@ -87,6 +121,14 @@ export function readContractCatalog(
         `[ethereum] contract catalog entry "${key}" at ${filePath} is missing name/abi; skipping it:`,
         value,
       );
+      continue;
+    }
+    if (value.source !== undefined && !isValidSource(value.source)) {
+      log(
+        `[ethereum] contract catalog entry "${key}" at ${filePath} has a malformed source field; keeping the entry without source:`,
+        value.source,
+      );
+      catalog[key] = { ...value, source: undefined };
       continue;
     }
     catalog[key] = value;

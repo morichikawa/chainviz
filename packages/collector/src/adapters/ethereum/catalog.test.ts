@@ -200,6 +200,198 @@ describe("readContractCatalog", () => {
     expect(logs).toHaveLength(2);
   });
 
+  it("passes a well-formed source field through verbatim (Issue #321)", () => {
+    const profileDir = writeCatalog(
+      JSON.stringify({
+        ChainvizToken: {
+          name: "ChainvizToken",
+          abi: [],
+          source: { fileName: "ChainvizToken.sol", language: "solidity", code: "contract X {}" },
+        },
+      }),
+    );
+    const logs: unknown[][] = [];
+    const catalog = readContractCatalog(profileDir, (m, d) => logs.push([m, d]));
+    expect(catalog?.ChainvizToken.source).toEqual({
+      fileName: "ChainvizToken.sol",
+      language: "solidity",
+      code: "contract X {}",
+    });
+    expect(logs).toHaveLength(0);
+  });
+
+  it("omits source (but keeps the entry) for an entry with no source field at all", () => {
+    const profileDir = writeCatalog(JSON.stringify({ Counter: { name: "Counter", abi: [] } }));
+    const catalog = readContractCatalog(profileDir, () => {});
+    expect(catalog?.Counter.source).toBeUndefined();
+  });
+
+  it("keeps the entry but drops a malformed source (missing code), logging the reason", () => {
+    const profileDir = writeCatalog(
+      JSON.stringify({
+        Bad: {
+          name: "Bad",
+          abi: [],
+          source: { fileName: "Bad.sol", language: "solidity" }, // code missing
+        },
+      }),
+    );
+    const logs: unknown[][] = [];
+    const catalog = readContractCatalog(profileDir, (m, d) => logs.push([m, d]));
+    expect(catalog?.Bad).toBeDefined();
+    expect(catalog?.Bad.name).toBe("Bad");
+    expect(catalog?.Bad.source).toBeUndefined();
+    expect(logs).toHaveLength(1);
+    expect(logs[0][0]).toContain('entry "Bad"');
+    expect(logs[0][0]).toContain("malformed source");
+  });
+
+  it("keeps the entry but drops a source whose fields have the wrong types", () => {
+    const profileDir = writeCatalog(
+      JSON.stringify({
+        Bad: {
+          name: "Bad",
+          abi: [],
+          source: { fileName: "Bad.sol", language: "solidity", code: 12345 }, // code not a string
+        },
+      }),
+    );
+    const logs: unknown[][] = [];
+    const catalog = readContractCatalog(profileDir, (m, d) => logs.push([m, d]));
+    expect(catalog?.Bad.source).toBeUndefined();
+    expect(logs).toHaveLength(1);
+  });
+
+  it("keeps the entry but drops a source that is not an object (e.g. a string)", () => {
+    const profileDir = writeCatalog(
+      JSON.stringify({ Bad: { name: "Bad", abi: [], source: "not an object" } }),
+    );
+    const logs: unknown[][] = [];
+    const catalog = readContractCatalog(profileDir, (m, d) => logs.push([m, d]));
+    expect(catalog?.Bad.source).toBeUndefined();
+    expect(logs).toHaveLength(1);
+  });
+
+  it("keeps the entry but drops a source missing only fileName (each field is checked individually)", () => {
+    const profileDir = writeCatalog(
+      JSON.stringify({
+        Bad: { name: "Bad", abi: [], source: { language: "solidity", code: "contract X {}" } },
+      }),
+    );
+    const logs: unknown[][] = [];
+    const catalog = readContractCatalog(profileDir, (m, d) => logs.push([m, d]));
+    expect(catalog?.Bad).toBeDefined();
+    expect(catalog?.Bad.source).toBeUndefined();
+    expect(logs).toHaveLength(1);
+    expect(logs[0][0]).toContain("malformed source");
+  });
+
+  it("keeps the entry but drops a source missing only language", () => {
+    const profileDir = writeCatalog(
+      JSON.stringify({
+        Bad: { name: "Bad", abi: [], source: { fileName: "Bad.sol", code: "contract X {}" } },
+      }),
+    );
+    const logs: unknown[][] = [];
+    const catalog = readContractCatalog(profileDir, (m, d) => logs.push([m, d]));
+    expect(catalog?.Bad.source).toBeUndefined();
+    expect(logs).toHaveLength(1);
+  });
+
+  it("keeps the entry but drops a source whose fileName is the wrong type", () => {
+    const profileDir = writeCatalog(
+      JSON.stringify({
+        Bad: {
+          name: "Bad",
+          abi: [],
+          source: { fileName: 123, language: "solidity", code: "contract X {}" },
+        },
+      }),
+    );
+    const logs: unknown[][] = [];
+    const catalog = readContractCatalog(profileDir, (m, d) => logs.push([m, d]));
+    expect(catalog?.Bad.source).toBeUndefined();
+    expect(logs).toHaveLength(1);
+  });
+
+  it("keeps the entry but drops a source whose language is the wrong type", () => {
+    const profileDir = writeCatalog(
+      JSON.stringify({
+        Bad: {
+          name: "Bad",
+          abi: [],
+          source: { fileName: "Bad.sol", language: 5, code: "contract X {}" },
+        },
+      }),
+    );
+    const logs: unknown[][] = [];
+    const catalog = readContractCatalog(profileDir, (m, d) => logs.push([m, d]));
+    expect(catalog?.Bad.source).toBeUndefined();
+    expect(logs).toHaveLength(1);
+  });
+
+  it("keeps the entry but drops a null source without throwing (null is typeof object)", () => {
+    // source: null は typeof === "object" だが null チェックで弾かれる。
+    // Object.entries 等で落ちずに source だけ落ちることを固定する。
+    const profileDir = writeCatalog(
+      JSON.stringify({ Bad: { name: "Bad", abi: [], source: null } }),
+    );
+    const logs: unknown[][] = [];
+    const catalog = readContractCatalog(profileDir, (m, d) => logs.push([m, d]));
+    expect(catalog?.Bad).toBeDefined();
+    expect(catalog?.Bad.source).toBeUndefined();
+    expect(logs).toHaveLength(1);
+    expect(logs[0][0]).toContain("malformed source");
+  });
+
+  it("keeps the entry but drops a source that is an array (arrays are typeof object)", () => {
+    const profileDir = writeCatalog(
+      JSON.stringify({ Bad: { name: "Bad", abi: [], source: ["ChainvizToken.sol"] } }),
+    );
+    const logs: unknown[][] = [];
+    const catalog = readContractCatalog(profileDir, (m, d) => logs.push([m, d]));
+    expect(catalog?.Bad.source).toBeUndefined();
+    expect(logs).toHaveLength(1);
+  });
+
+  it("accepts a source whose fields are all empty strings (empty is a valid string, boundary)", () => {
+    // fileName/language/code が空文字でも「string である」ため source は有効。
+    // 空ソース（code: ""）はフロント側で空表示として扱う正当な入力であり、
+    // ここで落とさない（型検証の境界を「空文字は不正ではない」に固定する）。
+    const profileDir = writeCatalog(
+      JSON.stringify({ Empty: { name: "Empty", abi: [], source: { fileName: "", language: "", code: "" } } }),
+    );
+    const logs: unknown[][] = [];
+    const catalog = readContractCatalog(profileDir, (m, d) => logs.push([m, d]));
+    expect(catalog?.Empty.source).toEqual({ fileName: "", language: "", code: "" });
+    expect(logs).toHaveLength(0);
+  });
+
+  it("passes source code containing newlines, tabs and Unicode through verbatim", () => {
+    // ソース全文は改行・タブ・非ASCII（NatSpec の日本語コメント等）を含みうる。
+    // JSON 経由でこれらが変形しないこと（表示が壊れないこと）を固定する。
+    const code = "// 日本語コメント\ncontract X {\n\tuint256 public count; // café ☕\n}\n";
+    const profileDir = writeCatalog(
+      JSON.stringify({
+        Uni: { name: "Uni", abi: [], source: { fileName: "X.sol", language: "solidity", code } },
+      }),
+    );
+    const catalog = readContractCatalog(profileDir, () => {});
+    expect(catalog?.Uni.source?.code).toBe(code);
+  });
+
+  it("passes a very long source code string through verbatim", () => {
+    const code = "// line\n".repeat(5000);
+    const profileDir = writeCatalog(
+      JSON.stringify({
+        Big: { name: "Big", abi: [], source: { fileName: "Big.sol", language: "solidity", code } },
+      }),
+    );
+    const catalog = readContractCatalog(profileDir, () => {});
+    expect(catalog?.Big.source?.code).toBe(code);
+    expect(catalog?.Big.source?.code.length).toBe(code.length);
+  });
+
   it("passes token metadata through verbatim without validating its shape", () => {
     // isValidEntry は name/abi しか検証せず token は素通しする。token の形が
     // 想定外（decimals 欠落など）でもエントリ自体は生き残り、そのまま

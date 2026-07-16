@@ -267,6 +267,11 @@
       }
     ],
     "name": "ChainvizToken",
+    "source": {
+      "code": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\n/// @title ChainvizToken\n/// @notice 学習用の最小 ERC20 実装。外部ライブラリ（OpenZeppelin 等）には\n///         依存せず、ERC20 の中核（残高・allowance・transfer/approve/\n///         transferFrom・Transfer/Approval イベント）だけを自己完結で\n///         実装している。chainviz のサンプルコントラクトとして、トークン\n///         transfer の呼び出し・イベントログ可視化デモに使う\n///         （docs/ARCHITECTURE.md §4「コントラクトカタログ」）。\ncontract ChainvizToken {\n    string public constant name = \"Chainviz Token\";\n    string public constant symbol = \"CVZ\";\n    uint8 public constant decimals = 18;\n\n    uint256 public totalSupply;\n    address public immutable owner;\n\n    mapping(address => uint256) public balanceOf;\n    mapping(address => mapping(address => uint256)) public allowance;\n\n    event Transfer(address indexed from, address indexed to, uint256 value);\n    event Approval(address indexed owner, address indexed spender, uint256 value);\n\n    /// @param initialSupply デプロイ時にデプロイヤー（msg.sender）へ供給する\n    ///        初期発行量（wei 単位、decimals=18）。0 を指定してデプロイ後に\n    ///        mint() で発行する運用も可能。genesis でプリマインされた\n    ///        アカウント（values.env の EL_AND_CL_MNEMONIC 由来）に配りたい\n    ///        場合は、そのアカウントからデプロイするか、デプロイ後に\n    ///        mint() で送る。\n    constructor(uint256 initialSupply) {\n        owner = msg.sender;\n        if (initialSupply > 0) {\n            _mint(msg.sender, initialSupply);\n        }\n    }\n\n    modifier onlyOwner() {\n        require(msg.sender == owner, \"ChainvizToken: caller is not the owner\");\n        _;\n    }\n\n    /// @notice 追加発行。任意の宛先へ初期供給・追加供給するためのデモ用途の\n    ///         関数（デプロイヤーのみ呼び出し可）。\n    function mint(address to, uint256 amount) external onlyOwner {\n        _mint(to, amount);\n    }\n\n    function transfer(address to, uint256 amount) external returns (bool) {\n        _transfer(msg.sender, to, amount);\n        return true;\n    }\n\n    function approve(address spender, uint256 amount) external returns (bool) {\n        allowance[msg.sender][spender] = amount;\n        emit Approval(msg.sender, spender, amount);\n        return true;\n    }\n\n    function transferFrom(address from, address to, uint256 amount) external returns (bool) {\n        uint256 allowed = allowance[from][msg.sender];\n        require(allowed >= amount, \"ChainvizToken: insufficient allowance\");\n        if (allowed != type(uint256).max) {\n            allowance[from][msg.sender] = allowed - amount;\n        }\n        _transfer(from, to, amount);\n        return true;\n    }\n\n    function _transfer(address from, address to, uint256 amount) internal {\n        require(to != address(0), \"ChainvizToken: transfer to the zero address\");\n        uint256 fromBalance = balanceOf[from];\n        require(fromBalance >= amount, \"ChainvizToken: transfer amount exceeds balance\");\n        unchecked {\n            balanceOf[from] = fromBalance - amount;\n        }\n        balanceOf[to] += amount;\n        emit Transfer(from, to, amount);\n    }\n\n    function _mint(address to, uint256 amount) internal {\n        require(to != address(0), \"ChainvizToken: mint to the zero address\");\n        totalSupply += amount;\n        balanceOf[to] += amount;\n        emit Transfer(address(0), to, amount);\n    }\n}\n",
+      "fileName": "ChainvizToken.sol",
+      "language": "solidity"
+    },
     "token": {
       "decimals": 18,
       "symbol": "CVZ"
@@ -347,6 +352,11 @@
         "type": "event"
       }
     ],
-    "name": "Counter"
+    "name": "Counter",
+    "source": {
+      "code": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\n/// @title Counter\n/// @notice 状態変更とイベント発行だけを行う、もっとも単純な学習用\n///         コントラクト。chainviz のコントラクト呼び出し・イベントログ\n///         可視化デモに使う（docs/ARCHITECTURE.md §4「コントラクトカタログ」）。\ncontract Counter {\n    uint256 public count;\n\n    event Incremented(address indexed caller, uint256 newCount);\n    event Reset(address indexed caller);\n\n    /// @notice カウンタを1増やす。もっとも基本的な呼び出しデモ用。\n    function increment() external {\n        count += 1;\n        emit Incremented(msg.sender, count);\n    }\n\n    /// @notice カウンタを任意の量だけ増やす（引数付き呼び出しの可視化デモ用）。\n    function incrementBy(uint256 amount) external {\n        count += amount;\n        emit Incremented(msg.sender, count);\n    }\n\n    /// @notice カウンタを0に戻す。\n    function reset() external {\n        count = 0;\n        emit Reset(msg.sender);\n    }\n}\n",
+      "fileName": "Counter.sol",
+      "language": "solidity"
+    }
   }
 }

@@ -19,6 +19,7 @@ import { ContractPopover } from "../entities/ContractPopover.js";
 import type { InfraEntity } from "../entities/infraNode.js";
 import { InfraPopover } from "../entities/InfraPopover.js";
 import { RibbonHoverProvider } from "../entities/RibbonHoverContext.js";
+import { SidePanelProvider } from "../side-panel/SidePanelContext.js";
 import { TxLifecyclePopover } from "../entities/TxLifecyclePopover.js";
 import { WalletCard } from "../entities/WalletCard.js";
 import type { WalletFlowNode } from "../entities/walletNode.js";
@@ -59,8 +60,11 @@ function providers(node: React.ReactNode, withReactFlow = false) {
     <LanguageProvider initialLanguage="ja">
       <GlossaryProvider glossary={glossary}>
         {/* Issue #298: WalletCard/ContractCard は RibbonHoverContext を読む
-            ため、他のケースに影響が無い共通の Provider をここに置く。 */}
-        <RibbonHoverProvider transactions={[]}>{node}</RibbonHoverProvider>
+            ため、他のケースに影響が無い共通の Provider をここに置く。
+            Issue #321: ContractCard は SidePanelContext も読む。 */}
+        <RibbonHoverProvider transactions={[]}>
+          <SidePanelProvider>{node}</SidePanelProvider>
+        </RibbonHoverProvider>
       </GlossaryProvider>
     </LanguageProvider>
   );
