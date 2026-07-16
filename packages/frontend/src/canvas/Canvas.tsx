@@ -1,3 +1,4 @@
+import type { NodeEntity, TransactionEntity } from "@chainviz/shared";
 import {
   Background,
   Controls,
@@ -34,6 +35,7 @@ import { DEPLOY_EDGE_TYPE, isDeployFlowEdge } from "../entities/deployEdge.js";
 import { GhostNodeCard } from "../entities/GhostNodeCard.js";
 import { GHOST_NODE_TYPE, type GhostFlowNode } from "../entities/ghostNode.js";
 import { InfraNodeCard } from "../entities/InfraNodeCard.js";
+import type { InfraFlowNode } from "../entities/infraNode.js";
 import { NEW_ARRIVAL_HIGHLIGHT_DURATION_MS } from "../entities/useNewArrivalHighlight.js";
 import { useAppearanceOrder } from "../entities/useAppearanceOrder.js";
 import { InternalLinkEdge } from "../entities/InternalLinkEdge.js";
@@ -41,6 +43,13 @@ import {
   INTERNAL_LINK_EDGE_TYPE,
   isInternalLinkFlowEdge,
 } from "../entities/internalLinkEdge.js";
+import {
+  buildMempoolNodeEntries,
+  buildMempoolTxEntries,
+  limitMempoolTxEntries,
+  sortMempoolTxEntriesByAppearance,
+} from "../entities/mempoolList.js";
+import { MempoolPanel } from "../entities/MempoolPanel.js";
 import { PeerNetworkLegend } from "../entities/PeerNetworkLegend.js";
 import { PeerPropagationEdge } from "../entities/PeerPropagationEdge.js";
 import { PEER_EDGE_TYPE, isPeerFlowEdge } from "../entities/peerEdge.js";
@@ -63,6 +72,7 @@ import {
   type CanvasFlowEdge,
   type CanvasFlowNode,
   canvasNodeLayoutKey,
+  preserveDraggingState,
   preserveMeasuredDimensions,
 } from "../entities/canvasNode.js";
 import type { Position } from "../layout/layoutStore.js";
@@ -99,6 +109,17 @@ export interface CanvasProps {
    * 持つ（`LayerFilterBar` はツールバー直下に別途配置するため）。
    */
   layerFilter?: LayerFilter;
+  /**
+   * mempool パネル（Issue #330。ARCHITECTURE.md §11）の上段（tx 一覧）に
+   * 使う、ワールドステートの全 `TransactionEntity`（pending 以外も含む
+   * 生の配列。`buildMempoolTxEntries` がここで pending のみへ絞り込む）。
+   * `TransactionEntity` は React Flow ノードとしてキャンバスに現れない
+   * （ウォレットカードの tx チップに埋め込まれるだけ）ため、rfNodes からは
+   * 導出できず App.tsx から別途渡す必要がある（contractListEntries が
+   * rfNodes だけから作れるのとの違い）。省略時は空配列（パネルは 0 件
+   * 表示になる）。
+   */
+  transactions?: TransactionEntity[];
 }
 
 function CanvasInner({
@@ -106,6 +127,7 @@ function CanvasInner({
   edges = [],
   onPersistPosition,
   layerFilter = "all",
+  transactions = [],
 }: CanvasProps) {
   const [rfNodes, setRfNodes] = useState<CanvasFlowNode[]>(nodes);
   const [rfEdges, setRfEdges] = useState<CanvasFlowEdge[]>(edges);
@@ -154,8 +176,18 @@ function CanvasInner({
   // サイクルに入り、一瞬 visibility を hidden にする(Issue #119)。直前まで
   // rfNodes が持っていた実測値を引き継いでから反映することでこれを防ぐ
   // (詳細は canvasNode.ts の preserveMeasuredDimensions を参照)。
+  //
+  // さらに、ドラッグ中のノードは親から渡された position(layout由来。
+  // onNodeDragStop でのみ更新される)ではなく、直前の rfNodes 側の
+  // position・dragging・selected を優先する。そうしないと約2秒周期で届く
+  // WebSocket 差分のたびにドラッグ中の位置が保存位置へ描き戻り、位置が
+  // 「ガクン」と往復して見える(Issue #328。詳細は preserveDraggingState を
+  // 参照)。両関数は触るフィールドが独立している(measured vs
+  // position/dragging/selected)ため適用順序に依存関係は無い。
   useEffect(() => {
-    setRfNodes((current) => preserveMeasuredDimensions(nodes, current));
+    setRfNodes((current) =>
+      preserveDraggingState(preserveMeasuredDimensions(nodes, current), current),
+    );
   }, [nodes]);
 
   // ピア接続の追加・削除で親が edges を再計算したら反映する。
@@ -311,6 +343,54 @@ function CanvasInner({
     [contractListEntries, contractListOrder],
   );
 
+  // mempool パネル（Issue #330。ARCHITECTURE.md §11）に渡す行データ。
+  // 上段（tx 一覧）は `transactions` prop（App.tsx から渡される全
+  // TransactionEntity）から pending のみを抽出する。行クリックのパン先
+  // 判定に使う「from がウォレットカードとして存在するか」は rfNodes 上の
+  // ウォレットカード id 集合（= address）で判定する（contractListEntries と
+  // 同じ「rfNodes から揃う情報は rfNodes から取る」流儀）。
+  const walletIds = useMemo(
+    () =>
+      new Set(
+        rfNodes.filter((node) => node.type === WALLET_NODE_TYPE).map((node) => node.id),
+      ),
+    [rfNodes],
+  );
+  const mempoolTxEntries = useMemo(
+    () => buildMempoolTxEntries(transactions, walletIds),
+    [transactions, walletIds],
+  );
+  const mempoolTxIds = useMemo(
+    () => mempoolTxEntries.map((entry) => entry.hash),
+    [mempoolTxEntries],
+  );
+  const mempoolTxOrder = useAppearanceOrder(mempoolTxIds);
+  const sortedMempoolTxEntries = useMemo(
+    () => sortMempoolTxEntriesByAppearance(mempoolTxEntries, mempoolTxOrder),
+    [mempoolTxEntries, mempoolTxOrder],
+  );
+  const { visible: visibleMempoolTxEntries, overflowCount: mempoolOverflowCount } = useMemo(
+    () => limitMempoolTxEntries(sortedMempoolTxEntries),
+    [sortedMempoolTxEntries],
+  );
+
+  // 下段（ノード別実数）は rfNodes 上のインフラカードの `data.entity` から
+  // `kind === "node"` のものだけを取り出す（コントラクトカードと同じ
+  // 「rfNodes を filter するだけ」の流儀。インフラカードの id = entity.id
+  // であり、workbench も同じ "infra" 型を共有するため kind で絞る）。
+  const nodeEntitiesForMempool = useMemo(
+    () =>
+      rfNodes
+        .filter((node): node is InfraFlowNode => node.type === "infra")
+        .map((node) => node.data.entity)
+        .filter((entity): entity is NodeEntity => entity.kind === "node"),
+    [rfNodes],
+  );
+  const mempoolNodeEntries = useMemo(
+    () => buildMempoolNodeEntries(nodeEntitiesForMempool),
+    [nodeEntitiesForMempool],
+  );
+
   const { getNode, setCenter, getZoom } = useReactFlow();
 
   // コントラクト一覧パネルの行クリック。対象カードへパンし（ズーム倍率は
@@ -332,6 +412,25 @@ function CanvasInner({
       jumpHighlightTimerRef.current = setTimeout(() => {
         setJumpHighlightNodeId(null);
       }, NEW_ARRIVAL_HIGHLIGHT_DURATION_MS);
+    },
+    [getNode, setCenter, getZoom],
+  );
+
+  // mempool パネルの tx 行クリック（§11.3「行クリックで from のウォレット
+  // カードへパンする」）。`MempoolPanel` 自身は `walletCardId === undefined`
+  // の行を非クリック化し、クリック可能な行は `mempoolList.ts` の
+  // `buildMempoolTxEntries` が大文字小文字を無視して解決済みの
+  // `walletCardId`（React Flow のノード id とそのまま一致する表記）を渡す
+  // ため、ここで追加の casing 変換は不要。`getNode` の未存在防御は
+  // ハンドラ側にも残す（handleJumpToContract と同じ「消えたカードへの防御」
+  // パターン。行クリックからパン先が消える猶予はごくわずかだが起こりうる
+  // ため）。
+  const handleJumpToMempoolTx = useCallback(
+    (walletCardId: string) => {
+      const node = getNode(walletCardId);
+      if (!node) return;
+      const center = resolveNodeCenter(node.position, node.measured);
+      setCenter(center.x, center.y, { zoom: getZoom(), duration: 400 });
     },
     [getNode, setCenter, getZoom],
   );
@@ -394,6 +493,13 @@ function CanvasInner({
       <ContractListPanel
         entries={sortedContractListEntries}
         onSelect={handleJumpToContract}
+      />
+      <MempoolPanel
+        txEntries={visibleMempoolTxEntries}
+        overflowCount={mempoolOverflowCount}
+        totalPendingCount={mempoolTxEntries.length}
+        nodeEntries={mempoolNodeEntries}
+        onSelectTx={handleJumpToMempoolTx}
       />
     </ReactFlow>
   );

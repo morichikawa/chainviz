@@ -103,3 +103,214 @@
     修正不要と判断した
   - docsのみの変更のため、CLAUDE.md の例外規定に基づき chainviz-qa は
     省略可
+
+### 2026-07-16 Issue #328 実装 設計メモ
+- 担当: frontend
+- ブランチ: issue-328-drag-position-jitter
+- 対応方針: detective の見立てどおり、`preserveMeasuredDimensions` と同系の
+  マージ関数を `canvasNode.ts` に追加する
+  (`preserveDraggingState<TNode extends CanvasFlowNode>(next, previous)`)。
+  `onNodeDragStart`/`onNodeDragStop` で別途 id を追跡する案は採らず、
+  `previous`(= Canvas.tsx の `current` = 直前の rfNodes)側の各ノードが
+  既に持つ `dragging` フラグをそのまま判定に使う。理由:
+  - React Flow(`@xyflow/react` 12.11.1)の実装を確認したところ、
+    `useDrag`(内部フック)がドラッグ開始・移動・終了それぞれで
+    `updateNodePositions(items, dragging)` を呼び、`type: "position"` の
+    `NodeChange` に `dragging: true`(開始・移動中)/`dragging: false`
+    (終了)を積んで `onNodesChange` 経由でディスパッチしている。
+    `applyNodeChanges`(`@xyflow/react/dist/esm/index.js` 674〜675行目)は
+    `change.dragging` が定義されていればそのまま `element.dragging` に
+    反映するため、Canvas.tsx の `onNodesChange`
+    (`applyNodeChanges(changes, current)` → `setRfNodes`)を経由した
+    `rfNodes` は常に「今ドラッグ中かどうか」を正しく反映している。
+    自前で id を追跡する仕組みを足すと、この既存の状態と二重管理になり
+    ズレの温床になるため避けた
+  - `selected` も同じ理由で `previous` 側の値を信頼できる
+    (`applyNodeChanges` が `select`/`unselect` change を同様に反映するため)
+- マージ対象のフィールドは `position`・`dragging`・`selected` の3つのみ。
+  `data`(エンティティ内容)は `next`(親が最新の WorldState から再計算した
+  もの)を優先する。ドラッグ中でも WebSocket 更新によるカード内容の変化
+  (残高・ブロック高など)は従来どおり反映され続けるべきで、位置周りの
+  ちらつきだけを止めたいため
+- 判定は「`previous` の対応する id のノードが `dragging === true` か」のみ。
+  `dragging` を持たない(=ドラッグ中でない)ノードは何もせず `next` の値を
+  そのまま使う。これにより、ドラッグ中でない他のノードへの WebSocket 更新
+  (他ノードの新規追加・移動)は従来どおり即座に反映され続ける
+- 適用箇所: `Canvas.tsx` の該当 `useEffect` で
+  `preserveMeasuredDimensions` の結果にさらに `preserveDraggingState` を
+  適用する(`preserveDraggingState(preserveMeasuredDimensions(nodes, current), current)`)。
+  両関数は触るフィールドが完全に独立している(`measured` vs
+  `position`/`dragging`/`selected`)ため適用順序に依存関係は無い
+- テスト: `canvasNode.test.ts` に `preserveDraggingState` 用の describe
+  ブロックを追加する(既存の `preserveMeasuredDimensions` のテストパターンに
+  倣う)。中心となるケースは「`previous` で `dragging: true` のノードの
+  `position` が、`next` 側の新しい `position` に置き換わらず `previous` の
+  値を維持すること」。回帰検出力の確認として、修正前(`preserveDraggingState`
+  を呼ばない状態)でこのテストが実際に失敗することを一度確認してから実装を
+  適用する
+
+### 2026-07-16 Issue #328 実装
+- 担当: frontend
+- ブランチ: issue-328-drag-position-jitter
+- 内容: 設計メモどおりに実装した
+  - `packages/frontend/src/entities/canvasNode.ts` に
+    `preserveDraggingState<TNode extends CanvasFlowNode>(next, previous)` を
+    追加した。`previous`(直前の React Flow 内部状態)側で `dragging === true`
+    のノードについてのみ、`next` の `position`・`dragging`・`selected` を
+    `previous` の値で上書きする。`data` は常に `next` を使う(ドラッグ中でも
+    残高・ブロック高などの内容更新は止めない)
+  - `packages/frontend/src/canvas/Canvas.tsx` の該当 `useEffect` を
+    `setRfNodes((current) => preserveDraggingState(preserveMeasuredDimensions(nodes, current), current))`
+    に変更した
+- テスト: `packages/frontend/src/entities/canvasNode.test.ts` に
+  `preserveDraggingState` の describe ブロックを追加した(6ケース)。中心と
+  なるのは「ドラッグ中のノードは `next` の新しい position に置き換わらず
+  `previous` の position/dragging/selected を維持する」ケースと、
+  「ドラッグ中でない他ノードは従来どおり `next` の position を反映する」
+  ケース
+- 回帰検出力の確認: `preserveDraggingState` の実装を一時的に `return next`
+  のみ(何もしない no-op)に置き換えてテストを実行し、追加した6ケースのうち
+  3ケース(ドラッグ中position保持・他ノードへの影響なし確認・data保持)が
+  実際に失敗することを確認した。その後 no-op を元の実装に戻し、全ケースが
+  通ることを確認した
+- 確認結果: `pnpm --filter @chainviz/frontend build`・
+  `pnpm --filter @chainviz/frontend test`(143ファイル/2127件)がいずれも
+  成功。`npx eslint` を変更した3ファイルに対して実行しエラー無しを確認した
+- 実機確認について: `scripts/dev-up.sh` での Playwright 再現確認は実施
+  しなかった。作業時点で他の並行 worktree(issue-319/325/330 等)が同じ
+  Docker デーモンを共有しており、`docker ps` で既に別セッションが起動した
+  とみられる `chainviz-ethereum-*` スタックが動作中だった。`dev-up.sh` の
+  再実行はそちらのスタックを巻き込んで壊すおそれがあるため見送った。今回の
+  修正はロジックの純粋関数化がしやすい性質のバグで、detective が実機で
+  再現・特定した根本原因(該当 `useEffect` が `rfNodes` を丸ごと置き換える
+  ことで `position`/`dragging` が破棄される)に対して、ユニットテストで
+  同じ症状(ドラッグ中に `next` の古い position で上書きされる)を再現・
+  検出できることを確認済み。実機での最終確認は `chainviz-qa` の通常工程で
+  行う想定
+- 決定事項・注意点:
+  - `onNodeDragStart`/`onNodeDragStop` で id を別途追跡する案は採らず、
+    React Flow が `applyNodeChanges` を通じて自動的に反映する
+    `previous` 側の `dragging`/`selected` フラグをそのまま信頼する設計に
+    した。二重管理を避けるため
+  - `selected` も同じ機構で保全されるようにした(detective が「同じ機構で
+    毎回失われている可能性が高い、未検証」と付記していた点に対応。ただし
+    現状このアプリには `selected` を読んで見た目を変えるカードコンポー
+    ネントは無い(React Flow 標準の選択枠のみ)ため、体感できる変化は
+    ドラッグ中のガクツキ解消が主)
+
+### 2026-07-16 Issue #328 テスト強化(異常系・境界値)
+- 担当: tester
+- ブランチ: issue-328-drag-position-jitter
+- 内容: `preserveDraggingState` の既存6ケースに異常系・境界値の観点で
+  9ケースを追加した(`packages/frontend/src/entities/canvasNode.test.ts` の
+  `preserveDraggingState` describe ブロック)。追加した観点:
+  - マルチセレクトドラッグ(複数ノードが同時に dragging: true)で全ノードの
+    position/dragging/selected が保全されること
+  - ドラッグ中のノードが WebSocket 更新で next から消えた場合(ドラッグ中に
+    エンティティ削除)、previous 側の dragging: true に引きずられて復活
+    させず、結果にも現れないこと
+  - `dragging: undefined` を false と同じく保全対象外として扱うこと
+    (判定が `dragging === true` の厳密比較のため両者に差が無いこと)
+  - previous.selected が undefined(未選択)のとき、next.selected が true でも
+    undefined で上書きすること(ドラッグ中は previous の操作状態を正とする)
+  - ドラッグ中ノードは新しいオブジェクトとして返し、next を破壊せず
+    previous の参照とも同一でないこと(純粋関数としての不変性)
+  - ドラッグ中でも next 配列の順序を維持すること
+  - next が空配列でも(previous にドラッグ中ノードがあっても)空配列を返すこと
+  - infra/wallet 混在配列で id ベースにドラッグ中カードのみ保全すること
+  - Canvas.tsx と同じ合成
+    (`preserveDraggingState(preserveMeasuredDimensions(nodes, current), current)`)で、
+    measured は preserveMeasuredDimensions が、position/dragging/selected は
+    preserveDraggingState が previous から引き継ぎ、data は next の最新値が
+    残ること(両関数が触るフィールドが独立で相互干渉しないこと)
+- 回帰検出力の確認: `preserveDraggingState` を一時的に `return next` の no-op に
+  差し替えると、追加分のうち5ケース(マルチセレクト・selected undefined 上書き・
+  新オブジェクト返却・混在配列・合成)が実際に失敗することを確認した。残り
+  4ケース(削除ノード非復活・undefined 非保全・順序維持・空配列)は no-op でも
+  成立する不変条件を明文化するガードテストであり、意図どおり緑のまま。確認後、
+  実装を元に戻し全ケースが通ることを確認した
+- 確認結果: `pnpm --filter @chainviz/frontend build`・
+  `pnpm --filter @chainviz/frontend test`(143ファイル/2136件)がいずれも成功。
+  `npx eslint` を変更したテストファイルに対して実行しエラー無しを確認した
+- 実装バグの疑いは検出されなかった(実装は変更していない)
+
+### 2026-07-16 Issue #328 実装レビュー
+- 担当: reviewer
+- ブランチ: issue-328-drag-position-jitter(コミット3件をレビュー)
+- 内容: `preserveDraggingState` の追加と Canvas.tsx への適用、テスト強化
+  (計15ケース)、worklog/PLAN.md 更新をレビューした。結果は**合格**
+- 確認したこと:
+  - 実装の正しさ: `previous` 側で `dragging === true` のノードのみ
+    `position`・`dragging`・`selected` を引き継ぎ、`data` は常に `next` を
+    使う純粋関数。id ベースの突き合わせで next に無いノードを復活させず、
+    next の順序・他ノードの参照同一性も保つ。detective が特定した根本原因
+    (useEffect による rfNodes 丸ごと置き換えでのドラッグ状態破棄)に
+    過不足なく対応している
+  - 合成の妥当性: `preserveDraggingState(preserveMeasuredDimensions(nodes, current), current)`
+    は両関数が触るフィールドが独立(measured vs position/dragging/selected)
+    しており順序依存が無い。合成テストでも measured/position/data がそれぞれ
+    意図した側から来ることを検証済み
+  - 設計判断: `onNodeDragStart`/`onNodeDragStop` での独自 id 追跡を避け、
+    `applyNodeChanges` が反映する `dragging`/`selected` フラグを信頼する
+    判断は妥当。React Flow 内部実装の該当箇所まで確認した根拠が worklog に
+    記録されており、二重管理によるズレの温床を作らない
+  - テストの回帰検出力: レビュー側でも `preserveDraggingState` を一時的に
+    no-op(`return next`)へ差し替えて実行し、37ケース中8ケースが実際に
+    失敗すること、復元後に全件通ることを独立に確認した(worklog の実装担当・
+    tester の確認記録とも整合)
+  - リポジトリ全体で `pnpm lint` / `pnpm build` / `pnpm test` を実行し
+    全件通過(frontend は 143ファイル/2136件)
+  - コミット粒度: fix(実装+基本テスト)/docs(worklog+PLAN.md)/test(強化)の
+    3コミットに分かれており、1変更1コミットの規約に沿う。fix コミットに
+    `Closes #328` が含まれる
+  - エラー握りつぶし・環境依存の固定値: 該当なし(純粋関数のみで catch も
+    タイムアウト定数も無い。「約2秒周期」はコメント内の背景説明であり
+    コード上の定数ではない)
+  - 境界・チェーンプロファイル独立性: frontend 内で完結し、チェーン固有
+    語彙の漏れも無い
+- 決定事項・注意点:
+  - 実機(Playwright)確認の見送りは妥当と判断した。並行 worktree が同一
+    Docker デーモンを共有しており `dev-up.sh` 再実行が他セッションの
+    スタックを壊すおそれがあるため。実機での最終確認は chainviz-qa の
+    通常工程に委ねる(レビュー側でも同じ理由で実機起動は行っていない)
+  - 既知の残課題(本Issueのスコープ外): クリックで選択しただけ(ドラッグ中で
+    ない)のノードの `selected` は、従来どおり WebSocket 更新のたびに失われる。
+    現状 `selected` を読んで見た目を変えるカードは無く React Flow 標準の
+    選択枠が消えるのみだが、将来 `selected` に依存する機能を足す際は
+    ドラッグ中以外の保全も必要になる
+
+## QA検証（実機確認、2026-07-16 chainviz-qa 検証大地）
+
+- 結論: 合格。Issue本文の不具合（ドラッグ中にWebSocket更新で位置がガクンと
+  ずれる/戻る）が実機で再現しないことを確認した。
+- 検証環境: 既存の共有Dockerスタック（chainviz-ethereum、稼働中のものを再利用）
+  に対し、他worktreeとのポート競合を避けるため collector=4100 / proxy=4101 /
+  frontend=5273 で `scripts/dev-up.sh` を起動。ブラウザ操作は Playwright
+  1.61.1 + chromium（headless、LD_LIBRARY_PATH で nss/nspr 共有ライブラリを
+  補って起動）。検証後は `scripts/dev-down.sh`（--docker なし）で自分の
+  collector/frontend のみ停止し、共有Dockerスタックは残した。
+- 事前確認:
+  - collector の WebSocket（ws://127.0.0.1:4100）で snapshot 1件のあと diff が
+    約2秒周期で流れることを確認。
+  - フロント（http://localhost:5273）は node/wallet/chain-ribbon 等のカードが
+    描画され、chain-ribbon のブロック番号が約1.7秒ごとに1つ進む（＝
+    ワールドステート差分が nodes 配列へ反映され Canvas.tsx の useEffect が
+    毎回発火する状態）。console error は 0 件。
+- 静止保持テスト（マウスを動かさずドラッグを保持）: reth2 カードをドラッグ位置
+  へ移動後、マウスを完全に静止させたまま7秒保持。保持中に chain-ribbon が
+  #1148→#1151 と進行（＝差分が複数回 nodes 配列へ適用され useEffect が反復
+  発火）したにもかかわらず、ドラッグ中ノードの位置は held 位置から偏差0で
+  完全に静止し続けた。修正前ならこの間に保存位置へ戻る（本ケースでは約239px
+  離れた位置へ跳ぶ）はずだが、それが発生しないことを確認。
+- 連続ドラッグテスト: カーソルを右下へ連続移動させながら約7秒ドラッグ（約4差分
+  分をまたぐ）。ノードの transform.x 軌跡は 0→207 まで単調増加で、カーソルと
+  逆方向へ動く「後退ステップ」は69ステップ中0件、最大後退量0px。差分到着時の
+  ガクンとした跳ね戻りは観測されなかった。
+- 永続化: mouseup 後もドラッグ位置（transform 158,281）を維持。ページを
+  リロードしても同位置が保持されることを確認（onNodeDragStop 由来の layout
+  保存が機能）。
+- デグレ確認（既存機能）: ドラッグ中も非ドラッグノードは WebSocket 更新を反映
+  し続けた（chain-ribbon のブロック追加が両テスト中に継続反映）。ドラッグ対象
+  以外のノード（reth1）の位置は変化せず安定。検証全体を通して console error 0件。
+- 補足: 実機確認見送りの理由だった「他worktreeとのDocker競合」は、共有スタックを
+  再利用しつつ collector/frontend のみ別ポートで立てることで回避できた。

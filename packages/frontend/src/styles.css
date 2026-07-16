@@ -1211,6 +1211,127 @@ body {
   color: var(--muted);
 }
 
+/* --- C層拡張: mempool パネル(Issue #330。ARCHITECTURE.md §11) --- */
+/* キャンバス左下、ContractListPanel(既定 left:15px/bottom:150px、
+   max-height 220px)の真上に縦積みする常設ミニパネル。ContractListPanel と
+   異なり0件でも常に描画するため、bottom オフセットは
+   「ContractListPanel の bottom(150) + ContractListPanel の最大高さ(220) +
+   隙間(15)」で固定し、ContractListPanel がどこまで伸びても重ならないように
+   する。 */
+.mempool-panel {
+  position: absolute;
+  left: 15px;
+  bottom: 385px;
+  z-index: 6;
+  min-width: 220px;
+  max-width: 280px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(26, 32, 48, 0.9);
+  border: 1px solid var(--divider);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  font-size: 11px;
+}
+
+.mempool-panel__header {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.mempool-panel__count {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.mempool-panel__empty {
+  margin: 4px 0 0;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.mempool-panel__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mempool-panel__row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 4px 2px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  border-radius: 4px;
+}
+
+button.mempool-panel__row {
+  cursor: pointer;
+}
+
+button.mempool-panel__row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.mempool-panel__row--static {
+  opacity: 0.7;
+}
+
+.mempool-panel__hash {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.mempool-panel__addr {
+  font-variant-numeric: tabular-nums;
+}
+
+.mempool-panel__fn {
+  color: var(--accent);
+}
+
+.mempool-panel__overflow {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.mempool-panel__nodes {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--divider);
+}
+
+.mempool-panel__nodes-title {
+  margin-bottom: 4px;
+}
+
+.mempool-panel__node-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mempool-panel__node-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.mempool-panel__node-counts {
+  margin-left: auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 /* networkId 1件分の「色チップ + 名前」。凡例・ピアポップオーバー共通。 */
 .network-label {
   display: inline-flex;

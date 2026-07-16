@@ -802,12 +802,26 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       背景に淡い色光のラジアルグラデーションを適用。役割別の枠色・エッジ色・
       状態色の意味体系は変更なし)
       [#327](https://github.com/morichikawa/chainviz/issues/327)
-- [ ] ノード/コンポーネントをドラッグ中にWebSocket更新で位置がガクンと
+- [x] ノード/コンポーネントをドラッグ中にWebSocket更新で位置がガクンと
       ずれる/戻る
-      (原因未調査。着手時はまずchainviz-detectiveに原因切り分けを依頼し、
-      特定でき次第標準パイプラインで対応するIssueとして仕切り直す。
-      着手は後日)
+      (chainviz-detectiveが原因を特定: Canvas.tsxのuseEffectが親から渡された
+      nodesでrfNodesを丸ごと置き換え、ドラッグ中のローカルposition・
+      draggingフラグが破棄されていた。preserveMeasuredDimensionsと同系の
+      マージ関数preserveDraggingStateを追加し、ドラッグ中ノードのみ
+      position・dragging・selectedを直前のReact Flow内部状態から引き継ぐ
+      よう修正)
       [#328](https://github.com/morichikawa/chainviz/issues/328)
+- [x] mempool(未承認tx)全体を俯瞰できるビューが無い
+      (pending txは局所表示のみだったため、mempool全体を俯瞰する常設
+      パネルをfrontendに追加した。shared型変更・collector変更は不要。
+      アドレス表記の大文字小文字差異照合バグをレビューで1回差し戻し・
+      修正済み)
+      [#330](https://github.com/morichikawa/chainviz/issues/330)
+- [ ] removeWorkbenchがaddWorkbenchで追加したワークベンチに対しても
+      「追加されていない」エラーを返すことがある
+      (Issue #319のQA検証中に偶発的に観測。再現手順未調査。着手時はまず
+      chainviz-detectiveに原因調査を依頼)
+      [#334](https://github.com/morichikawa/chainviz/issues/334)
 
 ## 運用ルール（全ステップ共通）
 
