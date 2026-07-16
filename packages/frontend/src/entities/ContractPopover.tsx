@@ -1,6 +1,7 @@
 import type { ContractEntity } from "@chainviz/shared";
 import type { ReactNode, RefObject } from "react";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
+import { withTermAnchor } from "../glossary/withTermAnchor.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { PopoverPortal } from "../interaction/PopoverPortal.js";
 import { LayerBadge } from "./LayerBadge.js";
@@ -18,23 +19,11 @@ function Field({ label, value }: { label: ReactNode; value: string }) {
 /**
  * 未知コントラクトの説明文中の「ABI」という語だけに用語解説アンカーを
  * 付ける（ARCHITECTURE.md §6.9: abi の主なアンカーの1つが「未知コントラクト
- * の説明文」）。i18n の文言データ自体は1つの完結した文（§6.8）のまま保ち、
- * 表示側でその中の該当語だけを `GlossaryTerm` に差し替える。
- * 文言に "ABI" という部分文字列が無い場合（訳文の変更などで一致しなくなった
- * 場合）は、アンカーを付けずそのままの文を返す防御的フォールバック。
+ * の説明文」）。実体は `withTermAnchor`（Issue #321 で汎用化。コントラクト
+ * ソースビューの「ソース手元に無し」説明文でも同じ流儀を使う）。
  */
 function withAbiAnchor(text: string): ReactNode {
-  const idx = text.indexOf("ABI");
-  if (idx === -1) return text;
-  const before = text.slice(0, idx);
-  const after = text.slice(idx + "ABI".length);
-  return (
-    <>
-      {before}
-      <GlossaryTerm termKey="abi">ABI</GlossaryTerm>
-      {after}
-    </>
-  );
+  return withTermAnchor(text, "ABI", "abi");
 }
 
 /**
