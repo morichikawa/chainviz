@@ -356,3 +356,62 @@ CLAUDE.md の固定値ルール上も安全(この根拠をコード上のコメ
 - 停滞判定はホストの時計がチェーンより 3 interval 超進んでいる場合に恒久的な
   停滞表示になるが、ローカル開発ツールの前提（同一ホスト上の Docker）では
   実質起きない。設計メモ §2 で言及済みの許容事項
+
+### 2026-07-16 実機検証（qa）
+
+- 担当: qa
+- ブランチ: issue-343-block-cadence-indicator
+- 判定: **合格**（Issue 本文の期待する対応をすべて満たす）
+
+#### 検証環境
+
+- 既に稼働中の profiles/ethereum スタック（Issue #322 の slot time 12 秒版、
+  2 ノード構成、reth1 が host:8545 公開）をそのまま再利用した。他 worktree と
+  Docker デーモンを共有しているため、スタックの起動・停止・再作成は一切
+  行っていない。
+- 検証時に host:4000 で稼働していた別 collector は、過去に破棄された旧スタック
+  の残骸（tip がブロック 16205・timestamp が約 3 時間前で停止、2 秒間隔の
+  古いチェーン）を保持しており、現行の 12 秒スタックを追従していなかった。
+  そのため検証用に本 worktree の collector を空きポート（WS 4100 / proxy 4101）
+  で新規起動し、現行スタックへ接続させた。collector は Docker を読み取り専用で
+  ポーリングしてノードを自動発見するため、他 worktree の作業には影響しない。
+  frontend は vite dev server をポート 5273 で `VITE_COLLECTOR_URL=
+  ws://127.0.0.1:4100` で起動し、Playwright（chromium headless）で実描画を
+  観察した。検証後、起動した collector（4100）と vite（5273）は停止済み。
+  Docker スタックと host:4000 の collector は無傷のまま残している。
+
+#### 確認結果（Issue 本文・依頼の検証項目に対応）
+
+1. 環境起動: 現行の 12 秒スタックへ新規 collector を接続し、WebSocket 経由で
+   ブロック diff がリアルタイムに届くこと（block 531→535 が各 ts 差 12 秒、
+   wallclock と ts が一致）を確認した。
+2. カウントダウン表示: チェーンリボンカード（`chain-ribbon-card`）のヘッダに
+   `chain-ribbon-cadence-countdown`「次のブロックまで N 秒」が表示された。
+3. 約 12 秒周期のリセット: Playwright でヘッダを 40 秒間 0.5 秒刻みでサンプ
+   リングし、カウントダウンが 12→1 と減り、新ブロック着地の瞬間（latest が
+   #559→#560→#561→#562 と増える瞬間）に 12 秒へリセットされることを確認。
+   リセット間隔は 9.5s→21.5s→33.5s で厳密に 12.0 秒であった。
+4. 進捗バー連動: `chain-ribbon-cadence-bar-fill` の width が 3%→99% へ線形に
+   増加し、新ブロックごとに 3% へリセットされること（カウントダウンと連動）を
+   確認した。
+5. 接続直後の非表示: 接続直後のスナップショットはブロック 1 件のみで、
+   `deriveBlockCadence` が導出不成立（null）となりインジケータ領域が出ない
+   ことを WebSocket プローブで確認した（差分が届いて 2 件以上になった後に
+   インジケータが出現）。
+6. 日英切り替え: `language-toggle` で ja「次のブロックまで N 秒」/ en
+   「Next block in Ns」が正しく切り替わること、再度トグルで日本語へ戻ることを
+   実 DOM の outerHTML で確認した。
+7. デグレ無し: チェーンリボンのタイル積み上げは従来どおり 8 件表示され、最新
+   ブロック番号（`chain-ribbon-latest`）が新ブロックごとに増加した。既存表示に
+   異常は見られなかった。
+
+#### 備考
+
+- 停滞表示（`interval × 3` 超で `chain-ribbon-cadence-stalled` へ切り替え）は
+  今回のライブ環境（健全な 12 秒生成）では発生条件に入らないため実機では
+  観測していない。ロジックは blockCadence / useBlockCadence / ChainRibbonCard
+  の各ユニット・コンポーネントテスト（停滞境界・停滞からの回復）で担保済み。
+- コンソールに接続直後の一過性の警告
+  `WebSocket connection ... closed before the connection is established` が
+  1 件出るが、その後正常に接続・スナップショット受信・diff 配信まで到達して
+  おり、本 Issue の機能（インジケータ）とは無関係。既存の再接続挙動の範疇。
