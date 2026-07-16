@@ -832,6 +832,10 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       legend.hint.suffixの意図的な空文字en訳とpickLocale()の空文字
       フォールバック仕様の衝突。#327のCSS変更とは無関係の既存不具合)
       [#341](https://github.com/morichikawa/chainviz/issues/341)
+- [ ] UI層E2Eテストの一部が実.hover()依存・描画安定性不足でflakyになりうる
+      (Issue #322のQA検証中に偶発的に観測。UI-C-04/UI-CMD-07/UI-ERR-02/
+      UI-D-03で個別再現。slot time変更とは無関係の既存のテスト脆さ)
+      [#346](https://github.com/morichikawa/chainviz/issues/346)
 
 ## 運用ルール（全ステップ共通）
 
