@@ -78,6 +78,7 @@ import { deriveDeployedContracts } from "../operations/deployedContracts.js";
 import { OperationDataProvider } from "../operations/OperationDataContext.js";
 import { deriveWalletCandidates } from "../operations/walletCandidates.js";
 import { type KeyValueStorage, getBrowserStorage } from "../platform/storage.js";
+import { SidePanelProvider } from "../side-panel/SidePanelContext.js";
 import type { ConnectionStatus } from "../websocket/client.js";
 import { createMockClient } from "../websocket/mockData.js";
 import { listEdges, listEntities } from "../world-state/store.js";
@@ -596,32 +597,38 @@ function AppShell({
               ため、Canvas を包む Context Provider はそのままノード内部の
               useRibbonHover まで届く（OperationDataProvider と同じ理由）。 */}
           <RibbonHoverProvider transactions={transactions}>
-            <main className="app__canvas">
-              <div className="canvas-overlay-top">
-                <CanvasToolbar
-                  pendingAddNode={pendingAddNode}
-                  pendingAddWorkbench={pendingAddWorkbench}
-                  entities={entities}
-                />
-                <LayerFilterBar
-                  value={layerFilter}
-                  onChange={setLayerFilter}
-                  layers={ETHEREUM_VISUALIZATION_LAYERS}
-                />
-              </div>
-              {nodes.length === 0 ? (
-                <p className="app__empty">{t("canvas.empty")}</p>
-              ) : (
-                <Canvas
-                  nodes={nodes}
-                  edges={edges}
-                  onPersistPosition={persist}
-                  layerFilter={layerFilter}
-                  transactions={transactions}
-                />
-              )}
-              <ToastStack notifications={notifications} onDismiss={dismiss} />
-            </main>
+            {/* Issue #321: サイドパネル機構（コントラクトソースビュー）。
+                ContractCard（トリガー）と Canvas 内の SidePanelHost（表示）
+                の両方から同じ状態を参照できるよう、両者の共通の祖先である
+                この位置に置く（RibbonHoverProvider と同じ配置パターン）。 */}
+            <SidePanelProvider>
+              <main className="app__canvas">
+                <div className="canvas-overlay-top">
+                  <CanvasToolbar
+                    pendingAddNode={pendingAddNode}
+                    pendingAddWorkbench={pendingAddWorkbench}
+                    entities={entities}
+                  />
+                  <LayerFilterBar
+                    value={layerFilter}
+                    onChange={setLayerFilter}
+                    layers={ETHEREUM_VISUALIZATION_LAYERS}
+                  />
+                </div>
+                {nodes.length === 0 ? (
+                  <p className="app__empty">{t("canvas.empty")}</p>
+                ) : (
+                  <Canvas
+                    nodes={nodes}
+                    edges={edges}
+                    onPersistPosition={persist}
+                    layerFilter={layerFilter}
+                    transactions={transactions}
+                  />
+                )}
+                <ToastStack notifications={notifications} onDismiss={dismiss} />
+              </main>
+            </SidePanelProvider>
           </RibbonHoverProvider>
         </OperationDataProvider>
       </CommandActionsProvider>
