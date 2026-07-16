@@ -1140,6 +1140,13 @@ export function createMockClient(
       hash,
       number,
       parentHash,
+      // ブロック生成タイミングのインジケータ（Issue #343。ARCHITECTURE.md
+      // §10.5）の導出は `Date.now()` 基準の timestamp を前提にしているため、
+      // 実時計から素直に取る（合成クロックにすると、tick 間隔が1秒の整数倍
+      // でない場合に実時間からの乖離が蓄積し、時計ずれガード
+      // （`deriveBlockCadence`）が誤って恒久的に発火しうる。実時計ベースなら
+      // anchor は常に「その時点の現在時刻」そのものなので、このガードは
+      // 実質発火しない）。
       timestamp: Math.floor(now / 1000),
       receivedAt: { [CL_BOOTNODE_ID]: now },
     };

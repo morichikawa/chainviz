@@ -1,3 +1,4 @@
+import type { BlockEntity } from "@chainviz/shared";
 import type { Node } from "@xyflow/react";
 import type { ChainRibbonTile } from "./chainRibbon.js";
 import type { LayoutMap, Position } from "../layout/layoutStore.js";
@@ -34,6 +35,13 @@ export interface ChainRibbonNodeData extends Record<string, unknown> {
   nodeLabelById: ReadonlyMap<string, string>;
   /** 着地アニメーション中のタイル hash 集合（`useRibbonLanding` の出力）。 */
   landingHashes: ReadonlySet<string>;
+  /**
+   * 直近の `BlockEntity` 全件（タイル表示窓（8件）に絞る前の、store が保持する
+   * 全ブロック）。ブロック生成タイミングのインジケータ（Issue #343。
+   * ARCHITECTURE.md §10.5）の導出に使う。`tiles` は表示件数に絞られており
+   * 導出に必要な差分の冗長性が足りないため、別途渡す。
+   */
+  blocks: readonly BlockEntity[];
 }
 
 export type ChainRibbonFlowNode = Node<ChainRibbonNodeData, "chainRibbon">;
@@ -43,6 +51,7 @@ export interface ChainRibbonNodeContext {
   txCountByHash: ReadonlyMap<string, number>;
   nodeLabelById: ReadonlyMap<string, string>;
   landingHashes: ReadonlySet<string>;
+  blocks: readonly BlockEntity[];
   layout: LayoutMap;
 }
 
@@ -61,6 +70,7 @@ export function chainRibbonToFlowNode(
       txCountByHash: ctx.txCountByHash,
       nodeLabelById: ctx.nodeLabelById,
       landingHashes: ctx.landingHashes,
+      blocks: ctx.blocks,
     },
   };
 }

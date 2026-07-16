@@ -76,6 +76,7 @@ function data(overrides: Partial<ChainRibbonFlowNode["data"]> = {}): ChainRibbon
     txCountByHash: new Map(),
     nodeLabelById: new Map(),
     landingHashes: new Set(),
+    blocks: [],
     ...overrides,
   };
 }
@@ -305,6 +306,56 @@ describe("ChainRibbonCard", () => {
       );
       expect(screen.queryByTestId("chain-ribbon-tile-0x3")).toBeNull();
       expect(screen.queryByTestId("chain-ribbon-tile-0x4")).toBeNull();
+    });
+  });
+
+  describe("block cadence indicator (Issue #343. ARCHITECTURE.md §10.5)", () => {
+    /** timestamp（秒）を Date.now() からの相対オフセットで指定するブロック。 */
+    function blockAt(hash: string, number: number, secOffsetFromNow: number): BlockEntity {
+      return block({
+        hash,
+        number,
+        timestamp: Math.floor(Date.now() / 1000) + secOffsetFromNow,
+      });
+    }
+
+    it("hides the indicator region entirely when cadence derivation is not possible", () => {
+      // ブロックが1件以下（derive 不成立）。
+      renderCard(data({ blocks: [blockAt("0x1", 1, 0)] }));
+      expect(screen.queryByTestId("chain-ribbon-cadence")).toBeNull();
+    });
+
+    it("shows a countdown + progress bar once a valid cadence is derived", () => {
+      renderCard(
+        data({
+          blocks: [
+            blockAt("0x1", 1, -24),
+            blockAt("0x2", 2, -12),
+            blockAt("0x3", 3, 0),
+          ],
+        }),
+      );
+      expect(screen.getByTestId("chain-ribbon-cadence")).toBeTruthy();
+      expect(screen.getByTestId("chain-ribbon-cadence-bar")).toBeTruthy();
+      expect(screen.getByTestId("chain-ribbon-cadence-countdown").textContent).toContain("秒");
+      expect(screen.queryByTestId("chain-ribbon-cadence-stalled")).toBeNull();
+    });
+
+    it("switches to the stalled message once past the 3x-interval threshold with no new block", () => {
+      renderCard(
+        data({
+          blocks: [blockAt("0x1", 1, -12), blockAt("0x2", 2, 0)],
+        }),
+      );
+      expect(screen.queryByTestId("chain-ribbon-cadence-stalled")).toBeNull();
+
+      // interval(12s) の3倍を少し超えるまで実時間を進める。
+      act(() => {
+        vi.advanceTimersByTime(12_000 * 3 + 500);
+      });
+
+      expect(screen.getByTestId("chain-ribbon-cadence-stalled")).toBeTruthy();
+      expect(screen.queryByTestId("chain-ribbon-cadence-countdown")).toBeNull();
     });
   });
 });

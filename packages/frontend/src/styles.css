@@ -2145,6 +2145,39 @@ button.mempool-panel__row:hover {
   font-size: 13px;
 }
 
+/* Issue #343: ブロック生成タイミングのインジケータ（チェーン全体で1つ、
+   ヘッダ右側。latest の右隣に並べる）。ARCHITECTURE.md §10.5。 */
+.chain-ribbon-card__cadence {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.chain-ribbon-card__cadence-bar {
+  position: relative;
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+
+.chain-ribbon-card__cadence-bar-fill {
+  position: absolute;
+  inset: 0;
+  width: 0%;
+  background: var(--accent);
+  border-radius: inherit;
+}
+
+.chain-ribbon-card__cadence-stalled {
+  color: var(--syncing);
+}
+
 .chain-ribbon-card__subtitle {
   margin-top: 2px;
   color: var(--muted);
