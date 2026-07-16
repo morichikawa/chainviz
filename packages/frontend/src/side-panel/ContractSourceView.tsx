@@ -11,7 +11,7 @@ export interface ContractSourceViewProps {
 
 /**
  * サイドパネル（kind: "contractSource"）の中身（Issue #321。
- * docs/worklog/issue-321.md §12.3）。カタログ同梱のソース
+ * docs/ARCHITECTURE.md §12.3）。カタログ同梱のソース
  * （`ContractEntity.sourceCode`）があれば行番号付き・シンタックスハイライト
  * 付きで全文を表示し、無ければ「ソースコードが手元に無いため表示できない」
  * ことを明示する。未知のコントラクト（`name` 省略）にも同じ説明を出す

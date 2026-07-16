@@ -1,6 +1,6 @@
 /**
  * サイドパネル（キャンバス右ドックの常設オーバーレイ）に表示中の内容を表す
- * 判別共用体（Issue #321。docs/worklog/issue-321.md §12.2「汎用サイドパネル
+ * 判別共用体（Issue #321。docs/ARCHITECTURE.md §12.2「汎用サイドパネル
  * 機構」）。今回は "contractSource"（コントラクトのソースコード表示）1種類
  * のみ持つが、今後 Issue #313（用語集パネル）で
  * `{ kind: "glossary"; termKey?: string }` を、Issue #317（ノード間通信

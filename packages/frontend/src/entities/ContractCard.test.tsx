@@ -439,7 +439,7 @@ describe("ContractCard", () => {
 
   it("shows the 'view source' button even for an unknown contract (no sourceCode)", () => {
     // 隠すより「なぜ見られないか」を学べる方を優先する設計判断
-    // (docs/worklog/issue-321.md §12.3)。ボタン自体は常に出す。
+    // (docs/ARCHITECTURE.md §12.3)。ボタン自体は常に出す。
     renderCard(data({ entity: contract({ name: undefined }) }));
     expect(
       screen.getByTestId(`contract-view-source-${contract().address}`),

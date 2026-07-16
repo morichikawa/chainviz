@@ -62,7 +62,7 @@
   --glass-border: rgba(201, 212, 232, 0.18); /* ガラスの縁 */
   --glass-highlight: rgba(255, 255, 255, 0.07); /* 上端1pxのハイライト */
   /* コントラクトソースビューのシンタックスハイライト（Issue #321。
-     docs/worklog/issue-321.md §12.4）。専用の色を割り当て、既存の意味付き
+     docs/ARCHITECTURE.md §12.4）。専用の色を割り当て、既存の意味付き
      カラー（--synced/--syncing 等の状態色、エッジ色パレット）を無関係な
      用途に転用しない。 */
   --code-comment: #7f8ba8;
@@ -1367,7 +1367,7 @@ button.mempool-panel__row:hover {
   font-variant-numeric: tabular-nums;
 }
 
-/* --- 汎用サイドパネル機構（Issue #321。docs/worklog/issue-321.md §12.2） ---
+/* --- 汎用サイドパネル機構（Issue #321。docs/ARCHITECTURE.md §12.2） ---
    キャンバス右ドックに固定する常設オーバーレイ。ContractListPanel/
    MempoolPanel（左下の浮遊ミニパネル）とは違い、右端に張り付いて縦の
    全高を使う（コード全文のような分量のあるコンテンツを収めるため）。
@@ -1431,7 +1431,7 @@ button.mempool-panel__row:hover {
 }
 
 /* --- コントラクトソースビュー（kind: "contractSource"。Issue #321。
-   docs/worklog/issue-321.md §12.3） --- */
+   docs/ARCHITECTURE.md §12.3） --- */
 .contract-source-view__header {
   display: flex;
   align-items: baseline;

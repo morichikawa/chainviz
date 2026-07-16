@@ -21,7 +21,7 @@ const SidePanelContext = createContext<SidePanelContextValue | null>(null);
 
 /**
  * 汎用サイドパネル機構の状態管理（Issue #321。
- * docs/worklog/issue-321.md §12.2）。`ContractCard` のようにパネルの
+ * docs/ARCHITECTURE.md §12.2）。`ContractCard` のようにパネルの
  * トリガーを持つコンポーネントと、実際にパネルを描画する
  * `SidePanelHost`（世界の状態から表示対象を引ける位置に置く）の両方から
  * `useSidePanel()` で同じ状態を参照できるようにするための Context。

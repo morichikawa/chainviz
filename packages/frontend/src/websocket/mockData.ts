@@ -434,7 +434,7 @@ function counterDeployTx(): TransactionEntity {
 
 /**
  * カタログ同梱コントラクトのソースコード（Issue #321。実カタログ
- * （profiles/ethereum/contracts/src/ChainvizToken.sol）の全文と一致させる。
+ * （profiles/ethereum/contracts/src/ChainvizToken.sol）からの抜粋。
  * collector 側の実装（catalog.json → ContractEntity.sourceCode への転記）が
  * 無くても、モックモードでコントラクトソースビューの見た目を確認できる
  * ようにするための埋め込み）。

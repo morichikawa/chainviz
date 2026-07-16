@@ -12,7 +12,7 @@ export interface SidePanelProps {
 
 /**
  * キャンバス右ドックの汎用サイドパネルのシェル（Issue #321 で新設。
- * docs/worklog/issue-321.md §12.2）。ヘッダー（タイトル・閉じるボタン）・
+ * docs/ARCHITECTURE.md §12.2）。ヘッダー（タイトル・閉じるボタン）・
  * Esc クローズ・本文スクロールだけを提供し、中身（`view.kind` ごとの
  * コンポーネント）については一切知らない。今回は contractSource のみだが、
  * Issue #313（用語集パネル）・#317（ノード間通信ログ）は中身の

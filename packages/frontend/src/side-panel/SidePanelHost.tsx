@@ -6,13 +6,13 @@ import { SidePanel } from "./SidePanel.js";
 import { useSidePanel } from "./SidePanelContext.js";
 
 export interface SidePanelHostProps {
-  /** address → ContractEntity の索引（App.tsx で既に算出済みのものを使う）。 */
+  /** address → ContractEntity の索引（Canvas.tsx が rfNodes から算出する）。 */
   contractsByAddress: Map<string, ContractEntity>;
 }
 
 /**
  * `SidePanelView.kind` ごとに中身コンポーネントを振り分けるディスパッチャ
- * （Issue #321。docs/worklog/issue-321.md §12.2「同時に開けるパネルは1枚」）。
+ * （Issue #321。docs/ARCHITECTURE.md §12.2「同時に開けるパネルは1枚」）。
  * `SidePanel`（シェル）自体は kind を一切知らないため、この振り分けは
  * ここに閉じる。Issue #313（用語集パネル）・#317（ノード間通信ログ）は
  * ここに case を足すだけで乗る想定。

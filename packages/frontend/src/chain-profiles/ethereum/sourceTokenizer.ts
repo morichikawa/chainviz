@@ -1,6 +1,6 @@
 /**
  * Ethereum チェーンプロファイルのフロント表現セット: コントラクトソース
- * ビュー（Issue #321。docs/worklog/issue-321.md §12.4）向けの軽量
+ * ビュー（Issue #321。docs/ARCHITECTURE.md §12.4）向けの軽量
  * シンタックスハイライト。
  *
  * `ContractSourceCode.language`（`packages/shared`。生の識別子）の解釈は

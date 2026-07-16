@@ -498,10 +498,10 @@ export const messages = {
   "layerBadge.b": { ja: "B層", en: "Layer B" },
   "layerBadge.c": { ja: "C層", en: "Layer C" },
   "layerBadge.d": { ja: "D層", en: "Layer D" },
-  // --- 汎用サイドパネル機構（Issue #321。docs/worklog/issue-321.md §12.2） ---
+  // --- 汎用サイドパネル機構（Issue #321。docs/ARCHITECTURE.md §12.2） ---
   "sidePanel.close": { ja: "閉じる", en: "Close" },
   // --- コントラクトソースビュー（kind: "contractSource"。Issue #321。
-  // docs/worklog/issue-321.md §12.3） ---
+  // docs/ARCHITECTURE.md §12.3） ---
   "contract.viewSource": { ja: "ソースコードを見る", en: "View source code" },
   "contractSource.title": { ja: "ソースコード", en: "Source code" },
   "contractSource.unavailable": {
