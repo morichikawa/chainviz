@@ -1217,7 +1217,9 @@ body {
    異なり0件でも常に描画するため、bottom オフセットは
    「ContractListPanel の bottom(150) + ContractListPanel の最大高さ(220) +
    隙間(15)」で固定し、ContractListPanel がどこまで伸びても重ならないように
-   する。 */
+   する。
+   Issue #327 追補: 浮遊オーバーレイパネルとして contract-list-panel と
+   同じすりガラス化。 */
 .mempool-panel {
   position: absolute;
   left: 15px;
@@ -1229,9 +1231,13 @@ body {
   overflow-y: auto;
   padding: 8px 10px;
   border-radius: 10px;
-  background: rgba(26, 32, 48, 0.9);
-  border: 1px solid var(--divider);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid var(--glass-border);
+  box-shadow:
+    0 8px 28px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 var(--glass-highlight);
   font-size: 11px;
 }
 
@@ -2259,6 +2265,7 @@ button.mempool-panel__row:hover {
   .layer-filter-bar,
   .p2p-legend,
   .contract-list-panel,
+  .mempool-panel,
   .toast {
     background: rgba(26, 32, 48, 0.92);
   }
