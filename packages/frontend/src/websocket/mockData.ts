@@ -432,6 +432,51 @@ function counterDeployTx(): TransactionEntity {
   };
 }
 
+/**
+ * カタログ同梱コントラクトのソースコード（Issue #321。実カタログ
+ * （profiles/ethereum/contracts/src/ChainvizToken.sol）の全文と一致させる。
+ * collector 側の実装（catalog.json → ContractEntity.sourceCode への転記）が
+ * 無くても、モックモードでコントラクトソースビューの見た目を確認できる
+ * ようにするための埋め込み）。
+ */
+const CHAINVIZ_TOKEN_SOURCE = [
+  "// SPDX-License-Identifier: MIT",
+  "pragma solidity ^0.8.24;",
+  "",
+  "/// @title ChainvizToken",
+  "/// @notice 学習用の最小 ERC20 実装。外部ライブラリ（OpenZeppelin 等）には",
+  "///         依存せず、ERC20 の中核（残高・allowance・transfer/approve/",
+  "///         transferFrom・Transfer/Approval イベント）だけを自己完結で",
+  "///         実装している。",
+  "contract ChainvizToken {",
+  '    string public constant name = "Chainviz Token";',
+  '    string public constant symbol = "CVZ";',
+  "    uint8 public constant decimals = 18;",
+  "",
+  "    uint256 public totalSupply;",
+  "    address public immutable owner;",
+  "",
+  "    mapping(address => uint256) public balanceOf;",
+  "    mapping(address => mapping(address => uint256)) public allowance;",
+  "",
+  "    event Transfer(address indexed from, address indexed to, uint256 value);",
+  "    event Approval(address indexed owner, address indexed spender, uint256 value);",
+  "",
+  "    constructor(uint256 initialSupply) {",
+  "        owner = msg.sender;",
+  "        if (initialSupply > 0) {",
+  "            _mint(msg.sender, initialSupply);",
+  "        }",
+  "    }",
+  "",
+  "    function transfer(address to, uint256 amount) external returns (bool) {",
+  "        _transfer(msg.sender, to, amount);",
+  "        return true;",
+  "    }",
+  "}",
+  "",
+].join("\n");
+
 /** カタログ既知・トークンを持つコントラクト。Alice がデプロイした体で、
  * デプロイエッジ（Alice ウォレット → このカード）を確認できる。
  * `catalogKey`/`token.symbol` は実カタログ（profiles/ethereum/contracts/
@@ -448,6 +493,11 @@ function chainvizTokenContract(): ContractEntity {
     deployerAddress: ALICE_WALLET,
     createdByTxHash: TOKEN_DEPLOY_TX,
     token: { symbol: "CVZ", decimals: 18 },
+    sourceCode: {
+      fileName: "ChainvizToken.sol",
+      language: "solidity",
+      code: CHAINVIZ_TOKEN_SOURCE,
+    },
   };
 }
 
@@ -465,6 +515,9 @@ function counterContract(): ContractEntity {
     catalogKey: "Counter",
     deployerAddress: BOB_WALLET,
     createdByTxHash: COUNTER_DEPLOY_TX,
+    // Issue #321: 未知コントラクト（unknownContract）との対比のため、こちらは
+    // 意図的に sourceCode を持たせない（カタログ既知でもソース未同梱の
+    // カタログエントリのケースをオフラインで確認できるようにする）。
   };
 }
 
