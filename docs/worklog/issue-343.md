@@ -288,3 +288,71 @@ CLAUDE.md の固定値ルール上も安全(この根拠をコード上のコメ
 - `pnpm exec eslint`（追加した 3 テストファイル対象）: エラーなし
 - 即時 setNow の回帰テストは、実装の該当行を一時的に削除すると当該テストが
   失敗すること、元に戻すと成功することを確認した
+
+### 2026-07-16 レビュー（reviewer）
+
+- 担当: reviewer
+- ブランチ: issue-343-block-cadence-indicator
+- 判定: **合格**（軽微な指摘1件あり。下記参照。差し戻しは不要）
+
+#### 確認内容
+
+- 設計メモとの整合: shared / collector への変更が無いこと（diff は
+  `packages/frontend` と `docs/` のみ）、GCD による導出方式・停滞判定
+  `interval × 3`・導出不成立時の非表示が設計メモ §2〜§3 のとおり実装されて
+  いることを確認した
+- `blockCadence.ts`: GCD（ユークリッドの互除法、正の差分のみ）・重複
+  timestamp 除去（Set の挿入順保持を利用）・時計ずれガード
+  （`anchorMs > now + intervalMs`）・剰余の [0, interval) への正規化
+  （now が anchor より過去でも負値/NaN を出さない）はいずれも正しい。
+  固定値（1〜600秒の interval 妥当範囲・停滞倍率3・tick 250ms）はすべて
+  根拠コメント付きで、チェーンの進行状態に依存しない相対値であり
+  CLAUDE.md の固定値ルールに適合する
+- `useBlockCadence.ts`: 導出は `useMemo(..., [blocks])` でブロック集合の
+  変化時のみ、毎 tick は `computeBlockCadenceProgress`（剰余計算）のみ、
+  という設計メモ §4 の方針どおり。導出不成立時はタイマー自体を起動しない。
+  cadence 確立直後の即時 `setNow` は tester の回帰テスト（意図的に壊して
+  検出を確認済み）で担保されている
+- モック timestamp の追加判断（合成クロック案を不具合の実測を根拠に
+  見送り、実時計ベースを維持）: 妥当。判断根拠が `mockData.ts` のコメントと
+  ARCHITECTURE.md §10.5 の両方に記録されており、CLAUDE.md の「実際に再現
+  して確認する」ルールにも沿っている
+- `ChainRibbonCard.tsx` への統合: 既存のヘッダ（title / latest）と共存し、
+  導出不成立時は `chain-ribbon-cadence` 領域ごと非表示。既存のリボン表示
+  ロジック（タイル・フリーズ・ハイライト）には手を入れていない
+- 境界の遵守: チェーン固有語彙の漏れなし。フロントは shared の
+  `BlockEntity` のみに依存し、導出はチェーン非依存（不規則チェーンでは
+  自然に非表示へ落ちる）
+- エラー握りつぶし: 新規コードに catch は無く、null 返却はすべて
+  「導出不成立 = 非表示」という意味付きでコメント化されている。問題なし
+- テストの質: GCD の非自明な縮約（[6,9,12]→3）、reorg 相当の timestamp
+  逆行、上限 600 秒の両側境界、停滞判定の厳密境界（3倍ちょうど/直後）、
+  時計巻き戻り、停滞からの回復、導出成立→不成立の遷移まで網羅されており、
+  実装の詳細をなぞるだけの無意味なテストは見当たらない
+- docs: ARCHITECTURE.md §10.5 の記述は実装と一致。PLAN.md のチェックと
+  E2E 除外の注記も適切
+- コミット粒度: feat / docs / test / docs(worklog) の4コミット。
+  `RIBBON_TILE_COUNT` コメント更新（12秒前提化）が feat コミットに同居して
+  いるが、本 Issue のスコープに明記された関連変更（コメントのみ）であり
+  許容範囲と判断した
+- `pnpm lint` / `pnpm build` / `pnpm test`: リポジトリ全体で成功
+  （shared 64 / collector 1458 / e2e 171 / frontend 2252、計 3945 件）
+
+#### 指摘（軽微・マージ前の対応を推奨、差し戻し不要）
+
+1. `blockCadence.ts` の `BlockCadenceProgress.remainingMs` の JSDoc が
+   「0以上、intervalMs未満」となっているが、実際の値域は
+   「0より大きく、intervalMs以下」（elapsed が [0, interval) に正規化される
+   ため remaining = interval - elapsed は (0, interval]）。テスト
+   （`returns remainingMs exactly equal to intervalMs when now === anchorMs`）
+   も remaining === intervalMs を固定しており、コメントだけが実装・テストと
+   矛盾している。コメントの1行修正を推奨
+
+#### 申し送り（対応不要の所見）
+
+- i18n キーが既存の `chainRibbon.*` ではなく `ribbon.*` 名前空間である点は
+  設計メモの初稿どおりだが、実装 worklog にも記載のとおり chainviz-i18n の
+  レビュー時に名前空間の統一を検討する余地がある
+- 停滞判定はホストの時計がチェーンより 3 interval 超進んでいる場合に恒久的な
+  停滞表示になるが、ローカル開発ツールの前提（同一ホスト上の Docker）では
+  実質起きない。設計メモ §2 で言及済みの許容事項
