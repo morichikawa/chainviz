@@ -200,6 +200,78 @@ describe("readContractCatalog", () => {
     expect(logs).toHaveLength(2);
   });
 
+  it("passes a well-formed source field through verbatim (Issue #321)", () => {
+    const profileDir = writeCatalog(
+      JSON.stringify({
+        ChainvizToken: {
+          name: "ChainvizToken",
+          abi: [],
+          source: { fileName: "ChainvizToken.sol", language: "solidity", code: "contract X {}" },
+        },
+      }),
+    );
+    const logs: unknown[][] = [];
+    const catalog = readContractCatalog(profileDir, (m, d) => logs.push([m, d]));
+    expect(catalog?.ChainvizToken.source).toEqual({
+      fileName: "ChainvizToken.sol",
+      language: "solidity",
+      code: "contract X {}",
+    });
+    expect(logs).toHaveLength(0);
+  });
+
+  it("omits source (but keeps the entry) for an entry with no source field at all", () => {
+    const profileDir = writeCatalog(JSON.stringify({ Counter: { name: "Counter", abi: [] } }));
+    const catalog = readContractCatalog(profileDir, () => {});
+    expect(catalog?.Counter.source).toBeUndefined();
+  });
+
+  it("keeps the entry but drops a malformed source (missing code), logging the reason", () => {
+    const profileDir = writeCatalog(
+      JSON.stringify({
+        Bad: {
+          name: "Bad",
+          abi: [],
+          source: { fileName: "Bad.sol", language: "solidity" }, // code missing
+        },
+      }),
+    );
+    const logs: unknown[][] = [];
+    const catalog = readContractCatalog(profileDir, (m, d) => logs.push([m, d]));
+    expect(catalog?.Bad).toBeDefined();
+    expect(catalog?.Bad.name).toBe("Bad");
+    expect(catalog?.Bad.source).toBeUndefined();
+    expect(logs).toHaveLength(1);
+    expect(logs[0][0]).toContain('entry "Bad"');
+    expect(logs[0][0]).toContain("malformed source");
+  });
+
+  it("keeps the entry but drops a source whose fields have the wrong types", () => {
+    const profileDir = writeCatalog(
+      JSON.stringify({
+        Bad: {
+          name: "Bad",
+          abi: [],
+          source: { fileName: "Bad.sol", language: "solidity", code: 12345 }, // code not a string
+        },
+      }),
+    );
+    const logs: unknown[][] = [];
+    const catalog = readContractCatalog(profileDir, (m, d) => logs.push([m, d]));
+    expect(catalog?.Bad.source).toBeUndefined();
+    expect(logs).toHaveLength(1);
+  });
+
+  it("keeps the entry but drops a source that is not an object (e.g. a string)", () => {
+    const profileDir = writeCatalog(
+      JSON.stringify({ Bad: { name: "Bad", abi: [], source: "not an object" } }),
+    );
+    const logs: unknown[][] = [];
+    const catalog = readContractCatalog(profileDir, (m, d) => logs.push([m, d]));
+    expect(catalog?.Bad.source).toBeUndefined();
+    expect(logs).toHaveLength(1);
+  });
+
   it("passes token metadata through verbatim without validating its shape", () => {
     // isValidEntry は name/abi しか検証せず token は素通しする。token の形が
     // 想定外（decimals 欠落など）でもエントリ自体は生き残り、そのまま
