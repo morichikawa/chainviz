@@ -18,9 +18,12 @@ interface PreviousCounter {
  * 埋め込まない」への対応）: 3 秒はチェーンの進行状態（稼働時間・ブロック高・
  * カウンタの絶対値）に依存しないサンプリング周期であり、増分ベースの観測
  * （本モジュールが差分を取る設計）なので絶対値がどれだけ大きくなっても壊れない。
- * 前提となるのは devnet の genesis slot time（既定 2 秒）に対してこの間隔が
- * 同程度のオーダーであること（docs/ARCHITECTURE.md §7.2）。slot time を大きく
- * 変える場合はこの値も見直すこと。既存の PEER_POLL_INTERVAL_MS /
+ * genesis slot time（現実の Ethereum に合わせ 12 秒）はこのスクレイプ間隔より
+ * 長いため、1 スクレイプ間隔に必ず Engine API 呼び出しが乗るわけではなく、
+ * 数回に1回のスクレイプで slot 分の増分をまとめて観測する（差分ベースなので
+ * 増分ゼロのスクレイプが混じっても正しく動く）。逆に slot time をこの間隔
+ * より大幅に短くする場合は、1 slot 分の呼び出しを取りこぼさないようこの値も
+ * 見直すこと（docs/ARCHITECTURE.md §7.2）。既存の PEER_POLL_INTERVAL_MS /
  * WALLET_POLL_INTERVAL_MS と同じ値・同じ考え方（実際の setInterval ループの
  * 配線は Issue #186 が行う。値の根拠は本Issueのスコープなのでここに置く）。
  */

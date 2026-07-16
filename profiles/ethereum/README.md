@@ -21,7 +21,8 @@ genesis 共有の PoS プライベートネット。実行層(reth)+ 合意層(l
 - `reth1 + beacon1 + validator1` で 1 ノード、`reth2 + beacon2 + validator2` で
   もう 1 ノード。各ノードは自分の EL を Engine API 経由で駆動する。
 - バリデーター 64 個を 2 ノードに 32 個ずつ分割。両ノードがブロックを提案する。
-- slot time は 2 秒(`values.env` で設定)。ブロックは約 2 秒ごとに進む。
+- slot time は 12 秒(`values.env` で設定。mainnet と同じ値。Issue #322)。
+  ブロックは約 12 秒ごとに進む。
 - genesis 時点で Electra(Prague)まで有効。Fulu(PeerDAS)以降は無効。
 
 ## 使い方
@@ -37,6 +38,19 @@ docker compose down -v     # 停止 + genesis / chain データ破棄
 
 - ホストからの JSON-RPC: `http://localhost:8545`(reth1)
 - ホストからの Beacon API: `http://localhost:5052`(beacon1)
+
+### `values.env` を変更したとき(genesis の作り直しが必要)
+
+`values.env` の内容(slot time・バリデーター数・フォークスケジュール等)を
+変更しても、`generate-genesis.sh` は前回生成した genesis が共有ボリューム
+(`.genesis-complete` マーカー)に残っている限りそれを再利用し続ける
+(前述「genesis の扱い」の冪等性)。この判定は genesis の年齢・生存確認のみを
+見ており、**`values.env` の内容が変わったこと自体は検知しない**。
+
+そのため `values.env` を変更した後、既に一度でも起動したことがある環境
+(共有ボリュームが残っている環境)では、変更を反映させるために
+`docker compose down -v` で共有ボリュームを含めて作り直す必要がある。
+`down`(`-v` なし)だけでは古い genesis が再利用され、変更が反映されない。
 
 ### 一部のサービスだけを再起動するとき(Issue #43)
 

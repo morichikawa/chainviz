@@ -42,9 +42,13 @@ export function extractFinishCheckpoint(
  * 並行スクレイプのタイミングのずれにより一時的に数ブロックの差が生じる
  * （実測で最大 3 ブロック）。一方 addNode 直後のバックフィル中のノードとの
  * 差は実測で数百〜数千ブロックであり、この閾値とは桁が大きく異なるため
- * 誤判定の余地が無い。3 秒のスクレイプ間隔・devnet 既定の 2 秒 slot time
- * という前提の下でのジッター吸収分であり、slot time を大きく変える場合は
- * 見直しが必要（既存の NODE_INTERNALS_POLL_INTERVAL_MS と同じ前提）。
+ * 誤判定の余地が無い。3 秒のスクレイプ間隔・slot time（現実の Ethereum に
+ * 合わせ 12 秒）という前提の下でのジッター吸収分。slot time が長いほど単位
+ * 時間あたりのブロック生成が減り、並行スクレイプのタイミングずれで生じる
+ * ブロック差はむしろ小さくなるため、5 ブロックの許容量はより安全側に働く。
+ * 逆に slot time をスクレイプ間隔より大幅に短くする場合は、1 スクレイプ間隔で
+ * 生成されるブロック数が増えて誤判定しうるため見直しが必要（既存の
+ * NODE_INTERNALS_POLL_INTERVAL_MS と同じ前提）。
  */
 export const SYNCED_TOLERANCE_BLOCKS = 5;
 

@@ -8,12 +8,23 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { composeFile } from "./paths.js";
 import { ethBlockNumber, rethRpcUrl } from "./rpc.js";
+import { SLOT_DURATION_MS } from "./slot-time.js";
 import { sleep, waitFor } from "./wait.js";
 
 const execFileAsync = promisify(execFile);
 
 /** reth1 の固定 IP（compose で 172.28.1.1 に割り当て）。 */
 const RETH1_IP = "172.28.1.1";
+
+/**
+ * チェーン進行の観測窓（2 回のブロック高観測の間隔）。ブロックは slot ごとに
+ * 1 つ生成されるため、少なくとも 1 slot 分を超えて待たないと、観測タイミングが
+ * slot 境界をまたがず「増えていない」と誤判定しうる。固定 6 秒だと slot time
+ * 12 秒では約半分の確率で誤判定するため、slot time に比例させ、位相ずれや
+ * 遅延 slot に対する余裕を見て 2 slot 分待つ（1 slot ちょうどだと観測が
+ * 境界と揃ったとき 0 ブロックになりうるため 2 倍にする）。
+ */
+const PROGRESS_OBSERVATION_MS = SLOT_DURATION_MS * 2;
 
 /** docker compose を実行する。stdout を返す。 */
 async function compose(args: string[], timeoutMs = 300_000): Promise<string> {
@@ -29,7 +40,7 @@ async function compose(args: string[], timeoutMs = 300_000): Promise<string> {
 async function chainIsProgressing(): Promise<boolean> {
   const url = rethRpcUrl(RETH1_IP);
   const first = await ethBlockNumber(url);
-  await sleep(6_000);
+  await sleep(PROGRESS_OBSERVATION_MS);
   const second = await ethBlockNumber(url);
   return second > first && second > 0;
 }

@@ -10,6 +10,7 @@
 
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { SLOT_DURATION_MS } from "../helpers/slot-time.js";
 import { dispatchHover, descendantContainingTestId } from "./support/interactions.js";
 import { serviceEntityId } from "./support/serviceIds.js";
 
@@ -95,13 +96,20 @@ const PULSE_DURATION_MS = 900;
 const PULSE_DISAPPEAR_TIMEOUT_MS = PULSE_DURATION_MS * 5;
 
 /**
- * 2回目のパルス出現(周期性の確認)を待つ上限。前提条件: `profiles/ethereum`
- * の slot 時間(既定2秒、`SLOT_DURATION_IN_SECONDS`。`p2p-graph.spec.ts`
- * 参照)がポーリング間隔(3秒)より短く、毎ポーリングで Engine API 呼び出しの
- * 増分が生じること。この前提が崩れる(slot 時間をポーリング間隔以上に
- * 延ばす)場合はこの倍率を保ったまま値を見直すこと。
+ * 2回目のパルス出現(周期性の確認)を待つ上限。パルスは Engine API 呼び出し
+ * (newPayload/forkchoiceUpdated)が slot ごとに生じ、それをスクレイプ
+ * (`NODE_INTERNALS_POLL_INTERVAL_MS` 間隔)が増分として検出したときに出る。
+ *
+ * slot 時間(`SLOT_DURATION_MS`、values.env 由来)がスクレイプ間隔より長い場合、
+ * パルスは毎スクレイプではなく slot ごと(=最大1 slot 間隔)にしか出ない。
+ * したがって次のパルスまでの待ちは「最大1 slot + スクレイプ位相のずれ(最大
+ * 1スクレイプ間隔) + ジッタ/Playwright ポーリング分の余裕」で構成する。
+ * 固定の `× 5`(=15秒)だと slot 12秒 + スクレイプ3秒の worst case(約15秒)に
+ * 対して余裕が無く flaky になるため、slot 時間に比例させて余裕を確保する
+ * (slot=2秒なら約11秒、slot=12秒なら約21秒)。
  */
-const SECOND_PULSE_TIMEOUT_MS = NODE_INTERNALS_POLL_INTERVAL_MS * 5;
+const SECOND_PULSE_TIMEOUT_MS =
+  SLOT_DURATION_MS + NODE_INTERNALS_POLL_INTERVAL_MS * 3;
 
 /**
  * 周期性(「流れ続ける」)を確認するために観測する「出現→消滅」サイクルの回数。

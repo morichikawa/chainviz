@@ -784,10 +784,11 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       着手時はまずchainviz-designerの設計から。#313/#317と同様の別パネル
       UIの共有を検討する余地あり)
       [#321](https://github.com/morichikawa/chainviz/issues/321)
-- [ ] slot timeを現実のEthereum値(12秒)に戻す
-      (設計完了。node-env側でvalues.envの3変数を12に変更、genesis再生成が
-      必要。E2Eの固定待ち時間2箇所を修正、Issue #286の閾値は変更不要
-      (安全側にしか動かない)。インジケータ部分はIssue #343へ分割済み)
+- [x] slot timeを現実のEthereum値(12秒)に戻す
+      (values.envの3変数を12に変更、genesis再生成後に実機で12秒間隔の
+      ブロック生成を確認。E2Eの固定待ち時間をslot timeから動的導出する
+      よう修正、Issue #286の閾値は変更不要(安全側にしか動かない)。
+      インジケータ部分はIssue #343へ分割済み)
       [#322](https://github.com/morichikawa/chainviz/issues/322)
 - [ ] ブロック生成タイミングのインジケータをチェーンリボンに追加する
       (Issue #322から分割。フロント側のみでBlockEntity.timestampの差分から
