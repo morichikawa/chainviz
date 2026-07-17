@@ -233,10 +233,25 @@ test("UI-D-03: ノード詳細に同期ステージと txpool 内訳が表示さ
   await page.goto("/");
   const card = page.getByTestId(`infra-card-${DRIVEN_RETH_ID}`);
   await expect(card).toBeVisible({ timeout: A_LAYER_POLL_TIMEOUT_MS });
-  const popover = card.getByTestId(`infra-popover-${DRIVEN_RETH_ID}`);
+  // InfraPopover は PopoverPortal(document.body 直下へ portal 描画。Issue
+  // #245)経由で描画されるため、DOM 上は card の子孫にならない。`card`
+  // スコープの locator では常に解決できず(Issue #346で判明。card.hover()の
+  // ビューポート問題とは別の原因)、page 直下から data-testid で特定する。
+  const popover = page.getByTestId(`infra-popover-${DRIVEN_RETH_ID}`);
 
   await test.step("reth ノードのカードにホバーしてポップオーバーを開く", async () => {
-    await card.hover();
+    // 実マウス座標での `card.hover()` は、React Flow のキャンバスが
+    // スクロールコンテナではなく CSS transform で位置決めするパン/ズーム
+    // 方式のため、対象カードが初期ビューポート(1280×720)外に配置された場合
+    // Playwright 標準の自動スクロール(scrollIntoViewIfNeeded)が効かず
+    // "element is outside of the viewport" で失敗することを実機で確認した
+    // (Issue #346。infra-card はエッジに覆われる心配が無く単独でヒット
+    // テストできるため dispatchHover の対象外という従来の整理だったが、
+    // 「ビューポート外に配置されうる」という別の理由で座標非依存の
+    // dispatchHover へ寄せる)。InfraNodeCard は useHoverPopover の
+    // onMouseEnter で開閉するため、UI-D-02 の内部リンクエッジと同じ
+    // 仕組みで dispatchHover が使える。
+    await dispatchHover(card);
     await expect(popover).toBeVisible();
   });
 
