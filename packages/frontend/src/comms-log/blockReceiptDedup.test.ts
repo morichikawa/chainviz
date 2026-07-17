@@ -66,4 +66,20 @@ describe("dedupeBlockReceipts", () => {
     const result = dedupeBlockReceipts({ "reth-only": 1000 }, entities);
     expect(result).toEqual([{ nodeId: "reth-only", receivedAt: 1000 }]);
   });
+
+  it("returns an empty array for an empty receivedAt map", () => {
+    expect(dedupeBlockReceipts({}, {})).toEqual([]);
+  });
+
+  it("keeps the driving (beacon) key when its driven target has no reception in this block", () => {
+    // beacon が drivesNodeId で reth-1 を指すが、この block の receivedAt に
+    // reth-1 のキーが無い（EL がまだ受信していない）場合、beacon は
+    // エイリアスではなく実受信として残す。
+    const entities = entitiesOf(
+      testNode({ id: "beacon-1", drivesNodeId: "reth-1", clientType: "lighthouse" }),
+      testNode({ id: "reth-1" }),
+    );
+    const result = dedupeBlockReceipts({ "beacon-1": 1000 }, entities);
+    expect(result).toEqual([{ nodeId: "beacon-1", receivedAt: 1000 }]);
+  });
 });
