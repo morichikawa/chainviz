@@ -4,10 +4,10 @@
 // SidePanelHost.test.tsx / SidePanelHost.commsLog.test.tsx が見るため、
 // ここでは「kind をまたぐ遷移」という関心事に絞る（CLAUDE.md 分割方針）。
 //
-// 注: このブランチの SidePanelView は contractSource / commsLog の2 kind。
-// 用語集（glossary）はサイドパネルの kind ではなくインラインの
-// GlossaryTerm アンカーで表現されているため、パネル kind としての
-// 相互作用テストの対象は上記2種になる。
+// 注: 作成時点のこのブランチでは SidePanelView は contractSource / commsLog
+// の2 kind だったため遷移テストの対象は上記2種。その後 main のマージで
+// glossary kind（Issue #313）が合流した。contractSource ⇄ glossary の遷移・
+// ガード非漏洩は SidePanelHost.glossary.test.tsx が扱う。
 import type { ContractEntity } from "@chainviz/shared";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
