@@ -200,3 +200,157 @@ worktree 環境ではブラウザ起動に必要なシステムライブラリ(l
   (totalSupply が viem の erc721Abi に含まれるかは実装時に確認)
 - ChainvizNFT の mint に 1 tx で複数個 mint する補助(バッチ)を付けるか
   (最小実装では不要)
+
+## frontend実装(2026-07-17)
+
+- 担当: frontend
+- ブランチ: `issue-315-erc721-ownership-frontend`（node-env/collector 側は
+  別ブランチ `issue-315-erc721-ownership` で並行実装中のため、`packages/shared`
+  の型変更コミット・設計docsコミット・node-env のコミット（サンプル
+  コントラクト・catalog.json）を cherry-pick してこのブランチへ取り込んだ
+  上で着手した。catalog.json を取り込んだのは、`operationCatalog.test.ts`
+  が実カタログの ABI とフロント表現セットの突き合わせを行うため）
+
+### 設計メモ(実装前の方針)
+
+- 導出関数は2本、方向を分けて実装する:
+  - `entities/walletNftHoldings.ts`
+    (`resolveWalletNftHoldings(walletAddress, contracts: Iterable<ContractEntity>)`):
+    ウォレット起点。全コントラクトの `nftTokens` を `ownerAddress` の大文字
+    小文字無視の照合で集約する。複数コントラクトを横断して集約するため、
+    `contractAddress` → `tokenId`(数値)の順で明示的にソートし、
+    `contractsByAddress` の走査順序に依存しない決定的な表示順にする
+    (`resolveWalletTokenBalances` は単一ウォレットの配列の入力順をそのまま
+    保つだけで足りるが、こちらは複数コントラクトの集約なので追加のソートが
+    要る違いがある)
+  - `entities/contractNftLedger.ts`
+    (`resolveContractNftLedger(nftTokens, walletAddresses: Iterable<string>)`):
+    コントラクト起点。`nftTokens` の入力順(collector 側で tokenId 昇順が
+    保証される)をそのまま使う。所有者ラベルの解決は既存の
+    `addressCasing.buildLowerCaseIndex` を再利用する(Issue #201/#232 で
+    確立済みの、大文字小文字表記ゆれの照合ヘルパー)
+- カード/ポップオーバーへの配線は既存の2つの索引の対称性をそのまま使う:
+  ウォレット側は既存の `WalletNodeData.contractsByAddress`
+  (`Map<string, ContractEntity>`)をそのまま流用でき、新しいフィールド追加は
+  不要。コントラクト側は「対応するウォレットの表記」を引く索引が無かった
+  ため、`ContractNodeData`/`ContractNodeContext` に `walletAddresses:
+  ReadonlySet<string>` を新設し、`WalletNodeData.contractsByAddress`
+  (逆方向の索引)と対にした。`isNew`/`flashKind` と同じく optional にして
+  おき(`contractsToFlowNodes` は常に値を入れるが、この型のノードデータを
+  直接組み立てている既存の他ファイル・テストまで書き換えずに済むように
+  する)、消費側の `ContractCard`/`ContractPopover` で未指定時は空集合に
+  フォールバックする
+- 表示の空/未観測の区別(「まだ発行されていません」 vs セクション自体を
+  出さない)は、解決後の配列の長さではなく元の `entity.nftTokens !==
+  undefined` で判定する(`resolveContractNftLedger` 自体は空配列と未定義を
+  区別しない仕様のため、呼び出し側でこの判定を持つ)
+- `operationCatalog.ts` の tokenId 引数には `unit: "token"` を絶対に付けない
+  よう明示的に注意する(付けると `OperationArgInput` が decimals 換算を
+  行ってしまい、tokenId という整数の個体識別子が壊れる。ERC-20 の
+  `approve`/`transferFrom` と関数シグネチャが同型なだけに、既存のコピペで
+  混入しやすい罠として設計メモに残す)
+
+### 実装内容
+
+- `entities/walletNftHoldings.ts` / `entities/contractNftLedger.ts`: 上記の
+  導出純関数2本。`formatNftChipLabel`(「CVN #1」形式)も
+  `walletNftHoldings.ts` に置いた
+- `entities/WalletCard.tsx` / `entities/WalletPopover.tsx`: トークン残高の下に
+  「保有 NFT」節を追加(カードはチップ列、ポップオーバーは
+  コントラクト名+短縮アドレス/「SYMBOL #tokenId」の一覧)。1件も無ければ
+  セクション自体を出さない(トークン残高と同じ流儀)
+- `entities/ContractCard.tsx` / `entities/ContractPopover.tsx`: 活動チップ列/
+  トークンフィールドの下に「発行済み NFT」節を追加。tokenId チップ(または
+  一覧行)に所有者の短縮アドレスを添える
+- `entities/contractNode.ts`: `ContractNodeData`/`ContractNodeContext` に
+  `walletAddresses` を追加、`isSameContractNode` の比較にも追加(参照比較。
+  `WalletNodeData.contractsByAddress` と同じ流儀)
+- `app/App.tsx`: `wallets` から `walletAddresses`(`Set<string>`)を
+  `useMemo` で導出し、`contractsToFlowNodes` の呼び出しに渡すよう配線
+- `chain-profiles/ethereum/operationCatalog.ts`: `ChainvizNFT` エントリを
+  追加(`mint(address)` / `approve(address,uint256)` /
+  `transferFrom(address,address,uint256)`)。`token` メタ情報は持たせず、
+  tokenId 引数に `unit: "token"` を付けない設計メモどおりに実装した
+- `i18n/messages.ts`: `field.nftHoldings`(保有 NFT) /
+  `contract.issuedNft`(発行済み NFT) / `contract.noNft`(まだ発行されて
+  いません)の3キーを追加
+- `glossary/ethereum/terms/c-transaction.yaml`: `nft` エントリを追加
+  (定義内で ERC-721 に言及し「ERC-20 との違い = 数量ではなく個体」を含む)。
+  既存の `token` の `relatedTerms` に `nft` を追加
+- `websocket/mockData.ts`: `chainvizNftContract()`(catalogKey
+  `"ChainvizNFT"`、`nft.symbol: "CVN"`)を追加し、tokenId 1→Alice、
+  2→Bob、3→追跡外アドレス(`NFT_UNTRACKED_OWNER`)の3件の台帳を持たせた
+  (対応するウォレットが見つかる通常ケースと、見つからず台帳の生の表記に
+  フォールバックするケースの両方をオフラインで確認できるようにするため)。
+  `MOCK_DEPLOYABLE_CATALOG`・`deployedContractCatalogKeys` にも
+  `ChainvizNFT` を追加し、モックの deploy/callContract シミュレーションが
+  ChainvizNFT に対しても機能するようにした
+- `styles.css`: 上記セクション用のクラス(`.wallet-card__nft*` /
+  `.contract-card__nft*` / `.wallet-popover__nft*` /
+  `.contract-popover__nft*`)を、既存のトークン残高/活動チップ列と同じ
+  見た目で追加
+
+### テスト
+
+- `walletNftHoldings.test.ts` / `contractNftLedger.test.ts`: 導出純関数の
+  単体テスト(空配列、ownerAddress の大文字小文字無視の照合、複数
+  コントラクトの集約順序、tokenId の数値ソートなど)
+- `WalletCard.nftHoldings.test.tsx` / `WalletPopover.nftHoldings.test.tsx` /
+  `ContractCard.nftLedger.test.tsx` / `ContractPopover.nftLedger.test.tsx`:
+  各カード/ポップオーバーでのセクション表示・非表示・チップ内容の統合テスト
+  (既存の `WalletCard.test.tsx`/`ContractCard.test.tsx` 等を肥大化させない
+  よう、CLAUDE.md の方針どおり関心事ごとに新規ファイルへ分離した)
+- `contractNode.walletAddresses.test.ts`: `walletAddresses` の配線
+  (`contractsToFlowNodes` のデフォルト値・全ノードへの伝播)と
+  `isSameContractNode` の参照比較を確認する新規ファイル
+- `operationCatalog.test.ts`: `ChainvizNFT` 追加に伴い、既存の
+  `catalogKey` 完全一致テストを更新。加えて constructorArgs 空・token
+  メタ情報なし・tokenId 引数に `unit: "token"` が付かないこと・
+  `mint`/`approve`/`transferFrom` の3関数がちょうど揃っていることを
+  確認する新規テストを追加
+
+### 実装中に踏んだ落とし穴(申し送り)
+
+- `ContractNodeData.walletAddresses` を必須フィールドにすると、この型の
+  ノードデータを直接組み立てている既存の複数ファイル
+  (`canvasLayers.test.ts`/`chainRibbonCrossHighlight.test.tsx`/
+  `canvasNode.test.ts`/`popoverPortalConsistency.test.tsx` 等、NFT機能とは
+  無関係な既存テスト)がコンパイルエラーになった。`isNew`/`flashKind` と
+  同じく optional にし、消費側でフォールバックする方針に変えて解決した
+- `isSameContractNode` に `walletAddresses` の参照比較を追加した結果、
+  `contractNode.test.ts` の「デフォルト値のまま2回呼んでも変化なし」という
+  既存テストが、`contractsToFlowNodes` 内部のデフォルト値生成
+  (`ctx.walletAddresses ?? new Set()`)が呼び出しごとに新しい `Set` を
+  作ってしまうため落ちた。`walletNode.test.ts` の `EMPTY_CONTRACTS`
+  (`contractsByAddress` 用の安定した既定値)と同じ前例があったため、
+  `contractNode.test.ts` の `ctx()` にも `EMPTY_WALLET_ADDRESSES`
+  (モジュールレベルの安定した空 `Set`)を既定値として持たせて解決した。
+  本番コード側(`contractsToFlowNodes`)はこれまでどおり呼び出しごとに
+  新しい `Set` を作るデフォルト実装のままにしている(実際の呼び出し元
+  `App.tsx` は常に `useMemo` で安定させた値を渡すため無害)
+- `shortHex` は `0x` + 先頭 **6文字** + `…` + 末尾4文字を返す
+  (`hex.slice(0, 2 + lead)`)。テスト記述時に `address.slice(0, 6)` と
+  誤って書いて2文字分ズレる失敗を最初に踏んだ(既存テストの
+  `address.slice(0, 8)` を見て気づいた)
+
+### 確認結果
+
+- `pnpm --filter @chainviz/frontend build` / `pnpm --filter @chainviz/frontend
+  test`(168 test files / 2357 tests)通過
+- `eslint`(変更ファイルのみ個別実行)で警告・エラーなし
+- `vite build` の成果物 + `vite preview` を起動し、`curl` でバンドルJSに
+  `ChainvizNFT` が含まれることを確認(この worktree 環境には Playwright
+  のブラウザ起動に必要なシステムライブラリが無く、実画面のスクリーン
+  ショット確認はできなかった。設計フェーズの `docs/worklog/issue-315.md`
+  「評価方法の注記」と同じ制約。実画面の確認は QA(chainviz-qa)に委ねる)
+
+### 次の担当への申し送り
+
+- `docs/PLAN.md` の #315 チェックボックスは、collector 側実装が別ブランチ
+  (`issue-315-erc721-ownership`)でまだ進行中のため、このブランチ単独では
+  更新していない(node-env・collector・frontend が揃った時点で担当をまたぐ
+  1つの Issue としてまとめてチェックする)
+- collector 側が合流すると `ContractEntity.nftTokens` に実データが載る。
+  フロント側は台帳の `tokenId` 昇順を前提にしている(`resolveContractNftLedger`
+  はソートせず入力順をそのまま使う)ため、collector 側がこの前提を崩さない
+  ことを QA で確認してほしい
