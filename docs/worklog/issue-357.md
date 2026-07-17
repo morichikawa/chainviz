@@ -194,3 +194,164 @@ wallet-index 採番)もリセットされないため、リセット後に作っ
   (4) フロントで開いたままのポップオーバー(wallet/contract)がパージ時に
   クラッシュしない(フロントが wallet の entityRemoved を受けるのは今回が
   初)ことを確認する
+
+### 2026-07-17 collector 実装: 設計メモ
+
+- 担当: collector
+- ブランチ: issue-357-eoa-not-cleared-on-down
+- 実装着手前に、上記 designer の設計を踏まえた実装方針を以下にまとめる。
+
+#### データフロー
+
+```
+EthereumAdapter.subscribeChainResets(onReset)
+  -> ChainResetWatcher.subscribe(onReset)（新規、3秒周期ループ）
+       tick ごとに observeOnce():
+         poller.pollOnce() -> executionRpcUrls(observations)
+         -> 先頭から順に fetchGenesisHash(rpc, url) を試す
+         -> 全滅なら undefined（欠測。前回値を維持し onReset を呼ばない）
+       前回値と異なるハッシュを実際に観測できた時だけ onReset() を呼ぶ
+
+collector 本体（index.ts の main）:
+  adapter.subscribeChainResets(() => {
+    adapter.resetChainDerivedState();   // (1) アダプタ内部キャッシュをクリア
+    const diff = store.purgeChainDerivedState(); // (2) store をパージ
+    server.broadcastDiff(diff);          // (3) entityRemoved を配信
+  });
+```
+
+#### 主要な関数構成
+
+- 新規 `chain-reset-watcher.ts`: `ChainResetWatcher` クラス。
+  `WalletTracker`/`NftTracker`（collector 本体で直接インスタンス化される
+  独立トラッカー）と同型で、自前の `subscribe`/`dispose`/周期ループを持つ。
+  `executionRpcUrls`（`targets.ts`）で候補 URL を得て、先頭から順に
+  `fetchGenesisHash`（`eth-rpc-client.ts` に新規追加）を試す
+  「到達可能な最初の1台でよい」実装は `WalletTracker.fetchWalletState` と
+  同じ「順に try、成功したら即返す」パターンを踏襲する。
+- `EthereumAdapter`（`index.ts`）: コンストラクタで `chainResetWatcher`
+  フィールドを生成（`this.poller`/`this.ethRpc` を渡す）。
+  `subscribeChainResets(onReset)` は起動を委譲するだけ。
+  `resetChainDerivedState()` は `contractTracker`/`txTracker`/
+  `blockTracker`/`headTipCache`/`syncStatusCache`/`beaconSyncStatusCache`
+  の `reset()`（各クラスに新規追加）と、アダプタ自身が持つ
+  `processedBlocks`/`undecodedDeployLogs` の `clear()` を呼ぶ。
+  `dispose()` にも `chainResetWatcher.dispose()` を追加する。
+- `store.ts`: `WorldStateStore.purgeChainDerivedState()` を新規追加。
+  既存の `evictBlocksBelow`（`applyBlock` 内、保持窓からの退去処理）と
+  同じ「対象エンティティを走査して `entityRemoved` を作り `applyEvent`
+  する」パターンを踏襲する。あわせて `maxObservedBlockNumber` を
+  `undefined` に戻す。
+
+#### 既存パターンとの対応
+
+- 周期ループの起動・停止（`running`/`timer`/`dispose`）は
+  `WalletTracker.subscribe`/`NftTracker` と同型。
+- 到達可能ノードへの順次フォールバックは `WalletTracker.fetchWalletState`
+  と同型。
+- 各トラッカー/キャッシュへの `reset()` 追加は、既存の
+  `NodeSyncStatusCache.forgetNode`/`HeadTipCache.prune`（対象集合との
+  突き合わせでエントリを破棄する）と同じ「後始末メソッドを持つ」流儀の
+  延長線上（ただし今回は「全消し」なので対象集合との突き合わせは不要）。
+- `store.purgeChainDerivedState()` は `evictBlocksBelow` と同じ
+  「走査 → `entityRemoved` 生成 → `applyEvent` → 差分配列を返す」構造。
+
+#### テスト方針
+
+- `chain-reset-watcher.test.ts`（新規）: `observeOnce`（到達可能ノードから
+  取得・フォールバック・全滅時 undefined）と `subscribe`（初回はキャッシュ
+  埋めのみ・ハッシュ変化で onReset・観測失敗で onReset を呼ばない・dispose
+  で停止・二重 subscribe 無視）を検証。
+- `fetch-genesis-hash.test.ts`（新規）: `eth-rpc-client.test.ts` が既に
+  1493 行と大きいため、新規関数は専用ファイルに分離する
+  （CLAUDE.md のテストファイル分割方針）。
+- `store-chain-reset-purge.test.ts`（新規）: `store.test.ts`
+  （841行）から分離。パージ対象/対象外の kind・`entityRemoved` イベント・
+  `maxObservedBlockNumber` リセットの回帰（新チェーンの block 1 が
+  保持窓に弾かれないこと）を検証。
+- `EthereumAdapter.resetChainDerivedState()`・`subscribeChainResets()`
+  自体の配線（各トラッカーの `reset()` が実際に呼ばれること）は
+  `index.ts`（main の配線）と `EthereumAdapter` 内部の呼び出しであり、
+  各トラッカーの `reset()` 自体は既存の `*.test.ts`（`contracts.test.ts`
+  等）に単体テストとして追加する。
+
+### 2026-07-17 collector 実装完了
+
+- 担当: collector
+- ブランチ: issue-357-eoa-not-cleared-on-down
+- 内容: 上記設計メモどおりに実装した。
+
+#### 実装したファイル
+
+- 新規 `packages/collector/src/adapters/ethereum/chain-reset-watcher.ts`:
+  `ChainResetWatcher` クラス。genesis ハッシュの周期観測・キャッシュ・
+  リセット判定を持つ。
+- `packages/collector/src/adapters/ethereum/eth-rpc-client.ts`:
+  `fetchGenesisHash(rpc, rpcUrl)` を追加
+  （`eth_getBlockByNumber(0x0, false)` の結果から hash を取り出す）。
+- `packages/collector/src/adapters/ethereum/index.ts`
+  （`EthereumAdapter`）: `chainResetWatcher` フィールド・
+  `subscribeChainResets(onReset)`・`resetChainDerivedState()` を追加。
+  `dispose()` に `chainResetWatcher.dispose()` を追加。
+- `packages/collector/src/adapters/ethereum/contracts.ts`
+  （`ContractTracker`）・`transactions.ts`
+  （`TransactionLifecycleTracker`）・`blocks.ts`
+  （`BlockPropagationTracker`）・`head-tip-cache.ts`（`HeadTipCache`）・
+  `sync-status.ts`（`NodeSyncStatusCache`）・`beacon-sync-status.ts`
+  （`BeaconSyncStatusCache`）: それぞれに `reset()` を追加。
+- `packages/collector/src/world-state/store.ts`
+  （`WorldStateStore`）: `purgeChainDerivedState()` を追加
+  （wallet/contract/block/transaction を `entityRemoved` として削除し、
+  `maxObservedBlockNumber` を `undefined` に戻す）。
+- `packages/collector/src/index.ts`（main の配線）:
+  `adapter.subscribeChainResets(...)` を追加し、
+  `resetChainDerivedState()` → `store.purgeChainDerivedState()` →
+  `server.broadcastDiff(diff)` の順で呼ぶ。
+
+#### 設計からの変更点・実装時の判断
+
+- `executionRpcUrls`（`targets.ts`）を使った（設計メモで例示された
+  `executionTargets` ではない）。`executionRpcUrls` は「チェーン全体の
+  状態をどの Execution ノードに聞いても同じなので、呼び出し側は先頭から
+  順に到達できたものを1つ使えばよい」という、今回の genesis ハッシュ
+  取得とまったく同じ用途のために既に用意されていた関数
+  （`WalletTracker.pollOnce` が同じ目的で使用済み）。`executionTargets`
+  が返す `ExecutionTarget`（wsUrl・receivedAtKeys 等）は今回不要な
+  情報を含むため使わなかった。
+- ピア観測キャッシュ（`consensusPeerObservations`）は設計メモの
+  「実装担当の裁量」どおりクリアしないことにした。次回成功観測で
+  上書きされ、`CONSENSUS_PEER_OBSERVATION_GRACE_TICKS`（既定3）の猶予も
+  数tickで自然に解消するため、恒久的な副作用にはならない。
+
+#### テストファイルの分割
+
+- 既存の `eth-rpc-client.test.ts`（1493行）・`store.test.ts`（841行）へ
+  追記せず、新規関心事として `fetch-genesis-hash.test.ts`・
+  `store-chain-reset-purge.test.ts` に分離した（設計メモどおり）。
+- `chain-reset-watcher.test.ts` を新規追加。`observeOnce`（到達可能ノード
+  からの取得・フォールバック・全滅時 undefined）と `subscribe`（初回は
+  キャッシュ埋めのみで onReset を呼ばない・ハッシュ変化で onReset・
+  観測失敗で onReset を呼ばない・dispose で停止・二重 subscribe の
+  無視）を検証。
+
+#### 確認結果
+
+- `pnpm --filter @chainviz/collector build`: 成功。
+- `pnpm --filter @chainviz/collector test`: 全 1544 件成功
+  （実装前 1523 件 + 新規 21 件）。
+- `pnpm build`（全パッケージ）: shared/collector/frontend/e2e すべて成功。
+- `npx eslint packages/collector/src`: エラーなし。
+
+#### 次の担当（tester/reviewer/QA）への申し送り
+
+- `docs/PLAN.md` のチェックボックスは完了に更新済み（実装担当は Issue を
+  自分ではクローズしない。PR の `Closes #357` によるマージ時の自動
+  クローズに委ねる）。
+- QA 検証時は上記「QA 観点」（このファイル冒頭の designer セクション）
+  どおり、実際に `docker compose down -v` → `up` して確認すること。
+  特に NftTracker のエラーログが止まることと、フロントの
+  wallet/contract ポップオーバーが開いたまま `entityRemoved` を受けても
+  クラッシュしないこと（フロントが wallet の `entityRemoved` を受けるのは
+  今回が初めて）は実機でしか確認できない。
+- `EthereumNodeLifecycle` の wallet-index 採番レジストリは設計判断どおり
+  意図的にパージしていない（今回の変更範囲外）。
