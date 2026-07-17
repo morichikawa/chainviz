@@ -847,8 +847,19 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       [#341](https://github.com/morichikawa/chainviz/issues/341)
 - [ ] UI層E2Eテストの一部が実.hover()依存・描画安定性不足でflakyになりうる
       (Issue #322のQA検証中に偶発的に観測。UI-C-04/UI-CMD-07/UI-ERR-02/
-      UI-D-03で個別再現。slot time変更とは無関係の既存のテスト脆さ)
+      UI-D-03で個別再現。slot time変更とは無関係の既存のテスト脆さ。
+      UI-C-04/UI-D-03はIssue #245のportal化でlocatorスコープが壊れて
+      いたことが判明し修正、UI-ERR-02はIssue #235の修正にテストが
+      追随していなかったことが判明し修正。UI-CMD-07(削除ボタンが
+      stableにならない)は原因不明のまま再現できず、Issue #373として分割)
       [#346](https://github.com/morichikawa/chainviz/issues/346)
+- [ ] UI-CMD-07: ワークベンチ削除ボタンがE2E上でstableにならないことがある
+      (原因不明)
+      (Issue #346から分割。クリーンな環境で6回連続実行しても再現できず、
+      preserveDraggingState(Issue #328)のコードレビューでも断定できる
+      原因が見つからなかった。着手時はまずchainviz-detectiveによる原因
+      調査から始める。クリーンな独立した合成環境で行うことが望ましい)
+      [#373](https://github.com/morichikawa/chainviz/issues/373)
 - [ ] チェーンリボンの「親ブロック」行ホバー強調が実質使えない
       (ホバーが約200msで閉じる。Issue #313のUX設計中にchainviz-uxが実測で
       発見。Issue #298の「既知の残課題」で既に言及されていた問題が今回
@@ -906,6 +917,11 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       ページスクロールが起きうる。`GlossaryTerm.tsx`のSpace/Enter
       ハンドラにpreventDefault()を追加する)
       [#353](https://github.com/morichikawa/chainviz/issues/353)
+- [ ] i18n translate()にObject.prototype由来キー(toString等)への防御が無い
+      (Issue #341のレビュー中に発見。型`MessageKey`により通常のコードから
+      到達不能で#341以前からの既存挙動だが、既存の`format()`と同じく
+      `hasOwnProperty`ガードを追加する軽微な堅牢性向上)
+      [#371](https://github.com/morichikawa/chainviz/issues/371)
 
 ## 運用ルール（全ステップ共通）
 
