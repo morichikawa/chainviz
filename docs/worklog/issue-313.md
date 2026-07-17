@@ -598,3 +598,15 @@ frontend をモックモード（`VITE_COLLECTOR_URL` 未設定、`pnpm --filter
   ブロッカーではない）。
 - worklog §3.8 記載の「チェーンリボンのポップオーバー内インタラクション
   （ホバー保持）」は本 Issue のスコープ外のまま。統括への既存の報告事項。
+
+### 2026-07-17 Issue #353 バックログ追記漏れの修正(レビュー)
+
+- 担当: reviewer
+- ブランチ: docs-issue-369-and-353-backlog
+- 内容: Issue #313 のテスト強化中に chainviz-tester が発見した
+  「GlossaryTerm のキーボード操作(Space)で preventDefault が呼ばれず
+  ページスクロールし得る」問題は Issue #353 として起票済みだったが、
+  `docs/PLAN.md` のバックログへの追記自体が漏れていた。統括が追記した
+  内容をレビューし、Issue #353 本文と過不足なく一致すること・既存
+  バックログ項目とフォーマットが一貫していることを確認した(合格。
+  詳細は docs/worklog/issue-369.md 参照)。#353 の実装自体は未着手。
