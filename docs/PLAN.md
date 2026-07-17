@@ -835,10 +835,12 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       (Issue #319のQA検証中に偶発的に観測。再現手順未調査。着手時はまず
       chainviz-detectiveに原因調査を依頼)
       [#334](https://github.com/morichikawa/chainviz/issues/334)
-- [ ] 英語モードでp2p-legendの凡例文が日英混在になっている
+- [x] 英語モードでp2p-legendの凡例文が日英混在になっている
       (Issue #327のQA検証中に偶発的に観測。原因はglossary/ではなく、
       legend.hint.suffixの意図的な空文字en訳とpickLocale()の空文字
-      フォールバック仕様の衝突。#327のCSS変更とは無関係の既存不具合)
+      フォールバック仕様の衝突。#327のCSS変更とは無関係の既存不具合。
+      translate()をpickLocale()経由からentry[lang]直接参照に変更して
+      修正し、pickLocale()自体はglossaryデータ向けの防御として現行維持)
       [#341](https://github.com/morichikawa/chainviz/issues/341)
 - [ ] UI層E2Eテストの一部が実.hover()依存・描画安定性不足でflakyになりうる
       (Issue #322のQA検証中に偶発的に観測。UI-C-04/UI-CMD-07/UI-ERR-02/

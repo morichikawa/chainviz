@@ -139,3 +139,36 @@
 - `translate()` 内部の書き方（`entry[lang]` を直接返すか、明示的な
   ローカル変数を挟むか等）
 - コメント・docstring の文面の細部
+
+### 2026-07-17 Issue #341 実装（frontend）
+
+- 担当: frontend
+- ブランチ: issue-341-i18n-empty-string-fallback（worktree上の作業ブランチ名は
+  issue-341-impl-worktree）
+- 内容: designerの設計メモ（案A'）どおり、以下3ファイルを変更した。
+  1. `packages/frontend/src/i18n/i18n.test.ts` — `translate("legend.hint.suffix",
+     "en")` が `""` を返す（jaへフォールバックしない）テストを追加。
+  2. `packages/frontend/src/entities/PeerNetworkLegend.test.tsx` —
+     「localizes the hint to English」テストに
+     `not.toContain("により時間とともに自動で増えます")` を追加。
+  3. `packages/frontend/src/i18n/i18n.ts` — `translate()` を `pickLocale()`
+     経由から `entry[lang]` の直接参照に変更。`pickLocale()` 自体は
+     glossaryデータ向けの防御として変更していない。両関数のdocstringに
+     使い分けの理由（コードは型検査済みで空文字が常に意図的、データは
+     不備がありうる）を追記した。
+  - 実装順序は設計メモの推奨どおり、先にテスト1・2を追加し、修正前の
+    `i18n.ts` で実際に失敗する（不具合を検出できる）ことを確認してから
+    `translate()` を修正した。修正前は
+    `translate("legend.hint.suffix", "en")` が
+    `"により時間とともに自動で増えます"` を返し、
+    `PeerNetworkLegend.test.tsx` の英語モードテストも日本語混入で失敗する
+    ことを確認済み。修正後は両テストとも成功する。
+  - `pnpm --filter @chainviz/frontend build` / `test`（198ファイル・2593
+    テスト全通過）/ 変更ファイルへの `pnpm eslint` を実行し、いずれも
+    問題なし。
+- 決定事項・注意点:
+  - `packages/shared` の型変更は不要（設計メモどおり）。
+  - `pickLocale()` の既存挙動・既存テストは変更していない。glossaryや
+    チェーンプロファイル側の空文字フォールバック防御は引き続き有効。
+  - `docs/ARCHITECTURE.md` §5.1 は設計担当が既に更新済みのため、実装側
+    での追加変更は行っていない。
