@@ -201,6 +201,86 @@ worktree 環境ではブラウザ起動に必要なシステムライブラリ(l
 - ChainvizNFT の mint に 1 tx で複数個 mint する補助(バッチ)を付けるか
   (最小実装では不要)
 
+## collector 実装(2026-07-17)
+
+- 担当: collector
+
+### 設計メモ(着手前)
+
+- ファイル構成: 既存の ERC-20/ウォレット残高ポーリングの3ファイル構成
+  (`erc20.ts` = ABI エンコード/デコード、`wallet-tracker.ts` = 3秒周期
+  ポーリング、`contracts.ts`/`index.ts` = 状態への反映)にならい、NFT側は
+  `erc721.ts`(ABI エンコード/デコード)・`nft-tracker.ts`(3秒周期
+  ポーリング、新規)の2ファイルに分離する。`wallet-tracker.ts` には追加しない
+  (1ファイル1責務。台帳の単位がウォレットではなくコントラクトのため型も
+  責務も別)
+- `erc721.ts`: `totalSupply()` は ERC-721 コア標準ではなく
+  ERC721Enumerable 拡張のため viem の `erc721Abi` に含まれないことを実装前に
+  確認した。`ownerOf` は標準に含まれるが、2関数の取得元を viem標準/自前
+  定義に分けると読みにくいため、両方を含む最小 ABI をこのファイル内に
+  自己完結させる方針にした(設計メモの未確定事項3の実装時判断)
+- `fetchErc721Ledger` は「totalSupply + 全 tokenId の ownerOf が揃って初めて
+  成功」という全成功・全失敗の二値契約にする(部分成功の台帳を返さない)。
+  理由: ステートレス方式の前提上、1回のポーリングで台帳全体を洗い替える
+  設計なので、部分的にしか取得できなかった場合に「未観測」なのか「本当に
+  所有者が変わった」のか区別がつかなくなる。これにより
+  `ContractTracker.applyNftObservation` はtokenId単位のマージを行わず、
+  観測結果で `nftTokens` を丸ごと置き換えるだけの単純な実装にできる
+  (`tokenBalances` のようなコントラクト単位のマージは不要。あちらは
+  「トークンコントラクトごとに個別のポーリング呼び出し」なので部分失敗を
+  許容する設計だが、NFTは「1コントラクトの台帳をまとめて1回で取得」と
+  いう単位が違うため、同じマージパターンを流用しない判断)
+- `ContractTracker` に `nftContractAddresses()`(`tokenContractAddresses()`
+  と同型)、`applyNftObservation(address, tokens)`(`registerDeployment`と
+  同じく更新後のエンティティ or null を返す)を追加。`applyCatalog` に
+  `nft` の転記を追加(`token` と同じパターン)
+- `EthereumAdapter` に `trackedNftContractAddresses()` /
+  `applyNftObservation()` を追加。後者は内部で保持している `onContract`
+  コールバック(`subscribeContracts` で登録済み)を再利用する
+  `registerContractDeployment` と同じ経路にする。これにより `index.ts`
+  (collector本体)側は新しい `store.applyContract`/`broadcastDiff` の配線を
+  増やす必要がなく、`NftTracker` の購読コールバックは
+  `adapter.applyNftObservation(...)` を呼ぶだけで済む
+- `catalog.ts` の `CatalogEntry.nft` は `token` と同じく形を検証しない
+  (既存の「token は未検証で通す」方針を踏襲。将来的に検証を入れる場合は
+  token/nft 両方まとめて見直す)
+
+### 実施内容
+
+- `packages/collector/src/adapters/ethereum/catalog.ts`: `CatalogEntry.nft?:
+  { symbol: string }` を追加
+- `packages/collector/src/adapters/ethereum/contracts.ts`: `applyCatalog` が
+  `nft` を転記するよう変更、`nftContractAddresses()` /
+  `applyNftObservation()` を追加
+- `packages/collector/src/adapters/ethereum/erc721.ts`(新規):
+  `fetchErc721Ledger(rpc, url, contractAddress)` — totalSupply +
+  1〜totalSupply の ownerOf を eth_call で取得し `NftToken[]` を返す
+- `packages/collector/src/adapters/ethereum/nft-tracker.ts`(新規):
+  `NftTracker` クラス — `wallet-tracker.ts` と同型の3秒周期ポーリング。
+  追跡中の NFT コントラクトが1つも無ければ Docker 観測自体を省略する
+- `packages/collector/src/adapters/ethereum/index.ts`
+  (`EthereumAdapter`): `trackedNftContractAddresses()` /
+  `applyNftObservation()` を追加
+- `packages/collector/src/index.ts`: `NftTracker` を配線
+  (`walletTracker.subscribe` の直後)。購読コールバックは各観測結果を
+  `adapter.applyNftObservation(address, tokens)` に渡すだけ
+- テスト(すべて新規): `erc721.test.ts`、`nft-tracker.test.ts`、
+  `contracts.nft.test.ts`(既存 `contracts.test.ts` の肥大化を避けて分離、
+  `contracts.source-code.test.ts` と同じ方針)、
+  `nft-observation-wiring.test.ts`(`EthereumAdapter` レベルの配線確認、
+  `contract-deploy-wiring.test.ts` と同じ構図)。加えて `catalog.test.ts`
+  に `nft` フィールドの読み込み・素通し検証を2件追加
+- `pnpm --filter @chainviz/collector build` / `pnpm --filter @chainviz/collector
+  test`(69ファイル・1519テスト全通過)を確認済み
+
+### 次の担当への申し送り
+
+- frontend側は `ContractEntity.nft` / `nftTokens` を購読すればよい状態に
+  なっている。`WalletEntity` 側の変更は無い(設計どおり、保有NFTはフロント側で
+  `nftTokens` から導出する)
+- `docs/PLAN.md` の #315 チェックボックスは、frontend側の実装も完了してから
+  まとめてチェックする(node-envの申し送りと同じ理由)
+
 ## frontend実装(2026-07-17)
 
 - 担当: frontend
