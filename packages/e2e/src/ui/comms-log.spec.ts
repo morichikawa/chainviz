@@ -120,8 +120,14 @@ test("UI-LOG-04: カテゴリフィルタで該当カテゴリだけに絞られ
   await expect(commsLogEntriesOf(page, "internal").first()).toBeVisible();
 
   await test.step("「操作」以外の全カテゴリチップを off にする", async () => {
+    // 各クリックが実際に反映される（aria-pressed が false になる）ことを
+    // 待ってから次のチップへ進む。高速連続クリックだと、反映前に次の
+    // 検証へ進んでしまいクリックを取りこぼすことがあった（Issue #317
+    // QA差し戻し）。
     for (const category of ["internal", "block", "tx", "peer", "environment"]) {
-      await page.getByTestId(`comms-log-filter-${category}`).click();
+      const chip = page.getByTestId(`comms-log-filter-${category}`);
+      await chip.click();
+      await expect(chip).toHaveAttribute("aria-pressed", "false");
     }
   });
 
