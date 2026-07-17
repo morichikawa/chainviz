@@ -255,6 +255,69 @@ describe("createDockerOperations", () => {
     await expect(ops.createAndStart(baseSpec)).rejects.toBe(notConflict);
   });
 
+  it("does not convert a non-409 failure into a name conflict even if its message mentions 'already in use'", async () => {
+    // 変換は「409 かつ message が already in use」の両方が必要。message だけで
+    // 判定すると、無関係な失敗（例: 500 系）を誤って名前衝突扱いにして
+    // addWorkbench が無駄なリトライに入ってしまう。statusCode が 409 でない
+    // 限り変換しないことを固定する（Issue #366）。
+    const misleading = Object.assign(
+      new Error(
+        "(HTTP code 500) server error - resource already in use by something unrelated",
+      ),
+      { statusCode: 500 },
+    );
+    const createContainer = vi.fn().mockRejectedValue(misleading);
+    const docker = { createContainer } as unknown as Docker;
+
+    const ops = createDockerOperations(docker);
+    const error = await ops
+      .createAndStart(baseSpec)
+      .catch((err: unknown) => err);
+    expect(error).not.toBeInstanceOf(ContainerNameConflictError);
+    expect(error).toBe(misleading);
+  });
+
+  it("does not convert a 409 failure that has no message into a name conflict", async () => {
+    // statusCode は 409 でも message が無い（別の 409 系の異常）ものは名前
+    // 衝突と断定できないため、元のエラーをそのまま伝播させる。
+    const bare409 = Object.assign(new Error(""), { statusCode: 409 });
+    const createContainer = vi.fn().mockRejectedValue(bare409);
+    const docker = { createContainer } as unknown as Docker;
+
+    const ops = createDockerOperations(docker);
+    const error = await ops
+      .createAndStart(baseSpec)
+      .catch((err: unknown) => err);
+    expect(error).not.toBeInstanceOf(ContainerNameConflictError);
+    expect(error).toBe(bare409);
+  });
+
+  it("recognizes a name conflict regardless of message casing", async () => {
+    // Docker のバージョン差などで文言の大小が揺れても取りこぼさない
+    // （isNameConflict の /already in use/i）。
+    const conflict = Object.assign(
+      new Error('(HTTP code 409) Conflict. The container name is ALREADY IN USE.'),
+      { statusCode: 409 },
+    );
+    const createContainer = vi.fn().mockRejectedValue(conflict);
+    const docker = { createContainer } as unknown as Docker;
+
+    const ops = createDockerOperations(docker);
+    await expect(ops.createAndStart(baseSpec)).rejects.toBeInstanceOf(
+      ContainerNameConflictError,
+    );
+  });
+
+  it("propagates a non-object rejection (e.g. a thrown string) without misclassifying it", async () => {
+    // createContainer が Error でない値（文字列等）を投げても、isNameConflict が
+    // typeof チェックで安全に false を返し、そのまま伝播すること（握りつぶさない）。
+    const createContainer = vi.fn().mockRejectedValue("boom");
+    const docker = { createContainer } as unknown as Docker;
+
+    const ops = createDockerOperations(docker);
+    await expect(ops.createAndStart(baseSpec)).rejects.toBe("boom");
+  });
+
   it("does not call start() when createContainer fails with a name conflict", async () => {
     const start = vi.fn();
     const conflict = Object.assign(new Error("already in use"), {
