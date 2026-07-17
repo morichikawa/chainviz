@@ -91,18 +91,34 @@ test("UI-LOG-03: ブロック進行で「ブロック受信」エントリが増
   await page.goto("/");
   await openCommsLogPanel(page);
 
+  // ブロック生成直後は内部API観測（engine_newPayloadV4 等）がブロック
+  // エントリよりさらに新しいタイムスタンプで記録されることがあり、
+  // 全カテゴリ横断で見た「一覧の絶対先頭」が block になるとは限らない
+  // （Issue #317 QA差し戻し）。そのため「新しいものが上」の検証は
+  // block カテゴリ内の相対順序（新しいブロックエントリが、そのカテゴリの
+  // 中で以前の先頭より上に来る）に限定する。
+  const blockEntries = commsLogEntriesOf(page, "block");
+  const before = await blockEntries.count();
+  const previousTopBlockText = before > 0 ? await blockEntries.first().textContent() : null;
+
   await test.step("次のブロックが生成されるまで待つと、ブロックカテゴリのエントリが増える", async () => {
-    const before = await commsLogEntriesOf(page, "block").count();
     await expect
-      .poll(async () => commsLogEntriesOf(page, "block").count(), {
+      .poll(async () => blockEntries.count(), {
         timeout: NEXT_BLOCK_TIMEOUT_MS,
       })
       .toBeGreaterThan(before);
   });
 
-  await test.step("新しいエントリが一覧の先頭に現れる（新しいものが上）", async () => {
-    const first = page.locator('[data-testid="comms-log-entry"]').first();
-    await expect(first).toHaveAttribute("data-category", "block");
+  await test.step("新しいブロックエントリがブロックカテゴリの先頭に来る（新しいものが上）", async () => {
+    const newTopBlockText = await blockEntries.first().textContent();
+    if (previousTopBlockText !== null) {
+      expect(newTopBlockText).not.toBe(previousTopBlockText);
+    } else {
+      // 待機開始時点で block エントリが0件だった場合、比較対象の
+      // 「以前の先頭」が無いため差分検証はできない。この場合は
+      // 新しい先頭エントリ自体が存在することだけを確認する。
+      expect(newTopBlockText).not.toBeNull();
+    }
   });
 });
 

@@ -663,3 +663,37 @@ hasText: "eth_sendRawTransaction" })` で絞り込み、その `.first()` が
 
 - `pnpm --filter @chainviz/e2e build`（`tsc --noEmit`）が通ることを確認。
 - 実 Docker スタックでの再実行は本対応では行っていない（QA に委ねる）。
+
+### 2026-07-17 UI-LOG-03 追加フレーキー対応（frontend）
+
+- 担当: frontend
+- ブランチ: issue-317-comms-log-panel
+- 経緯: 上記の UI-LOG-02/UI-LOG-04（クリック取りこぼし）の修正を QA が
+  実 Docker スタックで再検証したところ、それらとは別原因の新たな
+  フレーキーが UI-LOG-03・UI-LOG-04 それぞれで判明した（本節は
+  UI-LOG-03、次節は UI-LOG-04）。いずれも製品コードは正しく動作しており、
+  テスト側のタイミング依存が原因。
+
+#### 問題
+
+UI-LOG-03 は「一覧の絶対先頭が block」と断定していた。しかしブロック
+生成直後は内部API観測（`engine_newPayloadV4` 等）がブロックエントリより
+さらに新しいタイムスタンプで記録されることがあり、全カテゴリ横断で見た
+一覧の絶対先頭が block になるとは限らない（レビュー担当が申し送りで
+予告していた失敗モードが実際に顕在化した）。
+
+#### 修正内容
+
+全カテゴリ横断の絶対先頭を見る `page.locator('[data-testid="comms-log-
+entry"]').first()` の断定をやめ、block カテゴリでフィルタした locator
+（`commsLogEntriesOf(page, "block")`）だけで、待機前の先頭エントリの
+文言と待機後の先頭エントリの文言を比較する形にした。新しいブロック
+エントリが block カテゴリ内で以前の先頭より上に来ることを確認し、内部
+APIエントリとの相対順序には依存しない。待機開始時点で block エントリが
+0件だった場合（比較対象が無い場合）は、新しい先頭エントリの存在のみを
+確認する。
+
+#### 確認したこと
+
+- `pnpm --filter @chainviz/e2e build`（`tsc --noEmit`）が通ることを確認。
+- 実 Docker スタックでの再実行は本対応では行っていない（QA に委ねる）。
