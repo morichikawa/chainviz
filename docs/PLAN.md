@@ -833,20 +833,34 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       アドレス表記の大文字小文字差異照合バグをレビューで1回差し戻し・
       修正済み)
       [#330](https://github.com/morichikawa/chainviz/issues/330)
-- [ ] removeWorkbenchがaddWorkbenchで追加したワークベンチに対しても
+- [x] removeWorkbenchがaddWorkbenchで追加したワークベンチに対しても
       「追加されていない」エラーを返すことがある
-      (Issue #319のQA検証中に偶発的に観測。再現手順未調査。着手時はまず
-      chainviz-detectiveに原因調査を依頼)
+      (Issue #319のQA検証中に偶発的に観測。chainviz-detectiveの調査により
+      Issue #366と同一原因(stableId重複による操作の誤配送)の派生症状と
+      判明。#366の修正で解消)
       [#334](https://github.com/morichikawa/chainviz/issues/334)
-- [ ] 英語モードでp2p-legendの凡例文が日英混在になっている
+- [x] 英語モードでp2p-legendの凡例文が日英混在になっている
       (Issue #327のQA検証中に偶発的に観測。原因はglossary/ではなく、
       legend.hint.suffixの意図的な空文字en訳とpickLocale()の空文字
-      フォールバック仕様の衝突。#327のCSS変更とは無関係の既存不具合)
+      フォールバック仕様の衝突。#327のCSS変更とは無関係の既存不具合。
+      translate()をpickLocale()経由からentry[lang]直接参照に変更して
+      修正し、pickLocale()自体はglossaryデータ向けの防御として現行維持)
       [#341](https://github.com/morichikawa/chainviz/issues/341)
 - [ ] UI層E2Eテストの一部が実.hover()依存・描画安定性不足でflakyになりうる
       (Issue #322のQA検証中に偶発的に観測。UI-C-04/UI-CMD-07/UI-ERR-02/
-      UI-D-03で個別再現。slot time変更とは無関係の既存のテスト脆さ)
+      UI-D-03で個別再現。slot time変更とは無関係の既存のテスト脆さ。
+      UI-C-04/UI-D-03はIssue #245のportal化でlocatorスコープが壊れて
+      いたことが判明し修正、UI-ERR-02はIssue #235の修正にテストが
+      追随していなかったことが判明し修正。UI-CMD-07(削除ボタンが
+      stableにならない)は原因不明のまま再現できず、Issue #373として分割)
       [#346](https://github.com/morichikawa/chainviz/issues/346)
+- [ ] UI-CMD-07: ワークベンチ削除ボタンがE2E上でstableにならないことがある
+      (原因不明)
+      (Issue #346から分割。クリーンな環境で6回連続実行しても再現できず、
+      preserveDraggingState(Issue #328)のコードレビューでも断定できる
+      原因が見つからなかった。着手時はまずchainviz-detectiveによる原因
+      調査から始める。クリーンな独立した合成環境で行うことが望ましい)
+      [#373](https://github.com/morichikawa/chainviz/issues/373)
 - [ ] チェーンリボンの「親ブロック」行ホバー強調が実質使えない
       (ホバーが約200msで閉じる。Issue #313のUX設計中にchainviz-uxが実測で
       発見。Issue #298の「既知の残課題」で既に言及されていた問題が今回
@@ -893,13 +907,16 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       または表記変更が論点。catalog.json・operationCatalog.ts・
       mockData.ts等CVZに依存する既存コードへの影響範囲の洗い出しが必要)
       [#364](https://github.com/morichikawa/chainviz/issues/364)
-- [ ] 追加ワークベンチの命名が静的ワークベンチと衝突する
+- [x] 追加ワークベンチの命名が静的ワークベンチと衝突する
       (コンテナ名409・stableId重複による操作の誤配送)
       (ユーザーが実際のワークベンチ追加・送金操作で遭遇。chainviz-detective
       が原因調査済み(docs/worklog/meta.md)。静的ワークベンチがlifecycle
       レジストリから不可視なのに、コンテナ名・service名を占有している
-      ことが根本原因。フレッシュ起動後の初回addWorkbenchで確実に発生。
-      応急対処は追加時に既定以外のラベルを付けること)
+      ことが根本原因。コンテナ名はDocker自身の名前衝突検出(409)を利用した
+      リトライへ、service名(stableId)は静的ワークベンチを含むDocker上の
+      実在コンテナとの照合へ変更して解消。実機の隔離環境で修正前の再現・
+      修正後の解消(409にならない・stableId重複なし・removeWorkbenchが
+      1回で完了)を確認済み。詳細はdocs/worklog/issue-366.md)
       [#366](https://github.com/morichikawa/chainviz/issues/366)
 - [ ] GlossaryTermのキーボード操作(Space)でpreventDefaultが呼ばれず
       ページスクロールし得る
@@ -908,6 +925,11 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       ページスクロールが起きうる。`GlossaryTerm.tsx`のSpace/Enter
       ハンドラにpreventDefault()を追加する)
       [#353](https://github.com/morichikawa/chainviz/issues/353)
+- [ ] i18n translate()にObject.prototype由来キー(toString等)への防御が無い
+      (Issue #341のレビュー中に発見。型`MessageKey`により通常のコードから
+      到達不能で#341以前からの既存挙動だが、既存の`format()`と同じく
+      `hasOwnProperty`ガードを追加する軽微な堅牢性向上)
+      [#371](https://github.com/morichikawa/chainviz/issues/371)
 
 ## 運用ルール（全ステップ共通）
 

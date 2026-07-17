@@ -33,10 +33,12 @@ import type {
   NodeLifecycle,
   WorkbenchOperationResult,
 } from "../../commands/lifecycle.js";
-import type {
-  ContainerSpec,
-  DockerOperations,
-  LabeledContainer,
+import {
+  ContainerNameConflictError,
+  type ContainerSpec,
+  type CreatedContainer,
+  type DockerOperations,
+  type LabeledContainer,
 } from "../../docker/operations.js";
 import {
   COMPOSE_PROJECT_LABEL,
@@ -83,6 +85,15 @@ const ENGINE_PORT = 8551;
 const RETH_EXPOSED_PORTS = [8545, 8546, ENGINE_PORT, 30303];
 /** beacon の HTTP API / P2P ポート。 */
 const BEACON_EXPOSED_PORTS = [5052, 9000];
+
+/**
+ * ワークベンチのコンテナ名（`${project}-${slug(service)}-${n}`）の n が
+ * 実際の Docker 上の名前と衝突した場合に、次の番号へ進めて再試行する回数の
+ * 上限（Issue #366）。「今この瞬間に観測できる状態」から導いた値ではなく、
+ * 際限のないリトライループを防ぐための安全弁（実運用では静的ワークベンチ
+ * 1個分など、せいぜい数回の衝突しか起こらない想定）。
+ */
+const WORKBENCH_NAME_CONFLICT_RETRIES = 1000;
 
 export interface EthereumNodeLifecycleConfig {
   /**
@@ -328,12 +339,13 @@ export class EthereumNodeLifecycle implements NodeLifecycle {
       });
     }
 
-    // ワークベンチのコンテナ名サフィックス（-1, -2, ...）の採番を、回収できた
-    // ワークベンチの個数から再開する。ラベルから復元できるのは過去に採番した
-    // 最大番号ではなく現存する個数だけなので、過去に削除された分だけ番号が
-    // 進んでいた場合は理論上サフィックスが衝突しうる。ただし衝突時は
-    // createAndStart が失敗し commandResult(ok:false) として返るため実害は
-    // 限定的で、復元直後の addWorkbench で同名衝突が起きにくくなる効果を優先する。
+    // ワークベンチのコンテナ名サフィックス（-1, -2, ...）の初期推測値を、
+    // 回収できたワークベンチの個数から決める。この値はあくまで開始点の
+    // 見積もりであり、実際に使われている名前（静的ワークベンチ・過去に
+    // 削除された分の欠番等）とはズレうる。ズレていても
+    // createAndStart(addWorkbench 参照) が Docker 自身の名前衝突検出
+    // （ContainerNameConflictError）を見て次の番号へ進めながら再試行するため、
+    // ここでの見積もりの正確さは必須ではない（Issue #366）。
     this.workbenchSeq = this.workbenches.length;
   }
 
@@ -465,18 +477,53 @@ export class EthereumNodeLifecycle implements NodeLifecycle {
   }
 
   async addWorkbench(label: string): Promise<void> {
-    const service = this.uniqueWorkbenchService(label);
+    const service = await this.uniqueWorkbenchService(label);
     const walletIndex = allocateWalletIndex(
       new Set(this.workbenches.map((w) => w.walletIndex)),
     );
-    const created = await this.ops.createAndStart(
-      this.workbenchSpec(service, walletIndex),
-    );
+    const created = await this.createWorkbenchContainer(service, walletIndex);
     this.workbenches.push({
       stableId: `${this.cfg.composeProject}/${service}`,
       containerId: created.id,
       walletIndex,
     });
+  }
+
+  /**
+   * ワークベンチのコンテナを作成する。名前は `this.workbenchSeq + 1` から
+   * 試し、Docker が ContainerNameConflictError（指定した名前のコンテナが
+   * 既に存在する）を返した場合は番号を進めて再試行する。静的ワークベンチ
+   * （docker-compose.yml 由来、managed ラベル無し）はメモリ上のレジストリ
+   * から見えないため、事前に「使われている名前」を突き合わせるのではなく、
+   * Docker 自身の名前衝突検出にそのまま乗ることで、TOCTOU（確認してから
+   * 作成するまでの間に別プロセスが同名のコンテナを作る）競合にも強くする
+   * （Issue #366）。
+   */
+  private async createWorkbenchContainer(
+    service: string,
+    walletIndex: number,
+  ): Promise<CreatedContainer> {
+    for (
+      let attempt = 0;
+      attempt < WORKBENCH_NAME_CONFLICT_RETRIES;
+      attempt++
+    ) {
+      const seq = this.workbenchSeq + 1;
+      try {
+        const created = await this.ops.createAndStart(
+          this.workbenchSpec(service, walletIndex, seq),
+        );
+        this.workbenchSeq = seq;
+        return created;
+      } catch (err) {
+        if (!(err instanceof ContainerNameConflictError)) throw err;
+        // 名前が衝突していただけなので workbenchSeq を進めて次の番号を試す。
+        this.workbenchSeq = seq;
+      }
+    }
+    throw new Error(
+      `failed to allocate a unique workbench container name after ${WORKBENCH_NAME_CONFLICT_RETRIES} attempts`,
+    );
   }
 
   async removeWorkbench(workbenchId: string): Promise<void> {
@@ -650,12 +697,16 @@ export class EthereumNodeLifecycle implements NodeLifecycle {
     };
   }
 
-  private workbenchSpec(service: string, walletIndex: number): ContainerSpec {
+  private workbenchSpec(
+    service: string,
+    walletIndex: number,
+    seq: number,
+  ): ContainerSpec {
     const env: Record<string, string> = { ETH_RPC_URL: this.cfg.ethRpcUrl };
     const mnemonic = this.readMnemonic();
     if (mnemonic) env.EL_AND_CL_MNEMONIC = mnemonic;
     return {
-      name: `${this.cfg.composeProject}-${slug(service)}-${++this.workbenchSeq}`,
+      name: `${this.cfg.composeProject}-${slug(service)}-${seq}`,
       image: this.cfg.foundryImage,
       entrypoint: ["/bin/sh", "-c", "sleep infinity"],
       env,
@@ -717,20 +768,48 @@ export class EthereumNodeLifecycle implements NodeLifecycle {
   }
 
   /**
-   * ワークベンチの service 名（= 表示ラベルの元）を決める。ユーザー指定の
-   * ラベルを尊重しつつ、既に管理下にある同名ワークベンチと衝突する場合は
-   * -2, -3... を付けて一意にする。
+   * ワークベンチの service 名（= 表示ラベル・stableId の元）を決める。
+   * ユーザー指定のラベルを尊重しつつ、既に使われている同名（メモリ上の
+   * レジストリだけでなく、Docker 上に実在する静的ワークベンチ等も含む）と
+   * 衝突する場合は -2, -3... を付けて一意にする。
    */
-  private uniqueWorkbenchService(label: string): string {
+  private async uniqueWorkbenchService(label: string): Promise<string> {
     const base = label.trim().length > 0 ? label.trim() : "workbench";
-    const existing = new Set(
-      this.workbenches.map((w) => w.stableId.split("/").slice(1).join("/")),
-    );
+    const existing = await this.existingWorkbenchServiceNames();
     if (!existing.has(base)) return base;
     for (let n = 2; ; n++) {
       const candidate = `${base}-${n}`;
       if (!existing.has(candidate)) return candidate;
     }
+  }
+
+  /**
+   * 既に使われているワークベンチの service 名の集合を返す。メモリ上の
+   * レジストリ（this.workbenches）に加え、この compose project 配下に
+   * 実在する全コンテナ（listContainersByLabels を managed ラベル無しで
+   * 呼び、静的ワークベンチ・reth/beacon/validator・この lifecycle インス
+   * タンスがまだ知らない managed コンテナも含めて走査する。
+   * findWorkbenchContainer と同じ「Docker のラベルを単一の真実の情報源と
+   * する」考え方、Issue #65）を合算する。
+   *
+   * 静的ワークベンチ（docker-compose.yml 由来、managed ラベル無し）は
+   * recoverManagedContainers では回収されず this.workbenches に一切
+   * 現れないため、メモリ上のレジストリだけで衝突判定すると、静的
+   * ワークベンチと同じ service 名・同じ stableId を持つワークベンチを
+   * 作ってしまい、操作が誤って別コンテナへ配送される（Issue #366 症状2）。
+   */
+  private async existingWorkbenchServiceNames(): Promise<Set<string>> {
+    const names = new Set(
+      this.workbenches.map((w) => w.stableId.split("/").slice(1).join("/")),
+    );
+    const containers = await this.ops.listContainersByLabels({
+      [COMPOSE_PROJECT_LABEL]: this.cfg.composeProject,
+    });
+    for (const container of containers) {
+      const service = container.labels[COMPOSE_SERVICE_LABEL];
+      if (service) names.add(service);
+    }
+    return names;
   }
 
   private scriptPath(name: string): string {
