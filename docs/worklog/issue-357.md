@@ -408,3 +408,74 @@ collector 本体（index.ts の main）:
   観点3（ContractTracker のクリア）は、追加したテストがいずれも期待どおり
   緑になることで、実装が「観測失敗をリセットの証拠として扱わない」原則と
   配線順序を正しく守っていることを確認した。
+
+### 2026-07-17 レビュー（reviewer）
+
+- 担当: reviewer
+- ブランチ: issue-357-eoa-not-cleared-on-down
+- 判定: **合格**（指摘なし。差し戻し不要）
+
+#### 確認した内容
+
+1. **shared の型変更**: `ChainAdapter.subscribeChainResets?(onReset)` は
+   設計どおり省略可メソッドとして追加されている。型定義・doc コメントとも
+   チェーン固有語彙を境界に出していない（Ethereum の genesis 変化への言及は
+   コメント内の例示のみで、シグネチャ・スキーマには現れない）。DiffEvent を
+   追加せず `entityRemoved` の連発で表現する判断は、frontend の `applyDiff`
+   （`packages/frontend/src/world-state/store.ts`）が `entityRemoved` を
+   kind 非依存で `delete entities[event.id]` する実装であることを確認し、
+   フロント無変更で追従できることを裏付けた。
+2. **エラーの握りつぶし・固定値**: `ChainResetWatcher.observeOnce` の
+   ノード単位の catch は「次のノードへフォールバック」という意図コメント付き。
+   全ノード到達不能時の undefined（無ログ）は「欠測をリセットの証拠にしない」
+   設計そのものであり、`down -v` 中に3秒ごとのエラーログを出さないための
+   意図的な挙動としてクラス doc・ARCHITECTURE.md に明記済み。tick 全体の
+   catch は `console.error` でログを出す。`fetchGenesisHash` は異常形状を
+   URL 込みの具体的メッセージで throw しており握りつぶしなし。3秒周期は
+   環境状態に依存しない値で、`CHAIN_RESET_POLL_INTERVAL_MS` として定数化・
+   テスト用に注入可能。「genesis は `down -v`→`up` で必ず変わる」前提は
+   コード上のコメントと本 worklog の両方に明記されており、
+   `profiles/ethereum/scripts/generate-genesis.sh` L194
+   （`GENESIS_TIMESTAMP="$(date +%s)"`）で実際に成立することを確認した。
+3. **`executionRpcUrls` への逸脱**: 妥当。`targets.ts` の doc コメントが
+   「チェーン全体の状態はどの Execution ノードに聞いても同じなので先頭から
+   順に1つ使えばよい」というまさに今回の用途を想定しており、
+   `executionTargets` の返す wsUrl 等は不要な情報だった。
+4. **配線順序**: `adapter.resetChainDerivedState()` →
+   `store.purgeChainDerivedState()` → `server.broadcastDiff(diff)` は、
+   既存の「アダプタ/観測 → store 適用 → broadcastDiff」パターン
+   （subscribeContracts / subscribeBlocks 等）と一貫。アダプタ側を先に
+   クリアする理由（パージ直後の tick での旧アドレス再ポーリング防止）も
+   コード上のコメントに明記されている。
+5. **wallet-index レジストリを残す判断の docs 反映**: ARCHITECTURE.md §2
+   「例外: チェーンリセット時のパージ」にパージしないもの（node/workbench・
+   PeerEdge・ライフサイクルレジストリ）とその理由（真実の情報源は Docker
+   ラベル、チェーンリセット≠コンテナ消滅）が正しく記述されている。§4 の
+   `subscribeChainResets` の項も実装（検知手段・欠測の扱い・処理順序・
+   フロント無変更）と一致。あわせて WalletTracker / NftTracker が
+   per-address のキャッシュを持たず毎 tick `getTokenContractAddresses` 等の
+   コールバック経由で ContractTracker から取得する無状態設計であることを
+   実装から確認し、「ContractTracker の reset で十分」という設計主張の
+   裏も取った。
+6. **テストの質**: 追加テストはすべて内部実装をなぞらず観測可能な振る舞いを
+   固定している。特に (a) 欠測を挟んで同一 genesis に復帰しても onReset を
+   呼ばない/別 genesis なら取りこぼさない時系列テスト、(b) reset 後に同一
+   アドレスの再デプロイ・同一 hash の再 pending が新規として受理される
+   （reset 前は仕様上無視される）逆向きの検証、(c) パージ後の block 番号 1
+   受理（`maxObservedBlockNumber` リセットの回帰）、(d) パージ後のウォレット
+   再観測が旧残高を引き継がない検証は、壊れた実装なら赤くなる意味のある
+   テストになっている。
+7. **ビルド・lint・テスト**: `pnpm lint` / `pnpm build` / `pnpm test` を
+   リポジトリ全体で実行し全通過（shared 74 / e2e 171 / collector 1563 /
+   frontend 2460）。
+8. **コミット粒度**: `git log main..HEAD` の15コミットはいずれも単一の
+   関心事（shared 型 / RPC ヘルパー / watcher / トラッカー reset / store
+   パージ / アダプタ配線 / エントリポイント配線 / テスト3件 / docs）に
+   分かれており、規約どおり。
+
+#### QA への申し送り
+
+- 実装担当の申し送りどおり、実機での `down -v` → `up` 検証（NftTracker の
+  エラーログ停止、フロントの wallet/contract ポップオーバーが開いたまま
+  `entityRemoved` を受けてもクラッシュしないこと）は静的レビューでは
+  確認できないため QA で必ず確認すること。
