@@ -14,7 +14,7 @@
 //   みを持つ ContractEntity）として扱う。デプロイ済みバイトコードとの照合による
 //   特定はここでは行わない（ARCHITECTURE.md の決定: 必須にしない）
 
-import type { ChainType, ContractEntity } from "@chainviz/shared";
+import type { ChainType, ContractEntity, NftToken } from "@chainviz/shared";
 import type { CatalogEntry, ContractCatalog } from "./catalog.js";
 
 /** receipt から得られる、コントラクト作成 tx の最小情報。 */
@@ -135,6 +135,50 @@ export class ContractTracker {
   }
 
   /**
+   * 現在追跡中（デプロイ検知済み）かつカタログの nft メタ情報（symbol）を
+   * 持つコントラクトのアドレス一覧を返す（正規化済み・小文字表記）。
+   * NftTracker が所有台帳ポーリングの対象を決めるために使う（Issue #315）。
+   * tokenContractAddresses と同型だが、token（数量ベースの残高）と nft
+   * （個体ベースの所有）は別軸のフィールドなので対象は重ならない
+   * （ChainvizToken/ChainvizNFT のように排他的にどちらか一方だけを持つ）。
+   */
+  nftContractAddresses(): string[] {
+    return [...this.contracts.values()]
+      .filter((entity) => entity.nft !== undefined)
+      .map((entity) => entity.address);
+  }
+
+  /**
+   * NftTracker が取得した所有台帳の観測結果を対象コントラクトへ反映する
+   * （Issue #315）。ステートレスなポーリング方式（totalSupply + ownerOf の
+   * 全件洗い替え）が前提のため、ここでは tokenId 単位でのマージは行わず、
+   * 観測結果で nftTokens 全体を置き換える（部分的に取得できた不完全な台帳を
+   * 「一部だけ所有者が変わった」と誤解させないため。erc721.ts の
+   * fetchErc721Ledger 側で「全 tokenId が揃って初めて成功」という契約に
+   * している）。
+   *
+   * - tokens が undefined（この周期での取得自体に失敗）→ 何もせず null を
+   *   返す（前回の台帳を維持。呼び出し側は再送しない）
+   * - address が追跡中でない、または nft メタ情報を持たない（token コントラクト
+   *   や未知のコントラクト）→ 何もせず null を返す
+   * - それ以外は nftTokens を置き換え、更新後の ContractEntity を返す
+   *   （registerDeployment と同じく、呼び出し側が onContract へ渡して
+   *   entityUpdated 相当の配信に乗せる）
+   */
+  applyNftObservation(
+    rawAddress: string,
+    tokens: NftToken[] | undefined,
+  ): ContractEntity | null {
+    if (tokens === undefined) return null;
+    const address = normalizeAddress(rawAddress);
+    const existing = this.contracts.get(address);
+    if (!existing?.nft) return null;
+    const updated: ContractEntity = { ...existing, nftTokens: tokens };
+    this.contracts.set(address, updated);
+    return updated;
+  }
+
+  /**
    * address が追跡中かつカタログ照合済み（catalogKey 確定）のコントラクト
    * であれば、対応する CatalogEntry（ABI を含む）を返す。未追跡・カタログ
    * 未照合（「未知のコントラクト」）なら undefined を返す（呼び出し側 =
@@ -157,6 +201,7 @@ export class ContractTracker {
       name: catalogEntry.name,
       catalogKey: contractKey,
       ...(catalogEntry.token ? { token: catalogEntry.token } : {}),
+      ...(catalogEntry.nft ? { nft: catalogEntry.nft } : {}),
       ...(catalogEntry.source
         ? {
             sourceCode: {
