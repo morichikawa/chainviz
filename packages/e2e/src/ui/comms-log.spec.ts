@@ -75,8 +75,15 @@ test("UI-LOG-02: 送金操作の実行後に「操作（RPC）」エントリが
       })
       .toBeGreaterThan(before);
 
-    const latest = commsLogEntriesOf(page, "operation").first();
-    await expect(latest).toContainText("eth_sendRawTransaction");
+    // 送金操作は送金呼び出し後にレシート待ちで eth_getBlockByNumber /
+    // eth_getTransactionReceipt を複数回ポーリングするため、それらの方が
+    // タイムスタンプが新しく一覧の先頭に来る。先頭固定ではなく、操作
+    // カテゴリの中に eth_sendRawTransaction を含むエントリが存在すること
+    // を確認する（Issue #317 QA差し戻し）。
+    const sendRawTxEntries = commsLogEntriesOf(page, "operation").filter({
+      hasText: "eth_sendRawTransaction",
+    });
+    await expect(sendRawTxEntries.first()).toBeVisible();
   });
 });
 

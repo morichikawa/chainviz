@@ -580,3 +580,50 @@ comms-log-panelへマージ`）:
    内部APIエントリ（観測周期ごとに発生）がより新しい timestamp で挟まると
    落ちうる。実装担当も UI-LOG-03/04 のタイミング依存を申し送っており、
    QA での実機安定性確認の重点ポイント
+
+### 2026-07-17 差し戻し対応（frontend）
+
+- 担当: frontend
+- ブランチ: issue-317-comms-log-panel
+- 経緯: chainviz-qa が実 Docker スタックで検証したところ、製品（comms-log
+  機能自体）は完了条件を満たしていたが、`comms-log.spec.ts` の
+  `UI-LOG-02` が決定的に失敗することが判明した。原因はテスト側の
+  アサーション不備で、製品側の不具合ではない。
+
+#### 問題
+
+`UI-LOG-02`（78〜79行目）は「操作カテゴリの一覧**先頭**（最新）エントリが
+`eth_sendRawTransaction` を含む」と断定していた。しかし送金操作
+（`cast`）は送金呼び出し後にレシート待ちで `eth_getBlockByNumber` /
+`eth_getTransactionReceipt` を複数回ポーリングする。これらは送金呼び出し
+より新しいタイムスタンプを持つため、実際には一覧の先頭に来る。QA がトレース
+（DOM スナップショット）を解析した結果、`eth_sendRawTransaction` 自体は
+comms-log に正しく8件記録されており、製品は仕様どおり動作していることが
+確認された。つまりこの失敗はテストのアサーションが実装の実際の並び順
+（新しいタイムスタンプが先頭）を考慮していなかったために起きたもので、
+製品側の修正は不要だった。
+
+#### 修正内容
+
+`packages/e2e/src/ui/comms-log.spec.ts` の該当箇所を、「先頭のエントリが
+`eth_sendRawTransaction` を含む」という断定から、「操作カテゴリのエントリ
+群の中に `eth_sendRawTransaction` を含むものが少なくとも1件存在する」
+という確認に変更した。`commsLogEntriesOf(page, "operation").filter({
+hasText: "eth_sendRawTransaction" })` で絞り込み、その `.first()` が
+`toBeVisible()` であることを確認する形にした。並び順（先頭 = 最新）自体の
+検証は UI-LOG-03 が別途担っているため、UI-LOG-02 では並び順を主張しない
+方針にした。
+
+`packages/e2e/SCENARIOS.md` の UI-LOG-02 の完了条件文（「操作（RPC）
+カテゴリのエントリが新たに1件以上現れる」「内容にワークベンチ名 →
+対象ノード名の主体表記とメソッド名（`eth_sendRawTransaction`）が含まれる」）
+はもともと「先頭」を明言していなかったため、この解釈変更と齟齬が無い
+（QAの確認どおり）。SCENARIOS.md 自体の修正は不要と判断した。
+
+#### 確認したこと
+
+- `pnpm --filter @chainviz/e2e build`（`tsc --noEmit`）が通ることを確認。
+- 実 Docker スタックでの再実行は本対応では行っていない（QA に委ねる）。
+  修正前のコード（先頭固定の断定）が QA のトレース解析により実際に
+  誤っていたことは、QA 報告の実測結果（`eth_sendRawTransaction` が8件
+  記録されているが先頭ではない）から確認済み。
