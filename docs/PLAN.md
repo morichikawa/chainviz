@@ -573,6 +573,9 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
 - [ ] collectorのcomposeProjectが"chainviz-ethereum"にハードコードされ
       環境変数での上書き口が無く、QA検証時に独立した合成環境で
       ワークベンチ経由の操作(runWorkbenchOperation等)を検証できない
+      (以前から本ファイルに記載されていたがGitHub Issue化されずに残って
+      いた項目。統括が2026-07-17にIssue化)
+      [#369](https://github.com/morichikawa/chainviz/issues/369)
 - [x] デプロイのコンストラクタ引数にABI型と不一致な値を入力するとforgeの
       生エラーがそのままトーストに表示される
       [#209](https://github.com/morichikawa/chainviz/issues/209)
@@ -894,6 +897,13 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       ことが根本原因。フレッシュ起動後の初回addWorkbenchで確実に発生。
       応急対処は追加時に既定以外のラベルを付けること)
       [#366](https://github.com/morichikawa/chainviz/issues/366)
+- [ ] GlossaryTermのキーボード操作(Space)でpreventDefaultが呼ばれず
+      ページスクロールし得る
+      (Issue #313のテスト強化中にchainviz-testerが発見した軽微なa11y
+      問題。`role="button"`を持つ`<span>`でSpaceを押すとブラウザ既定の
+      ページスクロールが起きうる。`GlossaryTerm.tsx`のSpace/Enter
+      ハンドラにpreventDefault()を追加する)
+      [#353](https://github.com/morichikawa/chainviz/issues/353)
 
 ## 運用ルール（全ステップ共通）
 
