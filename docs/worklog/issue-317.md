@@ -501,3 +501,82 @@ designer との調整が必要。
   `prevState` へ戻した壊れた実装で実際に失敗することを確認してから元に
   戻した。
 - lint（`eslint`）は追加ファイルについてクリーン。
+
+### 2026-07-17 Issue #317 レビュー（reviewer）
+
+- 担当: reviewer
+- ブランチ: issue-317-comms-log-panel
+- 判定: **合格**（差し戻しなし。軽微な申し送りのみ）
+
+#### mainのマージ（統括の指示による）
+
+レビューに先立ち `origin/main`（Issue #313 用語集パネル・#315 NFT可視化・
+#351/#352 バックログ追記を含む）を本ブランチへマージした。7ファイルで
+コンフリクトが発生し、以下の方針で解消した（`chore: mainをissue-317-
+comms-log-panelへマージ`）:
+
+- `sidePanelView.ts` / `SidePanelHost.tsx` / `Canvas.tsx` / `messages.ts` /
+  `styles.css`: 両ブランチのkind追加（glossary と commsLog）を統合。
+  ダングリングガードは両ブランチとも独立に同一の修正
+  （`view?.kind === "contractSource" && contract === undefined`）へ収束して
+  いたため、そのまま採用しコメントを3kind前提に統合した
+- `styles.css` は2つのコンフリクトが相互に入り組んでいたため、両親版から
+  該当セクション（glossary-panel / comms-log）を丸ごと取り出して結合し、
+  結合後にブレースの対応（開閉数の一致）を機械的に検証した
+- 意味的コンフリクト: `SidePanelHost` の props が両側で増えたため、
+  互いのテスト（`SidePanelHost.glossary.test.tsx` /
+  `SidePanelHost.commsLog.test.tsx` / `SidePanelHost.kindSwitch.test.tsx` /
+  `SidePanelHost.test.tsx`）に相手側の新propのno-op値を補った
+- `kindSwitch.test.tsx` 冒頭の「このブランチは2 kind」の注記がマージ後は
+  事実と食い違うため、経緯を残す形で更新した（別コミット）
+
+#### 確認したこと
+
+- **境界の遵守**: `packages/shared`・collector の変更なし（`git diff
+  origin/main...` で機械的に確認。設計どおり frontend のみで完結）。
+  ログ導出は既存 DiffEvent のみが材料で、フロントが Docker/ノードAPIに
+  触れる箇所は無い。`blockReceiptDedup.ts` は `drivesNodeId` の構造だけを
+  見る規則で、ロール名などチェーン固有解釈を持ち込んでいない
+- **エラーの握りつぶし**: 本ブランチの差分に `catch` は1箇所も無い。
+  意図的にイベントを無視する箇所（nodeLinkActivity の calls 空・wallet の
+  追加/削除・receivedAt 以外のみの block 更新など）はすべて理由コメント
+  付きで、`deriveCommsLogEntries.noise.test.ts` が挙動として固定している。
+  当初実装が同一バッチ内の後続 entityUpdated を「黙って無視」していた点は
+  実装担当が `running` 逐次適用で修正済みで、回帰テストが壊した実装で実際に
+  失敗することも確認済みと記録されている
+- **固定値のルール**: `COMMS_LOG_RETENTION = 500` は成立前提（表示上の
+  保持窓であり環境の観測数に依存しない）がコードコメントと本worklogの
+  両方に明記されている。E2E の待ち時間は `SLOT_DURATION_MS` からの動的
+  導出（`NEXT_BLOCK_TIMEOUT_MS = SLOT_DURATION_MS * 3 + 20_000`）で、
+  既存 `chain-ribbon.spec.ts` と同じ考え方
+- **テストの質**: 導出は関心事ごとに6ファイル+境界系3ファイルに分割され、
+  ハッピーパスに加えて「生んではいけない」負のケース・リングバッファ境界・
+  文言の設計不変条件（受信の語・双方向記号）まで固定されている。実装の
+  詳細をなぞるだけの無意味なテストは見当たらない
+- **3kind共存（統括の依頼事項）**: ダングリングガードは contractSource
+  限定の判定で、glossary（`SidePanelHost.glossary.test.tsx`）・commsLog
+  （`SidePanelHost.commsLog.test.tsx` / `kindSwitch.test.tsx`）それぞれに
+  「ガードが漏れて即閉じしない」テストがあり、マージ後の全テストが通る
+- **ビルド・lint・テスト**: マージ後の状態で `pnpm lint` / `pnpm build`
+  （e2e の tsc 含む4パッケージ）/ `pnpm test`（shared 74・collector 1523・
+  e2e 171・frontend 2592 = 計4360件）すべて通過
+- **コミット粒度**: `git log main..HEAD` を確認。UX設計docs → 導出ロジック →
+  バグ修正 → リファクタ → UI配線 → E2E → docs → テスト強化4件が
+  それぞれ独立したコミットに分かれており規約どおり
+
+#### 申し送り（軽微・差し戻し不要）
+
+1. glossary ⇄ commsLog の直接遷移テストは無い（contractSource⇄glossary・
+   contractSource⇄commsLog はそれぞれ既存。置換機構は SidePanelContext の
+   同一経路なのでリスクは低い）。QA後・マージ前に余裕があれば tester に
+   1ケース追加させてもよい
+2. `CommsLogEntryRow.tsx` の `CATEGORY_GLOSSARY_KEY` が Ethereum 前提の
+   用語キー（`engine-api` 等）を汎用コンポーネントに直書きしている。
+   既存の `entities/` 配下（`wei`・`nonce` 等）と同じ前提の書き方であり
+   現時点（ethereumプロファイルのみ）では問題にしないが、複数チェーン
+   対応時はチェーンプロファイル表現セット（`internalLinkKinds.ts` の
+   `headingGlossaryKey` 等）から引く形への移行対象
+3. E2E UI-LOG-03 の「一覧先頭が block カテゴリ」の断言は、poll成立直後に
+   内部APIエントリ（観測周期ごとに発生）がより新しい timestamp で挟まると
+   落ちうる。実装担当も UI-LOG-03/04 のタイミング依存を申し送っており、
+   QA での実機安定性確認の重点ポイント
