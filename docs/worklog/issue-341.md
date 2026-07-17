@@ -222,3 +222,56 @@
     恒久対応するなら `format()` と同じく
     `Object.prototype.hasOwnProperty.call(messages, key)` で自己プロパティを
     確認する防御が考えられる。
+
+### 2026-07-17 Issue #341 レビュー
+
+- 担当: reviewer
+- ブランチ: issue-341-i18n-empty-string-fallback（worktree 上の作業ブランチ名は
+  issue-341-impl-worktree）
+- 内容: frontend 実装（案A': `translate()` を `pickLocale()` 経由から
+  `entry[lang]` の直接参照に変更）と tester のテスト強化に対する静的レビュー。
+  結果は**合格**。
+  - `packages/shared` の変更なしを diff で確認（変更は
+    `packages/frontend/` 4ファイル + `docs/` 4ファイルのみ）。設計メモ
+    どおり frontend で完結している
+  - `pnpm lint` / `pnpm build` / `pnpm test` をリポジトリ全体で実行し
+    全通過（shared 74 / collector 1563 / e2e 171 / frontend 2602 テスト）
+  - テストが実際に不具合を検出できることを変異テストで再確認: `translate()`
+    を修正前の `pickLocale(entry, lang)` に戻した状態で対象3ファイルを実行し、
+    worklog の記載どおり**5件がちょうど失敗**（空文字境界2件・i18n.test.ts の
+    #341 テスト1件・PeerNetworkLegend の英語モード2件）、messages.ts の
+    不変条件テストは実装非依存のため PASS のままであることを実測。確認後に
+    `git checkout` でファイルを復元し、worktree がクリーンであることを確認済み
+  - テストコードの質: 「translate と pickLocale が同じ入力で意図的に異なる
+    結果を返す」境界そのものを対比で固定するテスト、意図的空文字が
+    `legend.hint.suffix.en` の1箇所だけという設計前提の不変条件テスト、
+    特定語句に依存しない文字種（ひらがな・カタカナ・CJK漢字）ベースの
+    広い回帰ガードのいずれも、実装の詳細をなぞるだけでない実質的な検証に
+    なっている。正規表現の文字範囲（U+3040-30FF, U+4E00-9FFF）はコメントの
+    説明と一致
+  - エラー握りつぶし・環境依存の決め打ち定数: 該当なし（純粋関数の1行変更と
+    テスト・docs のみ。タイムアウト等の時間依存値は登場しない）
+  - コミット粒度: 設計docs / 修正+基本テスト / 境界テスト追加 / 回帰ガード
+    追加 / worklog がそれぞれ分かれており、1変更1コミットを満たす。
+    d14950e に i18n.ts とテスト2ファイルが同居しているのは「修正とその修正を
+    検証する回帰テスト」で1つの関心事のため妥当
+  - docs 整合: `docs/ARCHITECTURE.md` §5.1（translate/pickLocale の使い分け
+    規則）が実装・コメントと一致。`docs/PLAN.md` の #341 チェックボックスは
+    実装担当が更新済み（修正方針の要約付き）で記述も実装と一致。
+    `docs/WORKLOG.md` 索引の #341 行も更新済み
+- 決定事項・注意点:
+  - **tester 申し送り（`Object.prototype` 由来キーの問題）は #341 スコープ外
+    として見送りと判断**。根拠:
+    - `translate()` の呼び出し口は `LanguageProvider` の
+      `t: (key: MessageKey) => string` の1箇所のみで、production コードに
+      `MessageKey` へのキャストや動的キー生成は存在しないことを grep で確認。
+      型により到達不能
+    - #341 以前も `pickLocale(関数, lang)` 経由で「未知キーはキー文字列を
+      返す」契約は破れていた（`""` を返していた）ため、#341 が新規に生んだ
+      問題ではない。#341 後は戻り値が `""` から `undefined` に変わったが、
+      到達不能である点は同じ
+    - 恒久対応（`format()` と同様の `Object.prototype.hasOwnProperty.call`
+      ガード1行）は価値があるが、到達不能な理論的経路のために実装差し戻し・
+      再テスト・再レビューの1サイクルを回すのは過剰。対応するなら別Issue
+      （バックログの軽微な堅牢性項目）として起票するのが妥当。起票の要否は
+      統括に委ねる
