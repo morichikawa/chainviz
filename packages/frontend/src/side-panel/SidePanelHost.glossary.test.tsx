@@ -89,6 +89,13 @@ function fullTree(options: HostOptions) {
             contractsByAddress={options.contractsByAddress ?? new Map()}
             layerFilter={options.layerFilter ?? "all"}
             onLayerFilterChange={options.onLayerFilterChange ?? (() => {})}
+            commsLog={{
+              visibleEntries: [],
+              filters: { categories: {} as never, nodeId: null },
+              toggleCategory: () => {},
+              setNodeFilter: () => {},
+            }}
+            commsLogNodeOptions={[]}
           />
         </SidePanelProvider>
       </GlossaryProvider>

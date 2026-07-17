@@ -535,6 +535,64 @@ export const messages = {
     ja: "クリックで用語集を開く",
     en: "Click to open the glossary",
   },
+  // --- 通信ログパネル（kind: "commsLog"。Issue #317。
+  // docs/worklog/issue-317.md 設計メモ） ---
+  "action.commsLog": { ja: "通信ログ", en: "Communication log" },
+  "commsLog.title": { ja: "通信ログ", en: "Communication log" },
+  "commsLog.description": {
+    ja: "キャンバスに一瞬だけ現れる出来事を時系列に記録しています。新しいものが上です",
+    en: "Events that flash by on the canvas for a moment are recorded here in chronological order, newest at the top",
+  },
+  "commsLog.empty": {
+    ja: "まだ記録がありません。ブロックの生成やワークベンチの操作が起きるとここに流れます",
+    en: "No entries yet. They will appear here as blocks are produced and workbenches are operated",
+  },
+  "commsLog.p2pNote": {
+    ja: "P2P のブロック伝播は各ノードの受信として記録されます（ノード間の送信経路そのものは観測していません）",
+    en: "P2P block propagation is recorded as each node's reception; the send path between nodes is not observed",
+  },
+  "commsLog.filter.categoryLabel": { ja: "カテゴリ", en: "Category" },
+  "commsLog.filter.nodeLabel": { ja: "ノード", en: "Node" },
+  "commsLog.filter.nodeAll": { ja: "すべて", en: "All" },
+  "commsLog.category.operation": { ja: "操作", en: "Operation" },
+  "commsLog.category.internal": { ja: "内部API", en: "Internal API" },
+  "commsLog.category.block": { ja: "ブロック", en: "Block" },
+  "commsLog.category.tx": { ja: "tx", en: "Tx" },
+  "commsLog.category.peer": { ja: "P2P接続", en: "P2P link" },
+  "commsLog.category.environment": { ja: "環境", en: "Environment" },
+  "commsLog.internal.call": { ja: "{method} ×{count}", en: "{method} ×{count}" },
+  "commsLog.internal.latency": { ja: " · {ms}ms", en: " · {ms}ms" },
+  "commsLog.block.received": { ja: "ブロック #{number} を受信", en: "Received block #{number}" },
+  "commsLog.block.receivedFirst": {
+    ja: "ブロック #{number} を最初に受信",
+    en: "First to receive block #{number}",
+  },
+  "commsLog.block.offset": { ja: "（+{seconds}s）", en: " (+{seconds}s)" },
+  "commsLog.tx.pending": { ja: "mempool に投入", en: "Submitted to mempool" },
+  "commsLog.tx.included": { ja: "ブロック #{number} に取り込み", en: "Included in block #{number}" },
+  "commsLog.tx.includedUnknownBlock": { ja: "取り込み済み", en: "Included" },
+  "commsLog.tx.failed": { ja: "ブロック #{number} で失敗", en: "Failed in block #{number}" },
+  "commsLog.tx.failedUnknownBlock": { ja: "失敗", en: "Failed" },
+  "commsLog.peer.connected": { ja: "ピア接続が確立", en: "Peer link established" },
+  "commsLog.peer.disconnected": { ja: "ピア接続が切断", en: "Peer link disconnected" },
+  "commsLog.environment.nodeAdded": { ja: "ノードが追加された", en: "Node added" },
+  "commsLog.environment.nodeRemoved": { ja: "ノードが削除された", en: "Node removed" },
+  "commsLog.environment.workbenchAdded": { ja: "ワークベンチが追加された", en: "Workbench added" },
+  "commsLog.environment.workbenchRemoved": {
+    ja: "ワークベンチが削除された",
+    en: "Workbench removed",
+  },
+  "commsLog.environment.contractDeployed": {
+    ja: "コントラクトがデプロイされた",
+    en: "Contract deployed",
+  },
+  "commsLog.environment.contractRemoved": { ja: "コントラクトが削除された", en: "Contract removed" },
+  // collector 接続イベントは subject 行に「commsLog.environment.
+  // collectorSubject」（"collector"）を出すため、こちらの文言側では
+  // 主語を繰り返さない（「collectorとの接続が切れた」の二重表記を避ける）。
+  "commsLog.environment.collectorDisconnected": { ja: "接続が切れた", en: "Lost connection" },
+  "commsLog.environment.collectorReconnected": { ja: "再接続した", en: "Reconnected" },
+  "commsLog.environment.collectorSubject": { ja: "collector", en: "Collector" },
 } as const satisfies Record<string, Localized>;
 
 export type MessageKey = keyof typeof messages;

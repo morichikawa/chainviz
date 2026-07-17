@@ -2,10 +2,9 @@
  * サイドパネル（キャンバス右ドックの常設オーバーレイ）に表示中の内容を表す
  * 判別共用体（Issue #321。docs/ARCHITECTURE.md §12.2「汎用サイドパネル
  * 機構」）。"contractSource"（コントラクトのソースコード表示）に加え、
- * Issue #313 で "glossary"（用語集パネル）を追加した。今後 Issue #317
- * （ノード間通信ログ）で `{ kind: "commsLog" }` を追加する想定。この型は
- * フロント内部の表示状態でありワールドステートのスキーマではないため
- * `packages/shared` には置かない。
+ * Issue #313 で "glossary"（用語集パネル）、Issue #317 で "commsLog"
+ * （ノード間通信ログ）を追加した。この型はフロント内部の表示状態であり
+ * ワールドステートのスキーマではないため `packages/shared` には置かない。
  *
  * 同時に開けるパネルは1枚（排他）。`SidePanelContext.tsx` の `open` は
  * 現在表示中のパネルを置き換える。
@@ -27,4 +26,7 @@ export type SidePanelView =
        * のクリックやパネル内の関連用語チップから開いたときは指定する。
        */
       termKey?: string;
+    }
+  | {
+      kind: "commsLog";
     };
