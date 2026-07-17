@@ -137,6 +137,34 @@ describe("resolveWalletNftHoldings (Issue #315)", () => {
     ]);
   });
 
+  it("applies the two-level sort together: contractAddress first, then numeric tokenId within each contract", () => {
+    // 単一コントラクトの tokenId 昇順と複数コントラクトの address 昇順を
+    // 別々のテストで確認しているが、両者が同時に効くこと（1段目 address、
+    // 2段目 tokenId 数値）を、走査順とは逆の入力で一括確認する。
+    const wallet = `0x${"a".repeat(40)}`;
+    const contractB = nftContract({
+      address: `0x${"2".repeat(40)}`,
+      nftTokens: [
+        { tokenId: "10", ownerAddress: wallet },
+        { tokenId: "2", ownerAddress: wallet },
+      ],
+    });
+    const contractA = nftContract({
+      address: `0x${"1".repeat(40)}`,
+      nftTokens: [
+        { tokenId: "2", ownerAddress: wallet },
+        { tokenId: "1", ownerAddress: wallet },
+      ],
+    });
+    const result = resolveWalletNftHoldings(wallet, [contractB, contractA]);
+    expect(result.map((h) => [h.contractAddress, h.tokenId])).toEqual([
+      [contractA.address, "1"],
+      [contractA.address, "2"],
+      [contractB.address, "2"],
+      [contractB.address, "10"],
+    ]);
+  });
+
   it("falls back to a string comparison for a non-numeric tokenId (defensive, mirrors formatUnits)", () => {
     const wallet = `0x${"a".repeat(40)}`;
     const contract = nftContract({

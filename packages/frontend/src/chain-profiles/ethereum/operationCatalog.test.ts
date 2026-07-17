@@ -115,6 +115,26 @@ describe("ETHEREUM_OPERATION_CATALOG", () => {
     },
   );
 
+  it("never marks any arg with unit: 'token' on an entry without token metadata (general guard for the ERC20/721 copy-paste trap)", () => {
+    // `unit: "token"` は decimals 換算を伴うため token メタ情報を持つ
+    // エントリでのみ意味を持つ。ChainvizNFT の approve/transferFrom は
+    // ERC-20 と同型のシグネチャで、コピペで `unit: "token"` が紛れ込むと
+    // tokenId が decimals 換算されて壊れる（docs/worklog/issue-315.md の罠）。
+    // 引数名に依存しない一般則として、token メタ情報を持たないエントリの
+    // 全引数に unit が付いていないことを保証する。
+    for (const entry of ETHEREUM_OPERATION_CATALOG) {
+      if (entry.token) continue;
+      for (const arg of entry.constructorArgs) {
+        expect(arg.unit).toBeUndefined();
+      }
+      for (const fn of entry.functions) {
+        for (const arg of fn.args) {
+          expect(arg.unit).toBeUndefined();
+        }
+      }
+    }
+  });
+
   it("exposes exactly mint/approve/transferFrom for ChainvizNFT (per docs/worklog/issue-315.md)", () => {
     const entry = getOperationCatalogEntry("ChainvizNFT");
     expect(entry?.functions.map((fn) => fn.label).sort()).toEqual([
