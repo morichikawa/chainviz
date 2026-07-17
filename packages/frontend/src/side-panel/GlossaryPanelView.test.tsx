@@ -145,6 +145,33 @@ describe("GlossaryPanelView: search (Issue #313 UX設計 §3.6)", () => {
     });
     expect(screen.getByTestId("glossary-panel-term-container")).toBeTruthy();
   });
+
+  it("shows the empty-state message for an empty glossary (0 terms, no query)", () => {
+    // 読み込み済み用語が1件も無い境界。検索していなくても空表示になる。
+    renderPanel({}, Object.create(null) as Glossary);
+    expect(screen.getByTestId("glossary-panel-empty")).toBeTruthy();
+    expect(screen.queryByTestId("glossary-panel-group-a")).toBeNull();
+  });
+
+  it("recovers to the full list when the query is cleared back to empty", () => {
+    renderPanel();
+    const search = screen.getByTestId("glossary-panel-search");
+    fireEvent.change(search, { target: { value: "boot" } });
+    expect(screen.queryByTestId("glossary-panel-term-container")).toBeNull();
+    fireEvent.change(search, { target: { value: "" } });
+    expect(screen.getByTestId("glossary-panel-term-container")).toBeTruthy();
+    expect(screen.getByTestId("glossary-panel-term-bootnode")).toBeTruthy();
+  });
+
+  it("keeps only-whitespace queries equivalent to empty (shows everything)", () => {
+    renderPanel();
+    fireEvent.change(screen.getByTestId("glossary-panel-search"), {
+      target: { value: "   " },
+    });
+    expect(screen.getByTestId("glossary-panel-term-container")).toBeTruthy();
+    expect(screen.getByTestId("glossary-panel-term-bootnode")).toBeTruthy();
+    expect(screen.getByTestId("glossary-panel-term-rpc")).toBeTruthy();
+  });
 });
 
 describe("GlossaryPanelView: grouping (UX設計 §3.3)", () => {
@@ -243,6 +270,15 @@ describe("GlossaryPanelView: related term chips (UX設計 §3.4)", () => {
     expect(chip.textContent).toBe("does-not-exist");
   });
 
+  it("does nothing (no view change) when the broken-reference chip is clicked", () => {
+    // 参照切れチップはただの span なので、クリックしても open() は呼ばれず
+    // Context の view は初期値のまま（GlossaryPanelView はマウント時に open()
+    // を呼ばない）。誤って navigation が走らないことを固定する。
+    const { probeView } = renderPanelWithViewProbe({ termKey: "container" });
+    fireEvent.click(screen.getByTestId("glossary-panel-related-does-not-exist"));
+    expect(probeView()).toBeNull();
+  });
+
   it(
     "clicking a related term chip re-opens the side panel view with the related term's key " +
       "(UX設計 §3.4: 'open() を呼び直すだけでよい'。実際に SidePanelHost 経由で新しい " +
@@ -289,6 +325,21 @@ describe("GlossaryPanelView: reacts to an externally-changed termKey prop", () =
       .getByTestId("glossary-panel-term-bootnode")
       .querySelector(".glossary-panel__row-header");
     expect(bootnodeHeader?.getAttribute("aria-expanded")).toBe("true");
+    const containerHeader = screen
+      .getByTestId("glossary-panel-term-container")
+      .querySelector(".glossary-panel__row-header");
+    expect(containerHeader?.getAttribute("aria-expanded")).toBe("false");
+  });
+});
+
+describe("GlossaryPanelView: resilience to a termKey with no matching term (broken deep-link)", () => {
+  it("does not crash and still lists every term when opened with an unknown termKey", () => {
+    // 参照切れの termKey（存在しない用語を指す deep-link・古いリンク）で
+    // 開かれても、scrollIntoView は無い ref に対してオプショナルチェーンで
+    // 無害化され、一覧はそのまま出る。どの行も展開されない。
+    expect(() => renderPanel({ termKey: "no-such-term" })).not.toThrow();
+    expect(screen.getByTestId("glossary-panel-term-container")).toBeTruthy();
+    expect(screen.getByTestId("glossary-panel-term-bootnode")).toBeTruthy();
     const containerHeader = screen
       .getByTestId("glossary-panel-term-container")
       .querySelector(".glossary-panel__row-header");
@@ -366,6 +417,18 @@ describe("GlossaryPanelView: layer chip (UX設計 §3.5)", () => {
     expect(screen.getByTestId("glossary-panel-layer-chip").getAttribute("aria-pressed")).toBe(
       "true",
     );
+  });
+
+  it("switches the lens to the term's layer (not toggle-to-all) when a different layer is currently active", () => {
+    // レンズが別の層(b)を選択中に、a層の用語のチップを押すと a へ切り替わる。
+    // 「同じ層をもう一度押したときだけ all に戻す」トグルが、別層選択中の
+    // クリックを誤って all にしないことを確認する（既存フィルタ状態との相互作用）。
+    const onLayerFilterChange = vi.fn();
+    renderPanel({ termKey: "container", layerFilter: "b", onLayerFilterChange });
+    const chip = screen.getByTestId("glossary-panel-layer-chip");
+    expect(chip.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(chip);
+    expect(onLayerFilterChange).toHaveBeenCalledWith("a");
   });
 
   it("does not render a layer chip for a term in the 'other' group (no layer to link to)", () => {

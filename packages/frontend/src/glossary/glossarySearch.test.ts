@@ -34,6 +34,17 @@ describe("resolveGlossaryLayerGroupKey", () => {
     expect(resolveGlossaryLayerGroupKey("")).toBe("other");
     expect(resolveGlossaryLayerGroupKey("z-unknown")).toBe("other");
   });
+
+  it("maps a bare single-character layer value ('a' without suffix) to its VisualizationLayer", () => {
+    expect(resolveGlossaryLayerGroupKey("a")).toBe("a");
+    expect(resolveGlossaryLayerGroupKey("d")).toBe("d");
+  });
+
+  it("treats a leading-whitespace layer value as 'other' (only the first char is inspected)", () => {
+    // charAt(0) が空白なので a-d に一致しない。想定外データでも表示を落とさず
+    // 「その他」に寄せる（UX設計 §3.3 の耐性）。
+    expect(resolveGlossaryLayerGroupKey(" a-infra")).toBe("other");
+  });
 });
 
 describe("matchesGlossaryQuery", () => {
@@ -68,6 +79,31 @@ describe("matchesGlossaryQuery", () => {
 
   it("is case-insensitive", () => {
     expect(matchesGlossaryQuery(t, "CONTAIN", "ja")).toBe(true);
+  });
+
+  it("is case-insensitive on the key too (keys are lowercase, query may not be)", () => {
+    expect(matchesGlossaryQuery(t, "CONTAINER", "ja")).toBe(true);
+  });
+
+  it("trims leading/trailing whitespace of the query before matching", () => {
+    expect(matchesGlossaryQuery(t, "  contain  ", "ja")).toBe(true);
+    // 全角ではなく半角スペースのみを trim する（String.prototype.trim の仕様）。
+    expect(matchesGlossaryQuery(t, "\tcontainer\n", "ja")).toBe(true);
+  });
+
+  it("does not collapse whitespace inside the query (internal spaces are literal)", () => {
+    // "contain er" は "container" の連続部分文字列ではないので一致しない
+    // （空白正規化・トークン分割はしない仕様。UX設計 §3.6）。
+    expect(matchesGlossaryQuery(t, "contain er", "ja")).toBe(false);
+  });
+
+  it("matches a single-character query (no minimum length)", () => {
+    expect(matchesGlossaryQuery(t, "c", "ja")).toBe(true);
+  });
+
+  it("matches a query equal to the whole field (upper boundary of partial match)", () => {
+    expect(matchesGlossaryQuery(t, "container", "ja")).toBe(true);
+    expect(matchesGlossaryQuery(t, "コンテナ", "ja")).toBe(true);
   });
 
   it("returns false when nothing matches", () => {
@@ -115,6 +151,27 @@ describe("groupGlossaryTermsByLayer", () => {
 
   it("returns an empty array for an empty input", () => {
     expect(groupGlossaryTermsByLayer([])).toEqual([]);
+  });
+
+  it("emits all present groups in fixed a -> b -> c -> d -> other order regardless of input order", () => {
+    const d = term({ key: "d", layer: "d-internal" });
+    const other = term({ key: "z", layer: "unknown" });
+    const b = term({ key: "b", layer: "b-network" });
+    const a = term({ key: "a", layer: "a-infra" });
+    const c = term({ key: "c", layer: "c-transaction" });
+    const groups = groupGlossaryTermsByLayer([d, other, b, a, c]);
+    expect(groups.map((g) => g.layer)).toEqual(["a", "b", "c", "d", "other"]);
+  });
+
+  it("keeps input order within a group even when same-layer terms are interleaved with others", () => {
+    // a1 -> b1 -> a2 という入力でも、a グループの中身は [a1, a2] の入力順を保つ
+    // （Map バケットへの push 順を維持する実装の確認）。
+    const a1 = term({ key: "a1", layer: "a-infra" });
+    const b1 = term({ key: "b1", layer: "b-network" });
+    const a2 = term({ key: "a2", layer: "a-infra" });
+    const groups = groupGlossaryTermsByLayer([a1, b1, a2]);
+    const groupA = groups.find((g) => g.layer === "a");
+    expect(groupA?.terms.map((x) => x.key)).toEqual(["a1", "a2"]);
   });
 });
 

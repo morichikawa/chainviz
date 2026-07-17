@@ -107,6 +107,30 @@ describe("GlossaryTerm click integration with the glossary panel (Issue #313)", 
     expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
+  it("also closes its open hover popover on keyboard activation (Enter), same as click", () => {
+    // キーボード操作でパネルを開く経路でも、ホバー由来のポップオーバーが
+    // 残ってパネルと二重表示にならないことを確認する（click と同じ close() 経路）。
+    wrapWithSidePanel(<GlossaryTerm termKey="container">コンテナ</GlossaryTerm>);
+    const anchor = screen.getByTestId("glossary-term-container");
+    fireEvent.mouseEnter(anchor);
+    expect(screen.getByRole("tooltip")).toBeTruthy();
+
+    fireEvent.keyDown(anchor, { key: "Enter" });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    expect(screen.getByTestId("view-probe").textContent).toBe(
+      JSON.stringify({ kind: "glossary", termKey: "container" }),
+    );
+  });
+
+  it("does not open the panel or throw when an unknown term (plain text, no popover) is clicked", () => {
+    // glossary 未登録の用語は role=button を持たない素の span としてレンダー
+    // され、クリックハンドラも付かない。誤ってパネルが開かないことを固定する。
+    wrapWithSidePanel(<GlossaryTerm termKey="does-not-exist">謎の用語</GlossaryTerm>);
+    const span = screen.getByText("謎の用語");
+    expect(() => fireEvent.click(span)).not.toThrow();
+    expect(screen.getByTestId("view-probe").textContent).toBe("null");
+  });
+
   it("does not propagate the click to an ancestor (e.g. a React Flow card) that would otherwise handle it", () => {
     const onAncestorClick = vi.fn();
     wrapWithSidePanel(

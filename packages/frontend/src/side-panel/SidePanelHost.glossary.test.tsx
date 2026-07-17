@@ -67,24 +67,37 @@ function OpenButtons() {
   );
 }
 
-function renderHost(options: {
+interface HostOptions {
   contractsByAddress?: Map<string, ContractEntity>;
   onLayerFilterChange?: (layer: LayerFilter) => void;
-}) {
-  return render(
+  layerFilter?: LayerFilter;
+}
+
+/**
+ * SidePanelHost を含むツリー全体を組む。rerender に同じ形のツリーを渡すと
+ * React は同一位置の `SidePanelProvider` を再利用するため、contractsByAddress
+ * だけを差し替えても「開いたままのパネル（Context 上の view）」が保持される。
+ * これによりダングリングガードの時系列遷移をテストできる。
+ */
+function fullTree(options: HostOptions) {
+  return (
     <LanguageProvider initialLanguage="ja">
       <GlossaryProvider glossary={glossary}>
         <SidePanelProvider>
           <OpenButtons />
           <SidePanelHost
             contractsByAddress={options.contractsByAddress ?? new Map()}
-            layerFilter="all"
+            layerFilter={options.layerFilter ?? "all"}
             onLayerFilterChange={options.onLayerFilterChange ?? (() => {})}
           />
         </SidePanelProvider>
       </GlossaryProvider>
-    </LanguageProvider>,
+    </LanguageProvider>
   );
+}
+
+function renderHost(options: HostOptions) {
+  return render(fullTree(options));
 }
 
 describe("SidePanelHost: glossary kind (Issue #313)", () => {
@@ -145,5 +158,76 @@ describe("SidePanelHost: glossary kind (Issue #313)", () => {
     fireEvent.click(screen.getByTestId("trigger-glossary-with-term"));
     fireEvent.click(screen.getByTestId("glossary-panel-layer-chip"));
     expect(onLayerFilterChange).toHaveBeenCalledWith("a");
+  });
+
+  it("reflects the externally-provided layerFilter as the chip's active state", () => {
+    // レンズが a 層を選択中の状態でパネルを開くと、a-infra 用語のチップは
+    // 最初から active（aria-pressed=true）で表示される。既存のレンズ状態が
+    // パネルへ正しく流れ込むことを host レベルで確認する。
+    renderHost({ layerFilter: "a" });
+    fireEvent.click(screen.getByTestId("trigger-glossary-with-term"));
+    expect(
+      screen.getByTestId("glossary-panel-layer-chip").getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
+  it(
+    "keeps the glossary panel open across world-state churn " +
+      "(regression: the pre-fix dangling guard ignored kind and closed on every " +
+      "render where contract lookup was undefined)",
+    () => {
+      const { rerender } = renderHost({ contractsByAddress: new Map() });
+      fireEvent.click(screen.getByTestId("trigger-glossary-no-term"));
+      expect(screen.getByTestId("glossary-panel")).toBeTruthy();
+
+      // world state が更新された（無関係なコントラクトが増えた）ことを模して
+      // contractsByAddress を差し替えて再レンダー。glossary は world state に
+      // 依存しないので開いたままであるべき。
+      const other = contract({ name: "ChainvizToken" });
+      rerender(fullTree({ contractsByAddress: new Map([[other.address, other]]) }));
+      expect(screen.getByTestId("glossary-panel")).toBeTruthy();
+    },
+  );
+
+  it(
+    "does not close the glossary panel when a contract entity is removed from world state " +
+      "while glossary is showing (Issue #321 no-degrade: dangling guard is contractSource-only)",
+    () => {
+      const target = contract({ name: "ChainvizToken" });
+      const { rerender } = renderHost({
+        contractsByAddress: new Map([[target.address, target]]),
+      });
+      fireEvent.click(screen.getByTestId("trigger-glossary-no-term"));
+      expect(screen.getByTestId("glossary-panel")).toBeTruthy();
+
+      // コントラクトが world state から消えても glossary view は無関係。
+      rerender(fullTree({ contractsByAddress: new Map() }));
+      expect(screen.getByTestId("glossary-panel")).toBeTruthy();
+    },
+  );
+
+  it("closes when switching from glossary to a contractSource whose address has no entity (cross-kind dangling)", () => {
+    // glossary → contractSource(参照切れ) の遷移で、contractSource 固有の
+    // ダングリングガードが正しく発火してパネルが閉じることを確認する
+    // （kind ゲートが contractSource 側の防御を無効化していないこと）。
+    renderHost({ contractsByAddress: new Map() });
+    fireEvent.click(screen.getByTestId("trigger-glossary-no-term"));
+    expect(screen.getByTestId("glossary-panel")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("trigger-contract-source"));
+    expect(screen.queryByTestId("glossary-panel")).toBeNull();
+    expect(screen.queryByTestId("contract-source-view")).toBeNull();
+    expect(screen.queryByTestId("side-panel")).toBeNull();
+  });
+
+  it("opens the glossary panel cleanly after a dangling contractSource auto-closed", () => {
+    // 参照切れ contractSource でパネルが自動クローズした後に glossary を開く
+    // 順序でも、正しく用語集パネルが出る（ダングリング後の状態リセット）。
+    renderHost({ contractsByAddress: new Map() });
+    fireEvent.click(screen.getByTestId("trigger-contract-source"));
+    expect(screen.queryByTestId("side-panel")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("trigger-glossary-no-term"));
+    expect(screen.getByTestId("glossary-panel")).toBeTruthy();
   });
 });
