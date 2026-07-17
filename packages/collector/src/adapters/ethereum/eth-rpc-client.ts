@@ -179,6 +179,47 @@ export async function fetchNonce(
   return Number(BigInt(hex));
 }
 
+interface RawBlock {
+  hash?: unknown;
+}
+
+/**
+ * genesis（block 0）のブロックハッシュを取得する。チェーンリセット検知
+ * （`docker compose down -v` → `up` による genesis の再生成。Issue #357）で
+ * 「観測対象が別のチェーンになったかどうか」を判定する基準値として使う。
+ * トランザクション本体は不要なので `eth_getBlockByNumber` の第2引数（フル
+ * トランザクションを展開するか）は false にする。
+ *
+ * ノードが block 0 を返さない（result が null/非オブジェクト）・hash
+ * フィールドが文字列でない場合はエラーを投げる。呼び出し側（アダプタの
+ * チェーンリセット監視）はこれを「このノードからは genesis を観測できな
+ * かった」という一時的な失敗として扱い、他ノードへのフォールバックや
+ * 前回観測値の維持で対応する（正常に block 0 が存在するはずの Ethereum
+ * ノードでこの形状が返ることは通常無いため、ここでは静かに undefined を
+ * 返さず例外にして呼び出し側に判断を委ねる）。
+ */
+export async function fetchGenesisHash(
+  rpc: EthRpcClient,
+  rpcUrl: string,
+): Promise<string> {
+  const raw = await rpc.call<unknown>(rpcUrl, "eth_getBlockByNumber", [
+    "0x0",
+    false,
+  ]);
+  if (typeof raw !== "object" || raw === null) {
+    throw new Error(
+      `eth_getBlockByNumber(0x0) on ${rpcUrl} returned no genesis block`,
+    );
+  }
+  const hash = (raw as RawBlock).hash;
+  if (typeof hash !== "string") {
+    throw new Error(
+      `eth_getBlockByNumber(0x0) on ${rpcUrl} returned a block without a hash`,
+    );
+  }
+  return hash;
+}
+
 /**
  * raw の nonce（16 進文字列のはず）を数値化する（Issue #319）。フィールドが
  * 欠落しているのは「このノード実装/レスポンスには元々含まれない」という
