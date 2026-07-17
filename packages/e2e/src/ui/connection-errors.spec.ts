@@ -30,15 +30,6 @@ import { UI_E2E_COLLECTOR_PORT } from "../helpers/playwright-global-setup.js";
  */
 const BADGE_TIMEOUT_MS = 30_000;
 
-/**
- * ゴーストカード消滅待ちの上限。`entities/ghostNode.ts` の
- * `GHOST_TIMEOUT_MS`(60_000ms。frontend側の固定UX定数で、実行環境の状態
- * に依存しない)に安全マージンを足す。この値自体が変わった場合はこちらも
- * 追随させて見直すこと。
- */
-const GHOST_TIMEOUT_MARGIN_MS = 10_000;
-const GHOST_DISAPPEAR_TIMEOUT_MS = 60_000 + GHOST_TIMEOUT_MARGIN_MS;
-
 /** 生成中のゴーストカード(種類を問わない)を指すロケータ。 */
 function anyGhostCard(page: Page) {
   return page.locator('[data-testid^="ghost-card-"]');
@@ -104,9 +95,6 @@ test.describe("UI-ERR collectorプロセスの停止・再起動", () => {
   test("UI-ERR-02: collector 停止中の追加操作はエラーが利用者に伝わる", async ({
     page,
   }) => {
-    // ゴースト消滅待ち(最大70秒)を含むため、既定の60秒から延長する。
-    test.setTimeout(120_000);
-
     await test.step(
       "（前提の再現）collector が停止し「切断」バッジが出ている",
       async () => {
@@ -125,22 +113,24 @@ test.describe("UI-ERR collectorプロセスの停止・再起動", () => {
 
     await test.step("ツールバーの「ノード追加」ボタンを押す", async () => {
       await page.getByTestId("canvas-toolbar-add-node").click();
-      // addNodeはEL/CLの2枚のゴーストを生む(commands-node.spec.tsと同じ)。
-      await expect(anyGhostCard(page)).toHaveCount(2);
     });
 
     await test.step(
-      "ゴーストカードが出た後、タイムアウト（60秒。GHOST_TIMEOUT_MS）で" +
-        "ゴーストカードが静かに消える（実装時に実挙動を確認した結果、" +
-        "エラートーストは表示されない。既知の問題として Issue #235 で" +
-        "起票済み）",
+      "WebSocket未接続でコマンドがそもそも送信できないため、ゴーストカードは" +
+        "作られず、即座にエラートーストで理由が利用者に伝わる（Issue #235で" +
+        "修正済み。以前は楽観的にゴーストカードが作られ、GHOST_TIMEOUT_MS" +
+        "（60秒）後に通知なく静かに消えるだけだった。websocket/client.tsの" +
+        "sendCommandが未接続時にundefinedを返すよう修正され、" +
+        "useCommands.tsのdispatchがゴーストを作らず" +
+        "describeCommandNotConnectedErrorのトーストを即座に出すようになった）",
       async () => {
-        await expect(anyGhostCard(page)).toHaveCount(0, {
-          timeout: GHOST_DISAPPEAR_TIMEOUT_MS,
-        });
-        // ゴースト消滅後もエラートーストが出ていないことを確認する
-        // (Issue #235で報告した「トーストが出ない」実挙動そのものの検証)。
-        await expect(page.locator('[data-testid^="toast-"]')).toHaveCount(0);
+        // addNodeはEL/CLの2枚のゴーストを生むが(commands-node.spec.tsと同じ)、
+        // 未接続時はコマンド自体を送信しない設計に変わったため、ゴーストは
+        // 1枚も作られない。
+        await expect(anyGhostCard(page)).toHaveCount(0);
+        const toast = page.locator('[data-testid^="toast-"]').first();
+        await expect(toast).toBeVisible();
+        await expect(toast).toHaveClass(/toast--error/);
       },
     );
   });
