@@ -164,3 +164,92 @@ chainviz-detective への追加調査を提案する。
 - `docs/PLAN.md` のIssue #346チェックボックスは、UI-CMD-07が未解決のため
   完了とせず、進捗を注記するに留めた（Issueのクローズ・分割判断は統括に
   委ねる）
+
+### 2026-07-17 Issue #346 テスト強化（portalスコープ崩れの横断確認・UI-ERR-02の検証強化）
+
+- 担当: tester
+- ブランチ: issue-346-e2e-hover-flakiness（`issue-346-impl-worktree` worktree）
+
+#### 実施内容
+
+**1. Issue #245 portal化による同種のlocatorスコープ崩れの横断確認**
+
+実装担当はUI-C-04（contract-lifecycle）・UI-D-03（node-internals）の2箇所を
+修正したが、同じパターンが他のE2Eテストに残っていないか
+`packages/e2e/src/ui/` 配下を全数確認した。PopoverPortal経由で
+`document.body` 直下へportal描画される全ポップオーバー（InfraPopover /
+ContractPopover / WalletPopover / TxLifecyclePopover / ChainRibbonPopover /
+GlossaryTerm / ActionHint / contract-activity-chip__popover）について、
+各specがそのポップオーバーをトリガー要素の子孫としてスコープしていないかを
+照合した。
+
+その結果、`infra-display.spec.ts` に同型の未修正が2箇所残っていた。
+
+- UI-A-02（`infra-popover-${RETH1_ID}`）: `card.getByTestId(...)` のまま
+- UI-A-05（`glossary-popover-container`）: `card.getByTestId(...)` のまま
+
+いずれもnode-internals UI-D-03と同一のportalスコープ崩れ（portal描画で
+カードの子孫にならないため`card`スコープのlocatorが解決できない）。両方を
+`page.getByTestId(...)` へ修正した。用語アンカー（`glossary-term-container`）
+自体はカードの子孫として描画されるため`card`スコープのまま据え置いた。
+
+その他のportal系specは問題なし。`chain-ribbon.spec.ts` は外側の
+`chain-ribbon-popover-${hash}` を`page.getByTestId(...)` で取得し、内側の
+`chain-ribbon-popover-parent-${hash}` はportal描画されたpopoverの子孫として
+`popover.getByTestId(...)` で取得しており、いずれも正しいスコープ。
+`node-internals.spec.ts`（UI-D-03修正済み）・`contract-lifecycle.spec.ts`
+（UI-C-04修正済み）も確認済み。wallet-balance / token-balance / p2p-graph
+等の残りのspecはポップオーバーのホバー検証を含まない。
+
+**2. UI-ERR-02の検証強化**
+
+「ゴーストが作られない」「即座にエラートーストが出る」の両方は検証済み
+だったが、ゴースト数0の検証（`toHaveCount(0)`）を先に評価していたため、
+クリックのdispatchが処理される前の空の状態を評価して素通りしうる余地が
+あった（ゴーストが作られる退行を見逃す）。エラートーストの出現（=dispatch
+完了）を先に待ってからゴースト数0を確認する順序へ変更し、トーストが空文字で
+ないこと（理由の文言が入っていること）も確認するようにした。
+
+**3. dispatchHoverの境界値確認（コード変更なし）**
+
+`dispatchHover(target)` は `target.dispatchEvent("mouseover")` への薄い委譲。
+対象要素が存在しない場合はPlaywrightのauto-waitがタイムアウトし明示的な
+エラーで失敗する（無言では通らない）ため、テストヘルパーとして望ましい
+挙動になっている。存在チェックを足すと本来検出すべきテスト失敗を握りつぶす
+ことになるため、防御コードは追加しない。
+
+#### 検証結果
+
+- `pnpm --filter @chainviz/e2e build`: 通過（`@chainviz/shared` を先にビルド
+  した上で `tsc --noEmit` が exit 0）
+- frontend側 `popoverPortalConsistency.test.tsx` / `GlossaryTerm.testid.test.tsx`
+  / `InfraPopover.testid.test.tsx`（計19件）を実行し全通過。
+  `popoverPortalConsistency.test.tsx` は InfraPopover・GlossaryTerm を含む
+  全8ポップオーバーについて「popoverは`document.body`配下にあり、トリガーの
+  ローカルサブツリー（container）の子孫ではない」ことを固定しており、本修正
+  （`card`スコープ → `page`スコープ）の正しさを直接裏付ける。
+- 実Docker環境でのinfra-displayフル再実行は、作業時点で共有スタック
+  （`chainviz-ethereum`）に他エージェントの並行作業由来の追加コンテナ
+  （`beacon3`/`reth3`/`test-2`/`workbench-3`、いずれも2時間稼働）が存在し、
+  infra-displayが期待するノード数（compose 6 + workbench = 7）と一致しない
+  ため、破壊的な `down -v` なしには実施できなかった。E2Eの排他ロックは
+  空だが、追加コンテナは並行作業由来（実装記録でも `beacon3`/`reth3`/`test-2`
+  は他エージェント由来と記載）であり使用中の可能性を排除できないため、
+  共有スタックのdown/upは行っていない。修正の正しさは上記の静的根拠・
+  frontend単体テスト・実装担当による同一パターン（node-internals UI-D-03、
+  同じInfraPopover・同じ`infra-popover-${id}`）の実Docker再現の3点で裏付け
+  られる。クリーンな共有スタックが得られた時点でinfra-display.spec.ts
+  （UI-A-01〜UI-A-05）のフル再実行による最終確認を残す。
+
+#### 決定事項・注意点
+
+- 変更はE2Eテストのlocator・検証順序のみ。実装コード・SCENARIOS.mdの
+  シナリオ記述に変更は無い（挙動・シナリオ自体は変えていないため）。
+- infra-display UI-A-02/UI-A-05は`card.hover()`/`term.hover()`（実マウス
+  ホバー）を維持した。RETH1は compose ノードで初期レイアウト上ビューポート
+  内に配置され、node-internals UI-D-03のDRIVENノード（実行時追加で
+  ビューポート外に置かれうる）と異なりviewport外問題が生じにくいこと、
+  およびUI-A-02の「ホバーを外すとポップオーバーが消える」ステップが
+  `page.mouse.move(0,0)` の実マウス移動に依存する（dispatchHoverで開くと
+  実ポインタが要素上を通らず`mouseout`が発火せず閉じない）ことから、
+  最小変更としてlocatorスコープのみを修正した。
