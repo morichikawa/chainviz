@@ -11,6 +11,16 @@ import { SidePanelHost } from "./SidePanelHost.js";
 
 afterEach(cleanup);
 
+// このファイルは contractSource 周りの振り分け・ダングリングガードのみを
+// 見る。commsLog 側は別ファイル（SidePanelHost.commsLog.test.tsx）でテスト
+// するため、ここでは何もしない最小のダミー値を渡す。
+const noopCommsLog = {
+  visibleEntries: [],
+  filters: { categories: {} as never, nodeId: null },
+  toggleCategory: () => {},
+  setNodeFilter: () => {},
+};
+
 function contract(overrides: Partial<ContractEntity> = {}): ContractEntity {
   return {
     kind: "contract",
@@ -42,7 +52,11 @@ function renderHost(
       <GlossaryProvider glossary={{}}>
         <SidePanelProvider>
           <OpenButton address={address} />
-          <SidePanelHost contractsByAddress={contractsByAddress} />
+          <SidePanelHost
+            contractsByAddress={contractsByAddress}
+            commsLog={noopCommsLog}
+            commsLogNodeOptions={[]}
+          />
         </SidePanelProvider>
       </GlossaryProvider>
     </LanguageProvider>,
@@ -84,7 +98,11 @@ describe("SidePanelHost", () => {
         <GlossaryProvider glossary={{}}>
           <SidePanelProvider>
             <OpenButton address={target.address} />
-            <SidePanelHost contractsByAddress={withEntity} />
+            <SidePanelHost
+              contractsByAddress={withEntity}
+              commsLog={noopCommsLog}
+              commsLogNodeOptions={[]}
+            />
           </SidePanelProvider>
         </GlossaryProvider>
       </LanguageProvider>,
@@ -98,7 +116,11 @@ describe("SidePanelHost", () => {
         <GlossaryProvider glossary={{}}>
           <SidePanelProvider>
             <OpenButton address={target.address} />
-            <SidePanelHost contractsByAddress={new Map()} />
+            <SidePanelHost
+              contractsByAddress={new Map()}
+              commsLog={noopCommsLog}
+              commsLogNodeOptions={[]}
+            />
           </SidePanelProvider>
         </GlossaryProvider>
       </LanguageProvider>,
@@ -109,8 +131,14 @@ describe("SidePanelHost", () => {
   it("replaces the panel content when a second address is opened while the first is showing (exclusive)", () => {
     // 複数のコントラクトカードから連続してソース表示を開いた場合、前のパネルが
     // 置き換わり、常に最後に開いたコントラクトだけが表示されることを確認する。
-    const first = contract({ name: "ChainvizToken", address: `0x${"a".repeat(40)}` });
-    const second = contract({ name: "Counter", address: `0x${"b".repeat(40)}` });
+    const first = contract({
+      name: "ChainvizToken",
+      address: `0x${"a".repeat(40)}`,
+    });
+    const second = contract({
+      name: "Counter",
+      address: `0x${"b".repeat(40)}`,
+    });
     const map = new Map([
       [first.address, first],
       [second.address, second],
@@ -121,7 +149,11 @@ describe("SidePanelHost", () => {
           <SidePanelProvider>
             <OpenButton address={first.address} />
             <OpenButton address={second.address} />
-            <SidePanelHost contractsByAddress={map} />
+            <SidePanelHost
+              contractsByAddress={map}
+              commsLog={noopCommsLog}
+              commsLogNodeOptions={[]}
+            />
           </SidePanelProvider>
         </GlossaryProvider>
       </LanguageProvider>,

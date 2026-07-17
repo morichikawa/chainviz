@@ -76,7 +76,7 @@ import {
   preserveMeasuredDimensions,
 } from "../entities/canvasNode.js";
 import type { Position } from "../layout/layoutStore.js";
-import { SidePanelHost } from "../side-panel/SidePanelHost.js";
+import { SidePanelHost, type SidePanelHostProps } from "../side-panel/SidePanelHost.js";
 
 // nodeTypes / edgeTypes は再レンダーごとに作り直すと React Flow が警告するため外に出す。
 const nodeTypes: NodeTypes = {
@@ -121,6 +121,12 @@ export interface CanvasProps {
    * 表示になる）。
    */
   transactions?: TransactionEntity[];
+  /**
+   * 通信ログ（Issue #317）。蓄積・フィルタ状態は App 層の `useCommsLog` が
+   * 持ち、ここでは `SidePanelHost` へそのまま橋渡しするだけ
+   * （`transactions` と同じ「rfNodes から導出できない値は親から渡す」理由）。
+   */
+  commsLog: SidePanelHostProps["commsLog"];
 }
 
 function CanvasInner({
@@ -129,6 +135,7 @@ function CanvasInner({
   onPersistPosition,
   layerFilter = "all",
   transactions = [],
+  commsLog,
 }: CanvasProps) {
   const [rfNodes, setRfNodes] = useState<CanvasFlowNode[]>(nodes);
   const [rfEdges, setRfEdges] = useState<CanvasFlowEdge[]>(edges);
@@ -405,6 +412,24 @@ function CanvasInner({
     return map;
   }, [rfNodes]);
 
+  // Issue #317: 通信ログのノードフィルタ（設計メモ §5.4）に出す、現存の
+  // node/workbench 一覧。表示名はカードと同じ解決（node は containerName、
+  // workbench は label）を使う（`resolveActorLabel` と同じ流儀。ここでは
+  // rfNodes の data.entity から直接引けるので専用の関数化はしない）。
+  // contractsByAddress と同じ「rfNodes を filter するだけ」の流儀。
+  const commsLogNodeOptions = useMemo(() => {
+    const options: { id: string; label: string }[] = [];
+    for (const node of rfNodes) {
+      if (node.type !== "infra") continue;
+      const entity = node.data.entity;
+      options.push({
+        id: entity.id,
+        label: entity.kind === "workbench" ? entity.label : entity.containerName,
+      });
+    }
+    return options;
+  }, [rfNodes]);
+
   const { getNode, setCenter, getZoom } = useReactFlow();
 
   // コントラクト一覧パネルの行クリック。対象カードへパンし（ズーム倍率は
@@ -515,7 +540,11 @@ function CanvasInner({
         nodeEntries={mempoolNodeEntries}
         onSelectTx={handleJumpToMempoolTx}
       />
-      <SidePanelHost contractsByAddress={contractsByAddress} />
+      <SidePanelHost
+        contractsByAddress={contractsByAddress}
+        commsLog={commsLog}
+        commsLogNodeOptions={commsLogNodeOptions}
+      />
     </ReactFlow>
   );
 }

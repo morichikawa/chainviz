@@ -6,6 +6,7 @@ import type { CommandActions } from "../commands/useCommands.js";
 import { GlossaryProvider } from "../glossary/GlossaryProvider.js";
 import type { Glossary } from "../glossary/types.js";
 import { LanguageProvider } from "../i18n/LanguageProvider.js";
+import { SidePanelProvider } from "../side-panel/SidePanelContext.js";
 import { CanvasToolbar, type CanvasToolbarProps } from "./CanvasToolbar.js";
 
 // Issue #251: CanvasToolbar はノード追加ボタンの hint に GlossaryTerm を
@@ -61,7 +62,12 @@ export function renderToolbar(
     <LanguageProvider initialLanguage={lang}>
       <GlossaryProvider glossary={testGlossary}>
         <CommandActionsProvider actions={full}>
-          <CanvasToolbar {...props} />
+          {/* Issue #317: CanvasToolbar は通信ログの開閉トグルボタンのために
+              useSidePanel() を読むため、テストでも Provider 配下でレンダー
+              する必要がある（ContractCard.test.tsx と同じ理由）。 */}
+          <SidePanelProvider>
+            <CanvasToolbar {...props} />
+          </SidePanelProvider>
         </CommandActionsProvider>
       </GlossaryProvider>
     </LanguageProvider>,
