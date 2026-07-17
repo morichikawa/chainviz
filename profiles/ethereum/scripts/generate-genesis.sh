@@ -27,8 +27,10 @@
 # 「停止時間」だけでは「genesis は古いが停止は短い」down→up を見逃す
 # ため、判定の入力を genesis 年齢に置き換えた)。
 #
-# まっさらな chain で始めたい場合は `docker compose down -v` でボリュームごと
-# 破棄すれば、次回起動時に再生成される(こちらは常に有効な手動リセット)。
+# まっさらな chain で始めたい場合は `docker compose down -v --remove-orphans`
+# でボリュームごと破棄すれば、次回起動時に再生成される
+# (こちらは常に有効な手動リセット。--remove-orphans が必要な理由は
+# docker-compose.yml 冒頭コメント・README.md・Issue #359 を参照)。
 set -e
 
 GEN=/data/metadata
@@ -176,7 +178,7 @@ should_regenerate() {
 }
 
 if ! should_regenerate; then
-  echo "[generate] 既存の genesis を再利用する。作り直すには 'docker compose down -v' でボリュームを破棄すること。"
+  echo "[generate] 既存の genesis を再利用する。作り直すには 'docker compose down -v --remove-orphans' でボリュームを破棄すること。"
   exit 0
 fi
 

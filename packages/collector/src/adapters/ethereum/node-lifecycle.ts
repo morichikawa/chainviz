@@ -19,6 +19,13 @@
 // targets.ts）が既存ノードと同様に機能する。service 名は reth1/reth2 の慣習に
 // 合わせて reth<n> / beacon<n>（n>=3）とし、reth と beacon で同じ n を共有する
 // ことで両者が同じ論理ノードとして対応付く。
+//
+// project/service に加えて CONFIG_HASH_LABEL（com.docker.compose.config-hash）
+// も必須で付ける。これが無いと Docker Compose 自身がコンテナを一切認識せず
+// （`docker compose ps -a` にも出ない）、`docker compose down -v
+// --remove-orphans` で削除されずネットワークも破棄できない不具合があった
+// （Issue #359。詳細は labels.ts の CONFIG_HASH_LABEL コメントと
+// docs/worklog/issue-359.md）。
 
 import path from "node:path";
 import type { WorkbenchOperation } from "@chainviz/shared";
@@ -36,6 +43,7 @@ import {
 import {
   COMPOSE_PROJECT_LABEL,
   COMPOSE_SERVICE_LABEL,
+  CONFIG_HASH_LABEL,
   MANAGED_LABEL,
   ROLE_LABEL,
 } from "./labels.js";
@@ -61,6 +69,15 @@ const CONSENSUS_IP_PREFIX = "172.28.2.";
 /** ノード番号の採番範囲。1,2 は compose のノードが使用済みなので 3 から。 */
 const NODE_INDEX_START = 3;
 const NODE_INDEX_END = 254;
+
+/**
+ * addNode/addWorkbench が作るコンテナに付ける CONFIG_HASH_LABEL の値
+ * （Issue #359）。動的追加コンテナは docker-compose.yml のサービス定義に
+ * 対応するエントリを持たないため、Compose がこの値を実際のサービス設定と
+ * 比較することはなく、固定のプレースホルダーで問題ない（CONFIG_HASH_LABEL
+ * のコメント参照）。
+ */
+const DYNAMIC_CONFIG_HASH = "chainviz-dynamic";
 
 /** reth の Engine API（authrpc）ポート。 */
 const ENGINE_PORT = 8551;
@@ -732,6 +749,7 @@ export class EthereumNodeLifecycle implements NodeLifecycle {
       [COMPOSE_SERVICE_LABEL]: service,
       [MANAGED_LABEL]: "true",
       [ROLE_LABEL]: role,
+      [CONFIG_HASH_LABEL]: DYNAMIC_CONFIG_HASH,
     };
   }
 
@@ -745,6 +763,7 @@ export class EthereumNodeLifecycle implements NodeLifecycle {
       [MANAGED_LABEL]: "true",
       [ROLE_LABEL]: "workbench",
       [WALLET_INDEX_LABEL]: String(walletIndex),
+      [CONFIG_HASH_LABEL]: DYNAMIC_CONFIG_HASH,
     };
   }
 
