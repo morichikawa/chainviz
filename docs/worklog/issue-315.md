@@ -499,3 +499,72 @@ worktree 環境ではブラウザ起動に必要なシステムライブラリ(l
   基本テストで既にカバーされていた。本作業はその周辺の穴埋め(列挙範囲の
   厳密性・解決順非依存・partial failure の end-to-end・一般則としての
   unit ガード等)を追加したもの。
+
+## レビュー(2026-07-17)
+
+- 担当: reviewer
+- 対象: node-env + collector + frontend の3担当分すべて(cherry-pick 合流後の
+  `issue-315-erc721-ownership-frontend` ブランチ、HEAD = 06e1186)
+- 判定: **要修正(軽微)**。ロジック・型・境界・テストはすべて合格水準。
+  指摘は下記2件のみで、いずれもコメントの追記・整形(ロジック変更なし)
+
+### 確認した内容
+
+- `packages/shared` の型変更(`NftToken` / `ContractEntity.nft` / `nftTokens`):
+  設計メモどおり。`token`(数量・decimals あり)と `nft`(個体・symbol のみ)が
+  別軸のフィールドとして分離されており、型レベルの混同なし。tokenId は
+  balance/TokenBalance.amount と同じ10進文字列で精度問題なし。省略=未観測/
+  空配列=観測済み未発行の区別も doc コメントに明記されている
+- 境界の遵守: frontend は `ContractEntity.nftTokens` を読むだけで、
+  `eth_call`/`ownerOf`/`totalSupply` 等のチェーン固有語彙は collector の
+  `erc721.ts`(viem ABI もこのファイル内に自己完結)に閉じている。frontend 側で
+  ERC-721 に言及するのは `chain-profiles/ethereum/`(チェーンプロファイルの
+  フロント表現セット)と glossary・モックのみで、いずれも許容範囲。shared の
+  スキーマのフィールド名はチェーン非依存(doc コメント内の「EVM では〜」は
+  既存フィールドと同じ説明例示の流儀)
+- チェーンプロファイル独立性: 既存プロファイルへの分岐追加なし。
+  ChainvizToken/Counter の既存カタログエントリは無変更(純粋な追加のみ)
+- エラーの握りつぶし: なし。`NftTracker.fetchLedger` は全ノード失敗時に
+  最後に捕捉した実際のエラーをログし(固定文言へのすり替えなし。テストで
+  検証済み)、`fetchErc721Ledger` は部分失敗で reject する二値契約。frontend の
+  `compareTokenId` の catch → 文字列比較フォールバックは理由コメントあり
+- 固定値: `NFT_POLL_INTERVAL_MS = 3000` は他層と揃えた周期でコメントあり。
+  観測環境依存の決め打ち定数なし
+- テストの質: tester 追加分を含め意味のある検証になっている。特に
+  ownerOf の列挙範囲(1..totalSupply ちょうど)の回帰ガードは実装を意図的に
+  壊して fail することを確認済みと記録されており、解決順非依存の並び保証・
+  部分失敗→undefined の end-to-end・空配列洗い替え・大文字小文字表記ゆれ・
+  `unit: "token"` 混入の一般則ガードなど、境界が広くカバーされている
+- cherry-pick 合流の過不足: `git diff issue-315-erc721-ownership..HEAD --
+  packages/collector packages/shared profiles docs/ARCHITECTURE.md` の差分は
+  tester が本ブランチで追加したテスト3ファイル分のみで、designer/collector/
+  node-env の内容は過不足なく反映されている
+- コミット粒度: main..HEAD の22コミットはいずれも単一関心事で
+  Conventional Commits 形式に適合
+- `pnpm lint` / `pnpm build` / `pnpm test` 全パッケージ通過を実測で確認
+  (shared 74 / e2e 171 / collector 1523 / frontend 2360)
+
+### 指摘(要修正・いずれも軽微)
+
+1. **collector: RPC 回数のスケール前提がコードコメントに無い**。
+   設計メモ(本ファイル「RPC 回数は…固定上限は設けない」)と
+   `docs/ARCHITECTURE.md` §13.2 は「学習用ローカル環境で発行数は高々数十個
+   という前提を置き、固定上限は設けない。**この前提はコード上のコメントにも
+   明記する**」と宣言しているが、`erc721.ts` / `nft-tracker.ts` のどちらにも
+   このスケール前提のコメントが無い(burn なし+連番採番の前提は `erc721.ts`
+   に明記済み。無いのはスケール前提のみ)。`fetchErc721Ledger` は
+   `Number(totalSupply)` 変換と無制限の `Promise.all` ファンアウトがこの
+   前提に依存しているため、docs が約束したとおり `erc721.ts` の
+   doc コメントに1〜2行追記すること(docs と実装の齟齬の解消)
+2. **frontend: `WalletPopover.tsx` の doc コメント整形崩れ**。129〜130行目、
+   ブロックコメント内に `*` プレフィックスの無い空行が1行紛れ込んでいる
+   (`* ...同じ関数）。` の直後)。構文上は問題なく lint も通るが、編集時の
+   消し忘れなので `*` 付きの空行1行に直すこと
+
+### 差し戻し判断の材料
+
+- 2件ともコメントのみの修正でロジック・テストに影響しない。修正後の
+  再レビューは該当2ファイルの差分確認だけで足りる(ビルド・テストの
+  全再実行は pre-push フックに委ねてよい)
+- `docs/PLAN.md` の #315 チェックボックスは上記2件の解消を確認してから
+  チェックする(未チェックのまま残している)
