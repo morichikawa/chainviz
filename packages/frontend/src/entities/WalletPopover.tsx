@@ -127,7 +127,6 @@ function WalletPopoverTxItem({
  * コントラクト側に持つ設計のため、`contractsByAddress` の全コントラクトから
  * `resolveWalletNftHoldings` で導出する（WalletCard と同じ関数）。
  *
-
  * `anchorRef` はこのポップオーバーを開いたカード本体への ref（Issue #245）。
  * React Flow のノードはそれぞれ独立したスタッキングコンテキストを持つため、
  * `PopoverPortal` でこのカードを基準位置に body 直下へ描画し、隣接カードの
