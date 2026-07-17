@@ -171,3 +171,159 @@ attempting click action
 - 偽 collector(port 4899)・vite(port 5379)は調査終了時に停止済み
 - 共有 Docker スタック・他 worktree には一切触れていない
 - リポジトリへの変更は本 worklog と `docs/WORKLOG.md` 索引のみ
+
+### 2026-07-18 Issue #373 修正方針の設計(designer)
+
+- 担当: designer
+- ブランチ: issue-373-fitview-timing-fix
+- 前提: detective の調査記録(上記)のとおり、根本原因は「React Flow の
+  `fitView` prop による初期フィットが、スナップショット到着前から存在する
+  唯一のノード(チェーンリボン)に対して発火し、zoom=maxZoom(2)のまま
+  再フィットされない」こと。チェーンリボンが到着前から nodes に存在する
+  設計(Issue #298)自体は変えない。`packages/shared` の型変更は不要。
+
+## 6. 採用する方針: 「最初のスナップショット反映後の遅延初期フィット」+ ズーム上限 1
+
+`fitView` prop をやめ、「最初のスナップショットの内容がキャンバスに載り、
+全ノードの計測が済んだ後」にフロントが `fitView({ maxZoom: 1 })` を
+1 回だけ呼ぶ(detective の候補 1 を主軸に、候補 2 のズーム抑制を初期
+フィット限定の保険として併用)。仕様は ARCHITECTURE.md §14 に反映済み。
+
+検討した代替案と棄却理由:
+
+- **maxZoom 抑制のみ(候補 2 単独)**: フィット対象がリボン 1 枚のままなので
+  「カード群が視野に入る」保証がなく、緩和にしかならない。棄却
+- **`hasReceivedSnapshot` まで Canvas をマウントしない(ゲート方式)**:
+  実装は最も単純で、組み込みの `fitView` prop が「完全な初期集合」に
+  対してそのまま正しく働く。しかし collector 未接続・接続失敗時に
+  Canvas 内のリボン・SidePanelHost(用語集パネル等)まで表示されなくなる
+  UX 退行があり(現状は接続前・未接続でもリボンと各パネルが見える)、
+  「リボンは接続前から常設」という表示上の意味も失うため棄却
+
+挙動仕様として決めた点(理由つき):
+
+1. **いつフィットするか**: 最初のスナップショット反映+計測完了後に 1 回。
+   `hasReceivedSnapshot`(useWorldState 既存)を契機に使う
+2. **ズーム上限 1(等倍)**: スナップショットが実質空(リボンのみ)の世界で
+   2 倍ズームに張り付くのを防ぐ。値 1 は「初期表示の中立な上限」という
+   UX 判断であり環境依存の実測値ではない(コードコメントにもこの根拠を
+   書くこと)。ユーザー操作の maxZoom prop(2)・minZoom(0.2)は変えない
+3. **初期フィット後はカメラを自動で動かさない**: 既存の Miro 原則
+   (Canvas.tsx の handleJumpToContract コメント参照)と一貫。ref ガードで
+   2 回目以降のスナップショット・差分では再フィットしない
+4. **再接続の考慮**: 現行 client.ts に自動再接続は無い(ARCHITECTURE.md
+   「未確定のまま残す項目」)。ページ再読込は再マウントなので新しい初期
+   フィットが走る(正しい)。将来自動再接続が実装されても
+   `hasReceivedSnapshot` は下がらず ref ガードも生きているため、2 回目の
+   スナップショットでカメラが勝手に動くことはない
+5. **スナップショット到着前の見た目**: リボンが既定ビューポート
+   (zoom 1, 原点)で見える。リボンの既定位置は (-20, 260) なのでほぼ視野内。
+   従来(リボンへ 2 倍ズーム → カード出現でも据え置き)より穏当で、初回の
+   カメラ移動は「スナップショット反映と同時のフィット 1 回」だけになり
+   ガタつきはむしろ減る。フィットに duration は付けない(起動時の
+   アニメーションは不要。即時でよい)
+6. **到着前にユーザーがパン/ズームした場合**: 初期フィットが 1 回だけ
+   上書きする。窓は通常サブ秒であり、「操作済みなら初期フィットを
+   スキップする」ガードは過剰実装として今回は入れない(問題になったら
+   別 Issue)
+
+## 7. データフローと競合(レースコンディション)の扱い
+
+契機の配線: `useWorldState.hasReceivedSnapshot` → `App.tsx`(取得済み。
+L153)→ `Canvas` の新 prop → `CanvasInner` 内の初期フィットフック。
+
+単純に `hasReceivedSnapshot && useNodesInitialized()` を条件にすると
+競合が残る点に注意(実装上の要):
+
+- コミット 1: スナップショット到着。`hasReceivedSnapshot=true`・`nodes`
+  prop は 17 件に再計算されるが、`CanvasInner` の `useEffect([nodes])` が
+  `setRfNodes` を予約するだけで、React Flow 内部ストアはまだリボン 1 枚。
+  `useNodesInitialized()` は旧状態(リボン計測済み)のまま true を返すため、
+  ここでフィットすると**リボンだけへのフィットになり元の不具合が再発する**
+- 対策: フィット条件に「`nodes` prop の全 id が React Flow 内部ストア
+  (`getNodes()`)に存在する」ことを加える。コミット 1 では 17 件中 1 件
+  しか無いのでスキップされ、`setRfNodes` 反映 → 新ノード計測開始で
+  `useNodesInitialized()` が false → 計測完了で true に戻ったコミットで
+  条件が揃い、正しい全体フィットになる
+- スナップショットが実質空(リボンのみ)の場合は条件が最初から揃うため、
+  リボンへのフィット(それが全世界)で正しい。ズーム上限 1 が効くので
+  過剰ズームにもならない
+
+## 8. 実装分担
+
+### frontend(描画担当。本修正の主担当)
+
+- `packages/frontend/src/canvas/initialFit.ts`(新規): 純粋ロジック。
+  `shouldPerformInitialFit({ alreadyFitted, hasReceivedSnapshot,
+  nodesInitialized, expectedNodeIds, storeNodeIds }): boolean` と
+  `INITIAL_FIT_MAX_ZOOM = 1`(根拠コメント付き)。React 非依存にして
+  ユニットテスト可能にする
+- `packages/frontend/src/canvas/useInitialFit.ts`(新規): React 配線。
+  `useInitialFit(hasReceivedSnapshot: boolean, nodes: CanvasFlowNode[])`。
+  内部で `useNodesInitialized()` + `useReactFlow()`(`getNodes` /
+  `fitView`)+ 一度きり ref。effect の deps は
+  `[hasReceivedSnapshot, nodesInitialized, nodes]`。条件成立で
+  `fitView({ maxZoom: INITIAL_FIT_MAX_ZOOM })` を呼び ref を立てる。
+  ReactFlowProvider 配下でしか使えない(CanvasInner 内で呼ぶ)
+  - 純粋ロジックとフックを 1 ファイルにまとめるかは実装判断でよい
+    (責務は「初期フィット」1 つ。テストしやすさから 2 ファイルを推奨)
+  - `useEffect` でよい(計測完了コミット直後の 1 フレームに未フィット描画が
+    見える可能性は理論上あるが、React Flow は未計測ノードを不可視で描く
+    ため窓は極小。実機で気になる場合のみ `useLayoutEffect` に変える判断を
+    実装担当に委ねる)
+- `packages/frontend/src/canvas/Canvas.tsx`: `<ReactFlow>` から `fitView`
+  prop を削除し、`CanvasProps` に `hasReceivedSnapshot?: boolean`
+  (**既定 true**)を追加、`CanvasInner` で `useInitialFit` を呼ぶ。既定を
+  true にするのは、Canvas を単体で使う既存テスト・ハーネス(prop 未指定)で
+  「ノードが揃い次第フィット」という従来相当の挙動を保つため(jsdom は
+  計測が走らないため実質影響なし)
+- `packages/frontend/src/app/App.tsx`: `<Canvas hasReceivedSnapshot=
+  {hasReceivedSnapshot}>` を渡す(値は取得済み。1 行の配線のみ)
+- ユニットテスト: `shouldPerformInitialFit` に対して最低限
+  (1) スナップショット未受信 → false、(2) 受信直後でストアに全 id が
+  無い(§7 コミット 1 相当) → false、(3) 計測未完了 → false、
+  (4) 全条件成立 → true、(5) フィット済み → false、
+  (6) リボンのみの空世界 → true、を書く(異常系・境界の強化は tester)
+
+### e2e(同ブランチで frontend 担当が実施)
+
+本質修正により、**初期スナップショットに含まれるカード**へのクリックは
+すべて視野内が保証される。UI-CMD-07・commands-node の削除クリック・
+UI-D-03・`cleanup.ts` の安全網は毎回 `page.goto("/")` 直後に対象へ触れる
+ため、テストコード変更なしで解決する。
+
+一方「**ページロード後に追加されたカード**」は初期フィットに含まれず、
+視野内保証が構造的に無い。detective の提案どおり共通ヘルパーを最小限
+追加する:
+
+- `packages/e2e/src/ui/support/viewport.ts`(新規): `fitCanvasView(page)`。
+  React Flow Controls のフィットボタン(安定クラス
+  `.react-flow__controls-fitview`)をクリックして全ノードを視野に収める
+  (ユーザーが実際に行える操作をなぞる方式。フロントにテスト用フックを
+  生やさない)
+- 適用箇所(基準: クリック対象がページロード後に diff で追加されたカード):
+  - `multi-client.spec.ts` UI-MULTI-01: pageB での削除ボタンクリックの前
+    (pageB のロード後に pageA がワークベンチを追加しており、初期フィットに
+    含まれない唯一の現行シナリオ)
+  - `support/cleanup.ts` `removeInfraCardIfPresent`: `waitForButton` 成功後・
+    `click` 前に挟む(安全網はコンテナ残留に直結するため、視野問題への
+    頑健化の価値が高い)
+  - それ以外のクリック箇所には散布しない(上記基準で判断する)
+
+### tester / QA への申し送り
+
+- tester: `shouldPerformInitialFit` の境界(空の expectedNodeIds、ストアに
+  余分な id がある場合=ゴースト残り等)を強化
+- QA: 回帰確認には detective の合成環境(偽 collector + 実フロント + 実
+  spec。§1)がそのまま使える。「修正前に UI-CMD-07 が再現失敗し、修正後に
+  合格する」の両方を確認すること(CLAUDE.md「直したはずで済ませない」)。
+  実測では fit 発火 t=337ms vs snapshot 到着 t=344ms 程度の競合なので、
+  修正前の再現は同環境なら安定して起きる
+
+## 9. 未決事項(実装時に判断してよい範囲)
+
+- `useEffect` か `useLayoutEffect` か(§8 のとおり既定は useEffect)
+- initialFit.ts / useInitialFit.ts のファイル分割粒度
+- `fitView` の padding(既定 0.1 のままでよい想定)
+- `fitCanvasView` ヘルパーの置き場所(viewport.ts 新設を推奨、既存
+  support/operations.ts への追記でも可)
