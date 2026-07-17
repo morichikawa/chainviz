@@ -24,6 +24,12 @@ export function isLanguage(value: unknown): value is Language {
 /**
  * `{ja, en}` 形式のテキストから現在の言語の文字列を取り出す。
  * 対象言語の値が空/未定義ならデフォルト言語へフォールバックする。
+ *
+ * この空文字フォールバックは glossary データ（用語の name/definition や
+ * チェーンプロファイルの label/description など）向けの防御。glossary の
+ * parse はトリムのみで空文字を弾かないため、データ不備で空文字翻訳が
+ * 入りうることに備えている。UI 文言（`messages.ts`）はこの関数を経由
+ * しない（`translate()` を使う。Issue #341）。
  */
 export function pickLocale(
   localized: Partial<Localized> | undefined,
@@ -38,11 +44,20 @@ export function pickLocale(
   return localized[DEFAULT_LANGUAGE] ?? "";
 }
 
-/** UI 文言を現在の言語で引く。未知キーはキー文字列をそのまま返す。 */
+/**
+ * UI 文言を現在の言語で引く。未知キーはキー文字列をそのまま返す。
+ *
+ * `messages.ts` の `Localized` は `Record<Language, string>`（全言語必須）
+ * で型検査されるため、値が空文字であることは常に意図的（例:
+ * `legend.hint.suffix.en` は英語の語順の都合で空文字にしている）。
+ * よって `pickLocale()` のような空文字フォールバックはせず、
+ * `entry[lang]` をそのまま返す（Issue #341: フォールバックにより
+ * 日本語の断片が英語表示に混入していた不具合の修正）。
+ */
 export function translate(key: MessageKey, lang: Language): string {
   const entry = messages[key] as Localized | undefined;
   if (!entry) return key;
-  return pickLocale(entry, lang);
+  return entry[lang];
 }
 
 /**
