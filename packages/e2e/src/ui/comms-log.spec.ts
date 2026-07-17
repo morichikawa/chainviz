@@ -124,6 +124,18 @@ test("UI-LOG-03: ブロック進行で「ブロック受信」エントリが増
 
 test("UI-LOG-04: カテゴリフィルタで該当カテゴリだけに絞られる", async ({ page }) => {
   await page.goto("/");
+
+  // 操作（RPC）カテゴリのエントリを決定的に発生させる。ログ蓄積はパネルの
+  // 開閉と無関係にApp層のフックで常時行われる（設計メモ§4-5・§7.1）ため、
+  // パネルを開く前に実行してよい。逆に、通信ログパネル（右ドック約420px）
+  // を開いた状態でワークベンチを追加すると、managedワークベンチが2台
+  // （このテストが追加する分 + 既存分）になりグリッド配置が列方向へずれ、
+  // 静的ワークベンチの操作ボタンがパネルの裏に回り込んでクリックできなく
+  // なることがあった（Issue #317 QA差し戻し）。パネルを開く前に操作を
+  // 済ませてこの重なりを回避する。
+  const { address } = await addWorkbenchAndGetWallet(page, "comms-log-filter-sender");
+  await submitTransfer(page, STATIC_WORKBENCH_ID, { to: address, amount: "0.001" });
+
   await openCommsLogPanel(page);
 
   // 複数カテゴリが蓄積されるまで、次のブロックが生成されるのを待つ
@@ -135,22 +147,13 @@ test("UI-LOG-04: カテゴリフィルタで該当カテゴリだけに絞られ
     .toBeGreaterThan(0);
   await expect(commsLogEntriesOf(page, "internal").first()).toBeVisible();
 
-  // 操作（RPC）カテゴリのエントリを決定的に発生させる。tick 由来の
-  // ブロック/内部API等はモック・実環境どちらでも継続的に生じるが、操作
-  // カテゴリはワークベンチから明示的に送金しない限り0件のままになりうる
-  // ため、UI-LOG-02 と同様に送金操作を実行してから絞り込みに進む
-  // （Issue #317 QA差し戻し: 以前は UI-LOG-02 が作ったワークベンチの
-  // ポーリングが偶然この窓に入っていたため見かけ上合格していた）。
-  const operationBefore = await commsLogEntriesOf(page, "operation").count();
-  await test.step("ワークベンチカードから送金操作を実行し、操作エントリを発生させる", async () => {
-    const { address } = await addWorkbenchAndGetWallet(page, "comms-log-filter-sender");
-    await submitTransfer(page, STATIC_WORKBENCH_ID, { to: address, amount: "0.001" });
-    await expect
-      .poll(async () => commsLogEntriesOf(page, "operation").count(), {
-        timeout: OPERATION_EFFECT_TIMEOUT_MS,
-      })
-      .toBeGreaterThan(operationBefore);
-  });
+  // 上で実行した送金操作の操作エントリが記録されるまで待つ（パネルを
+  // 開く前に送金しているため、ここで初めてDOMに現れる）。
+  await expect
+    .poll(async () => commsLogEntriesOf(page, "operation").count(), {
+      timeout: OPERATION_EFFECT_TIMEOUT_MS,
+    })
+    .toBeGreaterThan(0);
 
   await test.step("「操作」以外の全カテゴリチップを off にする", async () => {
     // 各クリックが実際に反映される（aria-pressed が false になる）ことを

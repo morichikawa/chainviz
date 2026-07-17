@@ -728,3 +728,46 @@ UI-LOG-02 と同様に `addWorkbenchAndGetWallet` + `submitTransfer` で送金
 
 - `pnpm --filter @chainviz/e2e build`（`tsc --noEmit`）が通ることを確認。
 - 実 Docker スタックでの再実行は本対応では行っていない（QA に委ねる）。
+
+### 2026-07-17 UI-LOG-04 追加フレーキー対応その2（frontend）
+
+- 担当: frontend
+- ブランチ: issue-317-comms-log-panel
+- 経緯: 前節の修正（送金操作を明示的に発生させる変更）を QA が実 Docker
+  スタックで再検証したところ、UI-LOG-03 は合格したが、UI-LOG-04 が別原因
+  で新たに失敗することが判明した。
+
+#### 問題
+
+前節の修正は「通信ログパネルを開いた状態のまま」`addWorkbenchAndGetWallet`
++ `submitTransfer(STATIC_WORKBENCH_ID)` を実行していた。この状態だと、
+UI-LOG-02 が作った managed ワークベンチ（`comms-log-sender`）が残存した
+まま UI-LOG-04 自身がさらに `comms-log-filter-sender` を追加するため、
+managed ワークベンチが2台になる。カードのグリッド配置はエンティティ数に
+対して決定的なため、この2台分だけ列がずれて静的ワークベンチのカードが
+右ドック（約420px）の通信ログパネルの裏に回り込み、操作ボタンがクリック
+できずタイムアウトしていた。
+
+なお、通信ログパネルを開いている間は裏に位置するカードの操作ボタンが
+押せなくなるという UX 上の懸念自体は、既知の「操作パネルはみ出し問題」
+（`packages/e2e/src/ui/support/operations.ts` の `OPERATION_PANEL_VIEWPORT`
+コメント参照）と同種の課題として別途共有されている。本 Issue のスコープ
+外のため今回は対応していない（統括側で別 Issue 化を検討）。
+
+#### 修正内容
+
+送金操作の実行順序を変更した。通信ログの蓄積はパネルの開閉と無関係に
+App 層のフックで常時行われる（設計メモ§4-5・§7.1）ため、パネルを開く
+前に `addWorkbenchAndGetWallet` + `submitTransfer` を実行しても操作
+エントリは失われない。この性質を利用し、パネルを開く前に送金を済ませて
+から `openCommsLogPanel` するよう入れ替えた。これによりパネルとワーク
+ベンチカードの重なりを完全に回避でき、managed ワークベンチの台数にも
+依存しなくなる。パネルを開いた後は、block/internal の蓄積待ちに続けて、
+既に実行済みの送金操作が操作カテゴリのエントリとして現れることを
+`expect.poll` で確認する（送金自体はパネルを開く前に行っているため、
+「before/after の差分」ではなく「0件から増える」ことの確認で足りる）。
+
+#### 確認したこと
+
+- `pnpm --filter @chainviz/e2e build`（`tsc --noEmit`）が通ることを確認。
+- 実 Docker スタックでの再実行は本対応では行っていない（QA に委ねる）。
