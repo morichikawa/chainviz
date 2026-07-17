@@ -353,6 +353,22 @@ export async function main(port: number = DEFAULT_PORT): Promise<void> {
     })
     .catch((err) => console.error("[collector] block subscription failed:", err));
 
+  // チェーンリセット（観測対象のチェーン自体が破棄され、別のチェーンとして
+  // 再作成されたこと。例: `docker compose down -v` → `up`。Issue #357）を
+  // 検知し、アダプタ内部キャッシュ（旧チェーンのトークン/NFT コントラクト
+  // 追跡等）をクリアしたうえで、ワールドステート store のチェーン由来
+  // エンティティ（wallet/contract/block/transaction）をパージして配信する。
+  // 順序は (1) adapter.resetChainDerivedState() → (2)
+  // store.purgeChainDerivedState() → (3) broadcastDiff（アダプタのキャッシュ
+  // を先にクリアすることで、パージ直後の tick で旧アドレスの再ポーリング・
+  // 旧エンティティの再投入が走らないようにするため。docs/worklog/issue-357.md
+  // 参照）。
+  adapter.subscribeChainResets(() => {
+    adapter.resetChainDerivedState();
+    const diff = store.purgeChainDerivedState();
+    server.broadcastDiff(diff);
+  });
+
   // C 層: tx ライフサイクル（mempool 投入 → ブロック取り込み）を購読し、
   // TransactionEntity の差分をワールドステート store 経由でフロントへ配信する。
   // 併せて、この tx の from/to に一致する既存ウォレットの recentTxHashes
