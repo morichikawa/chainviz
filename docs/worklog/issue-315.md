@@ -145,6 +145,51 @@ worktree 環境ではブラウザ起動に必要なシステムライブラリ(l
    モックデータ(`mockData.ts`)への NFT コントラクト追加、glossary の
    `nft` 用語(en 訳は chainviz-i18n がレビュー)
 
+## node-env 実装(2026-07-17)
+
+- 担当: node-env
+- 実施内容:
+  - `profiles/ethereum/contracts/src/ChainvizNFT.sol` を新規追加。設計メモ
+    どおりの学習用サブセット(name/symbol 定数、totalSupply、balanceOf/
+    ownerOf/getApproved、approve/transferFrom、mint(address)、Transfer/
+    Approval イベント)。safeTransferFrom/setApprovalForAll/ERC-165/
+    tokenURI/burn は実装していない。burn なし+1 始まり連番採番により
+    「発行済み tokenId = 1〜totalSupply」が常に成立する不変条件を
+    コントラクト先頭のコメントと mint() 直上のコメントの両方に明記した
+    (collector 側のポーリング実装が依存する前提のため)
+  - `build-catalog.sh` の `add_entry()` に第 3 引数(`nft_json`)を追加し、
+    渡された場合はエントリに `nft: { symbol }` を足すよう拡張。第 2 引数
+    (`token_json`)とは独立して扱い、既存の呼び出し(ChainvizToken/Counter)
+    は空文字列を追加で渡すよう更新した(後方非互換の呼び出し形式変更だが
+    このスクリプト内で閉じているため影響なし)
+  - `catalog.json` に `ChainvizNFT` エントリ(`nft: { symbol: "CVN" }`)を
+    追加。`token` フィールドは持たせていない(§13.1 の「排他」方針どおり)
+- 動作確認:
+  - ローカルに `forge` が無かったため `build-catalog.sh` のフォールバック
+    経路(`docker run ghcr.io/foundry-rs/foundry:latest forge build`)で
+    3 コントラクト(ChainvizToken/Counter/ChainvizNFT)のコンパイルが
+    成功することを確認
+  - `jq` もローカルに無く、かつ非対話 sudo が使えない worktree 環境だった
+    ため、`docker run imega/jq` を呼ぶラッパースクリプトを一時的に PATH に
+    追加し(`TMPDIR` もコンテナにマウントされる作業ディレクトリ配下に
+    切り替えて)`build-catalog.sh` を最後まで実行できることを確認した。
+    このラッパー自体はスクラッチパス上の一時ファイルでリポジトリには
+    含まれない
+  - 生成された `catalog.json` の差分を確認し、既存の ChainvizToken/Counter
+    エントリが変化していないこと(純粋な追加のみ)、ChainvizNFT の ABI に
+    `mint(address)` / `approve(address,uint256)` /
+    `transferFrom(address,address,uint256)` が設計メモどおりのシグネチャで
+    含まれること、`nft.symbol` が `"CVN"` になっていることを確認した
+- 次の担当への申し送り:
+  - `catalog.json` の ChainvizNFT エントリ・ABI は確定済み。collector 側
+    (`catalog.ts` の `nft` フィールド検証、`erc721.ts` の
+    totalSupply/ownerOf 呼び出し)・frontend 側
+    (`operationCatalog.ts` への mint/approve/transferFrom 追加)はこの
+    ABI・関数シグネチャに合わせて実装できる
+  - `docs/PLAN.md` の #315 チェックボックスは、collector/frontend 実装が
+    完了してから(担当をまたぐ1つの Issue のため)まとめてチェックする。
+    node-env 単独では未完了のまま残している
+
 ## 実装時に判断してよいこと(未確定のまま渡す点)
 
 - カード上の tokenId チップの表示上限(ウォレットの tx チップは 6 件上限の
