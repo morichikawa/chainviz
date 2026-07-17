@@ -133,5 +133,8 @@ describe("PeerNetworkLegend", () => {
     const legend = screen.getByTestId("p2p-legend");
     expect(legend.textContent).toContain("Peer connections grow over time via");
     expect(legend.textContent).toContain("node discovery");
+    // Issue #341: legend.hint.suffix の en は意図的な空文字。ja へフォール
+    // バックして日本語断片が混入してはならない。
+    expect(legend.textContent).not.toContain("により時間とともに自動で増えます");
   });
 });
