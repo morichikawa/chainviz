@@ -2090,16 +2090,37 @@ button.mempool-panel__row:hover {
   margin-bottom: 4px;
 }
 
+/* Issue #313 UX設計 §3.7-1: 長文の定義文をポップオーバー内で6行までに
+   クランプする（全文は用語集パネルで読む。260px幅での実測に基づく根拠は
+   docs/worklog/issue-313.md §3.7-1 参照）。line-clamp 非対応環境では単に
+   クランプされず全文表示されるだけで、崩れはしない安全なフォールバック。 */
 .glossary-popover__definition {
-  display: block;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
   font-size: 12px;
   color: var(--muted);
   line-height: 1.5;
 }
 
+/* Issue #313 UX設計 §3.7-3: 生キー表示をやめて用語名表示にしたため、
+   もう辿れるリンクではないことを示す弱い色（--accent の青ではなく --muted）
+   にする（「死んだリンクに見せない」）。 */
 .glossary-popover__related {
   display: block;
   margin-top: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* Issue #313 UX設計 §3.7-2: クリックできることのディスカバリー手段を兼ねる
+   固定フッター。関連用語の有無・クランプの有無に関わらず常に出す。 */
+.glossary-popover__footer {
+  display: block;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--divider);
   font-size: 11px;
   color: var(--accent);
 }
