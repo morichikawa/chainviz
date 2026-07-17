@@ -335,3 +335,66 @@ collector/e2e/frontend）も成功。
    オプションは、同ファイル内のどのテストからも使われていない（実際に
    使うテストは新設の node-lifecycle-workbench-naming.test.ts 側にあり、
    そちらは独自の fakeOps を持つ）。未使用のヘルパー拡張として残っている
+
+### 2026-07-17 QA検証（qa）
+
+- 担当: qa
+- ブランチ: issue-366-workbench-naming-collision
+- 判定: 合格（完了条件を満たす）
+
+共有Dockerスタック（chainviz-ethereum）は他Issue（#346）の残骸コンテナ
+（beacon3/reth3/test-2/workbench-3）が稼働中で他作業の使用可能性があるため
+触れず、`profiles/ethereum`を複製してcompose project名を`issue366qa`・
+サブネットを172.29系へ変更し、ホストポート公開を除去した隔離スタックを
+別途起動して検証した（実装担当・チームと同じ方針）。検証で追加したコンテナ・
+ネットワーク・ボリュームは終了時に`docker compose down -v --remove-orphans`と
+明示的な`docker rm`で全て撤去し、検証前後で共有スタックのコンテナ一覧が
+完全に同一であることを確認済み（共有スタックには一切触れていない）。
+
+検証は、ビルド済みのcollector実コード（`dist/adapters/ethereum/
+node-lifecycle.js`・`dist/docker/dockerode-operations.js`）を実際の
+dockerode経由で隔離スタックに対して駆動する使い捨てスクリプトで行った
+（フレッシュなcollector状態を模すため`recoverManagedContainers()`を先に
+実行。静的ワークベンチはmanagedラベルを持たないため回収されずmanaged 0件の
+状態から開始）。
+
+確認結果:
+
+1. 元のユーザー報告の再現確認（409の解消）: 静的ワークベンチ
+   （`issue366qa/workbench`、コンテナ名`issue366qa-workbench-1`）が存在する
+   状態で既定ラベル（空文字）の`addWorkbench("")`を実行し、409を発生させずに
+   成功した。作成された動的ワークベンチのservice名は`workbench-2`、stableIdは
+   `issue366qa/workbench-2`となり、静的ワークベンチの`issue366qa/workbench`と
+   重複しなかった。
+2. コンテナ名409リトライ機構の実機動作: service名を持たないデコイコンテナ
+   `issue366qa-Foo-1`を手動で作成して意図的に名前衝突を仕込み、
+   `addWorkbench("Foo")`を実行したところ、`ContainerNameConflictError`を
+   捕捉して連番を進め`issue366qa-Foo-2`として作成に成功した（症状1の
+   リトライ経路が実Docker上で機能することを直接確認）。
+3. 誤配送が起きないこと: 静的ワークベンチ（`issue366qa/workbench`）と新規
+   ワークベンチ（`issue366qa/workbench-2`）の双方に対しtransferを実行し、
+   送信元アドレスが静的=walletIndex 0（0x2BB7…）、新規=walletIndex 1
+   （0xfCd9…）と異なることを、それぞれのtxHashから`cast tx <hash> from`で
+   確認した。操作が別コンテナ・別鍵へ誤配送されていない。
+4. removeWorkbenchの1回完了（Issue #334）: 新規ワークベンチのstableIdに対し
+   `removeWorkbench`を1回呼び出すと正しく削除され、「追加されていない」
+   エラーは発生しなかった。削除後も静的ワークベンチは残存し、transferが
+   引き続き成功することを確認（道連れ削除なし）。
+5. `docs/PLAN.md`の#366（追加ワークベンチの命名衝突）・#334
+   （removeWorkbenchの誤エラー）の完了条件を満たす。両チェックボックスは
+   実装担当が既に`[x]`済みのため据え置く。
+
+統括からの追加確認（Issue #359との相互作用）:
+
+- 空ラベル（既定）でのaddWorkbenchで、動的ワークベンチのservice名が静的
+  ワークベンチの`workbench`と一致しないこと → 上記1で`workbench-2`となり
+  一致しないことを確認済み。
+- 本ブランチには#359のconfig-hashラベル付与の変更は含まれていない
+  （`config-hash`への参照はpackages/配下に存在しない）ことを確認。
+  参考として、本ブランチ（config-hash無し）の状態で動的ワークベンチ
+  （`issue366qa-workbench-2-1`）が存在する状態のまま隔離スタックに
+  `docker compose up -d`（--remove-orphans無し）を実行したところ、動的
+  ワークベンチは同一コンテナIDのまま稼働継続し、再作成も削除もされなかった。
+  ただしこれはconfig-hashラベルが無い状態での挙動であり、#359が動的
+  ワークベンチにconfig-hashを付与した後の相互作用は本ブランチでは検証
+  できない。**#359とのマージ後に統括側で再検証が必要**。
