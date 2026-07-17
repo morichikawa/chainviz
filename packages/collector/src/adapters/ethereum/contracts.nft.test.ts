@@ -177,6 +177,23 @@ describe("ContractTracker.applyNftObservation (Issue #315)", () => {
     ]);
   });
 
+  it("replaces a previously non-empty ledger with [] wholesale (empty is a real observation, not a no-op)", () => {
+    // 洗い替え方式の境界: 前回 non-empty だった台帳を空配列で観測した場合、
+    // マージ（前回値の残存）ではなく [] へ置き換わる。undefined（取得失敗）
+    // とは異なり、[] は「観測できたが 0 件」という正当な状態のため
+    // 前回の内容を消す（frontend はこの [] を「まだ発行されていません」と
+    // 表示し、undefined ではセクション自体を出さない、と区別する）。
+    const tracker = new ContractTracker("ethereum", catalog);
+    trackedNftContract(tracker, "0xnft");
+    tracker.applyNftObservation("0xnft", [
+      { tokenId: "1", ownerAddress: "0xowner1" },
+    ]);
+
+    const updated = tracker.applyNftObservation("0xnft", []);
+    expect(updated?.nftTokens).toEqual([]);
+    expect(tracker.get("0xnft")?.nftTokens).toEqual([]);
+  });
+
   it("records an empty ledger as [] (observed but nothing minted yet), distinct from undefined", () => {
     const tracker = new ContractTracker("ethereum", catalog);
     trackedNftContract(tracker, "0xnft");

@@ -213,6 +213,41 @@ describe("NftTracker.pollOnce", () => {
     ]);
   });
 
+  it("yields tokens: undefined when totalSupply succeeds but one ownerOf reverts (a partial fetch is never a partial ledger)", async () => {
+    // 全成功・全失敗の二値契約の end-to-end 確認: totalSupply は取れても
+    // 一部の ownerOf が revert したら台帳全体を諦め undefined を返す。
+    // これにより呼び出し側（applyNftObservation）は前回の台帳を維持する。
+    const poller = new DockerPoller(clientFrom([rethFixture()]));
+    const owner1 = `0x${"1".padStart(40, "0")}`;
+    const rpc: EthRpcClient = {
+      async call<T>(
+        _url: string,
+        _method: string,
+        params: unknown[],
+      ): Promise<T> {
+        const [{ data }] = params as [{ to: string; data: string }, string];
+        const selector = data.slice(0, 10);
+        if (selector === "0x18160ddd") return encodeUint256(2n) as T;
+        const tokenId = BigInt(`0x${data.slice(10)}`).toString(10);
+        if (tokenId === "2") {
+          throw new Error("execution reverted: ownerOf(2)");
+        }
+        return encodeAddress(owner1) as T;
+      },
+    };
+    const tracker = new NftTracker(poller, {
+      rpc,
+      getNftContractAddresses: () => ["0xnft"],
+    });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const observations = await tracker.pollOnce();
+      expect(observations).toEqual([{ address: "0xnft", tokens: undefined }]);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("logs the actual last error (not a fixed message) when every node fails for a contract", async () => {
     const poller = new DockerPoller(clientFrom([rethFixture()]));
     const revertError = new Error("execution reverted: no such tokenId");

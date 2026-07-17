@@ -106,6 +106,54 @@ describe("fetchErc721Ledger", () => {
     ).rejects.toThrow("connection refused");
   });
 
+  it("queries ownerOf for exactly tokenIds 1..totalSupply (never 0, never totalSupply+1)", async () => {
+    // 「burn なし + 1 始まりの連番採番」により発行済み tokenId が
+    // 1〜totalSupply であるという不変条件（ChainvizNFT.sol / collector が依存）
+    // の回帰ガード。i+1 のオフバイワンや列挙範囲の取り違えを検出する。
+    const owner = `0x${"1".padStart(40, "0")}`;
+    const { rpc, calls } = stubRpc({
+      totalSupply: 3n,
+      owners: { "1": owner, "2": owner, "3": owner },
+    });
+    await fetchErc721Ledger(rpc, "http://node", contract);
+    const ownerOfTokenIds = calls
+      .filter((c) => c.data.slice(0, 10) === "0x6352211e")
+      .map((c) => BigInt(`0x${c.data.slice(10)}`).toString(10))
+      .sort((a, b) => Number(a) - Number(b));
+    expect(ownerOfTokenIds).toEqual(["1", "2", "3"]);
+  });
+
+  it("returns tokens in ascending tokenId order even when ownerOf calls resolve out of order", async () => {
+    // ownerOf は Promise.all で並行実行されるが、返り値の並びは tokenId の
+    // 昇順（配列の構築順）に固定されている、という契約の回帰ガード。
+    // frontend の resolveContractNftLedger は入力順をそのまま使うため、
+    // ここでの並び保証が崩れると発行済み NFT の表示順が乱れる。
+    const owners: Record<string, string> = {
+      "1": `0x${"1".padStart(40, "0")}`,
+      "2": `0x${"2".padStart(40, "0")}`,
+      "3": `0x${"3".padStart(40, "0")}`,
+    };
+    const rpc: EthRpcClient = {
+      async call<T>(
+        _url: string,
+        _method: string,
+        params: unknown[],
+      ): Promise<T> {
+        const [{ data }] = params as [{ to: string; data: string }, string];
+        if (data.slice(0, 10) === "0x18160ddd") {
+          return encodeUint256(3n) as T;
+        }
+        const tokenId = BigInt(`0x${data.slice(10)}`).toString(10);
+        // tokenId が小さいものほど遅く解決させ、解決順を昇順と逆にする。
+        const delayMs = tokenId === "1" ? 6 : tokenId === "2" ? 3 : 0;
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        return encodeAddress(owners[tokenId]) as T;
+      },
+    };
+    const ledger = await fetchErc721Ledger(rpc, "http://node", contract);
+    expect(ledger.map((t) => t.tokenId)).toEqual(["1", "2", "3"]);
+  });
+
   it("preserves precision for a large uint256 tokenId (no float rounding)", async () => {
     // totalSupply 自体を大きくすると配列長がメモリを圧迫するため、この観点は
     // 別の切り口（ownerOf の引数エンコードが tokenId=1 のような小さい値でも
