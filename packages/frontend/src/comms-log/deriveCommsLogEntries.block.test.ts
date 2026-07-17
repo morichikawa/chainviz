@@ -132,4 +132,43 @@ describe("deriveCommsLogEntries: block category (entityUpdated, receivedAt incre
     );
     expect(entries).toEqual([]);
   });
+
+  it("picks up a receivedAt-only entityUpdated that follows the block's own entityAdded within the same batch (regression: mock's advanceChain does exactly this)", () => {
+    // モックの advanceChain() は「同一 events 配列内で」ブロックを
+    // entityAdded した直後に、同じ hash への entityUpdated（receivedAt の
+    // 追記）を続けて push する。prevState だけを基準に「前の値」を探すと、
+    // このブロックはまだ prevState に存在しない（このバッチで初めて増える）
+    // ため、entityUpdated 側が静かに無視されてしまっていた
+    // （モックモードでの目視確認で発見）。
+    const prevState = stateWith(
+      testNode({ id: "reth-1", containerName: "reth-1" }),
+      testNode({ id: "reth-2", containerName: "reth-2" }),
+    );
+    const newBlock: BlockEntity = testBlock({
+      hash: "0xblock1",
+      number: 42,
+      receivedAt: { "reth-1": 1_000 },
+    });
+
+    const entries = deriveCommsLogEntries(
+      prevState,
+      [
+        { type: "entityAdded", entity: newBlock },
+        {
+          type: "entityUpdated",
+          id: "0xblock1",
+          patch: { receivedAt: { "reth-1": 1_000, "reth-2": 1_050 } },
+        },
+      ],
+      1_100,
+    );
+
+    const byNode = Object.fromEntries(
+      entries
+        .filter((entry) => entry.category === "block")
+        .map((entry) => [entry.nodeId, entry]),
+    );
+    expect(byNode["reth-1"]).toMatchObject({ relativeDelayMs: 0, isOrigin: true });
+    expect(byNode["reth-2"]).toMatchObject({ relativeDelayMs: 50, isOrigin: false });
+  });
 });

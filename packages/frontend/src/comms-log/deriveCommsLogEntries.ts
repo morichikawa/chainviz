@@ -20,6 +20,16 @@ import { resolveActorLabel } from "./resolveActorLabel.js";
  * PeerEdgeの端点）は prevState 側にしか残っていないため、両者をマージした
  * 索引を使う（後勝ち = 新しい情報を優先）。
  *
+ * 増分検出（block の receivedAt・tx の status 遷移）は「1件前の event まで
+ * 適用した state」を基準にする（`running`。event を1件ずつ `applyDiff` して
+ * 進める）。events 全体の直前（`prevState`）を基準に固定してしまうと、同じ
+ * バッチ内で「ブロックの entityAdded → 直後の entityUpdated（receivedAt
+ * 追記）」のように同一エンティティへの複数イベントが連続するケース
+ * （collector・モックの両方で起こりうる。モックの `advanceChain` が典型例）
+ * で、後段の entityUpdated が「まだ存在しないエンティティの更新」として
+ * 静かに無視されてしまう（実際にモックモードでの目視確認でこの欠落を
+ * 発見した）。
+ *
  * 戻り値は「新しい順（timestamp 降順）」。同一 events 列からは複数件
  * 生まれうる（例: 1ブロックを複数ノードがほぼ同時に受信）。
  *
@@ -31,15 +41,19 @@ export function deriveCommsLogEntries(
   events: DiffEvent[],
   now: number,
 ): CommsLogEntry[] {
-  const nextState = applyDiff(prevState, events);
+  const finalState = applyDiff(prevState, events);
   const entities: Record<string, WorldStateEntity> = {
     ...prevState.entities,
-    ...nextState.entities,
+    ...finalState.entities,
   };
 
   const out: CommsLogEntry[] = [];
   let seq = 0;
   const nextId = (category: string) => `${category}-${now}-${seq++}`;
+
+  // このバッチ内で「今処理しているイベントの直前」の state。イベントを
+  // 1件処理するたびに、そのイベントだけを適用して1件ずつ進める。
+  let running = prevState;
 
   for (const event of events) {
     switch (event.type) {
@@ -83,8 +97,20 @@ export function deriveCommsLogEntries(
       case "entityAdded": {
         const { entity } = event;
         if (entity.kind === "block") {
+          // 通常は新規ブロックなので prior は {} だが、念のため running 側の
+          // 既存値があればそれを優先する（entityRemoved を経ずに同一 hash が
+          // 再度 entityAdded されるような通常起きないケースへの防御）。
+          const priorBlock = running.entities[entity.hash];
+          const priorReceivedAt = priorBlock?.kind === "block" ? priorBlock.receivedAt : {};
           out.push(
-            ...deriveBlockReceiptEntries(entity.hash, entity.number, {}, entity.receivedAt, entities, nextId),
+            ...deriveBlockReceiptEntries(
+              entity.hash,
+              entity.number,
+              priorReceivedAt,
+              entity.receivedAt,
+              entities,
+              nextId,
+            ),
           );
         } else if (entity.kind === "transaction") {
           out.push(deriveTxEntry(entity.hash, entity.status, entity.blockHash, entities, now, nextId));
@@ -111,7 +137,7 @@ export function deriveCommsLogEntries(
         // （`applyDiff` 側の `{ ...existing, ...event.patch } as
         // WorldStateEntity` と同じ、ランタイムの kind 一致を前提にした
         // キャスト）。
-        const before = prevState.entities[event.id];
+        const before = running.entities[event.id];
         if (before?.kind === "block") {
           const patch = event.patch as Partial<BlockEntity>;
           if (patch.receivedAt !== undefined) {
@@ -140,7 +166,7 @@ export function deriveCommsLogEntries(
       }
 
       case "entityRemoved": {
-        const removed = prevState.entities[event.id];
+        const removed = running.entities[event.id];
         if (removed?.kind === "node") {
           out.push(
             buildEnvironmentEntry("nodeRemoved", removed.id, removed.containerName, now, nextId),
@@ -180,6 +206,10 @@ export function deriveCommsLogEntries(
       default:
         break; // 未知のイベント型は無視する(前方互換。applyDiffと同じ流儀)。
     }
+
+    // running を「このイベントまで適用した state」へ1件分だけ進める
+    // （次のイベントの処理で「直前」として参照するため）。
+    running = applyDiff(running, [event]);
   }
 
   out.sort((a, b) => b.timestamp - a.timestamp);
