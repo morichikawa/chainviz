@@ -38,3 +38,154 @@
     当該ブランチ上の記録を参照すること
   - 実装着手は後日。具体的な実現方法（README注記+掃除スクリプト等）は
     着手時に設計判断が必要
+
+### 2026-07-17 実機調査（node-env）: 根本原因の特定
+
+- 担当: node-env
+- ブランチ: issue-359-managed-container-cleanup
+
+#### 事前確認: 共有Dockerスタックの使用状況
+
+作業開始時、ホスト上で `chainviz-ethereum` プロジェクトが稼働中
+（コンテナ7個 + 動的追加と見られる `chainviz-ethereum-reth3` /
+`chainviz-ethereum-beacon3` / `chainviz-ethereum-workbench-*` /
+`chainviz-ethereum-test-2`）で、ポート4000/4001を握るcollectorプロセス
+（PID 1302547、`/home/zoe/workspace/chainviz` = メインworktree、
+現在ブランチ `issue-341-i18n-empty-string-fallback`）も生存していた。
+別Issueの並行作業に使われている可能性があり、Issue #126のworklog
+（過去に共有スタックを誤って`down`してしまった事故）の教訓も踏まえ、
+このスタックには一切触れず、scratchpad配下に独立したproject名・独立
+subnet（172.99.0.0/16）の合成composeを作って調査した。
+
+#### 実機調査で特定した根本原因
+
+Issue本文にある「`--remove-orphans`を付けても削除されない」という現象を
+実際に再現した上で、ラベルを1つずつ足して`docker compose ps -a`/
+`docker compose down -v --remove-orphans`の挙動を確認した結果、
+**`com.docker.compose.config-hash`ラベルが無いコンテナは、
+`com.docker.compose.project`/`com.docker.compose.service`が正しくても
+Docker Compose自身から一切認識されない（`docker compose ps -a`にすら
+出てこない）**ことが分かった。このラベルさえ足せば（値は何でもよい。
+実際に空文字でない適当な値で動作確認済み）、`docker compose ps -a`に
+現れるようになり、`docker compose down -v --remove-orphans`で正しく
+「孤児（orphan）」として検出・削除され、ネットワークも
+"Resource is still in use"にならず正常に削除された。
+
+`oneoff=False`・`container-number`・`project.config_files`・
+`project.working_dir`・`version`・`depends_on`を追加しても
+`config-hash`が無ければ認識されないことも個別に確認し、`config-hash`が
+真の欠落原因であると特定した（実機再現ログは本Issueのブランチでの作業
+記録として以下「実装」節にも要約する）。
+
+もう1つ確認した重要な事実: **`--remove-orphans`は`docker compose down`
+のCLIオプション（または`COMPOSE_REMOVE_ORPHANS`環境変数）としてでしか
+効かず、compose起動時に読む`.env`ファイルに`COMPOSE_REMOVE_ORPHANS=true`
+と書いても効果が無い**（実機で確認）。つまり「孤児を消すには明示的な
+フラグ/環境変数が要る」というDocker Compose自体の安全装置は今回のラベル
+修正では回避できない（意図された仕様であり、今回のバグの一部ではない）。
+
+#### 決めた修正方針
+
+1. **根本原因の修正（node-lifecycle.ts）**: addNode/addWorkbenchが作る
+   コンテナに`com.docker.compose.config-hash`ラベルを追加する。値は
+   固定のプレースホルダーでよい（動的追加コンテナはdocker-compose.ymlの
+   宣言済みサービスに対応するエントリを持たないため、Composeが値を
+   実際のサービス設定と比較することはない。「キーが存在すること」だけが
+   意味を持つ）。これにより`docker compose down -v --remove-orphans`が
+   コード変更なしに動的追加コンテナも含めて完全に片付けられるようになる。
+2. **README/docker-compose.ymlの注記更新**: 上記のとおり`--remove-orphans`
+   自体はComposeの仕様上省略できないため、`profiles/ethereum/README.md`と
+   `docker-compose.yml`冒頭コメントの「片付け」手順を
+   `docker compose down -v --remove-orphans`に更新し、理由（動的追加
+   コンテナも含めて完全に片付けるため）を注記する。
+3. **`scripts/dev-down.sh`は変更しない**: Issue #126で既に
+   `cleanup_dynamic_containers`（ラベルフィルタでの`docker rm -f`）が
+   `docker compose down`より前に動的追加コンテナを個別削除しており、
+   今回の修正が無くても`pnpm dev:down --docker -v`経路は既に問題ない。
+   今回の修正はこのスクリプトを使わず素の`docker compose down -v`を
+   直接使うユーザー（README記載の標準手順）向けの根本修正にあたる。
+
+#### 実装への影響範囲
+
+修正は`packages/collector/src/adapters/ethereum/{labels.ts,
+node-lifecycle.ts}`というTypeScriptコードに及ぶ（通常はcollector担当の
+持ち分だが、原因がaddNode/addWorkbenchのコンテナ生成ロジックそのものに
+あり、`profiles/`側だけでは修正しえないため、本Issueの担当としてここまで
+含めて対応する）。TypeScriptロジック変更を伴うため、
+`packages/collector/src/adapters/ethereum/node-lifecycle.test.ts`に
+ラベル存在を検証する回帰テストを追加する。
+
+### 2026-07-17 実装・実機確認（node-env）
+
+- 担当: node-env
+- ブランチ: issue-359-managed-container-cleanup
+
+#### 実装したファイル
+
+- `packages/collector/src/adapters/ethereum/labels.ts`: 定数
+  `CONFIG_HASH_LABEL = "com.docker.compose.config-hash"` を追加。値の
+  意味・実機検証の結果をコメントに記載。
+- `packages/collector/src/adapters/ethereum/node-lifecycle.ts`:
+  `nodeLabels()`（reth/beacon）・`workbenchLabels()`（workbench）の両方に
+  `CONFIG_HASH_LABEL: DYNAMIC_CONFIG_HASH`（プレースホルダー定数
+  `"chainviz-dynamic"`）を追加。モジュール冒頭のコメントにも経緯を追記。
+- `packages/collector/src/adapters/ethereum/node-lifecycle.test.ts`:
+  addNode・addWorkbench それぞれに、生成したコンテナへ
+  `CONFIG_HASH_LABEL` が付くことを確認する回帰テストを追加。
+- `profiles/ethereum/README.md`・`profiles/ethereum/docker-compose.yml`・
+  `profiles/ethereum/scripts/generate-genesis.sh`: 「片付け」手順を
+  `docker compose down -v --remove-orphans` に統一し、理由を注記。
+
+#### 実機確認（修正前後の差分を実際のコード・実Dockerで確認）
+
+共有スタック`chainviz-ethereum`は使用中と判断し一切触れず、scratchpad配下に
+独立project名（`chainviz-issue359val`）・独立subnet（172.30.0.0/16）の
+合成composeを作り、ビルド済みの`EthereumNodeLifecycle`を実際に
+`import`して`addWorkbench()`を呼ぶ一時スクリプト（コミットしない）で検証した。
+
+1. **修正前の再現**: `git stash`で修正前のコードに戻し再ビルドした状態で
+   `addWorkbench()`を実行 → 生成されたコンテナに`config-hash`ラベルが
+   無いことを確認。続けて`docker compose down -v --remove-orphans`を実行
+   → コンテナは削除されず残存し、ネットワーク削除も
+   "Resource is still in use"で失敗（Issue本文どおりの不具合を実際の
+   collectorコードで再現できた）。
+2. **修正後の確認**: `git stash pop`で修正を戻して再ビルドし、同じ手順を
+   再実行 → 生成されたコンテナに`com.docker.compose.config-hash:
+   "chainviz-dynamic"`ラベルが付くことを確認。続けて
+   `docker compose down -v --remove-orphans`を実行 → コンテナ・
+   ネットワーク・ボリュームがすべて削除され、完全にクリーンな状態に
+   なることを確認。
+3. addNodeが作るreth/beaconコンテナについては、固定IP帯
+   （172.28.1.x/172.28.2.x）がハードコードされており、稼働中の実
+   `chainviz-ethereum_chain`（同じ172.28.0.0/16サブネット）と重複するため
+   隔離環境での実行はできなかった。ユニットテスト（上記
+   node-lifecycle.test.ts）で`nodeLabels()`が生成するラベルに
+   `CONFIG_HASH_LABEL`が含まれることを固定し、Docker Compose側の
+   認識メカニズム自体（config-hashラベルの有無で挙動が変わること）は
+   addWorkbenchの実機確認と、コードから切り離した最小合成compose
+   （project/service/managed/config-hashラベルのみを付けた`docker run`）の
+   両方で確認済みのため、reth/beacon側も同じコード経路
+   （`nodeLabels()`）を通ることから同様に解消されると判断した。
+- 検証で使ったcompose・コンテナ・ネットワーク・ボリューム・一時スクリプトは
+  すべて削除済み。共有スタック`chainviz-ethereum`は検証開始時・終了時とも
+  無傷であることを確認した（検証中に他Issueのe2eテストと見られる
+  コンテナ（`chainviz-ethereum-e2e-ribbon-recipient-*`）が新規に現れており、
+  同スタックが並行作業で使用中だったことも裏付けられた）。
+
+#### 確認結果
+
+- `pnpm lint` / `pnpm build` / `pnpm test`: 全パッケージ通過
+  （shared 74 / e2e 171 / collector 1565 / frontend 2592）。
+- `bash -n profiles/ethereum/scripts/generate-genesis.sh`: 構文確認OK。
+
+#### 次の担当（reviewer/QA）への申し送り
+
+- `scripts/dev-down.sh`は変更していない（Issue #126の
+  `cleanup_dynamic_containers`が既に別経路でこの問題を回避しているため）。
+- addNodeが作るreth/beaconコンテナの実機E2E確認（隔離環境での
+  `docker compose down -v --remove-orphans`）は、固定IP帯の制約により
+  addWorkbenchほど直接的には行えていない。QAで機会があれば、共有スタックが
+  空いているタイミングで実際に`addNode`→`down -v --remove-orphans`の
+  実機確認を追加で行うことが望ましい（ユニットテスト・addWorkbenchでの
+  実機確認・Docker Compose側の一般的な挙動確認の組み合わせで妥当性は
+  確認済みだが、最終的な実機フルパスの確認ではない）。

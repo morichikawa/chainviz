@@ -867,12 +867,16 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       キャッシュとワールドステートのwallet/contract/block/transactionを
       パージする)
       [#357](https://github.com/morichikawa/chainviz/issues/357)
-- [ ] addNode/addWorkbenchで作成したmanagedコンテナがdocker compose
+- [x] addNode/addWorkbenchで作成したmanagedコンテナがdocker compose
       down -vでも削除されない
-      (Issue #357の原因調査中にchainviz-detectiveが副次的に発見。
-      隔離した最小composeプロジェクトで実証済み(Compose v2.40.3 /
-      Engine 29.1.3)。--remove-orphans付きでも削除されない。README注記+
-      ラベルベースの掃除スクリプト等が候補(chainviz-node-env + docs))
+      (根本原因を特定: `com.docker.compose.config-hash`ラベルが無い
+      コンテナはproject/serviceラベルが正しくてもDocker Compose自体から
+      一切認識されず、`--remove-orphans`を付けても孤児として検出されない。
+      node-lifecycle.tsのaddNode/addWorkbenchが作るコンテナにこのラベルを
+      追加し、`docker compose down -v --remove-orphans`で完全に片付く
+      ことを実機確認(修正前後の差分を実際のコード・実Dockerで再現・
+      解消確認)。READMEとdocker-compose.ymlの片付け手順も
+      `--remove-orphans`必須に更新。詳細はdocs/worklog/issue-359.md)
       [#359](https://github.com/morichikawa/chainviz/issues/359)
 - [ ] サイドパネル(コントラクトソース表示・用語集表示)の幅をリサイズ
       できるようにする
