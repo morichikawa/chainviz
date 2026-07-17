@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Command } from "@chainviz/shared";
+import type { Command, DiffEvent } from "@chainviz/shared";
 import type { NodeLinkActivitySignal } from "../entities/internalLinkEdge.js";
 import type { OperationSignal } from "../entities/operationEdge.js";
 import type {
@@ -23,6 +23,23 @@ export type CommandResultHandler = (
   commandId: string,
   ok: boolean,
   error?: string,
+) => void;
+
+/**
+ * 差分イベント到着を「適用前の WorldState」付きで観測するコールバック
+ * （Issue #317。`useCommsLog` の `deriveCommsLogEntries` へ渡す入力を
+ * 作るためのもの）。呼ばれる時点ではまだ `state` は更新されていない
+ * （`prevState` = このイベント列を適用する前の世界）。`now` は onDiff を
+ * 受け取った時点のフロント側時刻（epoch ms）で、イベント自身が時刻を
+ * 持たない場合のフォールバックに使う想定。
+ *
+ * スナップショット適用（初回・再接続）では呼ばれない（diff由来のみ。
+ * 設計メモ §7.1）。
+ */
+export type DiffObserver = (
+  prevState: WorldState,
+  events: DiffEvent[],
+  now: number,
 ) => void;
 
 export interface UseWorldStateResult {
@@ -78,10 +95,20 @@ const NODE_LINK_ACTIVITY_SIGNAL_CAP = 100;
  * `onCommandResult` は毎レンダーで参照が変わってもクライアントを張り直さない
  * よう ref 経由で最新のものを呼ぶ。`sendCommand` は接続中のクライアントへ
  * コマンドを委譲する安定した関数を返す。
+ *
+ * `onDiffEvents` も同じく ref 経由で最新のものを呼ぶ（Issue #317）。
+ * `state` の更新自体は、React 18 Strict Mode が `setState` へ渡した
+ * 更新関数を開発時に二重実行しうる（副作用の検出目的）ことを踏まえ、
+ * 更新関数の中では副作用（`onDiffEvents` の呼び出し）を起こさない設計に
+ * している。代わりに `worldStateRef` で「適用前の WorldState」を手動で
+ * 同期させ、その値を使って新しい state を関数の外で計算してから
+ * `setState` へ確定値として渡す（`setState(fn)` ではなく `setState(value)`）。
+ * これにより `onDiffEvents` は onDiff 呼び出しごとに厳密に1回だけ実行される。
  */
 export function useWorldState(
   createClient: ClientFactory,
   onCommandResult?: CommandResultHandler,
+  onDiffEvents?: DiffObserver,
 ): UseWorldStateResult {
   const [state, setState] = useState<WorldState>(emptyWorldState);
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
@@ -93,19 +120,30 @@ export function useWorldState(
   const clientRef = useRef<ChainvizClient | null>(null);
   const resultRef = useRef<CommandResultHandler | undefined>(onCommandResult);
   resultRef.current = onCommandResult;
+  const diffObserverRef = useRef<DiffObserver | undefined>(onDiffEvents);
+  diffObserverRef.current = onDiffEvents;
   // 操作観測イベントにフロント側で振る通し番号。単調増加させ、消費側の重複排除に使う。
   const opSeqRef = useRef(0);
   // 内部リンク活動観測イベントにフロント側で振る通し番号（opSeqRef と同じ狙い）。
   const nodeLinkActivitySeqRef = useRef(0);
+  // 直近確定した WorldState（onDiffEvents に渡す「適用前」を得るための影武者。
+  // 上記docstring参照）。setState と手動で同期させる。
+  const worldStateRef = useRef<WorldState>(emptyWorldState);
 
   useEffect(() => {
     const client = createClient({
       onSnapshot: (snapshot) => {
-        setState(applySnapshot(snapshot));
+        const next = applySnapshot(snapshot);
+        worldStateRef.current = next;
+        setState(next);
         setHasReceivedSnapshot(true);
       },
       onDiff: (events) => {
-        setState((current) => applyDiff(current, events));
+        const prevState = worldStateRef.current;
+        const nextState = applyDiff(prevState, events);
+        worldStateRef.current = nextState;
+        setState(nextState);
+        diffObserverRef.current?.(prevState, events, Date.now());
         // operationObserved は揮発性なのでワールドステートへ畳み込まず、
         // 通し番号を付けた別経路（operations）へ流す。
         const observed = extractOperations(events);
