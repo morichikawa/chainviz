@@ -46,3 +46,80 @@
     記載済み（managed 0件で起動→既定ラベルでaddWorkbench→409にならず、
     stableIdが`chainviz-ethereum/workbench`と重複せず、操作が正しい
     walletIndexで実行されること）
+
+### 2026-07-17 実装 設計メモ（collector）
+
+- 担当: collector
+- ブランチ: issue-366-workbench-naming-collision
+
+対象は `packages/collector/src/adapters/ethereum/node-lifecycle.ts` の2箇所。
+
+**問題1: コンテナ名の409衝突**
+
+`workbenchSpec()` は `${project}-${slug(service)}-${++this.workbenchSeq}` で
+コンテナ名を組み立てるが、`workbenchSeq` の初期値は
+`recoverManagedContainers()` が回収した managed ラベル付きコンテナの個数
+（静的ワークベンチは含まれない）から決まる。事前に「実際に使われている
+コンテナ名の一覧」を取得して突き合わせる方式（例: `docker.listContainers`
+を project ラベルだけで走査し、コンテナ名を集めて既存集合と照合してから
+採番する）も検討したが、以下の理由で不採用とした。
+
+- Docker の `listContainers` はコンテナ名そのもの（`Names` フィールド）を
+  返すが、現状の `DockerOperations.listContainersByLabels` はラベルのみを
+  返す設計になっており、コンテナ名まで持ち回るには型を拡張する必要がある。
+- 「事前に確認してから作成する」方式は TOCTOU（確認から作成までの間に
+  別プロセス・別リクエストが同じ名前でコンテナを作る）競合に弱い。
+
+代わりに、**Docker 自身の名前重複検出（409）をそのまま利用したリトライ**
+方式を採る。
+
+- `packages/collector/src/docker/operations.ts` に
+  `ContainerNameConflictError`（コンテナ名の重複が原因での失敗であることを
+  表す型）を追加する。dockerode の生のエラー形状（`statusCode`/`message`）を
+  ChainAdapter 層（node-lifecycle.ts）に漏らさないための変換型で、
+  `isRemovalInProgress`/`isNoSuchContainer`（既存の409/404判定ヘルパー）と
+  同じ置き場所・同じ思想。
+- `dockerode-operations.ts` の `createAndStart` が、dockerode からの生エラーが
+  「名前重複」（409 かつ message に "already in use" を含む）と判定できた
+  場合にこの型へ変換して re-throw する。
+- `node-lifecycle.ts` の `addWorkbench` は、コンテナ作成が
+  `ContainerNameConflictError` で失敗した場合、`workbenchSeq` を1つ進めて
+  別の候補名で再試行する（最大試行回数はコード内に安全弁として定数で持つが、
+  「今この瞬間の観測値」ではなく無限ループ防止のための余裕を持った上限であり、
+  通常は1〜2回の再試行で解決する見込み）。これにより、静的ワークベンチの
+  実在チェックを個別に行わなくても、Docker が実際に把握している状態と
+  必ず整合する形で採番できる。TOCTOU競合にも強い（チェックと作成が同じ
+  create 呼び出しの成否そのものになるため）。
+
+**問題2: stableId重複による誤配送**
+
+`uniqueWorkbenchService()` はメモリ上の `this.workbenches`（collector が
+addWorkbench で作成し、かつプロセスが記憶している範囲）としか照合しない。
+静的ワークベンチは managed ラベルを持たないため `recoverManagedContainers()`
+で回収されず、`this.workbenches` に一切現れない。
+
+`findWorkbenchContainer()` が既に採用している方式（compose project ラベル
+だけで Docker 上の全コンテナを走査し、Docker のラベルを単一の真実の情報源と
+扱う。Issue #65 の方針）を流用し、`uniqueWorkbenchService()` も
+`listContainersByLabels({ [COMPOSE_PROJECT_LABEL]: composeProject })` の
+結果（静的ワークベンチ・reth/beacon/validator・過去に回収し損ねた managed
+コンテナ等すべてを含む）と `this.workbenches` の和集合を「使用済み
+service名」として衝突判定する。非同期になるため `uniqueWorkbenchService`
+を async 化し、呼び出し元 `addWorkbench` も await するよう変更する。
+
+**回帰確認シナリオ（実装後に実機で確認する）**
+
+1. 稼働中の `profiles/ethereum` スタック（静的ワークベンチ込み）に対し、
+   collector をフレッシュ起動（managed コンテナ0件）した直後に既定ラベルで
+   `addWorkbench` を実行し、409にならず成功すること。
+2. 上記で作成されたワークベンチの stableId が静的ワークベンチの
+   `chainviz-ethereum/workbench` と重複しないこと（例:
+   `chainviz-ethereum/workbench-2`）。
+3. 2. のワークベンチに対する `transfer` 等の操作が、静的ワークベンチではなく
+   意図した（新規追加した）コンテナ・walletIndexで実行されること。
+4. `removeWorkbench` が1回の呼び出しで正しく完了し、静的ワークベンチを
+   道連れにしないこと。
+
+いずれも修正前に実際に再現し、修正後に再現しないことを確認してから
+完了とする（Issue #334はこの一連の不具合の派生症状として扱う）。
+
