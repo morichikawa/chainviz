@@ -1967,3 +1967,67 @@
     それが含まれない。必要なら `--base` で指定できる
   - CLAUDE.md のみの変更のため pnpm build/lint/test は省略した(コードに
     影響する差分が無いことは git status/diff で確認済み)
+
+### 2026-07-17 ワークベンチ2件の不具合報告(addWorkbench 409 / transfer残高不足)の原因調査
+
+- 担当: detective
+- ブランチ: main(調査のみ。コード変更なし)
+- 内容: ユーザー操作中に発生した2件の不具合(1. ワークベンチ追加が
+  HTTP 409 Conflict で失敗、2. 静的ワークベンチからの CVZ transfer が
+  "transfer amount exceeds balance" で revert)の根本原因を実測で特定した。
+- 報告1(409 Conflict)の調査結果:
+  - 根本原因: `packages/collector/src/adapters/ethereum/node-lifecycle.ts`
+    の `workbenchSpec()` が生成するコンテナ名
+    `${composeProject}-${slug(service)}-${++workbenchSeq}` が、
+    docker-compose.yml の静的ワークベンチに Docker Compose が自動命名する
+    `chainviz-ethereum-workbench-1` と衝突する。`workbenchSeq` は
+    `recoverManagedContainers()` が回収した `com.chainviz.managed=true` の
+    コンテナ数から始まるが、静的ワークベンチは managed ラベルを持たず
+    回収対象外のため、collector 起動直後(managed 0件)の初回
+    addWorkbench(既定ラベル)は必ず seq=1 → 名前 `...-workbench-1` になる
+  - 再現確認: 既存環境に触れないよう別プロジェクト名
+    (`chainviz-detective`)で静的ワークベンチ相当のコンテナ
+    (`com.docker.compose.service=workbench`、managed ラベル無し)を用意し、
+    dist の `EthereumNodeLifecycle` を直接呼び出して再現。1回目の
+    `addWorkbench("")` はユーザー報告と同一文面の 409 で失敗、2回目は
+    seq が失敗時にも進む副作用により `...-workbench-2` で成功した
+    (= 決定的に再現する実バグ。ただしリトライで自己回復する)
+  - 実セッションのログ・コンテナ作成時刻(21:24 起動 → 21:37 test-2 →
+    21:37 workbench-3)とも整合
+- 報告2(transfer 残高不足)の調査結果:
+  - 単位変換(Issue #211)の再発ではない: プロキシログの calldata で送金額は
+    123 × 10^18 wei(入力 123 CVZ に正確に対応)。frontend の
+    tokenAmount/etherAmount 等の関連テスト 83 件も全て合格
+  - 実際の残高不足でもない: 送金元のはずの wallet0
+    (0x2BB7...、静的ワークベンチ walletIndex=0)は調査時点でも
+    全供給量 1000 CVZ を保有
+  - 根本原因: ワークベンチの stableId 衝突。報告1の 409 失敗後に既定
+    ラベルで再追加されたワークベンチ(コンテナ名 workbench-3)は、
+    `uniqueWorkbenchService()` がメモリ上のレジストリ(managed のみ)と
+    しか照合しないため service 名 "workbench" となり、静的ワークベンチと
+    同じ stableId `chainviz-ethereum/workbench` を持ってしまう。
+    `findWorkbenchContainer()` は compose プロジェクト内のコンテナを
+    service ラベルで先勝ち検索するため、同 stableId への操作が新しい方の
+    workbench-3(walletIndex=2 = wallet2、CVZ 残高 0)で実行され、revert した
+  - 証拠: プロキシログで失敗した eth_estimateGas の from が wallet2
+    (0xad77...)・呼び出し元 IP 172.28.0.6(= workbench-3)。同じ stableId
+    宛ての2回目の deployContract も wallet2 から実行されている(tx の from を
+    cast で確認)。また、ワールドステートはエンティティを stableId で一意
+    管理するため workbench-3 は GUI 上で静的ワークベンチのカードに隠れ、
+    そのRPC呼び出しは `[proxy] rpc call from unresolved caller 172.28.0.6`
+    として操作エッジも落ちていた(同一原因の派生症状)
+- 決定事項・注意点:
+  - 2件は独立のバグではなく、共通の根本原因「静的(compose 由来)
+    ワークベンチが lifecycle のレジストリから不可視なのに、service 名
+    "workbench" とコンテナ名 `<project>-workbench-1` を占有している」から
+    派生している。修正は collector 担当(node-lifecycle.ts): (a) コンテナ名
+    採番・(b) service 名の一意化の両方で、静的ワークベンチ(または Docker 上の
+    実在コンテナ)を考慮する必要がある
+  - 修正時の回帰確認手順: managed ワークベンチ0件の状態で collector を
+    起動し、既定ラベルで addWorkbench → 409 にならないこと・生成された
+    ワークベンチの stableId が `chainviz-ethereum/workbench` と重複しない
+    こと・そのワークベンチへの操作が正しい walletIndex で実行されることを
+    確認する
+  - 調査で作成した一時コンテナ・ネットワーク(chainviz-detective-*)は
+    削除済み。既存の稼働環境(workbench-1/test-2/workbench-3)には
+    手を加えていない
