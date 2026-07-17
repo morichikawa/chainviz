@@ -434,3 +434,68 @@ worktree 環境ではブラウザ起動に必要なシステムライブラリ(l
   フロント側は台帳の `tokenId` 昇順を前提にしている(`resolveContractNftLedger`
   はソートせず入力順をそのまま使う)ため、collector 側がこの前提を崩さない
   ことを QA で確認してほしい
+
+## テスト強化(2026-07-17)
+
+- 担当: tester
+- ブランチ: `issue-315-erc721-ownership-frontend`(node-env/collector を
+  cherry-pick で合流済みの本ブランチ上で実施)
+- 目的: 実装担当が書いた基本テスト(ハッピーパス中心)に対し、境界値・
+  異常系の観点を追加する。実装ロジックは変更していない。追加テストはすべて
+  関心事が既存テストファイルと同一のため、新規ファイルを作らず該当ファイルへ
+  追記した(1ファイル1責務の範囲内)。
+
+### 追加したテスト
+
+- `packages/collector/src/adapters/ethereum/erc721.test.ts`(2件追加):
+  - `ownerOf` を tokenId 1〜totalSupply の範囲でちょうど問い合わせること
+    (0 や totalSupply+1 を問い合わせないこと)の回帰ガード。「burn なし +
+    1 始まりの連番採番」という ChainvizNFT の不変条件に collector が依存する
+    ため、`i + 1` のオフバイワンや列挙範囲の取り違えを検出する。
+  - `ownerOf` が Promise.all で並行実行され解決順が昇順と逆になっても、
+    返り値の並びが tokenId 昇順に固定されること(frontend の
+    `resolveContractNftLedger` が入力順をそのまま使う前提を守る)。
+- `packages/collector/src/adapters/ethereum/nft-tracker.test.ts`(1件追加):
+  - totalSupply の取得は成功したが一部の `ownerOf` が revert した場合に、
+    `NftTracker.pollOnce` が部分的な台帳ではなく `tokens: undefined` を
+    返すこと(全成功・全失敗の二値契約の end-to-end 確認。呼び出し側が
+    前回値を維持する経路に繋がる)。
+- `packages/collector/src/adapters/ethereum/contracts.nft.test.ts`(1件追加):
+  - 前回 non-empty だった台帳を空配列 `[]` で観測した場合に、マージ(前回値の
+    残存)ではなく `[]` へ洗い替わること。取得失敗(undefined)とは異なり
+    `[]` は「観測できたが 0 件」という正当な状態であり前回内容を消す、という
+    設計上の区別の境界を固定する。
+- `packages/frontend/src/entities/walletNftHoldings.test.ts`(1件追加):
+  - 複数コントラクト横断時に「contractAddress 昇順 → 各コントラクト内で
+    tokenId 数値昇順」の2段ソートが同時に効くことを、走査順とは逆の入力で
+    一括確認する(既存テストは単一コントラクトの tokenId ソートと複数
+    コントラクトの address ソートを別々に確認していた)。
+- `packages/frontend/src/entities/contractNftLedger.test.ts`(1件追加):
+  - `walletAddresses` に同一アドレスの大文字小文字違いが混入した場合でも、
+    例外を投げず後勝ち(`buildLowerCaseIndex` の仕様)で決定的に解決する
+    ことの防御的テスト。
+- `packages/frontend/src/chain-profiles/ethereum/operationCatalog.test.ts`
+  (1件追加):
+  - token メタ情報を持たないエントリの全引数(コンストラクタ・関数)に
+    `unit: "token"` が付かないことを、引数名に依存しない一般則として保証する。
+    既存テストは ChainvizNFT の `tokenId` という名前の引数のみを見ていたが、
+    ERC-20 との copy-paste で `unit: "token"` が混入して decimals 換算で
+    tokenId が壊れる罠を、より広く検出する。
+
+### 確認結果
+
+- 追加した回帰テストが実際に不具合を検出することを、最重要の列挙境界テスト
+  で確認した(`erc721.ts` の `BigInt(i + 1)` を `BigInt(i)` に一時的に
+  壊すと該当テストが fail し、元に戻すと pass することを確認して revert)。
+- `pnpm lint`(eslint 全体)警告・エラーなし。
+- `pnpm build`(全パッケージ)成功。
+- `pnpm test` 全パッケージ通過: shared 74 / collector 1523(基本テストの
+  1519 に +4)/ frontend 2360(2357 に +3)/ e2e 171。
+
+### 発見した問題
+
+- なし。実装・既存テストの品質は高く、二値契約(全成功・全失敗)・
+  表記揺れ照合・空配列と未観測の区別・sort 順など主要な境界は実装担当の
+  基本テストで既にカバーされていた。本作業はその周辺の穴埋め(列挙範囲の
+  厳密性・解決順非依存・partial failure の end-to-end・一般則としての
+  unit ガード等)を追加したもの。
