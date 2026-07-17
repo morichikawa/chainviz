@@ -95,6 +95,11 @@ async function fetchOwnerOf(
  * ERC721Enumerable を実装しなくても 1〜totalSupply の全 tokenId を列挙できる。
  * この前提が崩れるコントラクト（burn 実装済み等）をカタログに追加する場合は
  * この関数を再検討すること。
+ *
+ * RPC 呼び出し回数は 1（totalSupply）+ totalSupply（ownerOf）。学習用の
+ * ローカル環境では発行数が高々数十個という前提を置き、固定上限は設けて
+ * いない（CLAUDE.md「固定値の前提条件を明記する」ルール。
+ * docs/worklog/issue-315.md 設計メモにも同じ前提を記録済み）。
  */
 export async function fetchErc721Ledger(
   rpc: EthRpcClient,
