@@ -37,6 +37,19 @@ export interface ContractNodeData extends Record<string, unknown> {
    * useContractSettlementEffects の結果を後付けする。
    */
   flashKind?: "success" | "failed";
+  /**
+   * 現在キャンバス上に存在するウォレットのアドレス集合（Issue #315）。
+   * `ContractCard`/`ContractPopover` の「発行済み NFT」節で、台帳
+   * （`entity.nftTokens`）の所有者アドレスを対応するウォレットの表記
+   * （EIP-55 になりうる）へ揃える（`resolveContractNftLedger`）ために使う。
+   * `WalletNodeData.contractsByAddress`（逆方向の照合）と対になる。
+   *
+   * `isNew`/`flashKind` と同じく optional にしている（`contractsToFlowNodes`
+   * は常に値を入れるが、既存の他ファイル（`canvasNode.test.ts` 等）が
+   * この型のノードデータを直接組み立てている箇所まで書き換えずに済むよう、
+   * 消費側（`ContractCard`）で未指定時は空 Set 扱いにフォールバックする）。
+   */
+  walletAddresses?: ReadonlySet<string>;
 }
 
 export type ContractFlowNode = Node<ContractNodeData, "contract">;
@@ -73,6 +86,12 @@ export interface ContractNodeContext {
    * 空 Map（すべて最古扱いになり、tx hash の辞書順にフォールバックする）。
    */
   blockNumberByHash?: ReadonlyMap<string, number>;
+  /**
+   * 現在キャンバス上に存在するウォレットのアドレス集合（Issue #315。
+   * `ContractNodeData.walletAddresses` 参照）。省略時は空 Set
+   * （「発行済み NFT」節の所有者ラベルはすべて台帳の生の表記のまま出す）。
+   */
+  walletAddresses?: ReadonlySet<string>;
   grid?: GridOptions;
 }
 
@@ -95,6 +114,7 @@ export function contractsToFlowNodes(
   const grid = ctx.grid ?? CONTRACT_GRID;
   const transactions = ctx.transactions ?? [];
   const blockNumberByHash = ctx.blockNumberByHash ?? new Map<string, number>();
+  const walletAddresses = ctx.walletAddresses ?? new Set<string>();
   const contracts = entities
     .filter(isContractEntity)
     .sort((a, b) => a.address.localeCompare(b.address));
@@ -111,7 +131,7 @@ export function contractsToFlowNodes(
       id: entity.address,
       type: CONTRACT_NODE_TYPE,
       position: { x: position.x, y: position.y },
-      data: { entity, activity },
+      data: { entity, activity, walletAddresses },
     };
   });
 }
@@ -131,6 +151,7 @@ export function isSameContractNode(
 ): boolean {
   return (
     previous.data.entity === next.data.entity &&
+    previous.data.walletAddresses === next.data.walletAddresses &&
     previous.position.x === next.position.x &&
     previous.position.y === next.position.y &&
     sameContractActivity(previous.data.activity, next.data.activity)

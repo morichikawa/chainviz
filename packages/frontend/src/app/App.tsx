@@ -353,6 +353,13 @@ function AppShell({
   );
   // tx が pending → 確定へ変わった瞬間を検知し、確定フラッシュ演出中の集合を得る。
   const settling = useTxLifecycle(transactions);
+  // ContractCard/ContractPopover の「発行済み NFT」節（Issue #315）が、台帳
+  // の所有者アドレスを対応するウォレットの表記へ揃えるために使う索引。
+  // contractsByAddress（逆方向の索引。§6.7）と対になる。
+  const walletAddresses = useMemo(
+    () => new Set(wallets.map((w) => w.address)),
+    [wallets],
+  );
 
   // infraNodes と同じ理由(Issue #119)でウォレットカードも参照を安定化する。
   const previousWalletNodesRef = useRef<WalletFlowNode[]>([]);
@@ -384,13 +391,18 @@ function AppShell({
   const previousContractNodesRef = useRef<ContractFlowNode[]>([]);
   const contractNodes = useMemo(() => {
     const next = stabilizeNodes(
-      contractsToFlowNodes(contracts, { layout, transactions, blockNumberByHash }),
+      contractsToFlowNodes(contracts, {
+        layout,
+        transactions,
+        blockNumberByHash,
+        walletAddresses,
+      }),
       previousContractNodesRef.current,
       isSameContractNode,
     );
     previousContractNodesRef.current = next;
     return next;
-  }, [contracts, layout, transactions, blockNumberByHash]);
+  }, [contracts, layout, transactions, blockNumberByHash, walletAddresses]);
 
   // 現在キャンバスに存在するウォレットの address 集合（デプロイエッジの
   // 端点存在判定に使う。ownershipEdges の infraNodeIds と同じ狙い）。
