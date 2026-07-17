@@ -302,3 +302,106 @@ frontend をモックデータモード（`VITE_COLLECTOR_URL` 未設定、
 2. **ヘッダー配置**（§3.2-1）はツールバー配置と比較のうえの推奨。
    ツールバー側が良ければボタンの置き場所だけ差し替え可能（設計の他の
    部分に影響しない）
+
+### 2026-07-17 Issue #313 用語集パネルの実装
+
+- 担当: frontend
+- ブランチ: issue-313-glossary-panel
+- 統括からの判断: §3.11 の2点とも推奨案どおり採用（ポップオーバー6行
+  クランプを採用、ボタンはヘッダー配置）
+
+#### 設計メモ（実装着手前）
+
+UX設計 §3.10 の実装要件まとめにほぼ沿って進めた。差分・補足のみ記録する。
+
+- **`SidePanelHost.tsx` のダングリングガードのバグ**: 既存コードは
+  `const dangling = view !== null && contract === undefined;` となって
+  おり、`contract` は `view?.kind === "contractSource"` のときだけ
+  world state から引いていた。つまり `kind` を判定せず
+  `contract === undefined` だけで判定していたため、glossary kind を
+  追加すると「glossary パネルを開いた瞬間、contract が undefined なので
+  ダングリング扱いされて即座に閉じる」という自己矛盾を起こす。
+  `view?.kind === "contractSource" && contract === undefined` に修正した
+  （§3.10 には明記されていなかったが、2 kind 目を追加する時点で必然的に
+  露呈する既存のバグ。回帰テストを `SidePanelHost.glossary.test.tsx` に
+  追加した）
+- **`SidePanelProvider` の引き上げ**: §3.5 の実装メモどおり、`App.tsx` の
+  `.app` 全体（ヘッダーを含む）を包む位置へ引き上げた。以前は
+  `RibbonHoverProvider` の内側・`main` を包む位置だったため、ヘッダーの
+  `GlossaryOpenButton` が `useSidePanel()` を呼べなかった
+- **`useHoverPopover` に `close` を追加**: `GlossaryTerm` はクリック時に
+  自分自身のホバーポップオーバーを即座に閉じる必要があるが、既存の
+  返り値（`isOpen`/`onMouseEnter`/`onMouseLeave`/`onFocus`/`onBlur`）には
+  「即座に閉じる」を外部から呼べる関数が無かった（`onBlur` の内部実装
+  `closeNow` を流用するだけで済んだ）。既存の呼び出し元には影響しない
+  追加のみの変更
+- **`SidePanelContext.tsx` に `useOptionalSidePanel` を追加**:
+  `GlossaryTerm` は `SidePanelProvider` の外（単体テストなど）でも
+  レンダーされる想定のため、throw する `useSidePanel()` とは別に
+  `useContext` を直接呼ぶだけの non-throw 版を追加した
+- **検索・グループ化の純粋関数を `glossary/glossarySearch.ts` に分離**:
+  `GlossaryPanelView.tsx` 本体を表示に専念させるため（CLAUDE.md
+  「1ファイル1責務」）。`resolveGlossaryLayerGroupKey` /
+  `matchesGlossaryQuery` / `filterGlossaryTerms` /
+  `groupGlossaryTermsByLayer` / `glossaryToOrderedTerms` の5関数
+- **ジャンプ時のハイライト演出は新規定数を作らず既存の
+  `NEW_ARRIVAL_HIGHLIGHT_DURATION_MS`（5000ms, Issue #123）を再利用**。
+  「ここだよ」の合図という役割が同じなため。CSS の `@keyframes
+  chainviz-new-arrival` も同様に再利用（`.glossary-panel__row--highlight`）
+- **`scrollIntoView` は jsdom に実装が無い**ため、`row?.scrollIntoView?.()`
+  とオプショナルチェーンで無くても壊れないようにした（呼ばれることの
+  確認は `GlossaryPanelView.test.tsx` でテスト内だけ一時的にプロトタイプへ
+  スタブを生やして検証）
+
+#### 実装したファイル
+
+- 新規: `glossary/glossarySearch.ts`（+テスト）、
+  `glossary/GlossaryOpenButton.tsx`（+テスト）、
+  `side-panel/GlossaryPanelView.tsx`（+テスト）、
+  `glossary/GlossaryTerm.panelIntegration.test.tsx`、
+  `side-panel/SidePanelHost.glossary.test.tsx`、
+  `app/App.glossaryPanel.test.tsx`（配線のE2Eに近い確認）
+- 変更: `side-panel/sidePanelView.ts`（`glossary` kind 追加）、
+  `side-panel/SidePanelHost.tsx`（振り分け + ダングリングガード修正）、
+  `side-panel/SidePanelContext.tsx`（`useOptionalSidePanel` 追加）、
+  `glossary/GlossaryTerm.tsx`（クリック連携・クランプ・フッター・関連用語
+  名前解決）、`interaction/useHoverPopover.ts`（`close` 追加）、
+  `canvas/Canvas.tsx`（`onLayerFilterChange` を `SidePanelHost` へ中継）、
+  `app/App.tsx`（`SidePanelProvider` 引き上げ・ヘッダーボタン配置・
+  `Canvas` へ `onLayerFilterChange` 配線）、`i18n/messages.ts`（設計メモ
+  §3.9 の9キーをそのまま追加）、`styles.css`
+- 既存テストの追従修正: `entities/ContractCard.test.tsx`
+  （`SidePanelView` が判別共用体になったことに伴う型エラー修正）、
+  `side-panel/SidePanelHost.test.tsx`（新しい必須 prop
+  `layerFilter`/`onLayerFilterChange` の追加）
+
+#### 動作確認
+
+- `pnpm --filter @chainviz/frontend build` / `test`（167ファイル・2390件）
+  ともに成功、`pnpm lint` も警告無し
+- モックモード（`pnpm --filter @chainviz/frontend dev`）を起動し、
+  Playwright（`packages/e2e` 同梱の chromium。issue-125.md 記載の
+  `LD_LIBRARY_PATH` 回避策を使用）で実際に操作して確認した:
+  - ヘッダーの「用語集」ボタンでパネルが開き、検索欄にフォーカスが当たる
+  - 「チェーン」見出し（termKey `block`）のホバーポップオーバーが
+    6行クランプ表示になり、関連用語が生キーではなく用語名
+    （「トランザクション（tx）」「mempool（メモリプール）」
+    「ゴシップ伝播」）で、末尾に「クリックで用語集を開く」フッターが
+    出ることを確認
+  - そのポップオーバーの用語自体をクリックすると、用語集パネルが開いて
+    「ブロック」行が展開状態でスクロール表示され、クランプ無しの全文が
+    読めることを確認（本Issueの起点だった「読み切れない」課題の解消を
+    実際に確認できた）
+  - パネル内の行のレイヤーチップをクリックすると、実際にキャンバス左上の
+    レイヤーレンズのチップ（例: A層）が選択状態に切り替わることを確認
+  - パネル内の関連用語チップをクリックすると、その用語がパネル内で展開・
+    スクロールされることを確認
+  - ヘッダーボタンの再クリックでパネルが閉じることを確認
+
+#### 次の担当が知っておくべき注意点
+
+- §3.8 に記載のとおり、「別Issue候補」としてチェーンリボンのポップオーバー
+  内インタラクション（ホバー保持）の改善は本Issueのスコープ外のまま残して
+  ある。統括への報告事項
+- `packages/shared` の変更・glossary YAML スキーマの変更は無し（当初の
+  想定どおり）
