@@ -878,6 +878,14 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       最大幅が論点。`contractSource`/`glossary`/`commsLog`のkindによらず
       共通シェル(`SidePanel.tsx`)で一括対応できる見込み)
       [#362](https://github.com/morichikawa/chainviz/issues/362)
+- [ ] サンプルコントラクトのトークンシンボル(CVZ等)がSolidityの定数で
+      ハードコードされておりデプロイ時に変更できない
+      (ユーザーからの指摘。ChainvizToken.solの`symbol = "CVZ"`が定数で、
+      コンストラクタ引数はinitialSupplyのみ。「CVZ」が一般的なブロック
+      チェーン用語に見えてしまう。name/symbolのコンストラクタ引数化、
+      または表記変更が論点。catalog.json・operationCatalog.ts・
+      mockData.ts等CVZに依存する既存コードへの影響範囲の洗い出しが必要)
+      [#364](https://github.com/morichikawa/chainviz/issues/364)
 
 ## 運用ルール（全ステップ共通）
 
