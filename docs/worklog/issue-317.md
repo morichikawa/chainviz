@@ -438,3 +438,66 @@ designer との調整が必要。
 - 第2弾（レスポンス観測、Issue #352）は本Issueのスコープ外。
   `CommsLogTxEntry`/`CommsLogOperationEntry` 等の型に成否・所要時間を
   追加する際は、この第1弾の型・導出ロジックとの整合を確認すること。
+
+### 2026-07-17 Issue #317 テスト強化（tester）
+
+- 担当: tester
+- ブランチ: issue-317-comms-log-panel
+- 内容: 第1弾実装（frontend）の基本テストに対し、異常系・境界値・設計不変
+  条件の観点でユニットテストを追加した。新機能の実装・既存実装ロジックの
+  変更は行っていない。
+
+#### 追加したテスト（関心事ごとに新規ファイルへ分割）
+
+- `comms-log/deriveCommsLogEntries.sameBatch.test.ts`（新規）:
+  同一 diff バッチ内で「同じエンティティ／エッジへの複数イベントが連続する」
+  ケースを block 以外へ横展開して固定。実装担当が block でのみ確認・修正した
+  「後続 entityUpdated 見落とし」（`running` 逐次適用で修正済み）が、tx
+  （added pending → updated included/failed）・環境（node added → removed）・
+  peer（edgeAdded → edgeRemoved）・複数ブロックのインターリーブでも正しく
+  機能することを確認。この仕組みは `deriveCommsLogEntries` 内の
+  `running.entities[event.id]` 参照に集約されているため横展開漏れは無い
+  （実装を `prevState.entities` に戻すと tx・複数ブロックのテストが実際に
+  失敗することを確認してから戻した）。
+- `comms-log/deriveCommsLogEntries.noise.test.ts`（新規）:
+  ログエントリを生んではいけない DiffEvent の組み合わせを固定。node/workbench
+  の entityUpdated（resource/sync 更新）、receivedAt 以外のみを触る block
+  update、block/transaction/wallet の entityRemoved、未知 id の削除が
+  いずれも 0 件になることを確認（誤分類・過剰記録の防止）。
+- `comms-log/blockReceiptDedup.test.ts`（追記）:
+  空の receivedAt マップ、drivesNodeId の指す相手がこの block に受信キーを
+  持たない場合（beacon をエイリアスではなく実受信として残す）の2境界を追加。
+- `comms-log/useCommsLog.retention.test.tsx`（新規）:
+  リングバッファ境界。上限ちょうどで1件も落ちないこと、1回の observeDiff で
+  上限超えのバッチを流したときの切り詰め、空バッチが無害なこと、カテゴリ
+  フィルタで表示を絞っても蓄積・上限切り詰めは継続すること（フィルタを戻すと
+  上限ぶんが一気に見える）を確認。
+- `side-panel/SidePanelHost.kindSwitch.test.tsx`（新規）:
+  複数 kind をまたぐパネル遷移。contractSource ⇄ commsLog の排他置換、
+  ダングリングで閉じた contractSource の直後に commsLog を開いても即閉じ
+  しないこと、commsLog 表示中に contract カタログが空へ変わっても閉じない
+  ことを確認（contractSource 専用ダングリングガードの他 kind への非漏洩）。
+- `comms-log/commsLogText.p2pWording.test.ts`（新規）:
+  設計不変条件（§3・§5.6）の固定。ブロック伝播は受信ノード単体を主体とし、
+  文言に送信方向の矢印（→）を含まず受信の語（受信 / receive）を使うこと、
+  peer は双方向記号（⇄）で方向を断定しないことを ja/en 両方で確認。
+
+#### 気づいた点（実装変更はしていない）
+
+- 依頼では「3 kind（contractSource / glossary / commsLog）」のダングリング
+  ガード相互作用の確認を挙げられていたが、このブランチの `SidePanelView` は
+  contractSource / commsLog の2 kind。用語集（glossary）はサイドパネルの
+  kind ではなくインラインの `GlossaryTerm` アンカーで表現されており、パネル
+  kind としては存在しない。そのため kind をまたぐ相互作用テストの対象は
+  上記2種にした（glossary が将来パネル kind 化される場合は同種の遷移テストを
+  足すこと）。実装上の不具合ではなく、依頼時の前提と実装の差分の共有。
+
+#### 確認したこと
+
+- `pnpm --filter @chainviz/frontend build`（tsc -b）が通ることを確認。
+- `pnpm --filter @chainviz/frontend test`（vitest）が 185 ファイル・2444 件
+  すべて通ることを確認（追加前 2415 件 → 2444 件）。
+- 追加した回帰テスト（sameBatch）が、意図的に `running` 参照を
+  `prevState` へ戻した壊れた実装で実際に失敗することを確認してから元に
+  戻した。
+- lint（`eslint`）は追加ファイルについてクリーン。
