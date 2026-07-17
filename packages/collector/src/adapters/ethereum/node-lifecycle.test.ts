@@ -3,12 +3,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { WorkbenchOperation } from "@chainviz/shared";
 import { describe, expect, it, vi } from "vitest";
-import type {
-  ContainerSpec,
-  CreatedContainer,
-  DockerOperations,
-  ExecResult,
-  LabeledContainer,
+import {
+  ContainerNameConflictError,
+  type ContainerSpec,
+  type CreatedContainer,
+  type DockerOperations,
+  type ExecResult,
+  type LabeledContainer,
 } from "../../docker/operations.js";
 import { walletTrackingDisabledWarning } from "./mnemonic.js";
 import {
@@ -27,6 +28,14 @@ function fakeOps(
   opts: {
     usedIps?: string[];
     createFails?: (spec: ContainerSpec) => boolean;
+    /**
+     * これらの名前でコンテナを作成しようとすると、あたかも Docker 上に
+     * 既に同名のコンテナが存在するかのように ContainerNameConflictError を
+     * 投げる（Issue #366 の409衝突再現用）。一度衝突を報告した名前は集合から
+     * 取り除かれる（呼び出し側が別名で再試行したとき、その別名は空いている
+     * ものとして扱う）。
+     */
+    conflictingNames?: Set<string>;
     stopAndRemoveFails?: (id: string) => boolean;
     managedContainers?: LabeledContainer[];
     exec?: (containerId: string, cmd: string[]) => Promise<ExecResult>;
@@ -43,6 +52,10 @@ function fakeOps(
     removed,
     createAndStart: vi.fn(
       async (spec: ContainerSpec): Promise<CreatedContainer> => {
+        if (opts.conflictingNames?.has(spec.name)) {
+          opts.conflictingNames.delete(spec.name);
+          throw new ContainerNameConflictError(spec.name);
+        }
         if (opts.createFails?.(spec)) throw new Error("create failed");
         created.push(spec);
         return { id: `cid-${++seq}` };
