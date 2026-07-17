@@ -10,6 +10,7 @@ import type {
   ExecResult,
   LabeledContainer,
 } from "../../docker/operations.js";
+import { CONFIG_HASH_LABEL } from "./labels.js";
 import { walletTrackingDisabledWarning } from "./mnemonic.js";
 import {
   allocateNodeIndex,
@@ -644,6 +645,22 @@ describe("EthereumNodeLifecycle.addNode", () => {
     expect(beacon.binds).toContain("chainviz-ethereum_clpeer:/clpeer:ro");
   });
 
+  it("labels reth and beacon containers with CONFIG_HASH_LABEL so docker compose down --remove-orphans can recognize and remove them (Issue #359)", async () => {
+    // 実機検証（docs/worklog/issue-359.md）: com.docker.compose.project /
+    // com.docker.compose.service が正しくても、この CONFIG_HASH_LABEL が
+    // 無いと Docker Compose がコンテナを一切認識せず、`docker compose ps -a`
+    // にも `down -v --remove-orphans` の孤児検出にも現れなかった。
+    const ops = fakeOps({
+      usedIps: ["172.28.1.1", "172.28.1.2", "172.28.2.1", "172.28.2.2"],
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+    await lifecycle.addNode("ethereum");
+
+    const [reth, beacon] = ops.created;
+    expect(reth.labels?.[CONFIG_HASH_LABEL]).toBeTruthy();
+    expect(beacon.labels?.[CONFIG_HASH_LABEL]).toBeTruthy();
+  });
+
   it("allocates the next free index on a second addNode", async () => {
     const ops = fakeOps({
       usedIps: ["172.28.1.1", "172.28.1.2", "172.28.2.1", "172.28.2.2"],
@@ -900,6 +917,15 @@ describe("EthereumNodeLifecycle workbench commands", () => {
     expect(wb.labels?.["com.docker.compose.service"]).toBe("Alice");
     // reth へ直結させず、必ずロギングプロキシ経由の URL を渡す（Issue #129）。
     expect(wb.env?.ETH_RPC_URL).toBe(config.ethRpcUrl);
+  });
+
+  it("labels the workbench container with CONFIG_HASH_LABEL so docker compose down --remove-orphans can recognize and remove it (Issue #359)", async () => {
+    const ops = fakeOps();
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+    await lifecycle.addWorkbench("Alice");
+
+    const wb = ops.created[0];
+    expect(wb.labels?.[CONFIG_HASH_LABEL]).toBeTruthy();
   });
 
   it("mounts the sample contracts project so deployContract (forge create) can find it (Issue #293)", async () => {
