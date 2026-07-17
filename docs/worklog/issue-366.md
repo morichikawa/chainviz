@@ -219,3 +219,54 @@ collector/e2e/frontend）も成功。
   `void` で呼んでいるため、理論上は完全同時到達がありうる。今回のIssueの
   根本原因〈静的ワークベンチとの決定的衝突〉とは別種のより一般的な
   並行性の課題であり、本Issueのスコープ外と判断した）。
+
+### 2026-07-17 テスト強化（collector）
+
+- 担当: tester
+- ブランチ: issue-366-workbench-naming-collision
+
+実装担当が書いた基本テスト（ハッピーパス＋主要な異常系）を土台に、
+依頼された4つの重点観点について境界値・異常系のケースを追加した。
+実装ロジックは変更していない。
+
+追加したテストの観点:
+
+- `packages/collector/src/docker/dockerode-operations.test.ts`（既存の
+  `createDockerOperations` の 409 変換テスト群に追記。同一の関心事のため
+  新規ファイルには分割せず隣接する既存 describe に追加）:
+  - 409 以外（statusCode 500）で message に "already in use" を含む
+    エラーを名前衝突へ誤変換しないこと（変換には 409 と message の両方が
+    必要という契約の固定）。
+  - statusCode 409 でも message が無いエラーは名前衝突と断定できず、元の
+    エラーをそのまま伝播すること。
+  - message の大小（"ALREADY IN USE"）が揺れても名前衝突として認識する
+    こと（`/already in use/i`）。
+  - createContainer が Error 以外（文字列）を投げても isNameConflict が
+    typeof チェックで安全に false を返し、そのまま伝播すること。
+- `packages/collector/src/adapters/ethereum/node-lifecycle-workbench-naming.test.ts`
+  （実装担当が新設したファイルに、同じ関心事として追記）:
+  - コンテナ名リトライの上限ちょうどの境界: 999 連続衝突の後、1000 回目
+    （seq=1000）の試行で初めて成功すること（諦める側の既存テストと対で
+    WORKBENCH_NAME_CONFLICT_RETRIES 回まで試行することを固定）。
+  - Docker 上に静的ワークベンチが複数存在する場合（"workbench" と
+    "workbench-2"）に、次に空いている suffix（"workbench-3"）まで進める
+    こと。
+  - service 名の一意化が「Docker 走査結果とメモリ上レジストリの和集合」で
+    あることの核心: Docker 側に静的 "Alice" が居る状態で addWorkbench("Alice")
+    を続けて2回呼ぶと "Alice-2" → "Alice-3" になること（メモリ側が効いて
+    いないと2回目も "Alice-2" を再採番してしまう）。
+  - service ラベルを持たない無関係な Docker コンテナが走査結果に混ざって
+    いても、読み捨てて衝突集合に加えず既定名を使えること。
+  - service 名の一意化のための Docker 問い合わせ（listContainersByLabels）
+    自体が失敗した場合、衝突判定を省いて作成に突き進むのではなく、エラーを
+    伝播して一切コンテナを作成しないこと。
+
+確認結果:
+
+- `pnpm --filter @chainviz/collector build` 成功。
+- `pnpm --filter @chainviz/collector test` 成功（1586 件、テスト強化前の
+  1577 件から +9 件）。
+- `pnpm lint`（workspace 全体、eslint）成功。
+- 既存テストはいずれも無修正で通過。実装ロジックの変更・実装バグの疑いは
+  なし（申し送りにある弱い TOCTOU 競合は本 Issue のスコープ外として了解。
+  今回追加したテストの範囲内でも新たな問題は検出されなかった）。
