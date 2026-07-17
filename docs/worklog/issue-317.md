@@ -278,3 +278,163 @@ designer との調整が必要。
 - 内部APIエントリの視覚的な抑え方（透明度か文字サイズか）
 - フィルタ UI の細部（チップの並び・ドロップダウンの実装方式）
 - 相対遅延表記（+0.42s）の桁数・閾値（波の起点と同時刻の場合の扱い含む）
+
+### 2026-07-17 Issue #317 第1弾実装（frontend）
+
+- 担当: frontend
+- ブランチ: issue-317-comms-log-panel
+- 統括の判断: レスポンス（成否・所要時間）の観測は Issue #352 として別
+  Issue に分割済み。今回のスコープには含めない（§8 の判断どおり）。
+
+#### 実装方針・設計メモ
+
+- ログ導出は `packages/frontend/src/comms-log/` に新設した純関数群に閉じる。
+  `deriveCommsLogEntries(prevState, events, now)` が DiffEvent 列から
+  `CommsLogEntry[]` を導出し、リングバッファ・フィルタ状態は
+  `useCommsLog()` フックが持つ（§7.1 の設計どおり）。`packages/shared` の
+  変更は無し。
+- `useWorldState` に `onDiffEvents?: DiffObserver`（`(prevState, events,
+  now) => void`）を追加した。onDiff 到着のたびに「適用前の WorldState」を
+  渡して呼ぶ。React 18 Strict Mode は `setState` へ渡した更新関数を開発時に
+  二重実行しうるため、`setState(current => applyDiff(current, events))`
+  という既存の書き方のまま `onDiffEvents` を呼ぶと二重発火してしまう。
+  代わりに `worldStateRef`（直近確定 state を手動で同期する ref）を導入し、
+  `setState` には確定済みの値をそのまま渡す形に変えた（`onDiff`
+  ハンドラ自体は React のレンダー経路の外で動く通常の JS コールバックなので
+  二重実行の対象ではないが、`setState` の関数形式引数だけは対象になりうる
+  ため、そちらを避けた）。`useCommands` はこの引数をそのまま
+  `useWorldState` へ委譲するだけ。
+- `useCommsLog()` は当初「現存する node/workbench id 集合」を引数に取る
+  設計だったが、App.tsx で実際に配線する際に「`observeDiff` を
+  `useCommands` に渡すには `state` が確定する前にこのフックを呼ぶ必要が
+  あるが、id 集合は `state` から導出される」という循環に気づいた
+  （設計段階では気づけなかった実装上の制約）。引数を廃止し、
+  `syncValidNodeWorkbenchIds(ids)` という明示的な呼び出しに変更し、
+  呼び出し側（App.tsx）が `entities` 確定後に `useEffect` から呼ぶ形にした
+  （接続状態を伝える `noteConnectionStatus` と同じパターンに統一）。
+- ブロック受信の重複排除（§7.1 候補(b)）は「駆動する側（beacon）の
+  receivedAt キーが、駆動される側（execution）と同じ時刻を持つ場合にだけ
+  エイリアスとして畳む」という構造だけを見た汎用規則にした
+  （`comms-log/blockReceiptDedup.ts`）。ロール名（"execution"/"consensus"）
+  を一切参照しないため、この関数自体はチェーン固有解釈を持ち込まない
+  （CLAUDE.md の ChainAdapter 境界を満たす）。
+- 表示名解決（node は containerName、workbench は label）は
+  `resolveActorLabel.ts` に切り出した。カード本体の見出し（両kindとも
+  containerName）とは異なる決定だが、設計メモ §5.1 の例（"Alice のワーク
+  ベンチ → chainviz-reth-1"）が workbench 側を人が付けた名前で示している
+  ことに合わせた。
+- カテゴリチップの色は既存のキャンバス色をそのまま再利用する方針
+  （設計メモ §5.2）を CSS カスタムプロパティの参照だけで実現し、新しい
+  色は一切定義していない（`--op-edge`/`--internal-edge`/`--accent`/
+  `--syncing`/`--synced`/赤/`--muted`）。peer だけは
+  `entities/peerEdge.ts` の `networkIdColor(networkId)` をエントリ単位で
+  呼び、実際のピアエッジと同じ色を inline style で当てている。
+- E2E（`packages/e2e/SCENARIOS.md` UI-LOG-01〜04・
+  `packages/e2e/src/ui/comms-log.spec.ts`）は §7.3 のルールに従い追加した。
+  実 Docker スタックに対しては未実行（globalSetup が実環境を要求するため、
+  フロント実装担当の環境では起動していない）。chainviz-qa による実行を
+  前提とする。
+
+#### 実装中に見つけたバグとその修正
+
+- **同一バッチ内での entityAdded→entityUpdated の見落とし**:
+  当初の実装は block の receivedAt 増分検出に `prevState`
+  （イベント列全体の適用前）だけを基準にしていた。モックモードで実際に
+  アプリを動かして目視確認したところ、新しいブロックの受信ノードが
+  「最初の1台」しかログに現れないことに気づいた。原因は、モックの
+  `advanceChain()` が「ブロックの entityAdded」→「直後の同一 hash への
+  entityUpdated（receivedAt 追記）」を同じ `events` 配列内で連続して
+  push するため、後段の entityUpdated が「まだ `prevState` に存在しない
+  エンティティの更新」として黙って無視されていたこと。`deriveCommsLogEntries`
+  内で `running`（events を1件ずつ `applyDiff` して進める、直前state）を
+  導入し、block の receivedAt・tx の status 遷移の両方の「前の値」を
+  `prevState` 固定ではなく `running` から引く形に修正した。回帰テスト
+  （同一バッチ内 entityAdded→entityUpdated の組み合わせ）を追加し、修正前
+  の実装に戻すと実際に落ちることを確認してから元に戻した
+  （`deriveCommsLogEntries.block.test.ts`）。
+- `SidePanelHost.tsx` の既存ダングリングガード（`view !== null && contract
+  === undefined`）は元々 contractSource 専用の判定だったが、`commsLog`
+  kind を素通しすると `contract` が常に `undefined` になり、開いた瞬間に
+  即座に閉じてしまう不具合を実装中に発見した（実装前の型チェック時点で
+  気づいた。ランタイムでの再現確認はテスト
+  `SidePanelHost.commsLog.test.tsx` の
+  "is not affected by the contractSource dangling guard" で行った）。
+  判定を `view?.kind === "contractSource" && contract === undefined` に
+  変更し、commsLog を対象外にした。
+
+#### ファイル構成（実装後）
+
+- `comms-log/commsLogEntry.ts`: `CommsLogEntry`（6カテゴリの判別共用体）
+- `comms-log/blockReceiptDedup.ts` (+test): EL/CL 2キー記録の重複排除
+- `comms-log/resolveActorLabel.ts` (+test): node/workbench の表示名解決
+- `comms-log/deriveCommsLogEntries.ts`
+  (+`.operation`/`.block`/`.tx`/`.peer`/`.environment`/`.ordering`
+  の5分割test): 導出純関数本体
+- `comms-log/commsLogFilter.ts` (+test): フィルタ状態・適用純関数
+- `comms-log/commsLogText.ts` (+test): エントリ→表示文言の変換純関数
+  （React 非依存、`t` を引数化）
+- `comms-log/formatLocalTime.ts` (+test): ローカル時刻表示
+- `comms-log/useCommsLog.ts` (+test): リングバッファ・フィルタ・
+  接続状態監視・`observeDiff`/`syncValidNodeWorkbenchIds`
+- `comms-log/testFixtures.ts`: テスト用の最小エンティティビルダー
+  （derive系テストで共通利用。テストファイル自体ではないため vitest
+  には拾われない）
+- `side-panel/CommsLogView.tsx` / `CommsLogEntryRow.tsx` /
+  `CommsLogFilterBar.tsx`（各+test）: パネル中身
+- `side-panel/SidePanelHost.tsx`: `commsLog` kind の振り分けを追加
+  （+`SidePanelHost.commsLog.test.tsx`）
+- `side-panel/sidePanelView.ts`: `{ kind: "commsLog" }` を追加
+- `canvas/CanvasToolbar.tsx`: 「通信ログ」トグルボタン追加
+  （+`CanvasToolbarCommsLog.test.tsx`）
+- `canvas/Canvas.tsx`: `commsLog`/`commsLogNodeOptions`
+  （rfNodesから導出）を `SidePanelHost` へ橋渡し
+- `app/App.tsx`: `useCommsLog()` を App 層で常駐マウントし、
+  `observeDiff` を `useCommands` へ、`syncValidNodeWorkbenchIds`/
+  `noteConnectionStatus` を対応する `useEffect` から配線
+- `world-state/useWorldState.ts`: `DiffObserver` 型・`onDiffEvents`
+  引数を追加（+`useWorldState.diffObserver.test.tsx`）
+- `commands/useCommands.ts`: `onDiffEvents` 引数を追加して委譲
+  （+`useCommandsDiffObserver.test.tsx`）
+- `i18n/messages.ts`: `commsLog.*` / `action.commsLog` を追加
+- `styles.css`: `.comms-log-*` 一式、`.canvas-toolbar__button--active`
+
+#### 確認したこと
+
+- `pnpm --filter @chainviz/frontend build` / `test`（vitest、180ファイル・
+  2415件）が通ることを確認済み。lint（`eslint`）もクリーン。
+- モックモード（`vite` を `VITE_COLLECTOR_URL` 未設定で起動）+ Playwright
+  （chromium。サンドボックスに `libnspr4.so` 等が無いため、事前に展開
+  済みのライブラリへ `LD_LIBRARY_PATH` を通して解決。UX設計時と同じ
+  対処）で実際に操作・撮影して確認した:
+  - ツールバーの「通信ログ」ボタンでパネルが開閉し、Esc でも閉じる
+  - モックの tick（既定3秒間隔）で6カテゴリのうち operation/internal/
+    block/tx の4カテゴリが実際にログへ流れることを確認（peer/environment
+    は addNode 等の操作が必要なため、この目視確認では未発生。ユニット
+    テストでは全カテゴリを確認済み）
+  - ブロックカテゴリで、CL（lighthouse）→EL（reth-1）→reth-2 の受信順・
+    相対遅延（+0.03s・+0.07s）が正しく表示される（このモックはCL/ELの
+    受信時刻を意図的に30ms・65ms ずらしてシミュレートしており、Issue #141
+    の「同時刻エイリアス」とは別物。重複排除ロジックはこのケースでは
+    発火せず、3ノード全てが独立したエントリとして正しく現れることを確認）
+  - tx チップの色が実際に pending=amber/included=green で塗り分けられる
+    ことを DOM の computedStyle で確認（クロップした縮小画像では目視で
+    判別しづらかったため、色そのものは JS 評価で検証した）
+  - カテゴリフィルタで on/off した表示切り替え、日本語/英語表示切替も
+    確認した
+- `packages/e2e` 側は `pnpm --filter @chainviz/e2e build`（tsc --noEmit）・
+  `pnpm --filter @chainviz/e2e test`（protocol層 vitest、171件）のみ確認。
+  Playwright の UI 層 E2E（`test:e2e:ui`）は実 Docker スタックを要するため
+  未実行（chainviz-qa に委ねる）。
+
+#### 次の担当（レビュー・QA）への申し送り
+
+- `useCommsLog` の API（`observeDiff`/`noteConnectionStatus`/
+  `syncValidNodeWorkbenchIds`）は設計メモの想定から実装時に変わっている
+  （上記「実装方針・設計メモ」参照）。設計メモの §7.1 と実装を突き合わせる
+  際はこの差分を踏まえてほしい。
+- `packages/e2e/src/ui/comms-log.spec.ts` は実環境未実行。特に
+  UI-LOG-03（ブロック進行待ち）・UI-LOG-04（複数カテゴリの蓄積待ち）は
+  タイミング依存が強いため、実機での安定性を重点的に見てほしい。
+- 第2弾（レスポンス観測、Issue #352）は本Issueのスコープ外。
+  `CommsLogTxEntry`/`CommsLogOperationEntry` 等の型に成否・所要時間を
+  追加する際は、この第1弾の型・導出ロジックとの整合を確認すること。
