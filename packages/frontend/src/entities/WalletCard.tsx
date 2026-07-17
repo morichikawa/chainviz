@@ -7,6 +7,7 @@ import { useHoverPopover } from "../interaction/useHoverPopover.js";
 import { useRibbonHover } from "./RibbonHoverContext.js";
 import { shortHex, txChipLabel } from "./transaction.js";
 import { TxLifecyclePopover } from "./TxLifecyclePopover.js";
+import { formatNftChipLabel, resolveWalletNftHoldings } from "./walletNftHoldings.js";
 import {
   formatTokenContractLabel,
   resolveWalletTokenBalances,
@@ -79,6 +80,13 @@ function TxChip({ tx, isSettling }: { tx: TransactionEntity; isSettling: boolean
  * 「{amount} {symbol}」形式に整形し、突き合わせ不能な分やトークン残高が
  * 1件もない場合はセクションごと表示しない（`resolveWalletTokenBalances`
  * 参照）。
+ *
+ * トークン残高の下には、保有 NFT チップ列を出す（Issue #315）。台帳は
+ * コントラクト側（`ContractEntity.nftTokens`）に持つ設計のため、
+ * `data.contractsByAddress` の全コントラクトから `resolveWalletNftHoldings`
+ * で導出する。1件も無ければセクション自体を出さない（トークン残高と同じ
+ * 「情報が無ければ出さない」流儀。所有関係を表す新しいエッジは張らない
+ * 設計。docs/worklog/issue-315.md 参照）。
  */
 export function WalletCard({ data }: NodeProps<WalletFlowNode>) {
   const {
@@ -112,6 +120,12 @@ export function WalletCard({ data }: NodeProps<WalletFlowNode>) {
   const tokenBalances = resolveWalletTokenBalances(
     entity.tokenBalances,
     contractsByAddress,
+  );
+  // 保有 NFT チップ列（Issue #315）。台帳はコントラクト側にあるため、
+  // 全コントラクトの nftTokens から address 照合で導出する。
+  const nftHoldings = resolveWalletNftHoldings(
+    entity.address,
+    contractsByAddress.values(),
   );
 
   return (
@@ -175,6 +189,31 @@ export function WalletCard({ data }: NodeProps<WalletFlowNode>) {
                 data-testid={`wallet-token-chip-${entity.address}-${tb.contractAddress}`}
               >
                 {tb.formatted} {tb.symbol}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {nftHoldings.length > 0 && (
+        <div
+          className="wallet-card__nft"
+          data-testid={`wallet-nft-${entity.address}`}
+        >
+          <span className="wallet-card__nft-label">
+            <GlossaryTerm termKey="nft">{t("field.nftHoldings")}</GlossaryTerm>
+          </span>
+          <div className="wallet-card__nft-chips">
+            {nftHoldings.map((holding) => (
+              <span
+                key={`${holding.contractAddress}-${holding.tokenId}`}
+                className="wallet-nft-chip"
+                title={formatTokenContractLabel(
+                  { contractAddress: holding.contractAddress, contractName: holding.contractName },
+                  t("contract.unknown"),
+                )}
+                data-testid={`wallet-nft-chip-${entity.address}-${holding.contractAddress}-${holding.tokenId}`}
+              >
+                {formatNftChipLabel(holding)}
               </span>
             ))}
           </div>

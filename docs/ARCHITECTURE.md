@@ -313,6 +313,19 @@ interface ContractSourceCode {
   code: string; // ソース全文
 }
 
+// NFT（非代替トークン）1 個の所有記録（Issue #315）。TokenBalance（数量の
+// 残高）では表現できない「固有の個体 ID を持つトークンと所有者の 1 対 1
+// 対応」を表す。所有台帳はコントラクトの内部状態なので、ウォレット側では
+// なく ContractEntity.nftTokens に載せる（ウォレット単位の保有一覧は
+// フロントが台帳から導出する。§13）
+interface NftToken {
+  tokenId: string; // 個体識別子。uint256 全域を表せるよう 10 進文字列
+  // 現在の所有者。チェーン側の生の表記（Ethereum アダプタでは小文字正規化
+  // 済み）。WalletEntity.address（EIP-55 表記になりうる）との照合は
+  // 大文字小文字を無視して行う（TransactionEntity.from と同じ扱い）
+  ownerAddress: string;
+}
+
 // チェーン上にデプロイされたスマートコントラクト。特定の 1 ノードの中で
 // 動くものではなく「チェーンに複製され、全ノードが同じ実行をするプログラム」
 // であり、WalletEntity と同じくチェーン側の状態なので、ノード・ワークベンチの
@@ -326,6 +339,14 @@ interface ContractEntity {
   deployerAddress?: string; // デプロイを観測できた場合のみ
   createdByTxHash?: string; // デプロイを観測できた場合のみ
   token?: { symbol: string; decimals: number }; // トークンコントラクトの表示メタ情報
+  // NFT コントラクトの表示メタ情報（Issue #315）。token（数量ベース）とは
+  // 別軸で、数量に decimals の解釈が無いため symbol のみ。カタログで NFT と
+  // 特定できた場合のみ入る
+  nft?: { symbol: string };
+  // 発行済み NFT の所有台帳（tokenId 昇順。Issue #315）。nft メタ情報を持つ
+  // 追跡中のコントラクトについて ChainAdapter が所有者を照会できた場合のみ。
+  // 省略 = 情報なし、空配列 = 観測できたが未発行（tokenBalances と同じ区別）
+  nftTokens?: NftToken[];
   // カタログ同梱のソースコード。カタログで特定できた場合のみ。省略 = ソースが
   // 手元に無い（未知のコントラクト等）で、フロントはその旨を明示する（§12）
   sourceCode?: ContractSourceCode;
@@ -356,6 +377,7 @@ erDiagram
     BlockEntity |o--o{ TransactionEntity : "取り込み（blockHash）"
     WalletEntity |o--o{ TransactionEntity : "送信元（from / recentTxHashes）"
     WalletEntity }o--o{ ContractEntity : "トークン残高（tokenBalances）"
+    WalletEntity }o--o{ ContractEntity : "NFT 所有（nftTokens.ownerAddress）"
     WalletEntity |o--o{ ContractEntity : "デプロイした人（deployerAddress）"
     TransactionEntity }o--o| ContractEntity : "関数呼び出し（contractCall）"
     TransactionEntity |o--o| ContractEntity : "デプロイ（createdContractAddress）"
@@ -729,8 +751,9 @@ profiles/ethereum/contracts/
   foundry.toml
   src/
     ChainvizToken.sol   # 最小の ERC20（外部依存なしの自己完結実装）
+    ChainvizNFT.sol     # 最小の ERC-721 系 NFT（学習用サブセット。Issue #315。§13）
     Counter.sol         # 最小のカウンタ（もっとも単純な学習用コントラクト）
-  catalog.json          # カタログキー → { 表示名, ABI, token メタ情報(symbol/decimals), ソースコード }
+  catalog.json          # カタログキー → { 表示名, ABI, token/nft メタ情報, ソースコード }
   build-catalog.sh      # forge build の成果物から catalog.json を再生成する開発用スクリプト
 ```
 
@@ -762,6 +785,11 @@ profiles/ethereum/contracts/
   追跡中のトークンコントラクト（カタログ掲載かつデプロイ済みのもの）に対して
   残高照会（EVM では `balanceOf` の `eth_call`）を既存の残高・nonce ポーリングと
   同じ周期で行って得る。トークンが 1 つもデプロイされていなければ何もしない
+- NFT の所有台帳（`ContractEntity.nftTokens`）も同じ流儀で得る: カタログの
+  `nft` メタ情報（symbol）を持つデプロイ済みコントラクトに対して、所有者照会
+  （EVM では `totalSupply` ＋ `ownerOf(tokenId)` の `eth_call`）を同じ周期で
+  ポーリングする。NFT コントラクトが 1 つもデプロイされていなければ何もしない
+  （設計判断・前提条件は §13）
 
 `ChainAdapter` を実装し、`profiles/<chainName>/` を追加するだけで
 新チェーンに対応する。既存プロファイルのコードは変更しない
@@ -2484,6 +2512,100 @@ tx を集約し、mempool 全体を俯瞰する常設ミニパネルをキャン
   カタログ同梱の自作サンプル（現在 2 ファイル・計 118 行）のみで文法網羅が
   不要、依存追加を避けられる、純関数としてテストしやすい。カタログが
   増えてトークナイザの保守が割に合わなくなったらライブラリ導入を再検討する
+
+## 13. NFT（ERC-721）の所有関係の可視化（Issue #315）
+
+「誰がどの `tokenId` を持っているか」という NFT 固有の所有関係を、既存の
+トークン残高（数量ベース。§6.7）と混同しない形で可視化する。設計の全文
+（検討した代替案・決定理由・実装分担）は `docs/worklog/issue-315.md` を参照。
+
+### 13.1 サンプルコントラクト: ChainvizNFT（学習用サブセット）
+
+`profiles/ethereum/contracts/src/ChainvizNFT.sol` を追加する。ChainvizToken と
+同じく外部ライブラリ（OpenZeppelin 等）に依存しない自己完結実装で、扱う範囲は
+**EIP-721 の厳密な準拠ではなく「tokenId の所有」を学ぶための中核サブセット**
+とする:
+
+- 持つもの: `name` / `symbol`（定数）、`totalSupply`（発行済み個数）、
+  `balanceOf` / `ownerOf` / `getApproved`、`approve` / `transferFrom`、
+  `mint(address to)`（デプロイヤーのみ。tokenId は **1 始まりの連番**を
+  自動採番）、`Transfer` / `Approval` イベント（ERC-721 標準と同じ
+  シグネチャ。`tokenId` は indexed）
+- 持たないもの: `safeTransferFrom`（受信側コントラクトのフック）、
+  `setApprovalForAll` / `isApprovedForAll`（オペレータ承認）、ERC-165
+  （`supportsInterface`）、`tokenURI`（オフチェーンメタデータ）、burn。
+  いずれも「誰がどの tokenId を持つか」という可視化の主題から外れた概念を
+  持ち込むため省く。実物の ERC-721 にはこれらがあることをソースコメントと
+  用語解説で明示する
+- **burn が無い + 連番採番**により「発行済み tokenId = 1〜totalSupply」が
+  常に成立する。これは 13.2 の所有台帳ポーリングが依存する前提条件で、
+  ソース側のコメントにも明記する
+
+`catalog.json` のエントリは `token` の代わりに **`nft: { symbol: "CVN" }`** を
+持つ（`build-catalog.sh` を拡張して生成する）。collector のカタログ読み込み
+（`catalog.ts`）はこの `nft` フィールドを検証・保持し、カタログ照合時に
+`ContractEntity.nft` へ転記する（`token` と同じ流儀）。
+
+### 13.2 collector 側: 所有台帳のポーリング（イベント畳み込みは採らない）
+
+所有台帳（`ContractEntity.nftTokens`）は、**チェーンへの直接照会の周期
+ポーリング**で得る:
+
+- 追跡中（デプロイ検知済み）かつ `nft` メタ情報を持つコントラクトを対象に、
+  `totalSupply()` → `ownerOf(1..totalSupply)` を `eth_call` で照会する
+  （ウォレット残高・トークン残高と同じ 3 秒周期。NFT コントラクトが 1 つも
+  無ければ何もしない）
+- 照会結果はアドレス単位で `ContractEntity` へマージし、既存の
+  `subscribeContracts` → `applyContract` の経路で `entityUpdated` として
+  流れる（新しい DiffEvent・プロトコル変更は不要。store の差分計算は
+  JSON ベースの深い比較なので、台帳に変化が無ければイベントは出ない）
+- `ownerAddress` は小文字へ正規化する（`ContractEntity.address` /
+  `TransactionEntity.from` と同じチェーン側の生の表記。フロントは
+  `addressCasing` ヘルパーで大文字小文字を無視して照合する）
+- **`Transfer` イベントの畳み込み（イベントソーシング）を採らない理由**:
+  collector の再起動・イベントの取りこぼしで台帳が静かに狂い、自己修復
+  できない。`ownerOf` ポーリングはステートレスで毎回チェーンの実状態と
+  一致する（ウォレット残高の既存方針と同じ「チェーンに直接問い合わせる」
+  流儀）。`Transfer` イベント自体はカタログ ABI により既存の復号機構
+  （Issue #162。`decode.ts` は ABI 汎用で indexed tokenId もそのまま復号
+  できる）でコントラクトカードの「直近の呼び出し・イベント」に表示される
+  ため、二重の配線は要らない
+- RPC 回数は「NFT コントラクト数 ×（1 + 発行済み個数）」/ 周期で増える。
+  学習用のローカル環境では発行数は高々数十個という前提を置き、件数の
+  固定上限は設けない（前提が崩れる規模になったら enumeration 方式ごと
+  見直す。この前提はコード上のコメントにも明記する）
+
+### 13.3 フロント側: 台帳はコントラクトカード、保有はウォレットカード
+
+所有関係は 2 つの視点で見せる。**どちらも新しいエッジは張らない**:
+
+- **NFT コントラクトカード**（台帳の視点）: サブタイトルに NFT の symbol を
+  出し、「発行済み NFT」セクションに tokenId チップ（`#1` 等）を並べる。
+  各チップに所有者（対応するウォレットがあれば短縮アドレス、無ければ
+  生アドレスの短縮表記）を添える。空配列は「まだ発行されていません」、
+  省略（未観測）はセクション自体を出さない
+- **ウォレットカード**（保有の視点）: トークン残高チップ列の下に
+  「保有 NFT」セクションを足す。全 NFT コントラクトの `nftTokens` から
+  `ownerAddress` 照合（大文字小文字無視）で導出し、「CVN #1」形式の
+  チップで出す。1 個も無ければセクション自体を出さない（§6.7 と同じ流儀）
+- **エッジを張らない理由**: 既存の視覚語彙では「エッジ = 実在の接続・
+  呼び出し・所有（秘密鍵）」であり、コントラクト内部の台帳という論理的な
+  対応関係にエッジを使うと、所有エッジ（ワークベンチ → ウォレット。
+  秘密鍵の所有）と「NFT の所有」が同じ見た目の別概念になって混同を招く
+  （§6.10 の決定 1 で「全ノードで実行」にエッジを使わなかったのと同じ
+  判断）。transfer の因果は既存の tx チップ・確定パルス・イベントチップが
+  示す
+- 定型操作は既存の `callContract` がそのまま使える（プロトコル変更なし）。
+  フロント表現セットの `operationCatalog.ts` に ChainvizNFT のエントリ
+  （`mint(address)` / `approve(address,uint256)` /
+  `transferFrom(address,address,uint256)`）を足すだけでよい
+
+### 13.4 用語解説
+
+`glossary/ethereum/terms/c-transaction.yaml` に `nft` を追加する（定義の中で
+ERC-721 という規格名・「ERC-20 との違い = 数量ではなく個体」に触れる。
+アンカーはウォレットカードの「保有 NFT」ラベルとコントラクトカードの
+「発行済み NFT」ラベル）。`token`（既存）の relatedTerms に `nft` を追加する。
 
 ## 未確定のまま残す項目
 

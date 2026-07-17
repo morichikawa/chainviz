@@ -6,6 +6,7 @@ import { useHoverPopover } from "../interaction/useHoverPopover.js";
 import { PopoverPortal } from "../interaction/PopoverPortal.js";
 import { useSidePanel } from "../side-panel/SidePanelContext.js";
 import type { ContractActivityChip } from "./contractActivity.js";
+import { resolveContractNftLedger } from "./contractNftLedger.js";
 import { ContractPopover } from "./ContractPopover.js";
 import type { ContractFlowNode } from "./contractNode.js";
 import { useRibbonHover } from "./RibbonHoverContext.js";
@@ -95,9 +96,16 @@ function ActivityChip({ chip }: { chip: ContractActivityChip }) {
  * `flashKind` はtx確定の瞬間（呼び出し・デプロイ）に一時的に立つ演出フラグ
  * （§6.6「確定時のコントラクトへのパルス」）。ウォレットの tx チップの
  * `is-settling` と同系の演出で、failed の tx は失敗色のフラッシュにする。
+ *
+ * NFT コントラクト（`entity.nft` を持つ）は、活動チップ列の下に「発行済み
+ * NFT」節を出す（Issue #315。docs/worklog/issue-315.md「フロント表現:
+ * エッジは張らない。カード2視点」）。台帳（`entity.nftTokens`）が省略
+ * （未観測）ならこの節自体を出さず、空配列なら「まだ発行されていません」を
+ * 出す（`resolveContractNftLedger` はこの区別をしないため、判定は
+ * `entity.nftTokens !== undefined` で行う）。
  */
 export function ContractCard({ data }: NodeProps<ContractFlowNode>) {
-  const { entity, activity, isNew, flashKind } = data;
+  const { entity, activity, isNew, flashKind, walletAddresses } = data;
   const { t } = useLanguage();
   // Issue #321: サイドパネル（コントラクトソースビュー）を開く。
   const { open: openSidePanel } = useSidePanel();
@@ -112,6 +120,13 @@ export function ContractCard({ data }: NodeProps<ContractFlowNode>) {
 
   const isUncataloged = entity.name === undefined;
   const name = entity.name ?? t("contract.unknown");
+  // Issue #315: 「発行済み NFT」節。省略（未観測）とセクション自体を出さない
+  // 判定は、生の nftTokens（undefined か否か）で行う。
+  const isNftObserved = entity.nftTokens !== undefined;
+  const nftLedger = resolveContractNftLedger(
+    entity.nftTokens,
+    walletAddresses ?? [],
+  );
 
   const className = [
     "infra-card",
@@ -197,6 +212,35 @@ export function ContractCard({ data }: NodeProps<ContractFlowNode>) {
           )}
         </div>
       </div>
+      {/* Issue #315: NFT コントラクトの「発行済み NFT」節。台帳（省略=未観測）
+          はセクション自体を出さない。空配列（観測済みだが未発行）は
+          「まだ発行されていません」を出す。新しいエッジは張らない設計
+          （docs/worklog/issue-315.md「フロント側」参照）。 */}
+      {isNftObserved && (
+        <div
+          className="contract-card__nft"
+          data-testid={`contract-nft-${entity.address}`}
+        >
+          <span className="contract-card__nft-label">
+            <GlossaryTerm termKey="nft">{t("contract.issuedNft")}</GlossaryTerm>
+          </span>
+          <div className="contract-card__nft-chips">
+            {nftLedger.length === 0 ? (
+              <span className="contract-card__nft-empty">{t("contract.noNft")}</span>
+            ) : (
+              nftLedger.map((token) => (
+                <span
+                  key={token.tokenId}
+                  className="contract-nft-chip"
+                  data-testid={`contract-nft-chip-${entity.address}-${token.tokenId}`}
+                >
+                  #{token.tokenId} · {shortHex(token.ownerAddress)}
+                </span>
+              ))
+            )}
+          </div>
+        </div>
+      )}
       {/* Issue #321: コントラクトソースビューを開くボタン。未知のコントラクト
           （sourceCode を持たない）にも出す。押すとパネル側で「なぜ見られない
           か」を明示する（見出しを隠すより学べる方を優先。ARCHITECTURE.md
@@ -210,7 +254,13 @@ export function ContractCard({ data }: NodeProps<ContractFlowNode>) {
       >
         {t("contract.viewSource")}
       </button>
-      {hovered && <ContractPopover anchorRef={cardRef} entity={entity} />}
+      {hovered && (
+        <ContractPopover
+          anchorRef={cardRef}
+          entity={entity}
+          walletAddresses={walletAddresses}
+        />
+      )}
     </div>
   );
 }

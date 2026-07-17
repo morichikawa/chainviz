@@ -407,6 +407,30 @@ export interface ContractSourceCode {
 }
 
 /**
+ * NFT（非代替トークン）1 個の所有記録（Issue #315）。
+ *
+ * TokenBalance（数量の残高）では表現できない「固有の個体 ID を持つトークンと
+ * 所有者の 1 対 1 対応」を表す。所有台帳はトークンを管理するコントラクトの
+ * 内部状態なので、ウォレット側ではなく ContractEntity.nftTokens に載せる
+ * （フロントはウォレット単位の保有一覧をこの台帳から導出する）。
+ */
+export interface NftToken {
+  /**
+   * トークンの個体識別子（10 進文字列。EVM の uint256 等の大きな値でも
+   * 精度を落とさないため、balance / TokenBalance.amount と同じく文字列）。
+   */
+  tokenId: string;
+  /**
+   * 現在の所有者アドレス。ChainAdapter 実装はチェーン側の生の表記
+   * （Ethereum アダプタでは小文字正規化済み）で載せる。WalletEntity.address
+   * は EIP-55 チェックサム表記になりうるため、フロントは大文字小文字を
+   * 無視して照合すること（TransactionEntity.from と同じ扱い。フロントの
+   * addressCasing ヘルパー参照）。
+   */
+  ownerAddress: string;
+}
+
+/**
  * チェーン上にデプロイされたスマートコントラクト。特定の 1 ノードの中で
  * 動くものではなく「チェーンに複製され、全ノードが同じ実行をするプログラム」
  * であり、WalletEntity と同じくチェーン側の状態なので、ノード・ワークベンチの
@@ -439,6 +463,23 @@ export interface ContractEntity {
    * WalletEntity.tokenBalances の amount はこの decimals で解釈する。
    */
   token?: { symbol: string; decimals: number };
+  /**
+   * NFT（非代替トークン）を管理するコントラクトである場合の表示メタ情報
+   * （Issue #315）。token（数量ベースの残高台帳）とは別軸のフィールドで、
+   * 数量に decimals の解釈が無いため symbol のみを持つ。チェーンプロファイル
+   * のコントラクトカタログで NFT と特定できた場合のみ入る（token と同じ
+   * 「カタログが単一の真実の情報源」の流儀）。
+   */
+  nft?: { symbol: string };
+  /**
+   * 発行済み NFT の所有台帳（tokenId の昇順。Issue #315）。nft メタ情報を
+   * 持つ追跡中のコントラクトについて、ChainAdapter が所有者をチェーンへ
+   * 照会（EVM では ownerOf の eth_call）できた場合のみ入る。省略 = 情報なし
+   * （未観測・NFT 以外のコントラクト・旧スナップショット）で、フロントは
+   * 台帳表示を出さない側に倒す。空配列は「観測できたが 1 個も発行されて
+   * いない」を意味し、省略と区別する（tokenBalances と同じ流儀）。
+   */
+  nftTokens?: NftToken[];
   /**
    * カタログ同梱のソースコード（表示用。Issue #321）。カタログで特定でき、
    * かつカタログがソースを同梱している場合のみ入る。省略 = ソースが手元に

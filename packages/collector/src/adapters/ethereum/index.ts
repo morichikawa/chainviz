@@ -12,6 +12,7 @@ import type {
   ContractEntity,
   ContractEvent,
   InfraEntity,
+  NftToken,
   NodeEntity,
   NodeInternalsHandlers,
   PeerEdge,
@@ -1022,6 +1023,31 @@ export class EthereumAdapter implements ChainAdapter {
    */
   trackedTokenContractAddresses(): string[] {
     return this.contractTracker.tokenContractAddresses();
+  }
+
+  /**
+   * 現在追跡中かつカタログの nft メタ情報を持つコントラクトのアドレス一覧を
+   * 返す（ContractTracker.nftContractAddresses への委譲）。collector 本体
+   * （index.ts）が NftTracker の所有台帳ポーリング対象を決めるために使う
+   * （Issue #315）。trackedTokenContractAddresses と同型の拡張 API。
+   */
+  trackedNftContractAddresses(): string[] {
+    return this.contractTracker.nftContractAddresses();
+  }
+
+  /**
+   * NftTracker が取得した所有台帳の観測結果を該当コントラクトへ反映する
+   * （Issue #315）。ContractTracker.applyNftObservation に委譲し、更新が
+   * 生じた場合（tokens が定義されており、かつ対象が nft メタ情報を持つ
+   * 追跡中のコントラクトである場合）は registerContractDeployment と同じく
+   * 購読済みの onContract コールバックへ渡し、store.applyContract による
+   * 差分計算・配信に乗せる。ChainAdapter インターフェースには含めず、
+   * registerContractDeployment と同じく EthereumAdapter 固有の拡張 API とする。
+   */
+  applyNftObservation(address: string, tokens: NftToken[] | undefined): void {
+    const updated = this.contractTracker.applyNftObservation(address, tokens);
+    if (!updated) return;
+    this.onContract?.(updated);
   }
 
   /**
