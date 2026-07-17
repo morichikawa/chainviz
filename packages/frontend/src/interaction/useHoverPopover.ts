@@ -24,6 +24,13 @@ export interface UseHoverPopoverResult {
   onFocus: () => void;
   /** キーボードフォーカスが外れた時に呼ぶ。連続的な移動を経ないため即座に閉じる。 */
   onBlur: () => void;
+  /**
+   * ホバー/フォーカス以外の理由（クリックで別の場所へ遷移する等）で即座に
+   * 閉じたい場合に呼ぶ（Issue #313: `GlossaryTerm` がクリックで用語集
+   * パネルを開くと同時に、開いたままのホバーポップオーバーを閉じるために
+   * 追加）。`onBlur` と同じ即時クローズ処理を公開しているだけ。
+   */
+  close: () => void;
 }
 
 /**
@@ -76,5 +83,6 @@ export function useHoverPopover(
     onMouseLeave: closeAfterDelay,
     onFocus: openNow,
     onBlur: closeNow,
+    close: closeNow,
   };
 }

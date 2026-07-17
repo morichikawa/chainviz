@@ -197,6 +197,26 @@ describe("wallet tx history message keys (Issue #320)", () => {
   });
 });
 
+describe("glossary panel message keys (Issue #313)", () => {
+  const glossaryKeys = [
+    "glossary.open",
+    "glossary.open.hint",
+    "glossary.panel.title",
+    "glossary.panel.searchPlaceholder",
+    "glossary.panel.searchEmpty",
+    "glossary.panel.relatedTerms",
+    "glossary.panel.layerLens.hint",
+    "glossary.panel.otherLayer",
+    "glossary.popover.openPanel",
+  ] as const;
+
+  it.each(glossaryKeys)("has a non-empty ja and en translation for %s", (key) => {
+    const entry = messages[key];
+    expect(entry.ja.length).toBeGreaterThan(0);
+    expect(entry.en.length).toBeGreaterThan(0);
+  });
+});
+
 describe("format", () => {
   it("replaces a single placeholder", () => {
     expect(format("hello {name}", { name: "world" })).toBe("hello world");

@@ -50,3 +50,14 @@ export function useSidePanel(): SidePanelContextValue {
   }
   return ctx;
 }
+
+/**
+ * `useSidePanel()` の非 throw 版（Issue #313）。`GlossaryTerm` はアプリ本体
+ * （`SidePanelProvider` の内側）だけでなく、単体テストや将来の Storybook 的な
+ * 利用のように Provider の外でもレンダーされ得る。Provider が無い場合は
+ * `null` を返し、呼び出し側（`GlossaryTerm`）はクリックでのパネル起動を
+ * no-op にフォールバックする。
+ */
+export function useOptionalSidePanel(): SidePanelContextValue | null {
+  return useContext(SidePanelContext);
+}

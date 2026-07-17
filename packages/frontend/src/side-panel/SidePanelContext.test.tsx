@@ -4,7 +4,11 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it } from "vitest";
-import { SidePanelProvider, useSidePanel } from "./SidePanelContext.js";
+import {
+  SidePanelProvider,
+  useOptionalSidePanel,
+  useSidePanel,
+} from "./SidePanelContext.js";
 
 afterEach(cleanup);
 
@@ -61,5 +65,21 @@ describe("useSidePanel", () => {
       });
     }).not.toThrow();
     expect(result.current.view).toBeNull();
+  });
+});
+
+describe("useOptionalSidePanel (Issue #313)", () => {
+  it("returns null outside a SidePanelProvider instead of throwing", () => {
+    const { result } = renderHook(() => useOptionalSidePanel());
+    expect(result.current).toBeNull();
+  });
+
+  it("returns the same live context value as useSidePanel() inside a SidePanelProvider", () => {
+    const { result } = renderHook(() => useOptionalSidePanel(), { wrapper });
+    expect(result.current).not.toBeNull();
+    act(() => {
+      result.current?.open({ kind: "glossary" });
+    });
+    expect(result.current?.view).toEqual({ kind: "glossary" });
   });
 });
