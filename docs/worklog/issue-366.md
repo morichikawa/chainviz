@@ -270,3 +270,68 @@ collector/e2e/frontend）も成功。
 - 既存テストはいずれも無修正で通過。実装ロジックの変更・実装バグの疑いは
   なし（申し送りにある弱い TOCTOU 競合は本 Issue のスコープ外として了解。
   今回追加したテストの範囲内でも新たな問題は検出されなかった）。
+
+### 2026-07-17 レビュー（reviewer）
+
+- 担当: reviewer
+- ブランチ: issue-366-workbench-naming-collision
+- 判定: **合格**（差し戻しなし。軽微な指摘2件は下記、対応任意）
+
+確認した内容:
+
+- `packages/shared` に変更が無いこと（`git diff origin/main...HEAD` の対象は
+  collector と docs のみ）。設計どおり collector 内で完結している
+- 境界の遵守: `ContainerNameConflictError` は `docker/operations.ts`
+  （Docker 共通語彙の層）に置かれ、dockerode の生エラー形状
+  （statusCode/message）を ChainAdapter 層に漏らさない変換型として機能
+  している。既存の `isRemovalInProgress` 等と同じ置き場所・思想で一貫
+- エラーの握りつぶしが無いこと: `createAndStart` の catch は名前衝突のみ
+  変換し、それ以外は元のエラーをそのまま re-throw（コメントで明記）。
+  `createWorkbenchContainer` の catch も `ContainerNameConflictError`
+  以外は即伝播。`existingWorkbenchServiceNames` の Docker 問い合わせ失敗も
+  伝播し、衝突判定を省いて作成に突き進まない（テストで固定済み）
+- 固定値の前提条件: `WORKBENCH_NAME_CONFLICT_RETRIES`(1000) は「環境の
+  観測値ではなく無限ループ防止の安全弁」である旨がコード上のコメントと
+  本 worklog（設計メモ・実装記録）の両方に明記されており、CLAUDE.md の
+  運用ルールを満たす。境界値（999衝突→1000回目成功 / 1000回全衝突→
+  諦める）もテストで両側から固定されている
+- Issue #334 を #366 の重複（派生症状）として扱う判断: detective の調査
+  記録（docs/worklog/meta.md 2026-07-17 節）が、stableId 重複により
+  同一 stableId のエンティティが GUI 上で静的ワークベンチのカードに
+  隠れる・操作が別コンテナへ誤配送されることを実測で示しており、#334 の
+  「addWorkbench で追加したはずのワークベンチに remove が『追加されて
+  いない』を返す」症状はこの遮蔽・誤配送の機序で説明できる。#334 自体は
+  当時の偶発観測で決定的再現はされていないが、stableId の一意化により
+  この症状クラス自体が成立しなくなるため、重複扱いは妥当。万一 #366
+  修正後に同症状が独立に再発した場合は別 Issue として再起票すればよい
+- 既知の限定事項（addWorkbench 完全同時到達時の service 名重複という
+  弱い TOCTOU）のスコープ外判断: 本 Issue の根本原因（静的ワークベンチ
+  との決定的衝突）とは別種の一般的な並行性課題であり、worklog に発生
+  条件（websocket-server の `void` 呼び出しによる理論上の同時到達）まで
+  明記されている。スコープ外判断は妥当。コンテナ名側はリトライ方式に
+  より TOCTOU 耐性がある
+- テストコードの質: 和集合判定の核心（メモリ側が効かないと再採番する
+  ケース）、無関係コンテナの読み捨て、managed 限定になっていないことの
+  ラベル引数検証、409 変換の両側condition（409 かつ message の両方が
+  必要）など、実装を壊すと確実に落ちる意味のあるケースで構成されている。
+  新規テストファイルの分離（1ファイル1責務）も適切
+- コミット粒度: 型変換層の追加 / lifecycle の修正 / docs / テスト強化
+  2件がそれぞれ独立のコミットに分かれており、Conventional Commits 形式
+  にも適合
+- `pnpm lint` / `pnpm build`（shared/collector/e2e/frontend）/
+  `pnpm test`（collector 1586 件・frontend 2592 件を含む全パッケージ）
+  すべて通過
+
+軽微な指摘（合否に影響なし。対応は任意）:
+
+1. `dockerode-operations.test.ts` の「does not call start() when
+   createContainer fails with a name conflict」は、`start` スパイが
+   docker モックのどこにも接続されていない（createContainer が reject
+   するためコンテナオブジェクト自体が存在せず、start は構造上呼び得ない）。
+   `expect(start).not.toHaveBeenCalled()` は空虚に真となるアサーション。
+   同テストの型変換アサーション自体は他テストと重複しており、削除しても
+   カバレッジは落ちない
+2. `node-lifecycle.test.ts` の fakeOps に追加された `conflictingNames`
+   オプションは、同ファイル内のどのテストからも使われていない（実際に
+   使うテストは新設の node-lifecycle-workbench-naming.test.ts 側にあり、
+   そちらは独自の fakeOps を持つ）。未使用のヘルパー拡張として残っている
