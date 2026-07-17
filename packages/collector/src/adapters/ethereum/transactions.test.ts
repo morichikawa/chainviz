@@ -757,3 +757,33 @@ describe("TransactionLifecycleTracker.updateContractEvents (Issue #244)", () => 
     ]);
   });
 });
+
+describe("TransactionLifecycleTracker.reset (Issue #357)", () => {
+  it("forgets previously tracked tx (pending and included)", () => {
+    const tracker = new TransactionLifecycleTracker();
+    tracker.recordPending({ hash: "0xpending", from: "0xa", to: "0xb" });
+    tracker.recordInclusion("0xblock", [
+      { hash: "0xincluded", from: "0xa", to: "0xb", status: "included" },
+    ]);
+    expect(tracker.get("0xpending")).toBeDefined();
+    expect(tracker.get("0xincluded")).toBeDefined();
+
+    tracker.reset();
+
+    expect(tracker.get("0xpending")).toBeUndefined();
+    expect(tracker.get("0xincluded")).toBeUndefined();
+  });
+
+  it("allows the same hash to be recorded as pending again after reset", () => {
+    const tracker = new TransactionLifecycleTracker();
+    tracker.recordInclusion("0xblock", [
+      { hash: "0xt1", from: "0xa", to: "0xb", status: "included" },
+    ]);
+    tracker.reset();
+
+    // reset 前は included 済みの hash を recordPending しても null（巻き戻り
+    // 防止のガード）。reset 後は新規 pending として受理されることを確認する。
+    const entity = tracker.recordPending({ hash: "0xt1", from: "0xa", to: "0xb" });
+    expect(entity?.status).toBe("pending");
+  });
+});

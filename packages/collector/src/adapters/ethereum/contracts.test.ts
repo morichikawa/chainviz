@@ -421,3 +421,59 @@ describe("ContractTracker address casing normalization (Issue #161 review follow
     expect(tracker.get(checksummed)).toEqual(tracker.get(lowercased));
   });
 });
+
+describe("ContractTracker.reset (Issue #357)", () => {
+  it("forgets previously tracked contracts", () => {
+    const tracker = new ContractTracker("ethereum", catalog);
+    tracker.recordDeployment({
+      address: "0xabc",
+      deployerAddress: "0xdeployer",
+      createdByTxHash: "0xtx1",
+    });
+    expect(tracker.get("0xabc")).toBeDefined();
+
+    tracker.reset();
+
+    expect(tracker.get("0xabc")).toBeUndefined();
+  });
+
+  it("forgets pending catalog key registrations (registerDeployment before recordDeployment)", () => {
+    const tracker = new ContractTracker("ethereum", catalog);
+    // まだデプロイを検知していないアドレスに先にカタログキーを登録する
+    // （registerDeployment のコメント参照。pendingCatalogKeys に保留される）。
+    tracker.registerDeployment("0xabc", "ChainvizToken");
+
+    tracker.reset();
+
+    // reset 後に同じアドレスのデプロイを検知しても、パージ前の保留登録が
+    // 残っていれば「未知のコントラクト」ではなくカタログ照合済みで現れて
+    // しまう。reset 後は「未知のコントラクト」として現れることを確認する。
+    const entity = tracker.recordDeployment({
+      address: "0xabc",
+      deployerAddress: "0xdeployer",
+      createdByTxHash: "0xtx1",
+    });
+    expect(entity?.catalogKey).toBeUndefined();
+  });
+
+  it("allows a fresh chain to redeploy at the same address after reset", () => {
+    const tracker = new ContractTracker("ethereum", catalog);
+    tracker.recordDeployment({
+      address: "0xabc",
+      deployerAddress: "0xold-deployer",
+      createdByTxHash: "0xold-tx",
+    });
+
+    tracker.reset();
+
+    // reset 前は同一アドレスの再デプロイは無視される（recordDeployment の
+    // 「既に追跡済みなら null」仕様）。reset 後は新規デプロイとして受理
+    // されることを確認する（新チェーンでの再デプロイを表す）。
+    const entity = tracker.recordDeployment({
+      address: "0xabc",
+      deployerAddress: "0xnew-deployer",
+      createdByTxHash: "0xnew-tx",
+    });
+    expect(entity?.deployerAddress).toBe("0xnew-deployer");
+  });
+});

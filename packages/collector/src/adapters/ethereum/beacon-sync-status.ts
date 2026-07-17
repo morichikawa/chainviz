@@ -72,4 +72,12 @@ export class BeaconSyncStatusCache {
   resolve(stableId: string): ResolvedSyncStatus | undefined {
     return this.resolved.get(stableId);
   }
+
+  /**
+   * 全ノードの解決済み同期状態を破棄する（チェーンリセット検知時。
+   * Issue #357）。`NodeSyncStatusCache.reset` と同じ後始末。
+   */
+  reset(): void {
+    this.resolved.clear();
+  }
 }

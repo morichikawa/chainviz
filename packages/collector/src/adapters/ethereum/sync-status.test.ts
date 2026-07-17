@@ -253,4 +253,19 @@ describe("NodeSyncStatusCache", () => {
     // reth1 自体はキャッシュから消え、undefined に戻る。
     expect(cache.resolve("chainviz-ethereum/reth1")).toBeUndefined();
   });
+
+  it("reset (Issue #357) forgets every node's observed checkpoint", () => {
+    const cache = new NodeSyncStatusCache();
+    cache.update("chainviz-ethereum/reth1", {
+      syncStages: [{ stage: "Finish", checkpoint: 5000 }],
+    });
+    cache.update("chainviz-ethereum/reth2", {
+      syncStages: [{ stage: "Finish", checkpoint: 4990 }],
+    });
+
+    cache.reset();
+
+    expect(cache.resolve("chainviz-ethereum/reth1")).toBeUndefined();
+    expect(cache.resolve("chainviz-ethereum/reth2")).toBeUndefined();
+  });
 });

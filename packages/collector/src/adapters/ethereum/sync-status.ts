@@ -111,4 +111,13 @@ export class NodeSyncStatusCache {
       syncStatus: behind <= SYNCED_TOLERANCE_BLOCKS ? "synced" : "syncing",
     };
   }
+
+  /**
+   * 全ノードの観測済み checkpoint を破棄する（チェーンリセット検知時。
+   * Issue #357）。旧チェーンのブロック高を新チェーンの D層観測まで基準値
+   * として使い続けないようにする。
+   */
+  reset(): void {
+    this.heights.clear();
+  }
 }

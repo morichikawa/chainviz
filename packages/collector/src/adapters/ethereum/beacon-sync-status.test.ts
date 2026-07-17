@@ -182,4 +182,21 @@ describe("BeaconSyncStatusCache", () => {
       blockHeight: 250,
     });
   });
+
+  it("reset (Issue #357) forgets every node's resolved sync status", () => {
+    const cache = new BeaconSyncStatusCache();
+    cache.set("chainviz-ethereum/beacon1", {
+      syncStatus: "synced",
+      blockHeight: 100,
+    });
+    cache.set("chainviz-ethereum/beacon2", {
+      syncStatus: "syncing",
+      blockHeight: 50,
+    });
+
+    cache.reset();
+
+    expect(cache.resolve("chainviz-ethereum/beacon1")).toBeUndefined();
+    expect(cache.resolve("chainviz-ethereum/beacon2")).toBeUndefined();
+  });
 });

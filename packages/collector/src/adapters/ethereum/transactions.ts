@@ -188,6 +188,16 @@ export class TransactionLifecycleTracker {
     return updated;
   }
 
+  /**
+   * 追跡中の全 tx を破棄する（チェーンリセット検知時。Issue #357）。
+   * 旧チェーンの tx ハッシュはリセット後の新チェーンでは無意味な情報に
+   * なるため、store 側の block/transaction パージ（`purgeChainDerivedState`）
+   * と合わせてアダプタ内部の状態も揃える。
+   */
+  reset(): void {
+    this.txs.clear();
+  }
+
   private put(entity: TransactionEntity): void {
     // Map は挿入順を保つので、更新時は一度消してから入れ直し最新扱いにする。
     this.txs.delete(entity.hash);
