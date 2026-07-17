@@ -833,10 +833,11 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       アドレス表記の大文字小文字差異照合バグをレビューで1回差し戻し・
       修正済み)
       [#330](https://github.com/morichikawa/chainviz/issues/330)
-- [ ] removeWorkbenchがaddWorkbenchで追加したワークベンチに対しても
+- [x] removeWorkbenchがaddWorkbenchで追加したワークベンチに対しても
       「追加されていない」エラーを返すことがある
-      (Issue #319のQA検証中に偶発的に観測。再現手順未調査。着手時はまず
-      chainviz-detectiveに原因調査を依頼)
+      (Issue #319のQA検証中に偶発的に観測。chainviz-detectiveの調査により
+      Issue #366と同一原因(stableId重複による操作の誤配送)の派生症状と
+      判明。#366の修正で解消)
       [#334](https://github.com/morichikawa/chainviz/issues/334)
 - [ ] 英語モードでp2p-legendの凡例文が日英混在になっている
       (Issue #327のQA検証中に偶発的に観測。原因はglossary/ではなく、
@@ -889,13 +890,16 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       または表記変更が論点。catalog.json・operationCatalog.ts・
       mockData.ts等CVZに依存する既存コードへの影響範囲の洗い出しが必要)
       [#364](https://github.com/morichikawa/chainviz/issues/364)
-- [ ] 追加ワークベンチの命名が静的ワークベンチと衝突する
+- [x] 追加ワークベンチの命名が静的ワークベンチと衝突する
       (コンテナ名409・stableId重複による操作の誤配送)
       (ユーザーが実際のワークベンチ追加・送金操作で遭遇。chainviz-detective
       が原因調査済み(docs/worklog/meta.md)。静的ワークベンチがlifecycle
       レジストリから不可視なのに、コンテナ名・service名を占有している
-      ことが根本原因。フレッシュ起動後の初回addWorkbenchで確実に発生。
-      応急対処は追加時に既定以外のラベルを付けること)
+      ことが根本原因。コンテナ名はDocker自身の名前衝突検出(409)を利用した
+      リトライへ、service名(stableId)は静的ワークベンチを含むDocker上の
+      実在コンテナとの照合へ変更して解消。実機の隔離環境で修正前の再現・
+      修正後の解消(409にならない・stableId重複なし・removeWorkbenchが
+      1回で完了)を確認済み。詳細はdocs/worklog/issue-366.md)
       [#366](https://github.com/morichikawa/chainviz/issues/366)
 - [ ] GlossaryTermのキーボード操作(Space)でpreventDefaultが呼ばれず
       ページスクロールし得る

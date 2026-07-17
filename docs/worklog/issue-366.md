@@ -123,3 +123,99 @@ service名」として衝突判定する。非同期になるため `uniqueWorkb
 いずれも修正前に実際に再現し、修正後に再現しないことを確認してから
 完了とする（Issue #334はこの一連の不具合の派生症状として扱う）。
 
+### 2026-07-17 実装記録（collector）
+
+- 担当: collector
+- ブランチ: issue-366-workbench-naming-collision
+
+設計メモどおりに実装した。変更ファイル:
+
+- `packages/collector/src/docker/operations.ts`:
+  `ContainerNameConflictError` を追加。`createAndStart` の契約に
+  「名前衝突時はこの型を投げる」ことを明記。
+- `packages/collector/src/docker/dockerode-operations.ts`:
+  `createAndStart` が dockerode の生エラー（409 かつ message に
+  "already in use" を含む）を `ContainerNameConflictError` へ変換する。
+  それ以外の失敗（イメージ不在等）はそのまま伝播させる。
+- `packages/collector/src/adapters/ethereum/node-lifecycle.ts`:
+  - `addWorkbench` からコンテナ作成部分を `createWorkbenchContainer`
+    private メソッドへ切り出し、`ContainerNameConflictError` を捕捉して
+    `workbenchSeq` を進めながら最大 `WORKBENCH_NAME_CONFLICT_RETRIES`
+    (1000、無限ループ防止の安全弁であり環境観測値ではない旨をコメントに明記)
+    回まで再試行するようにした。
+  - `workbenchSpec` はコンテナ名の連番 `seq` を引数で受け取るよう変更し
+    （従来は `++this.workbenchSeq` を内部でインクリメントしていた）、
+    採番の決定をリトライループ側に一本化した。
+  - `uniqueWorkbenchService` を async 化し、新設した
+    `existingWorkbenchServiceNames()`（`listContainersByLabels` を
+    compose project ラベルのみで呼び、静的ワークベンチ・reth/beacon/
+    validator・回収済みでない managed コンテナ等を走査する）と
+    `this.workbenches`（メモリ上のレジストリ）の和集合で衝突判定するよう
+    変更した。
+  - `recoverManagedContainers` 内の `workbenchSeq` 初期値に関するコメントを、
+    「この値はあくまで開始点の見積もりであり、ズレていても
+    createAndStart 側のリトライで解決する」という新しい前提に合わせて
+    書き直した。
+
+**実機での再現・修正確認**（`docker ps` の共有 `chainviz-ethereum` スタックは
+他Issueの並行作業中(コンテナ増減あり)だったため使用せず、`/tmp` の
+scratchpad に compose project名・サブネットを変えた隔離スタック
+`issue366repro`(`profiles/ethereum` を複製し、host向けポート公開を除去)を
+別途起動して確認した）:
+
+1. 修正前のコードに対し、実際の dockerode を使うスクリプトで
+   `recoverManagedContainers()` → `addWorkbench("")` を実行し、Issue本文と
+   一致する409エラー（`The container name "/issue366repro-workbench-1" is
+   already in use ...`）が実際に発生することを確認した。
+2. 修正後、同じ操作が成功し、作成されたコンテナ名は
+   `issue366repro-workbench-2-1`、service ラベルは `workbench-2`、stableId
+   は `issue366repro/workbench-2` となり、静的ワークベンチ
+   （`issue366repro/workbench`）と重複しないことを確認した。
+3. 静的ワークベンチ・新規ワークベンチの双方へ `runWorkbenchOperation`
+   (`transfer`) を実行し、異なる txHash（＝異なる送信元コンテナ・鍵）で
+   実行されることを確認した（誤配送が起きていない）。
+4. `removeWorkbench` を新規ワークベンチの stableId に対して1回呼び出すと
+   正しく削除され、静的ワークベンチは道連れにならず操作可能なまま残った。
+
+隔離スタックは確認後 `docker compose down -v` で片付け、他Issueが使っている
+共有スタックには一切触れていない。
+
+**テスト**:
+
+- `packages/collector/src/docker/operations.test.ts`（新規）:
+  `ContainerNameConflictError` の基本的な形状。
+- `packages/collector/src/docker/dockerode-operations.test.ts`:
+  `createAndStart` が実際の409エラー文言を `ContainerNameConflictError` へ
+  変換すること・無関係な409やそれ以外の失敗は変換せず伝播させること・
+  名前衝突時に `start()` を呼ばないことを追加。
+- `packages/collector/src/adapters/ethereum/node-lifecycle-workbench-naming.test.ts`
+  （新規。既存の `node-lifecycle.test.ts` が既に大きいため関心事ごとに
+  分離）: コンテナ名の再試行（1回衝突・複数回連続衝突・再試行後も
+  `workbenchSeq` が引き継がれる・再試行上限で打ち切る・名前衝突以外は
+  即伝播する）と、stableId 重複の回避（Docker 上だけに存在する静的
+  ワークベンチとの衝突回避、`recoverManagedContainers` からの一連の
+  回帰シナリオ、`listContainersByLabels` の呼び出しラベルが managed 限定に
+  なっていないこと）をカバーする。
+- 既存の `node-lifecycle.test.ts` の workbench 関連テストは無修正で
+  そのまま通ることを確認済み（`uniqueWorkbenchService`/`workbenchSpec` の
+  シグネチャ変更は呼び出し元のみに閉じている）。
+
+**確認結果**: `pnpm --filter @chainviz/collector build` /
+`pnpm --filter @chainviz/collector test`（1577件）/ `pnpm lint`
+（workspace全体）がすべて成功。`pnpm build`（workspace全体、shared/
+collector/e2e/frontend）も成功。
+
+**次の担当への申し送り**:
+
+- `docs/PLAN.md` のIssue #366と #334の両方のチェックボックスを更新した
+  （#334はchainviz-detectiveの調査により本Issueと同一原因の派生症状と
+  判明済みのため、実装担当の判断で合わせてチェックした。Issueのクローズ
+  自体はPRマージ時の自動クローズに委ねる。PR本文には
+  `Closes #366` `Closes #334` の両方を含めること）。
+- コンテナ名衝突の解消はリトライ方式（TOCTOUに強い）、service名/stableId
+  重複の解消は都度のDocker問い合わせ方式（弱いTOCTOUが残るが、複数の
+  addWorkbench呼び出しが完全同時に届く場合に限る低確率の残課題。
+  websocket-server.ts の `onMessage` はメッセージ受信時に await せず
+  `void` で呼んでいるため、理論上は完全同時到達がありうる。今回のIssueの
+  根本原因〈静的ワークベンチとの決定的衝突〉とは別種のより一般的な
+  並行性の課題であり、本Issueのスコープ外と判断した）。
