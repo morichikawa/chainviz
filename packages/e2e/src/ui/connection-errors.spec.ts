@@ -124,13 +124,22 @@ test.describe("UI-ERR collectorプロセスの停止・再起動", () => {
         "useCommands.tsのdispatchがゴーストを作らず" +
         "describeCommandNotConnectedErrorのトーストを即座に出すようになった）",
       async () => {
-        // addNodeはEL/CLの2枚のゴーストを生むが(commands-node.spec.tsと同じ)、
-        // 未接続時はコマンド自体を送信しない設計に変わったため、ゴーストは
-        // 1枚も作られない。
-        await expect(anyGhostCard(page)).toHaveCount(0);
+        // 先にエラートーストの出現を待つ。これが「即座にエラーが利用者へ
+        // 伝わる」ことの検証であると同時に、クリックの dispatch が実際に処理
+        // され描画が一巡したことの確認になる。トーストを待たずに先にゴースト数
+        // 0を検証すると、クリック処理前の空の状態を評価して素通りしうるため
+        // （ゴーストが作られる退行を見逃す）、必ずトーストの出現を待ってから
+        // ゴースト数を確認する。
         const toast = page.locator('[data-testid^="toast-"]').first();
         await expect(toast).toBeVisible();
         await expect(toast).toHaveClass(/toast--error/);
+        // トーストが理由の分かる文言を含むこと（空のトーストで素通りしない）。
+        await expect(toast).not.toBeEmpty();
+        // addNodeはEL/CLの2枚のゴーストを生むが(commands-node.spec.tsと同じ)、
+        // 未接続時はコマンド自体を送信しない設計に変わったため、ゴーストは
+        // 1枚も作られない。トースト出現（=dispatch完了）後に確認することで、
+        // 「ゴーストが一瞬でも作られていない」ことを意味のある形で検証する。
+        await expect(anyGhostCard(page)).toHaveCount(0);
       },
     );
   });
