@@ -253,3 +253,73 @@ GlossaryTerm / ActionHint / contract-activity-chip__popover）について、
   `page.mouse.move(0,0)` の実マウス移動に依存する（dispatchHoverで開くと
   実ポインタが要素上を通らず`mouseout`が発火せず閉じない）ことから、
   最小変更としてlocatorスコープのみを修正した。
+
+### 2026-07-17 Issue #346 実装・テスト強化の静的レビュー
+
+- 担当: reviewer
+- ブランチ: issue-346-e2e-hover-flakiness（`issue-346-impl-worktree` worktree）
+- 判定: **合格**（実装担当への差し戻しなし）
+
+#### 確認内容
+
+- **変更範囲**: 分岐点（`18db8f4`）からの差分は `docs/`（PLAN.md・worklog）と
+  `packages/e2e/`（SCENARIOS.md・spec 4ファイル）のみ。`packages/shared` への
+  変更が無いことを確認
+- **portalスコープ崩れの横断再確認**: `packages/e2e/src/ui/` 全14 specを対象に、
+  ポップオーバー系locator（`*popover*` を含む `getByTestId`/`locator`）と
+  `.hover()`/`dispatchHover` の全呼び出し箇所を独自にgrepで全数照合した。
+  ポップオーバーのルート要素はすべて `page` スコープで解決し、その内部要素のみ
+  ポップオーバー自身のスコープで解決する形になっており、トリガー要素の子孫として
+  portal要素を探す誤ったスコープは残っていない（chain-ribbon の
+  `popover.getByTestId(...)` はportal描画されたpopover自身の子孫探索であり正しい）。
+  WalletPopover / TxLifecyclePopover / ActionHint / ContractPopover をホバーで
+  開いて検証するspecは存在しないことも確認（tester の横断確認結果と一致）
+- **frontend実装との整合**: `InfraPopover.tsx`（`infra-popover-${id}`）・
+  `GlossaryTerm.tsx`（`glossary-popover-${termKey}`）・`ContractCard.tsx`
+  （`.contract-activity-chip__popover`）・`Toast.tsx`（`toast-${id}` /
+  `toast toast--${kind}`）・`websocket/client.ts`（未接続時 `sendCommand` が
+  `undefined`）・`useCommands.ts`（未接続時ゴーストを作らず
+  `describeCommandNotConnectedError` のerrorトースト）をすべて実コードで照合し、
+  テストの期待と一致することを確認
+- **UI-ERR-02の検証順序の妥当性**: 「トースト出現＝dispatch完了」を前提に
+  ゴースト数0を後から確認する順序について、トーストの発火元が
+  `useCommands.ts` の3箇所（コマンド結果エラー・ゴーストタイムアウト安全網・
+  未接続エラー）に限られ、切断そのものではトーストが出ないことを確認した。
+  クリック前にトーストが存在しない前提が成立するため、この順序変更は
+  「素通り」の余地を実際に塞いでいる
+- **品質ゲート観点**: エラー握りつぶしの追加なし（dispatchHoverに防御コードを
+  足さない判断は「テスト失敗を握りつぶさない」方向で妥当）。環境依存の
+  固定値はむしろ削減（GHOST_DISAPPEAR_TIMEOUT_MS 70秒待ちの撤去）。
+  修正前の再現→修正→解消の手順が worklog に記録されている
+- **コミット粒度**: 6コミットいずれも単一の関心事（UI-D-03/UI-C-04修正、
+  UI-ERR-02追随、UI-A-02/05修正、UI-ERR-02強化、docs×2）で、
+  Conventional Commits 形式にも準拠
+- **ビルド・テスト**: `pnpm lint` / `pnpm build`（e2eの `tsc --noEmit` 含む）/
+  `pnpm test`（shared 74・collector 1563・e2e 171・frontend 2592、全通過）を
+  リポジトリ全体で確認
+
+#### 非ブロッキングの指摘（差し戻し不要、フォローアップ推奨）
+
+1. `packages/e2e/src/ui/support/interactions.ts` の `dispatchHover` doc
+   コメントは「ノードカードのように単独でヒットテストできる要素は素直に
+   hover() を使ってよい」という従来の整理のままだが、UI-D-03 で
+   「初期ビューポート外に配置されうるカードは hover() が失敗する」という
+   第2の理由が判明した。呼び出し側（node-internals.spec.ts）には記載済み
+   だが、ヘルパー側のガイドも将来更新するとよい
+2. `docs/PLAN.md` の #346 注記にある「UI-CMD-07 は chainviz-detective への
+   追加調査を提案中」は、その後 main 側で Issue #373 として分割済みのため、
+   main へのマージ時に統括が #373 への参照へ更新（またはコンフリクト解消）
+   する必要がある（本ブランチ作成後に main が先行したことによる記述の陳腐化。
+   本ブランチ自体の欠陥ではない）
+3. UI-A-02/UI-A-05 で実 `hover()` を維持した理由（RETH1 は初期レイアウトで
+   ビューポート内・UI-A-02 の「ホバーを外すと閉じる」が実ポインタ移動に依存）
+   は worklog にのみ記録されている。spec 側コメントにも一言あると、将来の
+   担当が安易に dispatchHover 化して閉じる検証を壊すことを防げる
+
+#### QAへの申し送り
+
+- `infra-display.spec.ts`（UI-A-01〜UI-A-05）の実Docker環境でのフル再実行が
+  未実施（tester作業時に共有スタックへ他エージェント由来の追加コンテナ
+  `beacon3`/`reth3`/`test-2`/`workbench-3` が存在しノード数が期待値と不一致
+  だったため、破壊的な down/up を避けて見送られた）。クリーンなスタックで
+  必ず実施すること
