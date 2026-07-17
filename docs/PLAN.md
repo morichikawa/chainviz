@@ -856,6 +856,13 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       第1弾からは分離。Issue #317マージ後に着手し、まずchainviz-designerに
       設計を依頼する)
       [#352](https://github.com/morichikawa/chainviz/issues/352)
+- [ ] addNode/addWorkbenchで作成したmanagedコンテナがdocker compose
+      down -vでも削除されない
+      (Issue #357の原因調査中にchainviz-detectiveが副次的に発見。
+      隔離した最小composeプロジェクトで実証済み(Compose v2.40.3 /
+      Engine 29.1.3)。--remove-orphans付きでも削除されない。README注記+
+      ラベルベースの掃除スクリプト等が候補(chainviz-node-env + docs))
+      [#359](https://github.com/morichikawa/chainviz/issues/359)
 
 ## 運用ルール（全ステップ共通）
 
