@@ -842,7 +842,14 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       [#341](https://github.com/morichikawa/chainviz/issues/341)
 - [ ] UI層E2Eテストの一部が実.hover()依存・描画安定性不足でflakyになりうる
       (Issue #322のQA検証中に偶発的に観測。UI-C-04/UI-CMD-07/UI-ERR-02/
-      UI-D-03で個別再現。slot time変更とは無関係の既存のテスト脆さ)
+      UI-D-03で個別再現。slot time変更とは無関係の既存のテスト脆さ。
+      2026-07-17実装: UI-C-04/UI-D-03はdispatchHover化+ポップオーバーの
+      portal化(Issue #245)によるlocatorスコープ崩れの修正で解消、
+      UI-ERR-02はIssue #235修正後にテストが追随していなかった問題と
+      判明し修正、いずれも実Docker環境で再現→解消を確認済み。
+      UI-CMD-07(削除ボタンのstable判定)のみクリーンな環境で6回連続
+      再現を試みたが再現できず未解決。chainviz-detectiveへの追加調査を
+      提案中のため未完了のまま)
       [#346](https://github.com/morichikawa/chainviz/issues/346)
 - [ ] チェーンリボンの「親ブロック」行ホバー強調が実質使えない
       (ホバーが約200msで閉じる。Issue #313のUX設計中にchainviz-uxが実測で
