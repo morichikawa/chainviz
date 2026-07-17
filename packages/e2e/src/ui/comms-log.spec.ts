@@ -124,22 +124,21 @@ test("UI-LOG-03: ブロック進行で「ブロック受信」エントリが増
 
 test("UI-LOG-04: カテゴリフィルタで該当カテゴリだけに絞られる", async ({ page }) => {
   await page.goto("/");
-
-  // 操作（RPC）カテゴリのエントリを決定的に発生させる。ログ蓄積はパネルの
-  // 開閉と無関係にApp層のフックで常時行われる（設計メモ§4-5・§7.1）ため、
-  // パネルを開く前に実行してよい。逆に、通信ログパネル（右ドック約420px）
-  // を開いた状態でワークベンチを追加すると、managedワークベンチが2台
-  // （このテストが追加する分 + 既存分）になりグリッド配置が列方向へずれ、
-  // 静的ワークベンチの操作ボタンがパネルの裏に回り込んでクリックできなく
-  // なることがあった（Issue #317 QA差し戻し）。パネルを開く前に操作を
-  // 済ませてこの重なりを回避する。
-  const { address } = await addWorkbenchAndGetWallet(page, "comms-log-filter-sender");
-  await submitTransfer(page, STATIC_WORKBENCH_ID, { to: address, amount: "0.001" });
-
   await openCommsLogPanel(page);
 
-  // 複数カテゴリが蓄積されるまで、次のブロックが生成されるのを待つ
-  // （毎tickで操作・内部API・ブロック・txの複数カテゴリが同時に増える）。
+  // このシナリオはフィルタの表示切り替え・蓄積継続という挙動だけを見れば
+  // よく、絞り込む対象カテゴリ自体は何でもよい。あえて「操作（RPC）」を
+  // 対象にせず、チェーン進行だけでキャンバス操作なしに決定的に蓄積される
+  // block/internal の2カテゴリで検証する。ワークベンチ操作（送金）を伴う
+  // 版は、UI-LOG-02 の後に走ると追加した managed ワークベンチの分だけ
+  // カードのグリッドが伸び、静的ワークベンチのカードがオーバーレイ
+  // （通信ログパネル・p2p-legend・ツールバー等、テスト実行順やビューポート
+  // 次第でどれに当たるか変わる）の裏に回り込んで操作ボタンをクリック
+  // できなくなることが繰り返し起きた。「送金操作のためにキャンバス上の
+  // カードをクリックする」という構造そのものがレイアウト脆弱性であり、
+  // 送金の実行タイミングをずらす等の対症療法では収束しないため、
+  // ワークベンチ操作自体を不要にする（Issue #317 QA差し戻し。操作
+  // カテゴリの記録・検証は UI-LOG-02 が既にカバーしている）。
   await expect
     .poll(async () => commsLogEntriesOf(page, "block").count(), {
       timeout: NEXT_BLOCK_TIMEOUT_MS,
@@ -147,33 +146,25 @@ test("UI-LOG-04: カテゴリフィルタで該当カテゴリだけに絞られ
     .toBeGreaterThan(0);
   await expect(commsLogEntriesOf(page, "internal").first()).toBeVisible();
 
-  // 上で実行した送金操作の操作エントリが記録されるまで待つ（パネルを
-  // 開く前に送金しているため、ここで初めてDOMに現れる）。
-  await expect
-    .poll(async () => commsLogEntriesOf(page, "operation").count(), {
-      timeout: OPERATION_EFFECT_TIMEOUT_MS,
-    })
-    .toBeGreaterThan(0);
-
-  await test.step("「操作」以外の全カテゴリチップを off にする", async () => {
+  await test.step("「ブロック」以外の全カテゴリチップを off にする", async () => {
     // 各クリックが実際に反映される（aria-pressed が false になる）ことを
     // 待ってから次のチップへ進む。高速連続クリックだと、反映前に次の
     // 検証へ進んでしまいクリックを取りこぼすことがあった（Issue #317
     // QA差し戻し）。
-    for (const category of ["internal", "block", "tx", "peer", "environment"]) {
+    for (const category of ["operation", "internal", "tx", "peer", "environment"]) {
       const chip = page.getByTestId(`comms-log-filter-${category}`);
       await chip.click();
       await expect(chip).toHaveAttribute("aria-pressed", "false");
     }
   });
 
-  await test.step("表示されるエントリが全て操作（RPC）カテゴリになる", async () => {
-    await expect(page.locator('[data-testid="comms-log-entry"]:not([data-category="operation"])')).toHaveCount(0);
-    await expect(commsLogEntriesOf(page, "operation").first()).toBeVisible();
+  await test.step("表示されるエントリが全てブロックカテゴリになる", async () => {
+    await expect(page.locator('[data-testid="comms-log-entry"]:not([data-category="block"])')).toHaveCount(0);
+    await expect(commsLogEntriesOf(page, "block").first()).toBeVisible();
   });
 
-  await test.step("off にしたカテゴリを再度 on に戻すと再び表示される（蓄積自体は保たれている）", async () => {
-    await page.getByTestId("comms-log-filter-block").click();
-    await expect(commsLogEntriesOf(page, "block").first()).toBeVisible();
+  await test.step("off にした「内部API」カテゴリを再度 on に戻すと再び表示される（蓄積自体は保たれている）", async () => {
+    await page.getByTestId("comms-log-filter-internal").click();
+    await expect(commsLogEntriesOf(page, "internal").first()).toBeVisible();
   });
 });
