@@ -930,6 +930,10 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       到達不能で#341以前からの既存挙動だが、既存の`format()`と同じく
       `hasOwnProperty`ガードを追加する軽微な堅牢性向上)
       [#371](https://github.com/morichikawa/chainviz/issues/371)
+- [ ] 用語集パネルのフォントサイズを変更できるようにする
+      (ユーザーからの要望。フォントサイズ変更UIの要否・設定の永続化要否・
+      他のサイドパネルへの適用範囲が論点)
+      [#377](https://github.com/morichikawa/chainviz/issues/377)
 
 ## 運用ルール（全ステップ共通）
 
