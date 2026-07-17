@@ -193,6 +193,19 @@ export class ContractTracker {
     return this.catalog?.[entity.catalogKey];
   }
 
+  /**
+   * 追跡中の全コントラクトと保留中のカタログキー登録を破棄する
+   * （チェーンリセット検知時。Issue #357）。クリアしないと、旧チェーンの
+   * トークン/NFT コントラクトが `tokenContractAddresses`/
+   * `nftContractAddresses` を通じて WalletTracker/NftTracker に渡り続け、
+   * 新チェーンには存在しないアドレスへの eth_call が失敗し続けてエラー
+   * ログが際限なく積み上がる（issue-357 の調査で実測: ログ 5MB 超）。
+   */
+  reset(): void {
+    this.contracts.clear();
+    this.pendingCatalogKeys.clear();
+  }
+
   private applyCatalog(entity: ContractEntity, contractKey: string): ContractEntity {
     const catalogEntry = this.catalog?.[contractKey];
     if (!catalogEntry) return entity; // カタログ側に無いキー: 未知のまま

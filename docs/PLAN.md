@@ -856,6 +856,14 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       第1弾からは分離。Issue #317マージ後に着手し、まずchainviz-designerに
       設計を依頼する)
       [#352](https://github.com/morichikawa/chainviz/issues/352)
+- [x] docker compose down -v後もEOA(ウォレット)が削除されずに残る
+      (原因特定済み: collectorがチェーンリセット(genesis変更)を検知して
+      C層エンティティ(wallet/contract)をパージする仕組みが無い。詳細は
+      docs/worklog/issue-357.md。collector側の実装完了。genesisハッシュの
+      変化を検知するChainResetWatcherを追加し、検知時にアダプタ内部
+      キャッシュとワールドステートのwallet/contract/block/transactionを
+      パージする)
+      [#357](https://github.com/morichikawa/chainviz/issues/357)
 - [ ] addNode/addWorkbenchで作成したmanagedコンテナがdocker compose
       down -vでも削除されない
       (Issue #357の原因調査中にchainviz-detectiveが副次的に発見。

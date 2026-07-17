@@ -240,3 +240,18 @@ describe("BlockPropagationTracker", () => {
     expect(first.receivedAt).toEqual({ "p/reth1": 1000 });
   });
 });
+
+describe("BlockPropagationTracker.reset (Issue #357)", () => {
+  it("forgets previously recorded blocks so a later record for the same hash starts fresh (no stale merge)", () => {
+    const tracker = new BlockPropagationTracker();
+    tracker.record(["p/reth1"], header(), 1000);
+
+    tracker.reset();
+
+    const block = tracker.record(["p/reth2"], header(), 5000);
+    // reset していなければ同一 hash の再受信として p/reth1: 1000 も
+    // マージされて残るはず（通常仕様）。reset 後は真っさらな状態から
+    // 始まることを確認する。
+    expect(block.receivedAt).toEqual({ "p/reth2": 5000 });
+  });
+});

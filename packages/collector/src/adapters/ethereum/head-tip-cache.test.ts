@@ -132,4 +132,15 @@ describe("HeadTipCache", () => {
     cache.recordHead(["chainviz-ethereum/reth1"], "0xlow-after-reorg");
     expect(cache.resolve("chainviz-ethereum/reth1")).toBe("0xlow-after-reorg");
   });
+
+  it("reset (Issue #357) forgets every node's tip", () => {
+    const cache = new HeadTipCache();
+    cache.recordHead(["chainviz-ethereum/reth1"], "0xblock1");
+    cache.recordHead(["chainviz-ethereum/reth2"], "0xblock2");
+
+    cache.reset();
+
+    expect(cache.resolve("chainviz-ethereum/reth1")).toBeUndefined();
+    expect(cache.resolve("chainviz-ethereum/reth2")).toBeUndefined();
+  });
 });

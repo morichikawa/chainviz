@@ -56,4 +56,13 @@ export class HeadTipCache {
       if (!currentIds.has(id)) this.tips.delete(id);
     }
   }
+
+  /**
+   * 全ノードの tip 記録を破棄する（チェーンリセット検知時。Issue #357）。
+   * 旧チェーンの tip ハッシュを新チェーンの newHeads 受信まで表示し続け
+   * ないようにする。
+   */
+  reset(): void {
+    this.tips.clear();
+  }
 }

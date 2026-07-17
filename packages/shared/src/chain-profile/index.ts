@@ -65,4 +65,18 @@ export interface ChainAdapter {
    * 配線しない。CONCEPT.md「非 EVM チェーンでは D層は無いものとして扱う」）。
    */
   subscribeNodeInternals?(handlers: NodeInternalsHandlers): Promise<void>;
+  /**
+   * チェーンリセット（観測対象のチェーン自体が破棄され、別のチェーンとして
+   * 再作成されたこと。例: `docker compose down -v` → `up` による genesis の
+   * 再生成）の検知を購読する（Issue #357）。通常のノード再起動・一時的な
+   * 観測不能はリセットではない。何をもって「別のチェーンになった」と判定
+   * するかはチェーンごとにアダプタが決め（Ethereum は block 0 のハッシュ
+   * 変化）、この境界にはチェーン固有語彙を出さない。onReset を受けた
+   * collector 側は、store のチェーン由来エンティティ（wallet / contract /
+   * block / transaction）のパージ等を行う（反映は store 側の責務）。
+   * チェーンリセットという状況が起こり得ない・検知手段を持たないチェーンの
+   * アダプタは実装しなくてよい（省略可。省略時、collector はリセット検知を
+   * 配線しない）。
+   */
+  subscribeChainResets?(onReset: () => void): void;
 }

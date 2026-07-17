@@ -66,4 +66,14 @@ export class BlockPropagationTracker {
       this.blocks.delete(oldest);
     }
   }
+
+  /**
+   * 追跡中の全ブロックを破棄する（チェーンリセット検知時。Issue #357）。
+   * 旧チェーンのブロックハッシュはリセット後の新チェーンでは無意味な情報に
+   * なるため、store 側の block パージ（`purgeChainDerivedState`）と合わせて
+   * アダプタ内部の状態も揃える。
+   */
+  reset(): void {
+    this.blocks.clear();
+  }
 }

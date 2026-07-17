@@ -435,6 +435,50 @@ export class WorldStateStore {
     return undefined;
   }
 
+  /**
+   * チェーンリセット（観測対象のチェーン自体が破棄され、別のチェーンとして
+   * 再作成されたこと。例: `docker compose down -v` → `up`。Issue #357）の
+   * 検知時に、チェーン由来のエンティティ（wallet / contract / block /
+   * transaction）を丸ごとパージする。node/workbench（A層のインフラ）と
+   * PeerEdge は対象外（旧チェーンかどうかに関わらず毎 tick の Docker 観測
+   * との照合で自己修復するため、パージの必要がない）。
+   *
+   * wallet は通常の運用ではワークベンチ消滅時も `entityRemoved` を発行せず
+   * `ownerWorkbenchId: null` にして残す仕様（CONCEPT.md の決定、
+   * `computeWalletDiff` 参照）だが、チェーンリセットは「チェーンが生き
+   * 続ける」という前提そのものが崩れる例外ケースであり、旧チェーンの
+   * 残高・nonce は新チェーンでは無意味な情報になるため、ここでは通常の
+   * `entityRemoved` として明示的に削除する。
+   *
+   * `maxObservedBlockNumber` もあわせて undefined に戻す。戻さないと、
+   * 新チェーンの若いブロック番号（0起点）が旧チェーン基準の保持窓
+   * （`applyBlock` の `BLOCK_RETENTION` 判定）に「窓より古い」として弾かれ、
+   * 新チェーンのブロックを一切取り込めなくなる（これ自体が第2の不具合に
+   * なるため必須）。
+   *
+   * 返り値は適用した差分イベント（`entityRemoved` の配列。既存の差分配信
+   * 経路にそのまま渡せる）。
+   */
+  purgeChainDerivedState(): DiffEvent[] {
+    const events: DiffEvent[] = [];
+    for (const entity of this.entities.values()) {
+      if (
+        entity.kind !== "wallet" &&
+        entity.kind !== "contract" &&
+        entity.kind !== "block" &&
+        entity.kind !== "transaction"
+      ) {
+        continue;
+      }
+      const event: DiffEvent = { type: "entityRemoved", id: entityId(entity) };
+      this.applyEvent(event);
+      events.push(event);
+    }
+    this.maxObservedBlockNumber = undefined;
+    if (events.length > 0) this.timestamp = Date.now();
+    return events;
+  }
+
   private applyEvent(event: DiffEvent): void {
     switch (event.type) {
       case "entityAdded":
