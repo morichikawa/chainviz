@@ -211,6 +211,11 @@ export const messages = {
   "field.createdByTx": { ja: "作成 tx", en: "Created by tx" },
   "field.token": { ja: "トークン", en: "Token" },
   "field.tokenBalances": { ja: "トークン残高", en: "Token balances" },
+  // --- C層拡張: ERC-721(NFT)の所有関係の可視化（Issue #315。
+  // docs/worklog/issue-315.md） ---
+  "field.nftHoldings": { ja: "保有 NFT", en: "NFTs held" },
+  "contract.issuedNft": { ja: "発行済み NFT", en: "Issued NFTs" },
+  "contract.noNft": { ja: "まだ発行されていません", en: "None issued yet" },
   "edge.deployedBy": {
     ja: "{address} がデプロイしたコントラクト",
     en: "Contract deployed by {address}",

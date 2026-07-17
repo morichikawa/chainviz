@@ -619,6 +619,43 @@ body {
   color: var(--muted);
 }
 
+/* --- C層拡張: NFTコントラクトカードの「発行済みNFT」節（Issue #315）。
+   活動チップ列（.contract-card__activity 系）と同じ骨格。 --- */
+.contract-card__nft {
+  margin-top: 10px;
+  border-top: 1px solid var(--divider);
+  padding-top: 8px;
+}
+
+.contract-card__nft-label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.contract-card__nft-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.contract-card__nft-empty {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.contract-nft-chip {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--contract-edge);
+  color: var(--contract-edge);
+  background: rgba(111, 125, 234, 0.14);
+  white-space: nowrap;
+}
+
 /* 「ソースコードを見る」ボタン（Issue #321。docs/ARCHITECTURE.md
    §12.3）。infra-card__operate（ワークベンチの操作パネル起動ボタン）と
    同じ全幅ボタンの質感を流用する。未知のコントラクトにも常に出す。 */
@@ -797,6 +834,39 @@ body {
 }
 
 .wallet-token-chip {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--contract-edge);
+  color: var(--contract-edge);
+  background: rgba(111, 125, 234, 0.14);
+  white-space: nowrap;
+  cursor: help;
+}
+
+/* --- C層拡張: ウォレットカードの保有NFTチップ列（Issue #315）。トークン残高
+   チップ列（.wallet-card__tokens 系）と同じ見た目のブロックにする。 --- */
+.wallet-card__nft {
+  margin-top: 10px;
+  border-top: 1px solid var(--divider);
+  padding-top: 8px;
+}
+
+.wallet-card__nft-label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.wallet-card__nft-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.wallet-nft-chip {
   font-size: 10px;
   font-variant-numeric: tabular-nums;
   padding: 1px 6px;
@@ -1815,6 +1885,50 @@ button.mempool-panel__row:hover {
 
 .wallet-popover__token-amount {
   font-variant-numeric: tabular-nums;
+}
+
+/* --- C層拡張: WalletPopoverの保有NFT一覧（Issue #315）。トークン残高一覧
+   （.wallet-popover__token-* 系）と同じ「ラベル/値を両端に置く」見た目。 --- */
+.wallet-popover__nft-list {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wallet-popover__nft-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  padding: 2px 0;
+}
+
+.wallet-popover__nft-id {
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- C層拡張: ContractPopoverの発行済みNFT一覧（Issue #315）。 --- */
+.contract-popover__nft-list {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.contract-popover__nft-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  padding: 2px 0;
+}
+
+.contract-popover__nft-id {
+  font-variant-numeric: tabular-nums;
+}
+
+.contract-popover__nft-owner {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
 }
 
 /* --- C層拡張: WalletPopoverTxItem の送信tx限定 nonce 表示（Issue #319）。

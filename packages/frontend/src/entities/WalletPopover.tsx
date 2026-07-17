@@ -11,6 +11,7 @@ import { shortHex, TX_STATUS_MESSAGE_KEY } from "./transaction.js";
 import { deriveTxCallPreview } from "./txCallPreview.js";
 import { TxLifecyclePopover } from "./TxLifecyclePopover.js";
 import { formatEther } from "./walletNode.js";
+import { formatNftChipLabel, resolveWalletNftHoldings } from "./walletNftHoldings.js";
 import {
   formatTokenContractLabel,
   resolveWalletTokenBalances,
@@ -122,6 +123,11 @@ function WalletPopoverTxItem({
  * 複数デプロイされていても短縮アドレスで区別できる（Issue #218 派生。
  * `formatTokenContractLabel` 参照）。
  *
+ * 保有 NFT があれば「保有 NFT」行も追記する（Issue #315）。台帳は
+ * コントラクト側に持つ設計のため、`contractsByAddress` の全コントラクトから
+ * `resolveWalletNftHoldings` で導出する（WalletCard と同じ関数）。
+ *
+
  * `anchorRef` はこのポップオーバーを開いたカード本体への ref（Issue #245）。
  * React Flow のノードはそれぞれ独立したスタッキングコンテキストを持つため、
  * `PopoverPortal` でこのカードを基準位置に body 直下へ描画し、隣接カードの
@@ -148,6 +154,10 @@ export function WalletPopover({
   const tokenBalances = resolveWalletTokenBalances(
     entity.tokenBalances,
     contractsByAddress,
+  );
+  const nftHoldings = resolveWalletNftHoldings(
+    entity.address,
+    contractsByAddress.values(),
   );
 
   return (
@@ -201,6 +211,35 @@ export function WalletPopover({
                 </span>
                 <span className="wallet-popover__token-amount">
                   {tb.formatted} {tb.symbol}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {nftHoldings.length > 0 && (
+        <div className="wallet-popover__nft">
+          <span className="infra-field__label">
+            <GlossaryTerm termKey="nft">{t("field.nftHoldings")}</GlossaryTerm>
+          </span>
+          <ul className="wallet-popover__nft-list">
+            {nftHoldings.map((holding) => (
+              <li
+                key={`${holding.contractAddress}-${holding.tokenId}`}
+                className="wallet-popover__nft-item"
+                data-testid={`wallet-popover-nft-${entity.address}-${holding.contractAddress}-${holding.tokenId}`}
+              >
+                <span className="wallet-popover__nft-name">
+                  {formatTokenContractLabel(
+                    {
+                      contractAddress: holding.contractAddress,
+                      contractName: holding.contractName,
+                    },
+                    t("contract.unknown"),
+                  )}
+                </span>
+                <span className="wallet-popover__nft-id">
+                  {formatNftChipLabel(holding)}
                 </span>
               </li>
             ))}
