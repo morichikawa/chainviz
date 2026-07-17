@@ -479,3 +479,79 @@ collector 本体（index.ts の main）:
   エラーログ停止、フロントの wallet/contract ポップオーバーが開いたまま
   `entityRemoved` を受けてもクラッシュしないこと）は静的レビューでは
   確認できないため QA で必ず確認すること。
+
+### 2026-07-17 QA検証（qa）
+
+- 担当: qa
+- ブランチ: issue-357-eoa-not-cleared-on-down
+- 判定: **合格**（完了条件を満たす。差し戻し不要）
+
+実際に collector を起動したまま `docker compose down -v` → `up`（新 genesis）を
+行い、チェーンリセット検知とパージの実挙動を検証した。検証で立てた collector・
+frontend・WebSocket 記録クライアント・Docker スタックは検証後にすべて片付けた
+（他 Issue が使用中の共有スタックは無かった。開始時に存在した 2 時間前起動の
+スタックは本 Issue の調査で残されたもので、collector 未接続・ポート 4000/4001
+空きを確認済み）。
+
+#### 手順と結果
+
+1. **元のユーザー報告の再現確認（collector 再起動なしでのパージ）**
+   - リセット前の状態を作成: 既定ワークベンチのウォレット + `addWorkbench`
+     で 2 つ目のウォレット + `ChainvizNFT` をデプロイ。スナップショットに
+     wallet 2 件・contract 1 件・block（〜586）・transaction 1 件を確認。
+   - リセット前 genesis ハッシュ `0x06b999ba…`。`down -v` → orphan の managed
+     コンテナ削除 → `up` 後、新 genesis ハッシュ `0xb8912dfd…`（変化）。
+   - collector プロセス（同一 PID・再起動なし）が新 genesis を検知し、新チェーン
+     到達から約 3 秒後（3 秒周期の ChainResetWatcher 想定どおり）に wallet 2 件・
+     contract 1 件・block/transaction 群を **同一タイムスタンプで一括
+     `entityRemoved`** でパージした。旧チェーンの残高で凍結されたゴースト
+     ウォレット・旧 NFT コントラクトが消えることを実測で確認。
+   - パージ後スナップショット: 新チェーンの head=8 に対し collector も maxBlock=8
+     （block 1〜8 を受理）。`maxObservedBlockNumber` リセットの回帰が効いており、
+     新チェーンの低いブロック番号が保持窓に弾かれずに取り込まれている。ウォレット
+     残高も旧凍結値ではなく素の 1e27 プリマインで、パージ後のクリーンな再観測を
+     確認。
+
+2. **レビュー担当の申し送り事項1（NftTracker のエラーログ）**
+   - リセット後に発生した NftTracker の `Cannot decode zero data ("0x")` は
+     **1 回のみ**（新チェーン到達直後・パージ前の一瞬。旧 NFT アドレスが新チェーン
+     に存在しないため）。パージ以降はゼロ。20 秒待機しても collector ログの行数・
+     nft poll 失敗件数とも一切増えず、旧不具合の「5MB 超まで継続」する現象は
+     解消。down 中の `no reachable execution RPC endpoint` はチェーン停止中の
+     一過性エラーで想定内。
+
+3. **レビュー担当の申し送り事項2（wallet ポップオーバーを開いたままのクラッシュ）**
+   - frontend（vite）を実際にブラウザ（Playwright + chromium）で開き、wallet
+     カードにホバーして `WalletPopover` を表示した状態で `down -v` → `up` を実行。
+   - wallet の `entityRemoved` がポップオーバー表示中にフロントへ到達し、対象の
+     wallet カードは DOM から正常に消えた。**`pageerror` は 0 件（React クラッシュ
+     なし）**、ページは生存・応答可能（`document.readyState === "complete"`）。
+     フロントが wallet の `entityRemoved` を受けるのは今回が初のケースだが、
+     問題なく処理された。唯一のコンソールエラーは favicon.ico の 404（既定の
+     ブラウザ挙動）で本件と無関係。
+
+4. **新チェーンでの観測再開（パージで壊れていないこと）**
+   - パージ後、新チェーンで `addWorkbench`（qa-bob）と `ChainvizNFT` の再デプロイ
+     を実行。新ウォレット（素の 1e27 残高）・新 NFT コントラクト（新アドレス）・
+     新 transaction・ブロック進行をいずれも正常に観測。新 NFT に対する NftTracker
+     エラーは発生せず、トラッカー群がリセット後も正しく機能することを確認。
+   - 続けて 2 回目の `down -v` → `up`（ポップオーバー検証時）でも同様にパージ →
+     再観測が正しく動作し、連続リセットでも破綻しないことを確認。
+
+#### 完了条件との照合
+
+`docs/PLAN.md` の Issue #357 項目（genesis ハッシュ変化を検知する
+ChainResetWatcher を追加し、検知時にアダプタ内部キャッシュとワールドステートの
+wallet/contract/block/transaction をパージする）の完了条件を、実機で満たすことを
+確認した。`EthereumNodeLifecycle` の wallet-index 採番レジストリを意図的に
+パージしない設計判断も、リセット後の新規 addWorkbench が正常動作することから
+問題ないことを確認した。
+
+#### 補足（本 Issue の範囲外・別 Issue 相当）
+
+- collector が `addWorkbench`/`addNode` で作る managed コンテナは `down -v`
+  （`--remove-orphans` 付きでも）で削除されず、`chainviz-ethereum_chain`
+  ネットワークを「still in use」で残す現象を今回も実測（detective が指摘した
+  「第2の問題」）。本 Issue（collector 側のチェーンリセット検知・パージ）の
+  範囲外で、別 Issue 化が妥当。QA では検証を進めるため `com.chainviz.managed=true`
+  ラベルのコンテナを手動削除してから `up` した。
