@@ -355,3 +355,56 @@ collector 本体（index.ts の main）:
   今回が初めて）は実機でしか確認できない。
 - `EthereumNodeLifecycle` の wallet-index 採番レジストリは設計判断どおり
   意図的にパージしていない（今回の変更範囲外）。
+
+### 2026-07-17 テスト強化（tester）
+
+- 担当: tester
+- ブランチ: issue-357-eoa-not-cleared-on-down
+- 内容: 実装担当が書いた基本テスト（ハッピーパス中心）に対し、異常系・
+  境界値・時系列の観点でユニットテストを追加した。実装コードは変更して
+  いない。1ファイル1責務の方針に沿い、関心事ごとに新規ファイルへ分けた。
+
+#### 追加したテスト
+
+- 新規 `chain-reset-watcher-transitions.test.ts`（4件）: `ChainResetWatcher`
+  の複数 tick にまたがる観測列の遷移を固定した。既存 `chain-reset-watcher.test.ts`
+  は 1 段の判定（初回はキャッシュ埋め・変化で onReset・単発の欠測で誤検知
+  しない）を見ているが、こちらは列としての振る舞いを見る。
+  - 一時的な RPC 接続断（欠測）を挟んで同じ genesis に復帰しても onReset を
+    呼ばない（依頼観点1: genesis が一瞬観測できなくなる状況での誤検知防止）
+  - 欠測を挟んで別 genesis を観測したときはリセットを取りこぼさない
+  - down -v→up を立て続けに繰り返すと変化のたびに1回ずつ onReset を呼び、
+    変化しない tick では呼ばない（依頼観点4: 連続リセット）
+  - コールドスタートで最初の数 tick が欠測でも、最初に観測できたハッシュは
+    キャッシュ埋めでしかなくリセット扱いにならない（境界値）
+- 新規 `adapter-chain-reset.test.ts`（5件）: `EthereumAdapter` のチェーン
+  リセット配線を固定した（トラッカー単体の `reset()` は各 `*.test.ts` が
+  既に固定済みのため、ここは「アダプタが確かにそれらを呼ぶ」配線に絞る）。
+  - `resetChainDerivedState()` がトークンコントラクトの追跡を消し、
+    `trackedTokenContractAddresses()` が空になること（依頼観点3: ContractTracker
+    がクリアされず NftTracker/WalletTracker が旧アドレスをポーリングし続ける
+    再発の防止を、内部状態を覗ける公開メソッド経由で行動ベースに固定）
+  - リセット後は同一アドレスの再デプロイが新規として再検知される（旧チェーン
+    のゴーストが残らない）
+  - 何も追跡していない状態で呼んでも例外を投げない（冪等・安全）
+  - `subscribeChainResets(onReset)` が genesis ハッシュ変化で onReset を呼び、
+    `dispose()` 後は変化しても呼ばれない（配線と後始末）
+- `store-chain-reset-purge.test.ts` に1件追加: パージ後に同じアドレスの
+  ウォレットを再観測すると、旧チェーンの残高・nonce を引き継がず素の状態で
+  `entityAdded` される回帰テスト（依頼観点5: wallet-index 採番レジストリを
+  意図的にパージしない設計のもとでも、ゴーストの「再所有」が起きないことを
+  store 側の観測可能な振る舞いとして固定）。
+
+#### 確認結果
+
+- `npx eslint packages/collector`: エラーなし。
+- `pnpm --filter @chainviz/collector build`: 成功。
+- `pnpm --filter @chainviz/collector test`: 全 1563 件成功（追加した 10 件を
+  含む）。
+
+#### 発見した問題
+
+- 実装のバグは見つからなかった。特に依頼観点1（欠測を挟む復帰での誤検知）・
+  観点3（ContractTracker のクリア）は、追加したテストがいずれも期待どおり
+  緑になることで、実装が「観測失敗をリセットの証拠として扱わない」原則と
+  配線順序を正しく守っていることを確認した。
