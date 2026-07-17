@@ -871,6 +871,13 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       Engine 29.1.3)。--remove-orphans付きでも削除されない。README注記+
       ラベルベースの掃除スクリプト等が候補(chainviz-node-env + docs))
       [#359](https://github.com/morichikawa/chainviz/issues/359)
+- [ ] サイドパネル(コントラクトソース表示・用語集表示)の幅をリサイズ
+      できるようにする
+      (ユーザーからの要望。現状は幅固定(ARCHITECTURE.md §12.2に「400px
+      目安」と記載)。ドラッグリサイズハンドル・幅の永続化要否・最小/
+      最大幅が論点。`contractSource`/`glossary`/`commsLog`のkindによらず
+      共通シェル(`SidePanel.tsx`)で一括対応できる見込み)
+      [#362](https://github.com/morichikawa/chainviz/issues/362)
 
 ## 運用ルール（全ステップ共通）
 
