@@ -753,10 +753,17 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       送金操作によるtxの正常な取り込み・ブロック退去に連動したtxの退去を
       確認済み。docs/worklog/issue-303.md参照)
       [#303](https://github.com/morichikawa/chainviz/issues/303)
-- [ ] 用語集パネル(サイドパネルでの全用語一覧・検索・ジャンプ)が未実装
+- [x] 用語集パネル(サイドパネルでの全用語一覧・検索・ジャンプ)が未実装
       (CONCEPT.mdに構想として記載されているが未着手。インラインの
       ホバーポップオーバーのみだと定義文が長い用語が読みにくい。着手時は
-      まずchainviz-uxのUX設計から)
+      まずchainviz-uxのUX設計から。Issue #321の汎用サイドパネル機構に
+      `{kind:"glossary"}`を追加して相乗り。検索(ja/en名・key・現在言語の
+      定義)+A〜D層グループ(YAML記載順)+単一展開アコーディオン+関連用語
+      ジャンプ+レイヤーレンズ連動のチップを実装。ヘッダーに開閉トグル
+      ボタンを追加、インラインのGlossaryTermもクリック/Enter/Spaceで
+      同じパネルを開くよう変更。既存ポップオーバーは6行クランプ+
+      「クリックで用語集を開く」フッター+関連用語の生キー表示を用語名
+      表示に修正して共存。packages/shared・glossaryスキーマの変更なし)
       [#313](https://github.com/morichikawa/chainviz/issues/313)
 - [ ] ERC-721(NFT)の所有関係を可視化する
       (各tokenIdとウォレットが1対1で対応する所有関係は、既存のERC-20残高

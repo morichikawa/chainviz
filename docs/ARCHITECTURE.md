@@ -2425,9 +2425,10 @@ tx を集約し、mempool 全体を俯瞰する常設ミニパネルをキャン
 
   ```ts
   // packages/frontend/src/side-panel/（フロント内部の型。shared には置かない）
-  type SidePanelView = { kind: "contractSource"; address: string };
-  // #313 実装時に { kind: "glossary"; termKey?: string } を、
-  // #317 実装時に { kind: "commsLog" } を、それぞれ追加する想定
+  type SidePanelView =
+    | { kind: "contractSource"; address: string }
+    | { kind: "glossary"; termKey?: string }; // #313 で追加
+  // #317 実装時に { kind: "commsLog" } を追加する想定
   ```
 
 - `SidePanelContext` + `useSidePanel()` が `view: SidePanelView | null` と

@@ -111,6 +111,14 @@ export interface CanvasProps {
    */
   layerFilter?: LayerFilter;
   /**
+   * レイヤーレンズの選択状態を変更する（Issue #313: 用語集パネルの
+   * レイヤーチップから使う。`LayerFilterBar` 自体は App.tsx 側で直接
+   * `setLayerFilter` を受け取るため、こちらは `SidePanelHost` への中継専用）。
+   * 省略時は no-op（`layerFilter` を省略するテスト等で不要な prop 追加を
+   * 強制しないため）。
+   */
+  onLayerFilterChange?: (layer: LayerFilter) => void;
+  /**
    * mempool パネル（Issue #330。ARCHITECTURE.md §11）の上段（tx 一覧）に
    * 使う、ワールドステートの全 `TransactionEntity`（pending 以外も含む
    * 生の配列。`buildMempoolTxEntries` がここで pending のみへ絞り込む）。
@@ -123,11 +131,17 @@ export interface CanvasProps {
   transactions?: TransactionEntity[];
 }
 
+// props 省略時（`onLayerFilterChange` を渡さないテスト等）の既定値。
+// 呼び出しても何も起きない no-op で、Canvas.tsx 自体はレイヤーレンズの
+// 状態を持たない（App.tsx が保持する）ため代替の挙動は無い。
+function noopLayerFilterChange() {}
+
 function CanvasInner({
   nodes,
   edges = [],
   onPersistPosition,
   layerFilter = "all",
+  onLayerFilterChange = noopLayerFilterChange,
   transactions = [],
 }: CanvasProps) {
   const [rfNodes, setRfNodes] = useState<CanvasFlowNode[]>(nodes);
@@ -515,7 +529,11 @@ function CanvasInner({
         nodeEntries={mempoolNodeEntries}
         onSelectTx={handleJumpToMempoolTx}
       />
-      <SidePanelHost contractsByAddress={contractsByAddress} />
+      <SidePanelHost
+        contractsByAddress={contractsByAddress}
+        layerFilter={layerFilter}
+        onLayerFilterChange={onLayerFilterChange}
+      />
     </ReactFlow>
   );
 }

@@ -118,6 +118,23 @@ describe("useHoverPopover", () => {
     }).not.toThrow();
   });
 
+  it(
+    "close() closes immediately even mid-hover, and cancels a pending " +
+      "mouse-leave close timer (Issue #313: GlossaryTerm click closes its own " +
+      "hover popover on the way to opening the glossary panel)",
+    () => {
+      const { result } = renderHook(() => useHoverPopover());
+      act(() => result.current.onMouseEnter());
+      expect(result.current.isOpen).toBe(true);
+
+      act(() => result.current.close());
+      expect(result.current.isOpen).toBe(false);
+
+      // 保留中のクローズタイマーが無くても close() 後に例外にならない。
+      expect(() => advance(HOVER_POPOVER_CLOSE_DELAY_MS)).not.toThrow();
+    },
+  );
+
   it("repeated mouse leave calls do not each schedule an independent close", () => {
     const { result } = renderHook(() => useHoverPopover());
     act(() => result.current.onMouseEnter());
