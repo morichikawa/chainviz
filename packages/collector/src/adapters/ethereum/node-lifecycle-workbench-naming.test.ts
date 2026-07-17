@@ -145,6 +145,25 @@ describe("EthereumNodeLifecycle.addWorkbench container name collision (Issue #36
     expect(ops.created).toHaveLength(0);
   });
 
+  it("succeeds on the final allowed attempt when collisions stop exactly at the budget boundary", async () => {
+    // 上限ちょうどの境界: workbench-1..999 の 999 連続衝突の後、1000 回目
+    // （seq=1000）の試行で初めて成功する。ループが WORKBENCH_NAME_CONFLICT_RETRIES
+    // (1000) 回まで試行することを、諦める側（別テスト）と対で固定する。
+    const conflictingNames = new Set(
+      Array.from(
+        { length: 999 },
+        (_, i) => `chainviz-ethereum-workbench-${i + 1}`,
+      ),
+    );
+    const ops = fakeOps({ conflictingNames });
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+
+    await lifecycle.addWorkbench("");
+
+    expect(ops.created).toHaveLength(1);
+    expect(ops.created[0]?.name).toBe("chainviz-ethereum-workbench-1000");
+  });
+
   it("propagates a non-conflict failure from createAndStart without retrying", async () => {
     const ops: DockerOperations & { created: ContainerSpec[] } = {
       created: [],
@@ -219,6 +238,90 @@ describe("EthereumNodeLifecycle.addWorkbench stableId collision (Issue #366)", (
 
     const services = ops.created.map((s) => s.labels?.[COMPOSE_SERVICE_LABEL]);
     expect(services).toEqual(["Alice", "Alice-2"]);
+  });
+
+  it("disambiguates past multiple static workbenches observed via Docker", async () => {
+    // 静的ワークベンチが複数存在する（"workbench" と "workbench-2" が既に
+    // Docker 上に居る）場合でも、次に空いている suffix まで進めること。
+    const ops = fakeOps({
+      docContainers: [
+        staticWorkbenchContainer("chainviz-ethereum"),
+        {
+          id: "static-workbench-2-id",
+          labels: {
+            [COMPOSE_PROJECT_LABEL]: "chainviz-ethereum",
+            [COMPOSE_SERVICE_LABEL]: "workbench-2",
+          },
+        },
+      ],
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+
+    await lifecycle.addWorkbench("");
+
+    expect(ops.created[0]?.labels?.[COMPOSE_SERVICE_LABEL]).toBe("workbench-3");
+  });
+
+  it("takes the union of the Docker scan and the in-memory registry across successive calls", async () => {
+    // 和集合であることの核心: Docker 上に静的 "Alice" が居る状態で
+    // addWorkbench("Alice") を2回。1回目は Docker 側の "Alice" を避けて
+    // "Alice-2"、2回目はメモリ側に増えた "Alice-2" と Docker 側の "Alice" の
+    // 両方を避けて "Alice-3" になる（フェイクの docContainers は静的分のまま
+    // 変わらないので、メモリ側が効いていないと "Alice-2" を再採番してしまう）。
+    const ops = fakeOps({
+      docContainers: [
+        {
+          id: "static-alice-id",
+          labels: {
+            [COMPOSE_PROJECT_LABEL]: "chainviz-ethereum",
+            [COMPOSE_SERVICE_LABEL]: "Alice",
+          },
+        },
+      ],
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+
+    await lifecycle.addWorkbench("Alice");
+    await lifecycle.addWorkbench("Alice");
+
+    const services = ops.created.map((s) => s.labels?.[COMPOSE_SERVICE_LABEL]);
+    expect(services).toEqual(["Alice-2", "Alice-3"]);
+  });
+
+  it("tolerates a Docker container that has no compose service label", async () => {
+    // project ラベルだけで走査するため、service ラベルを持たないコンテナ
+    // （ネットワーク内の無関係なコンテナ等）も結果に混ざりうる。これを
+    // 読み捨てて衝突集合に加えず、既定の "workbench" をそのまま使えること。
+    const ops = fakeOps({
+      docContainers: [
+        {
+          id: "no-service-label-id",
+          labels: { [COMPOSE_PROJECT_LABEL]: "chainviz-ethereum" },
+        },
+      ],
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+
+    await lifecycle.addWorkbench("");
+
+    expect(ops.created[0]?.labels?.[COMPOSE_SERVICE_LABEL]).toBe("workbench");
+  });
+
+  it("propagates a Docker query failure and creates no container", async () => {
+    // service名の一意化は都度 Docker へ問い合わせる。その問い合わせ自体が
+    // 失敗した場合、衝突判定を省いて作成に突き進む（誤配送を招く）のではなく、
+    // エラーを伝播させて作成を行わないこと。
+    const ops = fakeOps();
+    ops.listContainersByLabels = vi.fn(async () => {
+      throw new Error("docker daemon unreachable");
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+
+    await expect(lifecycle.addWorkbench("Alice")).rejects.toThrow(
+      /docker daemon unreachable/,
+    );
+    expect(ops.created).toHaveLength(0);
+    expect(ops.createAndStart).not.toHaveBeenCalled();
   });
 
   it("queries listContainersByLabels with only the compose project label (not managed-only)", async () => {
