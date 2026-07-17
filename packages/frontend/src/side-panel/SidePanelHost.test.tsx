@@ -11,6 +11,12 @@ import { SidePanelHost } from "./SidePanelHost.js";
 
 afterEach(cleanup);
 
+// このファイルのテストは contractSource kind の振り分けにしか関心が無い
+// ため、レイヤーレンズ連携（Issue #313: glossary kind 向け）は固定値の
+// no-op で済ませる。glossary kind 自体のテストは
+// SidePanelHost.glossary.test.tsx が担う（CLAUDE.md のテスト分割方針）。
+function noopLayerFilterChange() {}
+
 function contract(overrides: Partial<ContractEntity> = {}): ContractEntity {
   return {
     kind: "contract",
@@ -42,7 +48,11 @@ function renderHost(
       <GlossaryProvider glossary={{}}>
         <SidePanelProvider>
           <OpenButton address={address} />
-          <SidePanelHost contractsByAddress={contractsByAddress} />
+          <SidePanelHost
+            contractsByAddress={contractsByAddress}
+            layerFilter="all"
+            onLayerFilterChange={noopLayerFilterChange}
+          />
         </SidePanelProvider>
       </GlossaryProvider>
     </LanguageProvider>,
@@ -84,7 +94,11 @@ describe("SidePanelHost", () => {
         <GlossaryProvider glossary={{}}>
           <SidePanelProvider>
             <OpenButton address={target.address} />
-            <SidePanelHost contractsByAddress={withEntity} />
+            <SidePanelHost
+              contractsByAddress={withEntity}
+              layerFilter="all"
+              onLayerFilterChange={noopLayerFilterChange}
+            />
           </SidePanelProvider>
         </GlossaryProvider>
       </LanguageProvider>,
@@ -98,7 +112,11 @@ describe("SidePanelHost", () => {
         <GlossaryProvider glossary={{}}>
           <SidePanelProvider>
             <OpenButton address={target.address} />
-            <SidePanelHost contractsByAddress={new Map()} />
+            <SidePanelHost
+              contractsByAddress={new Map()}
+              layerFilter="all"
+              onLayerFilterChange={noopLayerFilterChange}
+            />
           </SidePanelProvider>
         </GlossaryProvider>
       </LanguageProvider>,
@@ -121,7 +139,11 @@ describe("SidePanelHost", () => {
           <SidePanelProvider>
             <OpenButton address={first.address} />
             <OpenButton address={second.address} />
-            <SidePanelHost contractsByAddress={map} />
+            <SidePanelHost
+              contractsByAddress={map}
+              layerFilter="all"
+              onLayerFilterChange={noopLayerFilterChange}
+            />
           </SidePanelProvider>
         </GlossaryProvider>
       </LanguageProvider>,

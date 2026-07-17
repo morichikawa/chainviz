@@ -57,7 +57,7 @@ function OpenedViewProbe() {
   const { view } = useSidePanel();
   return (
     <span data-testid="opened-view">
-      {view ? `${view.kind}:${view.address}` : ""}
+      {view?.kind === "contractSource" ? `${view.kind}:${view.address}` : ""}
     </span>
   );
 }
