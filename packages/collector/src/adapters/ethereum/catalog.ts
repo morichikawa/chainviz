@@ -29,6 +29,13 @@ export interface CatalogEntry {
   /** トークンコントラクトの場合のみ。ContractEntity.token にそのまま入る。 */
   token?: { symbol: string; decimals: number };
   /**
+   * NFT（ERC-721 等）コントラクトの場合のみ。ContractEntity.nft にそのまま
+   * 入る（Issue #315）。token と同様にここでは形を検証しない（下記
+   * isValidEntry のコメント、catalog.test.ts「passes token metadata through
+   * verbatim」と同じ流儀）。
+   */
+  nft?: { symbol: string };
+  /**
    * カタログ同梱のソースコード（Issue #321）。ContractEntity.sourceCode に
    * そのまま転記される（contracts.ts の applyCatalog 参照）。build-catalog.sh
    * が同梱しなかった（または不正な形の）場合は undefined になり、カタログの

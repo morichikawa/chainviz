@@ -65,6 +65,10 @@ echo '{}' > "$TMP_CATALOG"
 #        情報源にして、キー変換ロジックによる取り違えを避ける)
 #   $2 = トークンメタ情報(symbol/decimals)の JSON。ERC20 系でなければ
 #        空文字列を渡す(token フィールド自体を省略する)
+#   $3 = NFT メタ情報(symbol)の JSON。ERC-721 系でなければ空文字列を渡す
+#        (nft フィールド自体を省略する)。token と nft は同じエントリに
+#        同時には立てない(数量ベースか個体ベースかは排他。
+#        docs/ARCHITECTURE.md §13.1)
 #
 # ソースコードは src/<name>.sol をそのまま埋め込む
 # (source: { fileName, language, code })。src/ を唯一の真実の情報源とし、
@@ -73,6 +77,7 @@ echo '{}' > "$TMP_CATALOG"
 add_entry() {
   contract_name="$1"
   token_json="$2"
+  nft_json="$3"
   abi_path="${OUT_DIR}/${contract_name}.sol/${contract_name}.json"
   src_file_name="${contract_name}.sol"
   src_path="${SCRIPT_DIR}/src/${src_file_name}"
@@ -95,6 +100,9 @@ add_entry() {
   if [ -n "$token_json" ]; then
     entry="$(printf '%s' "$entry" | jq --argjson token "$token_json" '. + {token: $token}')"
   fi
+  if [ -n "$nft_json" ]; then
+    entry="$(printf '%s' "$entry" | jq --argjson nft "$nft_json" '. + {nft: $nft}')"
+  fi
 
   jq --arg key "$contract_name" --argjson entry "$entry" '. + {($key): $entry}' \
     "$TMP_CATALOG" > "${TMP_CATALOG}.next"
@@ -108,8 +116,13 @@ echo "[build-catalog] catalog.json を再構築する"
 # (symbol="CVZ" / decimals=18)と一致させること。ABI にはこれらの値自体は
 # 出てこない(constant の値であって関数シグネチャではないため)ので、
 # ソースを変更した場合はここも手動で合わせて直す。
-add_entry "ChainvizToken" '{"symbol": "CVZ", "decimals": 18}'
-add_entry "Counter" ""
+add_entry "ChainvizToken" '{"symbol": "CVZ", "decimals": 18}' ""
+add_entry "Counter" "" ""
+
+# ChainvizNFT: symbol は src/ChainvizNFT.sol の定数(symbol="CVN")と
+# 一致させること(token と同じ理由で ABI には出てこない)。decimals は
+# 個体ベースの NFT には概念が無いため持たない(docs/ARCHITECTURE.md §13.1)。
+add_entry "ChainvizNFT" "" '{"symbol": "CVN"}'
 
 jq -S '.' "$TMP_CATALOG" > "$CATALOG"
 echo "[build-catalog] 完了: ${CATALOG}"

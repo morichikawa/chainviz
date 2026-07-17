@@ -54,6 +54,8 @@ function renderHost(contractsByAddress: Map<string, ContractEntity>, address: st
             contractsByAddress={contractsByAddress}
             commsLog={noopCommsLog}
             commsLogNodeOptions={[]}
+            layerFilter="all"
+            onLayerFilterChange={() => {}}
           />
         </SidePanelProvider>
       </GlossaryProvider>
@@ -119,6 +121,8 @@ describe("SidePanelHost: dangling guard isolation across kinds", () => {
               contractsByAddress={withEntity}
               commsLog={noopCommsLog}
               commsLogNodeOptions={[]}
+              layerFilter="all"
+              onLayerFilterChange={() => {}}
             />
           </SidePanelProvider>
         </GlossaryProvider>
@@ -137,6 +141,8 @@ describe("SidePanelHost: dangling guard isolation across kinds", () => {
               contractsByAddress={new Map()}
               commsLog={noopCommsLog}
               commsLogNodeOptions={[]}
+              layerFilter="all"
+              onLayerFilterChange={() => {}}
             />
           </SidePanelProvider>
         </GlossaryProvider>

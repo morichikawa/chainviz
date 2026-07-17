@@ -211,6 +211,11 @@ export const messages = {
   "field.createdByTx": { ja: "作成 tx", en: "Created by tx" },
   "field.token": { ja: "トークン", en: "Token" },
   "field.tokenBalances": { ja: "トークン残高", en: "Token balances" },
+  // --- C層拡張: ERC-721(NFT)の所有関係の可視化（Issue #315。
+  // docs/worklog/issue-315.md） ---
+  "field.nftHoldings": { ja: "保有 NFT", en: "NFTs held" },
+  "contract.issuedNft": { ja: "発行済み NFT", en: "Issued NFTs" },
+  "contract.noNft": { ja: "まだ発行されていません", en: "None issued yet" },
   "edge.deployedBy": {
     ja: "{address} がデプロイしたコントラクト",
     en: "Contract deployed by {address}",
@@ -507,6 +512,28 @@ export const messages = {
   "contractSource.unavailable": {
     ja: "このコントラクトのソースコードは chainviz の手元にありません。チェーン上にあるのはコンパイル済みのバイトコードだけで、そこから元のソースコード（関数やイベントの意味 = ABI を含む）は復元できません。カタログに載っているコントラクトだけソースを表示できます",
     en: "chainviz does not have this contract's source code on hand. What lives on the chain is only compiled bytecode, from which the original source (including the meaning of functions and events, i.e. the ABI) cannot be recovered. Source is only available for contracts listed in the catalog.",
+  },
+  // --- 用語集パネル（kind: "glossary"。Issue #313。docs/worklog/issue-313.md §3.9） ---
+  "glossary.open": { ja: "用語集", en: "Glossary" },
+  "glossary.open.hint": {
+    ja: "画面に登場する用語の一覧・検索を開きます",
+    en: "Browse and search all terms used on screen",
+  },
+  "glossary.panel.title": { ja: "用語集", en: "Glossary" },
+  "glossary.panel.searchPlaceholder": { ja: "用語を検索", en: "Search terms" },
+  "glossary.panel.searchEmpty": {
+    ja: "一致する用語がありません",
+    en: "No matching terms",
+  },
+  "glossary.panel.relatedTerms": { ja: "関連用語", en: "Related terms" },
+  "glossary.panel.layerLens.hint": {
+    ja: "この層だけをキャンバスで見る（レイヤーレンズ）",
+    en: "Focus the canvas on this layer (layer lens)",
+  },
+  "glossary.panel.otherLayer": { ja: "その他", en: "Other" },
+  "glossary.popover.openPanel": {
+    ja: "クリックで用語集を開く",
+    en: "Click to open the glossary",
   },
   // --- 通信ログパネル（kind: "commsLog"。Issue #317。
   // docs/worklog/issue-317.md 設計メモ） ---

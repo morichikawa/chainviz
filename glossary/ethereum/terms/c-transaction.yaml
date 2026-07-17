@@ -297,4 +297,34 @@ token:
       same way. chainviz uses it for the token balance chips on the wallet
       card and the symbol shown in the contract card's subtitle.
   layer: c-transaction
-  relatedTerms: [contract, transaction]
+  relatedTerms: [contract, transaction, nft]
+
+nft:
+  name:
+    ja: NFT（非代替トークン）
+    en: NFT (Non-Fungible Token)
+  definition:
+    ja: >-
+      ERC-721という規格で表される、個体ごとに区別できるトークン。ERC-20の
+      トークンが「数量」の台帳（誰がいくら持っているか）であるのに対し、
+      NFTは「個体」の台帳（誰がどのtokenIdを持っているか）を管理する。同じ
+      コントラクトが発行したNFTでも、tokenIdが違えば別物として扱われる点が
+      ERC-20との決定的な違い。chainvizではNFTコントラクトカードの「発行済み
+      NFT」欄にtokenIdと所有者の一覧が、ウォレットカードの「保有 NFT」欄に
+      そのウォレットが持つtokenIdの一覧が出る。所有関係はカードの一覧だけで
+      表し、新しいエッジ（ウォレットの秘密鍵の所有を表す既存の所有エッジとの
+      混同を避けるため）は張らない。
+    en: >-
+      A token distinguishable per individual unit, represented by the
+      ERC-721 standard. Where an ERC20 token is a ledger of "quantity" (how
+      much each address holds), an NFT is a ledger of "identity" (which
+      tokenId each address holds). Even NFTs minted by the same contract are
+      treated as distinct items once their tokenIds differ — the key
+      difference from ERC20. chainviz shows the tokenId/owner list under
+      "Issued NFTs" on the NFT contract card, and the tokenIds a wallet
+      holds under "NFTs held" on the wallet card. Ownership is shown only
+      through these card lists; no new edge is drawn (to avoid confusing it
+      with the existing ownership edge, which represents a workbench holding
+      a wallet's private key).
+  layer: c-transaction
+  relatedTerms: [token, contract, transaction]

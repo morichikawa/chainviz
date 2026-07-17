@@ -51,6 +51,8 @@ function renderHost({
               setNodeFilter,
             }}
             commsLogNodeOptions={[{ id: "reth-1", label: "chainviz-reth-1" }]}
+            layerFilter="all"
+            onLayerFilterChange={() => {}}
           />
         </SidePanelProvider>
       </GlossaryProvider>

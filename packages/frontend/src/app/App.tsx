@@ -60,6 +60,7 @@ import {
   isSameWalletNode,
   walletsToFlowNodes,
 } from "../entities/walletNode.js";
+import { GlossaryOpenButton } from "../glossary/GlossaryOpenButton.js";
 import { GlossaryProvider } from "../glossary/GlossaryProvider.js";
 import { glossary as defaultGlossary } from "../glossary/data.js";
 import type { Glossary } from "../glossary/types.js";
@@ -378,6 +379,13 @@ function AppShell({
   );
   // tx が pending → 確定へ変わった瞬間を検知し、確定フラッシュ演出中の集合を得る。
   const settling = useTxLifecycle(transactions);
+  // ContractCard/ContractPopover の「発行済み NFT」節（Issue #315）が、台帳
+  // の所有者アドレスを対応するウォレットの表記へ揃えるために使う索引。
+  // contractsByAddress（逆方向の索引。§6.7）と対になる。
+  const walletAddresses = useMemo(
+    () => new Set(wallets.map((w) => w.address)),
+    [wallets],
+  );
 
   // infraNodes と同じ理由(Issue #119)でウォレットカードも参照を安定化する。
   const previousWalletNodesRef = useRef<WalletFlowNode[]>([]);
@@ -409,13 +417,18 @@ function AppShell({
   const previousContractNodesRef = useRef<ContractFlowNode[]>([]);
   const contractNodes = useMemo(() => {
     const next = stabilizeNodes(
-      contractsToFlowNodes(contracts, { layout, transactions, blockNumberByHash }),
+      contractsToFlowNodes(contracts, {
+        layout,
+        transactions,
+        blockNumberByHash,
+        walletAddresses,
+      }),
       previousContractNodesRef.current,
       isSameContractNode,
     );
     previousContractNodesRef.current = next;
     return next;
-  }, [contracts, layout, transactions, blockNumberByHash]);
+  }, [contracts, layout, transactions, blockNumberByHash, walletAddresses]);
 
   // 現在キャンバスに存在するウォレットの address 集合（デプロイエッジの
   // 端点存在判定に使う。ownershipEdges の infraNodeIds と同じ狙い）。
@@ -603,30 +616,33 @@ function AppShell({
   );
 
   return (
-    <div className="app">
-      <header className="app__header">
-        <div className="app__titles">
-          <h1 className="app__title">{t("app.title")}</h1>
-          <p className="app__subtitle">{t("app.subtitle")}</p>
-        </div>
-        <div className="app__controls">
-          <StatusBadge status={status} isMock={isMock} />
-          <LanguageToggle />
-        </div>
-      </header>
-      <CommandActionsProvider actions={actions}>
-        <OperationDataProvider value={{ walletCandidates, deployedContracts }}>
-          {/* Issue #298 第2段階: タイルホバー連動ハイライトの共有状態
-              （chain-ribbon のタイル ⇔ wallet/contract カードの相互強調）。
-              React Flow はノードを portal を介さず通常の子要素として描画する
-              ため、Canvas を包む Context Provider はそのままノード内部の
-              useRibbonHover まで届く（OperationDataProvider と同じ理由）。 */}
-          <RibbonHoverProvider transactions={transactions}>
-            {/* Issue #321: サイドパネル機構（コントラクトソースビュー）。
-                ContractCard（トリガー）と Canvas 内の SidePanelHost（表示）
-                の両方から同じ状態を参照できるよう、両者の共通の祖先である
-                この位置に置く（RibbonHoverProvider と同じ配置パターン）。 */}
-            <SidePanelProvider>
+    // Issue #321/#313: サイドパネル機構（コントラクトソースビュー・用語集
+    // パネル）。ContractCard/GlossaryTerm（トリガー）・ヘッダーの
+    // GlossaryOpenButton（もう一つのトリガー）・Canvas 内の SidePanelHost
+    // （表示）のすべてから同じ状態を参照できるよう、ヘッダーも含めた
+    // `.app` 全体を包む位置に置く（Issue #313 でヘッダーにもトリガーが
+    // 増えたため、以前の「main の中だけ」から引き上げた）。
+    <SidePanelProvider>
+      <div className="app">
+        <header className="app__header">
+          <div className="app__titles">
+            <h1 className="app__title">{t("app.title")}</h1>
+            <p className="app__subtitle">{t("app.subtitle")}</p>
+          </div>
+          <div className="app__controls">
+            <StatusBadge status={status} isMock={isMock} />
+            <GlossaryOpenButton />
+            <LanguageToggle />
+          </div>
+        </header>
+        <CommandActionsProvider actions={actions}>
+          <OperationDataProvider value={{ walletCandidates, deployedContracts }}>
+            {/* Issue #298 第2段階: タイルホバー連動ハイライトの共有状態
+                （chain-ribbon のタイル ⇔ wallet/contract カードの相互強調）。
+                React Flow はノードを portal を介さず通常の子要素として描画する
+                ため、Canvas を包む Context Provider はそのままノード内部の
+                useRibbonHover まで届く（OperationDataProvider と同じ理由）。 */}
+            <RibbonHoverProvider transactions={transactions}>
               <main className="app__canvas">
                 <div className="canvas-overlay-top">
                   <CanvasToolbar
@@ -648,6 +664,7 @@ function AppShell({
                     edges={edges}
                     onPersistPosition={persist}
                     layerFilter={layerFilter}
+                    onLayerFilterChange={setLayerFilter}
                     transactions={transactions}
                     commsLog={{
                       visibleEntries: commsLog.visibleEntries,
@@ -659,11 +676,11 @@ function AppShell({
                 )}
                 <ToastStack notifications={notifications} onDismiss={dismiss} />
               </main>
-            </SidePanelProvider>
-          </RibbonHoverProvider>
-        </OperationDataProvider>
-      </CommandActionsProvider>
-    </div>
+            </RibbonHoverProvider>
+          </OperationDataProvider>
+        </CommandActionsProvider>
+      </div>
+    </SidePanelProvider>
   );
 }
 

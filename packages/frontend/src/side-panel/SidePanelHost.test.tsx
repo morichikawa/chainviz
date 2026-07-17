@@ -21,6 +21,12 @@ const noopCommsLog = {
   setNodeFilter: () => {},
 };
 
+// このファイルのテストは contractSource kind の振り分けにしか関心が無い
+// ため、レイヤーレンズ連携（Issue #313: glossary kind 向け）は固定値の
+// no-op で済ませる。glossary kind 自体のテストは
+// SidePanelHost.glossary.test.tsx が担う（CLAUDE.md のテスト分割方針）。
+function noopLayerFilterChange() {}
+
 function contract(overrides: Partial<ContractEntity> = {}): ContractEntity {
   return {
     kind: "contract",
@@ -56,6 +62,8 @@ function renderHost(
             contractsByAddress={contractsByAddress}
             commsLog={noopCommsLog}
             commsLogNodeOptions={[]}
+            layerFilter="all"
+            onLayerFilterChange={noopLayerFilterChange}
           />
         </SidePanelProvider>
       </GlossaryProvider>
@@ -102,6 +110,8 @@ describe("SidePanelHost", () => {
               contractsByAddress={withEntity}
               commsLog={noopCommsLog}
               commsLogNodeOptions={[]}
+              layerFilter="all"
+              onLayerFilterChange={noopLayerFilterChange}
             />
           </SidePanelProvider>
         </GlossaryProvider>
@@ -120,6 +130,8 @@ describe("SidePanelHost", () => {
               contractsByAddress={new Map()}
               commsLog={noopCommsLog}
               commsLogNodeOptions={[]}
+              layerFilter="all"
+              onLayerFilterChange={noopLayerFilterChange}
             />
           </SidePanelProvider>
         </GlossaryProvider>
@@ -153,6 +165,8 @@ describe("SidePanelHost", () => {
               contractsByAddress={map}
               commsLog={noopCommsLog}
               commsLogNodeOptions={[]}
+              layerFilter="all"
+              onLayerFilterChange={noopLayerFilterChange}
             />
           </SidePanelProvider>
         </GlossaryProvider>

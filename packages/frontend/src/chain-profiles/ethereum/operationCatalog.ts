@@ -149,6 +149,62 @@ export const ETHEREUM_OPERATION_CATALOG: ContractCatalogEntry[] = [
     ],
   },
   {
+    // Issue #315: ERC-721(NFT)の学習用サブセット。ソース
+    // `profiles/ethereum/contracts/src/ChainvizNFT.sol` 参照。
+    // `token`（symbol/decimals。数量ベース）は持たせない — NFT の tokenId は
+    // 「個体」であり decimals による単位換算の対象ではないため
+    // （docs/worklog/issue-315.md「ERC-20 との違い = 数量ではなく個体」）。
+    // 下記の tokenId 引数にも `unit: "token"` は付けない（付けると
+    // OperationArgInput が10進の量として decimals 換算してしまい、tokenId
+    // という整数の個体識別子が壊れる）。
+    catalogKey: "ChainvizNFT",
+    displayName: { ja: "ChainvizNFT", en: "ChainvizNFT" },
+    description: {
+      ja: "最小の ERC-721(NFT) コントラクト",
+      en: "A minimal ERC-721 (NFT) contract",
+    },
+    constructorArgs: [],
+    functions: [
+      {
+        signature: "mint(address)",
+        label: "mint",
+        description: {
+          ja: "to に新しい NFT を1個発行します（tokenId は自動採番。デプロイした人だけが実行できます）",
+          en: "Issues one new NFT to 'to' (tokenId is auto-assigned; only the deployer can call this).",
+        },
+        args: [{ name: "to", type: "address" }],
+        payable: false,
+      },
+      {
+        signature: "approve(address,uint256)",
+        label: "approve",
+        description: {
+          ja: "to に、自分が持つ tokenId の移転を許可します",
+          en: "Allows 'to' to transfer the NFT with the given tokenId.",
+        },
+        args: [
+          { name: "to", type: "address" },
+          { name: "tokenId", type: "uint" },
+        ],
+        payable: false,
+      },
+      {
+        signature: "transferFrom(address,address,uint256)",
+        label: "transferFrom",
+        description: {
+          ja: "approve で許可された範囲で from から to へ tokenId を移します",
+          en: "Moves the NFT with the given tokenId from 'from' to 'to', within an approval.",
+        },
+        args: [
+          { name: "from", type: "address" },
+          { name: "to", type: "address" },
+          { name: "tokenId", type: "uint" },
+        ],
+        payable: false,
+      },
+    ],
+  },
+  {
     catalogKey: "Counter",
     displayName: { ja: "Counter", en: "Counter" },
     description: {

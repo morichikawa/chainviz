@@ -11,6 +11,7 @@ import {
   walletTrackingDisabledWarning,
 } from "./adapters/ethereum/mnemonic.js";
 import { EthereumNodeLifecycle } from "./adapters/ethereum/node-lifecycle.js";
+import { NftTracker } from "./adapters/ethereum/nft-tracker.js";
 import { WalletTracker } from "./adapters/ethereum/wallet-tracker.js";
 import { CommandHandler } from "./commands/handler.js";
 import { createDockerClient } from "./docker/dockerode-client.js";
@@ -399,6 +400,24 @@ export async function main(port: number = DEFAULT_PORT): Promise<void> {
   walletTracker.subscribe((wallets) => {
     const diff = store.applyWallets(wallets);
     server.broadcastDiff(diff);
+  });
+
+  // C 層（新 Phase 4）: 追跡中の NFT（ERC-721）コントラクトの所有台帳を周期
+  // ポーリングし、ContractEntity.nftTokens としてワールドステート store 経由で
+  // フロントへ配信する（Issue #315）。追跡中の NFT コントラクト一覧は
+  // walletTracker のトークン残高ポーリングと同じく EthereumAdapter の
+  // ContractTracker から都度取得する。反映は EthereumAdapter.
+  // applyNftObservation が subscribeContracts（上）で登録済みの onContract
+  // コールバックへ渡す形で行うため（registerContractDeployment と同じ経路）、
+  // ここでの購読コールバックは adapter への委譲だけでよい（store.applyContract
+  // / broadcastDiff は上の subscribeContracts 経由で既に配線済み）。
+  const nftTracker = new NftTracker(poller, {
+    getNftContractAddresses: () => adapter.trackedNftContractAddresses(),
+  });
+  nftTracker.subscribe((observations) => {
+    for (const { address, tokens } of observations) {
+      adapter.applyNftObservation(address, tokens);
+    }
   });
 
   // D層: ノード内部の観測（Issue #185/#186）を購読し、ノード内部状態

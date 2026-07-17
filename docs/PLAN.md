@@ -753,12 +753,19 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       送金操作によるtxの正常な取り込み・ブロック退去に連動したtxの退去を
       確認済み。docs/worklog/issue-303.md参照)
       [#303](https://github.com/morichikawa/chainviz/issues/303)
-- [ ] 用語集パネル(サイドパネルでの全用語一覧・検索・ジャンプ)が未実装
+- [x] 用語集パネル(サイドパネルでの全用語一覧・検索・ジャンプ)が未実装
       (CONCEPT.mdに構想として記載されているが未着手。インラインの
       ホバーポップオーバーのみだと定義文が長い用語が読みにくい。着手時は
-      まずchainviz-uxのUX設計から)
+      まずchainviz-uxのUX設計から。Issue #321の汎用サイドパネル機構に
+      `{kind:"glossary"}`を追加して相乗り。検索(ja/en名・key・現在言語の
+      定義)+A〜D層グループ(YAML記載順)+単一展開アコーディオン+関連用語
+      ジャンプ+レイヤーレンズ連動のチップを実装。ヘッダーに開閉トグル
+      ボタンを追加、インラインのGlossaryTermもクリック/Enter/Spaceで
+      同じパネルを開くよう変更。既存ポップオーバーは6行クランプ+
+      「クリックで用語集を開く」フッター+関連用語の生キー表示を用語名
+      表示に修正して共存。packages/shared・glossaryスキーマの変更なし)
       [#313](https://github.com/morichikawa/chainviz/issues/313)
-- [ ] ERC-721(NFT)の所有関係を可視化する
+- [x] ERC-721(NFT)の所有関係を可視化する
       (各tokenIdとウォレットが1対1で対応する所有関係は、既存のERC-20残高
       表示・秘密鍵の所有エッジとは異なる概念で未対応。着手時はまず
       chainviz-designerの設計から)
@@ -837,6 +844,18 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       (Issue #322のQA検証中に偶発的に観測。UI-C-04/UI-CMD-07/UI-ERR-02/
       UI-D-03で個別再現。slot time変更とは無関係の既存のテスト脆さ)
       [#346](https://github.com/morichikawa/chainviz/issues/346)
+- [ ] チェーンリボンの「親ブロック」行ホバー強調が実質使えない
+      (ホバーが約200msで閉じる。Issue #313のUX設計中にchainviz-uxが実測で
+      発見。Issue #298の「既知の残課題」で既に言及されていた問題が今回
+      顕在化。着手時はまずchainviz-uxによるUX設計を先行させる)
+      [#351](https://github.com/morichikawa/chainviz/issues/351)
+- [ ] ノード間通信ログにRPC呼び出しのレスポンス(成否・所要時間)を追加する
+      (Issue #317第1弾の設計時にchainviz-uxが分割した論点。
+      OperationEdgeへのフィールド追加(shared型変更)とロギングプロキシからの
+      レスポンス観測(collector変更)を伴うため、フロントのみで完結する
+      第1弾からは分離。Issue #317マージ後に着手し、まずchainviz-designerに
+      設計を依頼する)
+      [#352](https://github.com/morichikawa/chainviz/issues/352)
 
 ## 運用ルール（全ステップ共通）
 

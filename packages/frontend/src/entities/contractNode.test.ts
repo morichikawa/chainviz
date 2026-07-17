@@ -44,11 +44,21 @@ const node: NodeEntity = {
   headBlockHash: "0x0",
 };
 
+/**
+ * `ctx()` の既定 `walletAddresses`（Issue #315）。同じ内容の複数回呼び出しでも
+ * 常に同一の参照を返すことで、実運用（App.tsx が useMemo で安定させる集合を
+ * 渡す）を模す。単に `new Set()` を都度作ると Issue #119 の参照安定化テストが
+ * 壊れる（内容は空同士でも参照が変われば「変化した」と誤検出する。
+ * walletNode.test.ts の `EMPTY_CONTRACTS` と同じ狙い）。
+ */
+const EMPTY_WALLET_ADDRESSES = new Set<string>();
+
 function ctx(
   overrides: Partial<Parameters<typeof contractsToFlowNodes>[1]> = {},
 ) {
   return {
     layout: {},
+    walletAddresses: EMPTY_WALLET_ADDRESSES,
     ...overrides,
   };
 }

@@ -329,9 +329,22 @@ function bobIncludedTx(): TransactionEntity {
 const TOKEN_CONTRACT = addr("cafe01");
 const COUNTER_CONTRACT = addr("c0de02");
 const UNKNOWN_CONTRACT = addr("dead01");
+// Issue #315: ChainvizNFT（ERC-721 サブセット）のモック用サンプル。
+const NFT_CONTRACT = addr("facade1");
 
 const TOKEN_DEPLOY_TX = txHash("dep70ken1");
 const COUNTER_DEPLOY_TX = txHash("dep70cnt1");
+const NFT_DEPLOY_TX = txHash("dep70nft1");
+
+/**
+ * NFT の tokenId 3 の所有者。ワークベンチ・ウォレットのいずれのカードとも
+ * 対応しない追跡外アドレスにし、`resolveContractNftLedger` が対応する
+ * WalletEntity を見つけられない場合に台帳の生の表記のまま出すフォール
+ * バック（docs/worklog/issue-315.md「無ければ生アドレスの短縮表記」）を
+ * オフラインで確認できるようにする（Bob の `UNTRACKED_TOKEN_CONTRACT` と
+ * 同じ狙い）。
+ */
+const NFT_UNTRACKED_OWNER = addr("f00d01");
 
 // C層拡張（コントラクト呼び出し・イベントログの可視化。Issue #166）のモック
 // 用サンプル。#165 のコントラクトサンプルと組み合わせて使えるよう、既存の
@@ -522,6 +535,41 @@ function counterContract(): ContractEntity {
 }
 
 /**
+ * ChainvizNFT（ERC-721 サブセット）のモック用サンプル（Issue #315。
+ * docs/worklog/issue-315.md「フロント側」）。Alice がデプロイした体にし、
+ * 3個発行済みの台帳（`nftTokens`）を持たせる:
+ *
+ * - tokenId 1 → Alice（`WalletCard`/`WalletPopover` の「保有 NFT」で
+ *   対応するウォレットが見つかる通常ケース）
+ * - tokenId 2 → Bob
+ * - tokenId 3 → `NFT_UNTRACKED_OWNER`（キャンバス上に対応するウォレット
+ *   カードが無い追跡外アドレス。`ContractCard`/`ContractPopover` の
+ *   「発行済み NFT」で所有者ラベルが台帳の生の表記のままフォールバックする
+ *   ことを確認できる）
+ *
+ * `catalogKey`/`nft.symbol` は実カタログ（profiles/ethereum/contracts/
+ * catalog.json）の "ChainvizNFT" / "CVN" と完全に一致させる
+ * （chainvizTokenContract の docstring と同じ理由）。
+ */
+function chainvizNftContract(): ContractEntity {
+  return {
+    kind: "contract",
+    address: NFT_CONTRACT,
+    chainType: "ethereum",
+    name: "ChainvizNFT",
+    catalogKey: "ChainvizNFT",
+    deployerAddress: ALICE_WALLET,
+    createdByTxHash: NFT_DEPLOY_TX,
+    nft: { symbol: "CVN" },
+    nftTokens: [
+      { tokenId: "1", ownerAddress: ALICE_WALLET },
+      { tokenId: "2", ownerAddress: BOB_WALLET },
+      { tokenId: "3", ownerAddress: NFT_UNTRACKED_OWNER },
+    ],
+  };
+}
+
+/**
  * カタログ未登録（手動デプロイ・追跡外アドレスからのデプロイを想定）の
  * コントラクト。名前・カタログキー・デプロイ元のいずれも観測できなかった
  * 状態を再現し、「未知のコントラクト」表示（破線ボーダー・カタログ外ピル・
@@ -646,6 +694,10 @@ export function createMockSnapshot(): WorldStateSnapshot {
       chainvizTokenContract(),
       counterContract(),
       unknownContract(),
+      // Issue #315: ERC-721(NFT)の所有関係。「発行済み NFT」（コントラクト
+      // カード）・「保有 NFT」（ウォレットカード）の両方をオフラインで
+      // 確認できるようにする。
+      chainvizNftContract(),
       // チェーンリボン（Issue #298）のオフライン確認用。reth の初期
       // blockHeight(128)に合わせた直近5件。
       ...initialMockBlocks(128),
@@ -980,15 +1032,26 @@ export const ADD_NODE_PEER_CONNECT_DELAY_MS = 4000;
 /**
  * runWorkbenchOperation(deployContract) のモック応答が組み立てる、最小限の
  * カタログ表示情報（Issue #167）。実カタログ（profiles/ethereum/contracts/
- * catalog.json）の ChainvizToken/Counter に対応する。ABI は持たない
- * （型解釈は実際には collector 側 ChainAdapter の責務であり、モックは
- * その結果だけを模す）。
+ * catalog.json）の ChainvizToken/ChainvizNFT/Counter に対応する。ABI は
+ * 持たない（型解釈は実際には collector 側 ChainAdapter の責務であり、
+ * モックはその結果だけを模す）。
+ *
+ * `nft`（Issue #315）は `token` と排他（`ContractEntity.nft`/`token` の
+ * 排他方針。docs/worklog/issue-315.md「データモデル」）。デプロイ直後は
+ * まだ何も mint されていない状態を表すため、生成時に `nftTokens: []`
+ * を持たせる（省略=未観測ではなく「観測できたが未発行」。
+ * `resolveContractNftLedger` が空配列と未定義を区別する設計に合わせる）。
  */
 const MOCK_DEPLOYABLE_CATALOG: Record<
   string,
-  { name: string; token?: { symbol: string; decimals: number } }
+  {
+    name: string;
+    token?: { symbol: string; decimals: number };
+    nft?: { symbol: string };
+  }
 > = {
   ChainvizToken: { name: "ChainvizToken", token: { symbol: "CVZ", decimals: 18 } },
+  ChainvizNFT: { name: "ChainvizNFT", nft: { symbol: "CVN" } },
   Counter: { name: "Counter" },
 };
 
@@ -1051,10 +1114,11 @@ export function createMockClient(
 
   // runWorkbenchOperation(callContract) の対象照合に使う、デプロイ済み・
   // カタログ既知コントラクトの address -> catalogKey 索引（Issue #167）。
-  // 初期スナップショットの2件（ChainvizToken/Counter）で種を蒔き、
-  // deployContract が成功するたびに追加する。
+  // 初期スナップショットの3件（ChainvizToken/ChainvizNFT/Counter。Issue
+  // #315 で NFT を追加）で種を蒔き、deployContract が成功するたびに追加する。
   const deployedContractCatalogKeys = new Map<string, string>([
     [TOKEN_CONTRACT, "ChainvizToken"],
+    [NFT_CONTRACT, "ChainvizNFT"],
     [COUNTER_CONTRACT, "Counter"],
   ]);
   let deploySeq = 0;
@@ -1360,6 +1424,11 @@ export function createMockClient(
                 workbenchId === "workbench-alice" ? ALICE_WALLET : undefined,
               createdByTxHash,
               token: catalogEntry.token,
+              nft: catalogEntry.nft,
+              // Issue #315: nft メタ情報を持つ場合のみ台帳を持たせる（token
+              // と同じ「排他」方針。デプロイ直後は空配列＝観測できたが未発行、
+              // token 系コントラクトでは省略のまま＝台帳の概念自体が無い）。
+              nftTokens: catalogEntry.nft ? [] : undefined,
             };
             return { ok: true, diffs: [{ type: "entityAdded", entity }] };
           }

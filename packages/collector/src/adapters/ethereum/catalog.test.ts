@@ -405,4 +405,31 @@ describe("readContractCatalog", () => {
     const catalog = readContractCatalog(profileDir, () => {});
     expect(catalog?.Tok.token).toEqual({ symbol: "ONLY_SYMBOL" });
   });
+
+  it("reads nft metadata into a key -> entry map (Issue #315)", () => {
+    const profileDir = writeCatalog(
+      JSON.stringify({
+        ChainvizNFT: {
+          name: "ChainvizNFT",
+          abi: [{ type: "function", name: "ownerOf" }],
+          nft: { symbol: "CVN" },
+        },
+      }),
+    );
+    const catalog = readContractCatalog(profileDir, () => {});
+    expect(catalog?.ChainvizNFT.nft).toEqual({ symbol: "CVN" });
+    // token(数量) と nft(個体) は別軸のフィールドなので、nft コントラクトは
+    // token を持たない。
+    expect(catalog?.ChainvizNFT.token).toBeUndefined();
+  });
+
+  it("passes nft metadata through verbatim without validating its shape (same as token)", () => {
+    const profileDir = writeCatalog(
+      JSON.stringify({
+        Bad: { name: "Bad", abi: [], nft: { notSymbol: true } },
+      }),
+    );
+    const catalog = readContractCatalog(profileDir, () => {});
+    expect(catalog?.Bad.nft).toEqual({ notSymbol: true });
+  });
 });

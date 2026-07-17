@@ -4,6 +4,7 @@ import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { withTermAnchor } from "../glossary/withTermAnchor.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { PopoverPortal } from "../interaction/PopoverPortal.js";
+import { resolveContractNftLedger } from "./contractNftLedger.js";
 import { LayerBadge } from "./LayerBadge.js";
 import { shortHex } from "./transaction.js";
 
@@ -35,6 +36,11 @@ function withAbiAnchor(text: string): ReactNode {
  * カタログ未登録（`name` 省略）の場合は説明文を差し替え、ABI を復号できない
  * ことを伝える（§6.4）。
  *
+ * NFT コントラクトは、既存のフィールド群の下に「発行済み NFT」節を追記する
+ * （Issue #315。`ContractCard` と同じ判定。`walletAddresses` は対応する
+ * ウォレットが見つかった場合に所有者ラベルをその表記へ揃えるために使う。
+ * 省略時は空 Set＝台帳の生の表記のまま出す）。
+ *
  * `anchorRef` はこのポップオーバーを開いたカード本体への ref（Issue #245）。
  * React Flow のノードはそれぞれ独立したスタッキングコンテキストを持つため、
  * `PopoverPortal` でこのカードを基準位置に body 直下へ描画し、隣接カードの
@@ -43,12 +49,16 @@ function withAbiAnchor(text: string): ReactNode {
 export function ContractPopover({
   anchorRef,
   entity,
+  walletAddresses = new Set(),
 }: {
   anchorRef: RefObject<HTMLElement | null>;
   entity: ContractEntity;
+  walletAddresses?: ReadonlySet<string>;
 }) {
   const { t } = useLanguage();
   const isUncataloged = entity.name === undefined;
+  const isNftObserved = entity.nftTokens !== undefined;
+  const nftLedger = resolveContractNftLedger(entity.nftTokens, walletAddresses);
 
   return (
     <PopoverPortal
@@ -90,6 +100,33 @@ export function ContractPopover({
           <span className="infra-field__value">
             {entity.token.symbol} / decimals {entity.token.decimals}
           </span>
+        </div>
+      )}
+      {/* Issue #315: 「発行済み NFT」節。ContractCard と同じ判定（省略=
+          未観測はセクション自体を出さない、空配列は「まだ発行されていません」）。 */}
+      {isNftObserved && (
+        <div className="contract-popover__nft">
+          <span className="infra-field__label">
+            <GlossaryTerm termKey="nft">{t("contract.issuedNft")}</GlossaryTerm>
+          </span>
+          {nftLedger.length === 0 ? (
+            <span className="infra-field__value">{t("contract.noNft")}</span>
+          ) : (
+            <ul className="contract-popover__nft-list">
+              {nftLedger.map((token) => (
+                <li
+                  key={token.tokenId}
+                  className="contract-popover__nft-item"
+                  data-testid={`contract-popover-nft-${entity.address}-${token.tokenId}`}
+                >
+                  <span className="contract-popover__nft-id">#{token.tokenId}</span>
+                  <span className="contract-popover__nft-owner">
+                    {shortHex(token.ownerAddress)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
     </PopoverPortal>
