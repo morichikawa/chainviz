@@ -871,6 +871,14 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       Engine 29.1.3)。--remove-orphans付きでも削除されない。README注記+
       ラベルベースの掃除スクリプト等が候補(chainviz-node-env + docs))
       [#359](https://github.com/morichikawa/chainviz/issues/359)
+- [ ] サンプルコントラクトのトークンシンボル(CVZ等)がSolidityの定数で
+      ハードコードされておりデプロイ時に変更できない
+      (ユーザーからの指摘。ChainvizToken.solの`symbol = "CVZ"`が定数で、
+      コンストラクタ引数はinitialSupplyのみ。「CVZ」が一般的なブロック
+      チェーン用語に見えてしまう。name/symbolのコンストラクタ引数化、
+      または表記変更が論点。catalog.json・operationCatalog.ts・
+      mockData.ts等CVZに依存する既存コードへの影響範囲の洗い出しが必要)
+      [#364](https://github.com/morichikawa/chainviz/issues/364)
 
 ## 運用ルール（全ステップ共通）
 
