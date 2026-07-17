@@ -172,3 +172,53 @@
     チェーンプロファイル側の空文字フォールバック防御は引き続き有効。
   - `docs/ARCHITECTURE.md` §5.1 は設計担当が既に更新済みのため、実装側
     での追加変更は行っていない。
+
+### 2026-07-17 Issue #341 テスト強化
+
+- 担当: tester
+- ブランチ: issue-341-i18n-empty-string-fallback（worktree 上の作業ブランチ名は
+  issue-341-impl-worktree）
+- 内容: 実装担当が追加した基本テスト（`translate("legend.hint.suffix",
+  "en")` が空文字を返す・英語ヒントに特定の日本語断片が混入しない）を土台に、
+  異常系・境界値・不変条件の観点で以下を追加した。
+  1. `packages/frontend/src/i18n/i18n.empty-string.test.ts`（新規）
+     - translate と pickLocale の空文字境界を対比で固定する。同じ
+       `{ja, en:""}` エントリに対し translate は空文字を尊重し、pickLocale は
+       ja へフォールバックすること、両者が異なる結果になること（将来
+       translate を再び pickLocale 経由へ戻す変更の検出）、translate の ja 側は
+       非空値を素通しすることを検証。
+     - messages.ts の意図的な空文字が `legend.hint.suffix.en` の1箇所だけで
+       あるという設計メモ §1 の前提を不変条件テストとして固定
+       （全キー×全言語を走査し、空文字ペアが `[["legend.hint.suffix","en"]]`
+       と一致することを assert）。別キーで空文字を足すとこのガードを踏むため、
+       追加時に意図の確認と回帰テスト追加を促せる。
+     - translate の「未知キーはキー文字列を返す」契約が #341 の内部実装変更
+       （pickLocale 経由 → entry[lang] 直接参照）後も両言語で保たれること、
+       空文字キーでも例外を投げないことを確認。
+  2. `packages/frontend/src/entities/PeerNetworkLegend.test.tsx`（追記）
+     - 英語ヒント（`.p2p-legend__hint`）に、特定の語句ではなく文字種
+       （ひらがな・カタカナ・CJK 漢字）で日本語が一切混入しないことを検証する
+       広い回帰ガードを追加。将来 suffix の文言が変わっても ja フォールバック
+       の再発を捕まえられる。
+  - 「直したはず」防止として、修正前の実装（translate を pickLocale 経由に
+    戻した状態）で新規テストが実際に失敗すること（境界テスト・CJK ガード・
+    既存 #341 テストの計5件が FAIL、messages.ts の不変条件テストは実装非依存の
+    ため PASS のまま）を確認してから実装を元に戻した。
+  - `npx eslint`（変更2ファイル）・`pnpm --filter @chainviz/frontend build`・
+    `pnpm --filter @chainviz/frontend test`（199 ファイル・2602 テスト全通過）を
+    実行し、いずれも問題なし。
+- 決定事項・注意点:
+  - 新機能の実装・既存実装ロジックの変更は行っていない。テスト追加のみ。
+  - `legend.hint.suffix` を参照するコンポーネントは `PeerNetworkLegend.tsx`
+    の1箇所だけであることを grep で確認済み。他コンポーネント向けの追加
+    回帰テストは不要。
+  - 報告事項（軽微な堅牢性ギャップ、実装変更は保留）: `translate()` に
+    `Object.prototype` 由来のキー（`"toString"` / `"constructor"` /
+    `"hasOwnProperty"` 等）を渡すと、`messages[key]` がプロトタイプチェーン
+    経由の関数を拾い `entry[lang]` が `undefined` を返す（「未知キーは
+    キー文字列を返す」契約から外れる）。型 `MessageKey` により通常のコード
+    からは到達不能で、#341 が新たに生んだ問題でもない（従来は pickLocale
+    経由で空文字を返していた）ため今回は修正・失敗テストの追加を見送った。
+    恒久対応するなら `format()` と同じく
+    `Object.prototype.hasOwnProperty.call(messages, key)` で自己プロパティを
+    確認する防御が考えられる。
