@@ -275,3 +275,34 @@
       再テスト・再レビューの1サイクルを回すのは過剰。対応するなら別Issue
       （バックログの軽微な堅牢性項目）として起票するのが妥当。起票の要否は
       統括に委ねる
+
+### 2026-07-17 Issue #341 QA検証
+
+- 担当: qa
+- ブランチ: issue-341-i18n-empty-string-fallback（worktree 上の作業ブランチ名は
+  issue-341-impl-worktree）
+- 内容: frontend をモックモード（VITE_COLLECTOR_URL 未設定）で実際に起動し、
+  実ブラウザ（Chromium headless）で P2P 凡例（p2p-legend）の表示を検証した。
+  ユニットテスト（jsdom）ではなく、`vite build:web` で生成した本番バンドルを
+  `vite preview` で配信し、Playwright でブラウザ操作して DOM の実表示を確認した。
+  - 検証手順: モックデータでピアエッジが増えて p2p-legend が表示されるのを
+    待ち、言語トグル（data-testid="language-toggle"）で ja→en→ja を切り替え
+    ながら `.p2p-legend__hint` の実テキストを取得した。
+  - 結果:
+    - 日本語モード（初期状態）: 「ピア接続はノード発見により時間とともに
+      自動で増えます」と正しく表示。
+    - 英語モードに切り替え: 「Peer connections grow over time via node
+      discovery」と表示され、日本語（ひらがな・カタカナ・CJK 漢字）の混入は
+      無い。修正前に観測されていた「Peer connections grow over time via node
+      discoveryにより時間とともに自動で増えます」の日英混在は解消されている
+      ことを目視・DOM の両方で確認した（凡例部分のスクリーンショットでも確認）。
+    - 日本語モードに戻す: 切り替え前と完全に一致するテキストが復元され、
+      日本語モードの表示に影響が出ていないことを確認した。
+  - `docs/PLAN.md` の Issue #341 完了条件（英語モードで日英混在が解消されて
+    いること）を満たしている。当該チェックボックスは実装担当が既に [x] に
+    更新済みで、単一チェックボックス項目のため QA 側での追加更新は不要。
+- 判定: 合格。実装担当への差し戻しは不要。
+- 注意点: 当環境の Chromium headless_shell は libnspr4/libnss3 が未導入で
+  そのままでは起動しないため、apt-get download で取得した .deb を非 root で
+  展開し LD_LIBRARY_PATH を通して起動した（検証用の一時対応。リポジトリには
+  影響しない）。
