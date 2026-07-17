@@ -5,12 +5,13 @@
 
 import { PassThrough } from "node:stream";
 import type Docker from "dockerode";
-import type {
-  ContainerSpec,
-  CreatedContainer,
-  DockerOperations,
-  ExecResult,
-  LabeledContainer,
+import {
+  ContainerNameConflictError,
+  type ContainerSpec,
+  type CreatedContainer,
+  type DockerOperations,
+  type ExecResult,
+  type LabeledContainer,
 } from "./operations.js";
 
 /** dockerode の network.inspect() が返す形のうち、参照する部分だけ。 */
@@ -113,11 +114,38 @@ function isRemovalInProgress(err: unknown): boolean {
   return /removal of container .* is already in progress/i.test(message);
 }
 
+/**
+ * dockerode のエラーが「指定した名前のコンテナが既に存在する（409 conflict）」
+ * かどうか。実際に観測された Docker Engine の文言（Issue #366）:
+ * `(HTTP code 409) unexpected - Conflict. The container name "/xxx" is
+ * already in use by container "yyy". You have to remove (or rename) that
+ * container to be able to reuse that name.`
+ */
+function isNameConflict(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const e = err as { statusCode?: number; message?: unknown };
+  if (e.statusCode !== 409) return false;
+  const message = typeof e.message === "string" ? e.message : "";
+  return /already in use/i.test(message);
+}
+
 /** dockerode の Docker を DockerOperations として使えるようラップする。 */
 export function createDockerOperations(docker: Docker): DockerOperations {
   return {
     async createAndStart(spec: ContainerSpec): Promise<CreatedContainer> {
-      const container = await docker.createContainer(toCreateOptions(spec));
+      let container: Docker.Container;
+      try {
+        container = await docker.createContainer(toCreateOptions(spec));
+      } catch (err) {
+        // 名前衝突は呼び出し側（ChainAdapter）が別名で再試行できるよう、
+        // dockerode の生エラー形状を漏らさず専用の型に変換する（Issue #366）。
+        // それ以外の失敗（イメージ未取得・ネットワーク不在等）は握りつぶさず
+        // そのまま伝播させる。
+        if (isNameConflict(err)) {
+          throw new ContainerNameConflictError(spec.name);
+        }
+        throw err;
+      }
       await container.start();
       return { id: container.id };
     },

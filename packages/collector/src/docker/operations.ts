@@ -67,9 +67,30 @@ export interface LabeledContainer {
   labels: Record<string, string>;
 }
 
+/**
+ * createAndStart が「指定した名前のコンテナが既に存在する」ことを理由に
+ * 失敗したことを表す。dockerode / Docker Engine API が返す生のエラー形状
+ * （`statusCode`/`message` を持つオブジェクト）を呼び出し側（ChainAdapter
+ * 実装）に漏らさないための変換型。dockerode 実装（dockerode-operations.ts）
+ * だけがこの型への変換を担い、呼び出し側はこの型かどうかだけを見て
+ * 「名前を変えて再試行する」判断ができる（CLAUDE.md「ChainAdapter 境界」。
+ * チェーン固有ではないが、Docker の生エラー詳細という実装依存の語彙を
+ * ChainAdapter に持ち込ませないという同じ考え方を Docker 操作層にも適用する）。
+ */
+export class ContainerNameConflictError extends Error {
+  constructor(public readonly containerName: string) {
+    super(`container name "${containerName}" is already in use`);
+    this.name = "ContainerNameConflictError";
+  }
+}
+
 /** コンテナのライフサイクル操作の最小面（dockerode 実装で満たす）。 */
 export interface DockerOperations {
-  /** コンテナを作成して起動する。 */
+  /**
+   * コンテナを作成して起動する。指定した名前が既に別のコンテナに
+   * 使われている場合は ContainerNameConflictError を投げる（呼び出し側は
+   * 別の名前で再試行できる）。
+   */
   createAndStart(spec: ContainerSpec): Promise<CreatedContainer>;
   /** コンテナを停止して削除する。既に停止・削除済みでも失敗しない。 */
   stopAndRemove(containerId: string): Promise<void>;

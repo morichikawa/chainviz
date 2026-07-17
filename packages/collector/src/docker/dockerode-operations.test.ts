@@ -7,7 +7,7 @@ import {
   toCreateOptions,
   toLabelFilters,
 } from "./dockerode-operations.js";
-import type { ContainerSpec } from "./operations.js";
+import { ContainerNameConflictError, type ContainerSpec } from "./operations.js";
 
 const baseSpec: ContainerSpec = {
   name: "chainviz-ethereum-reth3",
@@ -208,6 +208,66 @@ describe("createDockerOperations", () => {
     expect(result).toEqual({ id: "cid-1" });
     expect(createContainer).toHaveBeenCalledWith(toCreateOptions(baseSpec));
     expect(start).toHaveBeenCalledTimes(1);
+  });
+
+  it("translates a name-conflict (409) failure into ContainerNameConflictError (Issue #366)", async () => {
+    // 実際に観測された Docker Engine の生エラー文言（issue本文・実機再現ログ）を模す。
+    const conflict = Object.assign(
+      new Error(
+        '(HTTP code 409) unexpected - Conflict. The container name "/chainviz-ethereum-workbench-1" is already in use by container "bfd63c9283c0f8a889a65f2b7b5b1a2320ed21635b5357d7b0a4629b0d29009b". You have to remove (or rename) that container to be able to reuse that name. ',
+      ),
+      { statusCode: 409 },
+    );
+    const createContainer = vi.fn().mockRejectedValue(conflict);
+    const docker = { createContainer } as unknown as Docker;
+
+    const ops = createDockerOperations(docker);
+    const error = await ops
+      .createAndStart(baseSpec)
+      .catch((err: unknown) => err);
+
+    expect(error).toBeInstanceOf(ContainerNameConflictError);
+    expect((error as ContainerNameConflictError).containerName).toBe(
+      baseSpec.name,
+    );
+  });
+
+  it("does not treat an unrelated 409 failure from createContainer as a name conflict", async () => {
+    const other = Object.assign(
+      new Error("(HTTP code 409) unexpected - some other conflict"),
+      { statusCode: 409 },
+    );
+    const createContainer = vi.fn().mockRejectedValue(other);
+    const docker = { createContainer } as unknown as Docker;
+
+    const ops = createDockerOperations(docker);
+    await expect(ops.createAndStart(baseSpec)).rejects.toThrow(
+      /some other conflict/,
+    );
+  });
+
+  it("propagates a non-conflict failure from createContainer unchanged (e.g. unknown image)", async () => {
+    const notConflict = new Error("no such image");
+    const createContainer = vi.fn().mockRejectedValue(notConflict);
+    const docker = { createContainer } as unknown as Docker;
+
+    const ops = createDockerOperations(docker);
+    await expect(ops.createAndStart(baseSpec)).rejects.toBe(notConflict);
+  });
+
+  it("does not call start() when createContainer fails with a name conflict", async () => {
+    const start = vi.fn();
+    const conflict = Object.assign(new Error("already in use"), {
+      statusCode: 409,
+    });
+    const createContainer = vi.fn().mockRejectedValue(conflict);
+    const docker = { createContainer } as unknown as Docker;
+
+    const ops = createDockerOperations(docker);
+    await expect(ops.createAndStart(baseSpec)).rejects.toBeInstanceOf(
+      ContainerNameConflictError,
+    );
+    expect(start).not.toHaveBeenCalled();
   });
 
   it("stops then force-removes a container", async () => {
