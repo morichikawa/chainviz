@@ -189,3 +189,64 @@ node-lifecycle.ts}`というTypeScriptコードに及ぶ（通常はcollector担
   実機確認を追加で行うことが望ましい（ユニットテスト・addWorkbenchでの
   実機確認・Docker Compose側の一般的な挙動確認の組み合わせで妥当性は
   確認済みだが、最終的な実機フルパスの確認ではない）。
+
+### 2026-07-17 テスト強化
+
+- 担当: tester
+- ブランチ: issue-359-managed-container-cleanup
+
+#### 追加したテスト
+
+実装担当が追加した基本テスト（node-lifecycle.test.ts の reth/beacon/
+workbench それぞれで `CONFIG_HASH_LABEL` が `toBeTruthy` であること）は、
+ラベルが「付いていること」しか確認しておらず、実機検証で判明した不変条件
+（値が空文字だと Compose に認識されない・種別で値が食い違わない・孤児
+検出には project/service/managed と揃って必要）までは押さえていなかった。
+関心事ごとに以下2ファイルを新規追加した（node-lifecycle.test.ts は既に
+66KB と肥大しているため追記せず分割。CLAUDE.md「1ファイル1責務」）。
+
+- `packages/collector/src/adapters/ethereum/labels.test.ts`（新規、5テスト）:
+  labels.ts の定数群（唯一の定義元という責務）に対する回帰テスト。
+  - compose 互換キー（project/service/config-hash）と chainviz 独自キー
+    （managed/role/p2p-role）の正確な文字列を固定
+  - compose 系は `com.docker.compose.` 名前空間、chainviz 系は
+    `com.chainviz.` 名前空間であることを検証
+  - 全ラベルキーが相異なる（定数が同じ文字列を指して上書きし合わない）こと
+- `packages/collector/src/adapters/ethereum/managed-container-cleanup-labels.test.ts`
+  （新規、4テスト）: Issue #359 の中心的不変条件に特化。
+  - reth/beacon/workbench の全 managed コンテナ種別で config-hash が
+    「空でない文字列」かつ同一値であること（`toBeTruthy` より厳密に
+    `typeof === "string"` + `length > 0` を要求し、空文字への退行を弾く）
+  - config-hash 単体ではなく project + service + managed と揃って付くこと
+    （孤児検出に一式必要なため）
+  - 2 回 addNode したとき reth3/beacon3/reth4/beacon4 の 4 コンテナすべてに
+    付くこと（「最初の1個だけ付けて2個目を付け忘れる」境界の退行防止）
+  - 空ラベル（`"   "`）の addWorkbench で service 名が "workbench" に
+    フォールバックする境界でも config-hash が漏れないこと
+
+#### 依頼された観点への回答
+
+- 観点1（プレースホルダー値の形式）: 「値の中身を Compose が検証するか」は
+  Docker 側の挙動でありユニットテストでは直接検証できない。worklog の実機
+  検証で「孤児コンテナは docker-compose.yml に対応サービス定義を持たない
+  ため値の比較は行われず、キーが存在し空でなければ十分」と確定済み。この
+  結論のユニットテスト上の代理として「値が空でない文字列であること」を
+  managed-container-cleanup-labels.test.ts で固定した（空文字は認識され
+  ないという実機知見への回帰ガード）。
+- 観点2（reth/beacon への付与の補強）: 実機E2E確認が手薄だった reth/beacon
+  について、`nodeLabels()` 経由で生成される全コンテナ（複数回 addNode 含む）
+  に config-hash が付くことをユニットテストで固定した。
+- 観点3（既存 labels.ts テストとの整合）: labels.ts には専用テストが存在
+  しなかったため新規作成し、他ラベル定数との一貫性（名前空間・キー一意性）
+  もあわせて固定した。
+
+#### 実装のバグらしきもの
+
+なし（実装ロジックへの変更は行っていない）。
+
+#### 確認結果
+
+- `pnpm --filter @chainviz/collector build`: 通過。
+- `pnpm --filter @chainviz/collector test`: collector 全体で 76 ファイル
+  1574 テスト通過（新規 5 + 4 テストを含む）。
+- `pnpm lint`（ルート eslint）: 通過。
