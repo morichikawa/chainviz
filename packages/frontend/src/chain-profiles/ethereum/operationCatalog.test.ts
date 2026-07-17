@@ -8,9 +8,9 @@ import {
 } from "./operationCatalog.js";
 
 describe("ETHEREUM_OPERATION_CATALOG", () => {
-  it("keys every entry with the exact catalogKey collector/catalog.json use (ChainvizToken/Counter)", () => {
+  it("keys every entry with the exact catalogKey collector/catalog.json use (ChainvizToken/ChainvizNFT/Counter)", () => {
     const keys = ETHEREUM_OPERATION_CATALOG.map((entry) => entry.catalogKey);
-    expect(keys).toEqual(["ChainvizToken", "Counter"]);
+    expect(keys).toEqual(["ChainvizToken", "ChainvizNFT", "Counter"]);
   });
 
   it("gives every function a full cast signature (name + parens), not just a bare name", () => {
@@ -89,6 +89,39 @@ describe("ETHEREUM_OPERATION_CATALOG", () => {
     const entry = getOperationCatalogEntry("Counter");
     const incrementBy = entry?.functions.find((fn) => fn.label === "incrementBy");
     expect(incrementBy?.args.find((arg) => arg.name === "amount")?.unit).toBeUndefined();
+  });
+
+  // --- Issue #315: ChainvizNFT(ERC-721サブセット) ---
+
+  it("gives ChainvizNFT no constructor args (matches the source: no constructor params)", () => {
+    const entry = getOperationCatalogEntry("ChainvizNFT");
+    expect(entry?.constructorArgs).toEqual([]);
+  });
+
+  it("gives ChainvizNFT no token metadata (it is not a quantity-based ERC20 token)", () => {
+    const entry = getOperationCatalogEntry("ChainvizNFT");
+    expect(entry?.token).toBeUndefined();
+  });
+
+  it(
+    "never marks a ChainvizNFT tokenId arg with unit: 'token' " +
+      "(tokenId is a discrete identifier, not a decimals-scaled quantity)",
+    () => {
+      const entry = getOperationCatalogEntry("ChainvizNFT");
+      for (const fn of entry?.functions ?? []) {
+        const tokenIdArg = fn.args.find((arg) => arg.name === "tokenId");
+        if (tokenIdArg) expect(tokenIdArg.unit).toBeUndefined();
+      }
+    },
+  );
+
+  it("exposes exactly mint/approve/transferFrom for ChainvizNFT (per docs/worklog/issue-315.md)", () => {
+    const entry = getOperationCatalogEntry("ChainvizNFT");
+    expect(entry?.functions.map((fn) => fn.label).sort()).toEqual([
+      "approve",
+      "mint",
+      "transferFrom",
+    ]);
   });
 });
 
