@@ -33,6 +33,10 @@ import {
 import { BeaconSyncStatusCache, resolveBeaconSyncStatus } from "./beacon-sync-status.js";
 import { BlockPropagationTracker } from "./blocks.js";
 import type { ContractCatalog } from "./catalog.js";
+import {
+  CHAIN_RESET_POLL_INTERVAL_MS,
+  ChainResetWatcher,
+} from "./chain-reset-watcher.js";
 import { classifyContainer } from "./classify.js";
 import { ContractTracker, normalizeAddress } from "./contracts.js";
 import { decodeContractCall, decodeContractEvent } from "./decode.js";
@@ -194,6 +198,13 @@ export interface EthereumAdapterDeps {
    * コメント参照）。テストで短縮/長縮するために差し替え可能にしている。
    */
   blockSubscriptionReconcileIntervalMs?: number;
+  /**
+   * チェーンリセット監視（`subscribeChainResets`、Issue #357）の周期
+   * ポーリング間隔。未指定なら `CHAIN_RESET_POLL_INTERVAL_MS`（3000ms、
+   * 他層のループと同じ既定値）。テストで短縮/長縮するために差し替え
+   * 可能にしている。
+   */
+  chainResetPollIntervalMs?: number;
 }
 
 /**
@@ -249,6 +260,10 @@ export class EthereumAdapter implements ChainAdapter {
   // pollInfra）から行う（head-tip-cache.ts のコメント参照。syncStatusCache と
   // 同じ「書き込みは購読、store の書き手は applyInfra 1 本」構造）。
   private readonly headTipCache = new HeadTipCache();
+  // チェーンリセット（genesis 変化）の監視ループ本体（Issue #357）。
+  // ループ・キャッシュ・判定は ChainResetWatcher 側に閉じ込め、
+  // subscribeChainResets はこれを起動するだけ。
+  private readonly chainResetWatcher: ChainResetWatcher;
 
   private peerTimer?: ReturnType<typeof setTimeout>;
   private peerLoopRunning = false;
@@ -377,6 +392,10 @@ export class EthereumAdapter implements ChainAdapter {
     this.blockSubscriptionReconcileIntervalMs =
       deps.blockSubscriptionReconcileIntervalMs ??
       BLOCK_SUBSCRIPTION_RECONCILE_INTERVAL_MS;
+    this.chainResetWatcher = new ChainResetWatcher(this.poller, {
+      rpc: this.ethRpc,
+      pollIntervalMs: deps.chainResetPollIntervalMs ?? CHAIN_RESET_POLL_INTERVAL_MS,
+    });
   }
 
   /**
@@ -1051,6 +1070,52 @@ export class EthereumAdapter implements ChainAdapter {
   }
 
   /**
+   * チェーンリセット（Issue #357）の検知を購読する。監視ループの実体は
+   * `ChainResetWatcher` に委譲し（genesis ハッシュの観測・キャッシュ・
+   * 判定はそちらに閉じ込める）、ここでは起動するだけ。store 側のパージ
+   * （wallet/contract/block/transaction の entityRemoved）や、このアダプタの
+   * 内部キャッシュのクリア（`resetChainDerivedState`）は onReset の
+   * コールバック側（collector 本体 = index.ts の main の配線）が担う。
+   */
+  subscribeChainResets(onReset: () => void): void {
+    this.chainResetWatcher.subscribe(onReset);
+  }
+
+  /**
+   * チェーンリセット検知時に呼ぶ、アダプタ内部キャッシュのクリア
+   * （Issue #357）。store 側のパージ（`WorldStateStore.
+   * purgeChainDerivedState`）とは別に、アダプタが内部に保持するチェーン
+   * 由来のキャッシュも同時にクリアする必要がある。特に `contractTracker`
+   * をクリアしないと、WalletTracker/NftTracker が旧チェーンに存在しない
+   * トークン/NFT コントラクトのアドレスを追跡し続け、新チェーンでは
+   * eth_call が失敗し続けてエラーログが際限なく積み上がる（issue-357 の
+   * 調査で実測: ログ 5MB 超の直接原因）。
+   *
+   * node/workbench の存在自体・`EthereumNodeLifecycle` の wallet-index
+   * 採番レジストリはここでは触らない（設計判断: Docker コンテナの実在を
+   * 映すものであり、チェーンリセット ≠ コンテナ消滅。
+   * docs/worklog/issue-357.md 参照）。ピア観測キャッシュ
+   * （`consensusPeerObservations`）も対象外（次回成功観測で上書きされ、
+   * クリアしなくても数 tick で自然に解消するため）。
+   *
+   * 呼び出し順序は collector 本体（index.ts の main）が
+   * `resetChainDerivedState()` → `store.purgeChainDerivedState()` →
+   * `broadcastDiff` の順で担う（このメソッド自体は store に触れない。
+   * アダプタのキャッシュを先にクリアすることで、パージ直後の tick で
+   * 旧アドレスの再ポーリング・旧エンティティの再投入が走らないようにする）。
+   */
+  resetChainDerivedState(): void {
+    this.contractTracker.reset();
+    this.txTracker.reset();
+    this.blockTracker.reset();
+    this.headTipCache.reset();
+    this.syncStatusCache.reset();
+    this.beaconSyncStatusCache.reset();
+    this.processedBlocks.clear();
+    this.undecodedDeployLogs.clear();
+  }
+
+  /**
    * ブロック取り込みで得た receipts から、コントラクト作成（contractAddress が
    * 非 null）を検知し、追跡中の onContract コールバックへ ContractEntity を渡す。
    * onContract 未登録（subscribeContracts が呼ばれていない）場合でも追跡自体は
@@ -1329,8 +1394,8 @@ export class EthereumAdapter implements ChainAdapter {
   }
 
   /**
-   * ピアポーリング・ブロック購読・tx 購読・ノード内部メトリクスポーリングを
-   * 停止する（テスト・シャットダウン用）。
+   * ピアポーリング・ブロック購読・tx 購読・ノード内部メトリクスポーリング・
+   * チェーンリセット監視を停止する（テスト・シャットダウン用）。
    */
   dispose(): void {
     this.peerLoopRunning = false;
@@ -1351,5 +1416,6 @@ export class EthereumAdapter implements ChainAdapter {
       clearTimeout(this.nodeInternalsTimer);
       this.nodeInternalsTimer = undefined;
     }
+    this.chainResetWatcher.dispose();
   }
 }
