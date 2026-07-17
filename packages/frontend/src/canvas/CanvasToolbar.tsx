@@ -7,6 +7,7 @@ import {
 } from "../commands/commandMessages.js";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
+import { useSidePanel } from "../side-panel/SidePanelContext.js";
 import { ActionHint } from "./ActionHint.js";
 
 export interface CanvasToolbarProps {
@@ -44,6 +45,16 @@ export function CanvasToolbar({
   const { t } = useLanguage();
   const actions = useCommandActions();
   const [label, setLabel] = useState("");
+  // Issue #317: 通信ログパネルの開閉トグル。SidePanelView は排他（同時に
+  // 開けるのは1枚）なので、他のパネル（コントラクトソース等）が開いている
+  // 状態でこのボタンを押すとそちらを置き換えて通信ログが開く（既存の
+  // ContractCard 側トリガーと同じ `open` の挙動）。
+  const { view: sidePanelView, open: openSidePanel, close: closeSidePanel } = useSidePanel();
+  const commsLogOpen = sidePanelView?.kind === "commsLog";
+  const toggleCommsLog = () => {
+    if (commsLogOpen) closeSidePanel();
+    else openSidePanel({ kind: "commsLog" });
+  };
 
   const onAddWorkbench = (event: FormEvent) => {
     event.preventDefault();
@@ -127,6 +138,19 @@ export function CanvasToolbar({
           </button>
         </ActionHint>
       </form>
+      <button
+        type="button"
+        className={
+          commsLogOpen
+            ? "canvas-toolbar__button canvas-toolbar__button--active"
+            : "canvas-toolbar__button"
+        }
+        aria-pressed={commsLogOpen}
+        onClick={toggleCommsLog}
+        data-testid="canvas-toolbar-comms-log"
+      >
+        {t("action.commsLog")}
+      </button>
     </div>
   );
 }

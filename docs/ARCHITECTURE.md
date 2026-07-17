@@ -2583,6 +2583,43 @@ tx を集約し、mempool 全体を俯瞰する常設ミニパネルをキャン
   不要、依存追加を避けられる、純関数としてテストしやすい。カタログが
   増えてトークナイザの保守が割に合わなくなったらライブラリ導入を再検討する
 
+### 12.5 通信ログパネル（kind: "commsLog"。Issue #317 第1弾）
+
+キャンバス上のパルス・波・リボンは「今」を見せることに最適化されており、
+一瞬で消える出来事を後から遡る手段が無かった課題への答え。設計の全文
+（評価・判断理由）は `docs/worklog/issue-317.md` を参照。
+
+- **データフロー**: `SidePanelView` に `{ kind: "commsLog" }` を追加。
+  ログの材料は既存の DiffEvent（`operationObserved` / `nodeLinkActivity` /
+  `entityAdded` / `entityUpdated` / `edgeAdded` / `edgeRemoved`）のみで、
+  `packages/shared`・collector の変更は無い（第1弾のスコープ）。
+  `useWorldState` の `onDiff` 到着時、差分適用前の `WorldState` を渡す
+  `DiffObserver` コールバック経由で、フロント側の純関数
+  `deriveCommsLogEntries(prevState, events, now)`
+  （`frontend/src/comms-log/`）が6カテゴリ（操作・内部API・ブロック・
+  tx・P2P接続・環境）のエントリを導出する。スナップショット適用時は
+  呼ばない（diff由来のみ）
+- **蓄積**: フック `useCommsLog()` が App 層に常駐し、パネルの開閉と無関係に
+  リングバッファ（上限 500 件、新しい順）へ蓄積し続ける。表示フィルタ
+  （カテゴリ・ノード）は蓄積そのものには影響せず、描画直前にのみ適用する
+- **正直さの担保**: P2P ゴシップの実際の送信経路は観測していないため、
+  ブロック伝播は「〜が受信」の語で記録し方向を断定しない。`BlockEntity.
+  receivedAt` の EL/CL 2キー記録（Issue #141）は、駆動する側
+  （`NodeEntity.drivesNodeId` を持つ側）のキーが駆動される側と同じ時刻を
+  持つ場合にだけエイリアスとして畳む、ロール名を参照しない構造的な規則
+  （`comms-log/blockReceiptDedup.ts`）で重複排除する
+- **接続状態の記録**: `useCommsLog().noteConnectionStatus(status)` を
+  `useWorldState` の `status` の変化に合わせて呼び、切断→再接続の遷移
+  （マウント直後の初回接続は除く）を「環境」カテゴリのエントリとして残す
+- **開くトリガー**: キャンバスツールバーの「通信ログ」トグルボタン
+  （`CanvasToolbar`）。`SidePanelView` は排他のため、他のパネル
+  （コントラクトソース等）が開いている状態で押すとそちらを置き換える
+- **色の意味体系**: カテゴリチップの色は既存のキャンバス表現（操作エッジの
+  マゼンタ・内部リンクのシルバー・ブロック伝播のアクセント色・tx状態色・
+  ピア接続のネットワーク別色）をそのまま再利用し、新しい色は作らない
+- 第2弾（RPC呼び出しの成否・所要時間の観測。`packages/shared` の型変更を
+  伴う）は Issue #352 として分離済み
+
 ## 13. NFT（ERC-721）の所有関係の可視化（Issue #315）
 
 「誰がどの `tokenId` を持っているか」という NFT 固有の所有関係を、既存の

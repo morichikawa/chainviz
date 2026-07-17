@@ -770,7 +770,7 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       表示・秘密鍵の所有エッジとは異なる概念で未対応。着手時はまず
       chainviz-designerの設計から)
       [#315](https://github.com/morichikawa/chainviz/issues/315)
-- [ ] ノード間のリクエスト・レスポンスをログとして別タブで監視できるように
+- [x] ノード間のリクエスト・レスポンスをログとして別タブで監視できるように
       する
       (キャンバスのカード・パルスは「今の状態」を見せるのに適するが、
       時系列に流れるログとして遡って追うことはできない。着手時はまず
@@ -864,6 +864,13 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       キャッシュとワールドステートのwallet/contract/block/transactionを
       パージする)
       [#357](https://github.com/morichikawa/chainviz/issues/357)
+- [ ] addNode/addWorkbenchで作成したmanagedコンテナがdocker compose
+      down -vでも削除されない
+      (Issue #357の原因調査中にchainviz-detectiveが副次的に発見。
+      隔離した最小composeプロジェクトで実証済み(Compose v2.40.3 /
+      Engine 29.1.3)。--remove-orphans付きでも削除されない。README注記+
+      ラベルベースの掃除スクリプト等が候補(chainviz-node-env + docs))
+      [#359](https://github.com/morichikawa/chainviz/issues/359)
 
 ## 運用ルール（全ステップ共通）
 

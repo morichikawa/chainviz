@@ -12,6 +12,7 @@ import { CanvasToolbar } from "../canvas/CanvasToolbar.js";
 import { LayerFilterBar } from "../canvas/LayerFilterBar.js";
 import { CommandActionsProvider } from "../commands/CommandActionsContext.js";
 import { useCommands } from "../commands/useCommands.js";
+import { useCommsLog } from "../comms-log/useCommsLog.js";
 import { ToastStack } from "../notifications/Toast.js";
 import { useNotifications } from "../notifications/useNotifications.js";
 import { attachPulsesToEdges } from "../entities/blockPulse.js";
@@ -137,6 +138,15 @@ function AppShell({
   // 手順5: リロードで必ず「すべて」に戻る。開いたら全部見える、を保証する）。
   const [layerFilter, setLayerFilter] = useState<LayerFilter>("all");
 
+  // Issue #317: 通信ログの常駐フック。パネルの開閉と無関係に App 層で
+  // 1インスタンスだけマウントする（設計メモ §4）。`observeDiff` は
+  // `useCommands`（内部で `useWorldState` を呼ぶ）へそのまま渡す必要が
+  // あるため、`entities` 等（`state` に依存し useCommands の戻り値より
+  // 後でしか計算できない）より前で呼ぶ。ノードフィルタの自動リセット・
+  // 接続状態の記録は、対応する値が出揃った後で別途 effect から渡す
+  // （`syncValidNodeWorkbenchIds` / `noteConnectionStatus`。下記参照）。
+  const commsLog = useCommsLog();
+
   const {
     state,
     status,
@@ -147,7 +157,7 @@ function AppShell({
     ghosts,
     pendingOperationWorkbenchIds,
     pendingRemovalIds,
-  } = useCommands(clientFactory, notify, t);
+  } = useCommands(clientFactory, notify, t, commsLog.observeDiff);
 
   // ボタン押下直後のローディング表示（Issue #102）に使う。仮カードが
   // 1枚でも残っている間は「まだ実体化していない addNode/addWorkbench がある」
@@ -212,6 +222,21 @@ function AppShell({
     () => entities.filter(isInfraEntity).map((entity) => entity.id),
     [entities],
   );
+
+  // Issue #317: 通信ログのノードフィルタが指す node/workbench が削除された
+  // ら「すべて」へ自動で戻す（設計メモ §5.4）。`infraEntityIds` は
+  // node/workbench の両方を含む既存の配列を再利用する。
+  const infraEntityIdSet = useMemo(() => new Set(infraEntityIds), [infraEntityIds]);
+  const { syncValidNodeWorkbenchIds, noteConnectionStatus } = commsLog;
+  useEffect(() => {
+    syncValidNodeWorkbenchIds(infraEntityIdSet);
+  }, [infraEntityIdSet, syncValidNodeWorkbenchIds]);
+
+  // Issue #317: 接続状態の変化（切断/再接続）を通信ログの「環境」エントリと
+  // して記録する（設計メモ §7.1。スナップショット適用自体はエントリ化しない）。
+  useEffect(() => {
+    noteConnectionStatus(status);
+  }, [status, noteConnectionStatus]);
   const contractEntityIds = useMemo(
     () => entities.filter(isContractEntity).map((entity) => entity.address),
     [entities],
@@ -641,6 +666,12 @@ function AppShell({
                     layerFilter={layerFilter}
                     onLayerFilterChange={setLayerFilter}
                     transactions={transactions}
+                    commsLog={{
+                      visibleEntries: commsLog.visibleEntries,
+                      filters: commsLog.filters,
+                      toggleCategory: commsLog.toggleCategory,
+                      setNodeFilter: commsLog.setNodeFilter,
+                    }}
                   />
                 )}
                 <ToastStack notifications={notifications} onDismiss={dismiss} />

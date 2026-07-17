@@ -24,6 +24,7 @@ import { type WorldState, emptyWorldState } from "../world-state/store.js";
 import {
   type ClientFactory,
   type CommandResultHandler,
+  type DiffObserver,
   useWorldState,
 } from "../world-state/useWorldState.js";
 import type { ConnectionStatus } from "../websocket/client.js";
@@ -109,6 +110,11 @@ export function useCommands(
   clientFactory: ClientFactory,
   notify: (input: NotificationInput) => string,
   t: (key: MessageKey) => string,
+  /**
+   * 差分イベントの観測コールバック（Issue #317。`useWorldState` へそのまま
+   * 委譲する）。通信ログ（`useCommsLog`）が `observeDiff` を渡す想定。
+   */
+  onDiffEvents?: DiffObserver,
 ): UseCommandsResult {
   const pendingRef = useRef<Map<string, Command>>(new Map());
   const notifyRef = useRef(notify);
@@ -221,7 +227,7 @@ export function useCommands(
     operations,
     nodeLinkActivities,
     sendCommand,
-  } = useWorldState(clientFactory, handleCommandResult);
+  } = useWorldState(clientFactory, handleCommandResult, onDiffEvents);
   stateRef.current = state;
 
   // node / workbench / contract の実エンティティが新規に届いたら、対応する
