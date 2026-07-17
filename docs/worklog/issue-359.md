@@ -424,3 +424,57 @@ compose から不可視のため `up -d` の対象にならず生存する。つ
   よる compose 認識・孤児削除のメカニズム自体は合成composeで確認済みで、
   reth/beacon も同一コード経路（`nodeLabels()`）を通るため、ユニットテスト・
   addWorkbench 実機確認とあわせて妥当性は確認できたと判断する。
+
+### 2026-07-17 QA再検証（#366マージ取り込み後）
+
+- 担当: qa
+- ブランチ: issue-359-managed-container-cleanup（main取り込み後、コミット c128120）
+- 判定: 合格
+
+#### 経緯
+
+前回のQA検証時点のブランチにはワークベンチ命名衝突を修正した Issue #366
+（マージ済み）がまだ取り込まれておらず、`uniqueWorkbenchService()` が旧版
+（メモリ上のレジストリのみで照合）だったため、空ラベル addWorkbench の
+service 名が静的 "workbench" と衝突し `docker compose up -d` で削除される
+退行が再現していた。mainを取り込み（c128120）、`uniqueWorkbenchService()` が
+`existingWorkbenchServiceNames()`（compose project 配下の実在コンテナの
+service 名も走査する新版）を使うようになったため再検証した。
+
+#### 検証方法
+
+前回同様、共有スタック `chainviz-ethereum`（稼働中・collector 生存）には
+一切触れず、scratchpad配下に独立project（chainviz-i359r2）・独立ネットワークを
+作成。ビルド済みの `EthereumNodeLifecycle` と実 `createDockerOperations` を
+import し、静的 workbench サービス（service=workbench、managed ラベル無し）が
+実在する compose project に対して**実コード経路の `addWorkbench("")` を2回**
+呼び出して検証した（合成ラベルの手動付与ではなく実際の命名ロジックを通す）。
+foundryImage は alpine:latest に差し替え（コンテナは sleep するだけで
+イメージ内容は命名・ラベル検証に影響しない）。
+
+#### 確認結果
+
+1. **命名衝突の解消**: 空ラベル addWorkbench 2回で生成された動的ワークベンチの
+   service 名は `workbench-2` / `workbench-3` となり、静的サービス名
+   `workbench` と衝突しなかった（`existingWorkbenchServiceNames()` が静的
+   workbench コンテナを検出して番号を進めた）。両者に config-hash=chainviz-dynamic
+   が付くことも確認。
+2. **up -d での退行解消**: 上記状態で `docker compose up -d`（dev-up.sh・README
+   標準再起動手順）を実行 → 「Found orphan containers」の警告のみで、動的
+   ワークベンチ（workbench-2 / workbench-3）はいずれも停止・削除されず生存した
+   （前回再現した回帰は解消）。
+3. **#359 主目的の維持**: 続けて `docker compose down -v --remove-orphans` を
+   実行 → 静的 workbench・動的 workbench-2 / workbench-3 とネットワークが
+   すべて削除され、残留なし。config-hash ラベルによる孤児削除は引き続き機能する。
+
+検証で使った独立 project・コンテナ・ネットワーク・一時スクリプトはすべて削除済み。
+共有スタック `chainviz-ethereum` は検証前後で無傷（running(7)）・collector
+（ポート4000/4001）稼働継続を確認。
+
+#### 未実施・制約（前回から継続）
+
+実 `addNode`（reth/beacon）を用いた `down -v --remove-orphans` フルパスは、
+固定IP帯 172.28.x が稼働中の共有スタックと衝突するため隔離実行できず未実施。
+config-hash による compose 認識・孤児削除メカニズムは合成composeおよび
+実 addWorkbench 経路で確認済みで、reth/beacon も同一コード経路（`nodeLabels()`）
+を通るため妥当性は確認できたと判断する。
