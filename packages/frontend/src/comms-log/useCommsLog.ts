@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { ConnectionStatus } from "../websocket/client.js";
 import type { DiffObserver } from "../world-state/useWorldState.js";
 import type { CommsLogCategory, CommsLogEntry } from "./commsLogEntry.js";
@@ -47,22 +47,24 @@ export interface UseCommsLogResult {
    * 接続ステータス変化を環境エントリとして記録する」）。
    */
   noteConnectionStatus: (status: ConnectionStatus) => void;
+  /**
+   * 現存する node/workbench の entity id 集合を同期する。選択中のノード
+   * フィルタがこの集合に無くなったら「すべて」へ自動で戻す（設計メモ
+   * §5.4）。呼び出し側（App層）が `entities` から導出した Set を
+   * `useEffect` 経由で渡す想定（`observeDiff` を `useCommands`/
+   * `useWorldState` へ渡すには `state` が確定する前にこのフックを呼ぶ
+   * 必要があり、`state` 由来の値をコンストラクタ引数にはできないため、
+   * `noteConnectionStatus` と同じ「後から効果として渡す」形にしている）。
+   */
+  syncValidNodeWorkbenchIds: (ids: ReadonlySet<string>) => void;
 }
 
 /**
  * 通信ログの常駐フック（Issue #317）。App 層でパネルの開閉と無関係に
  * 1インスタンスだけマウントし、Context 等でパネル側へ値を渡す想定
  * （設計メモ §4「ログ蓄積フックはパネルの開閉と無関係に常駐させること」）。
- *
- * `validNodeWorkbenchIds` は現存する node/workbench の entity id 集合。
- * ノードフィルタの対象が削除された場合に自動で「すべて」へ戻すために使う
- * （設計メモ §5.4）。呼び出し側は内容が変わらない限り同じ参照を保つこと
- * （毎レンダー新規 Set を渡すと、この自動リセット用の effect が無駄に
- * 走るだけで実害は無いが、`useMemo` で安定させる方が望ましい）。
  */
-export function useCommsLog(
-  validNodeWorkbenchIds: ReadonlySet<string>,
-): UseCommsLogResult {
+export function useCommsLog(): UseCommsLogResult {
   const [entries, setEntries] = useState<CommsLogEntry[]>([]);
   const [filters, setFilters] = useState<CommsLogFilterState>(defaultCommsLogFilterState);
 
@@ -141,13 +143,13 @@ export function useCommsLog(
   }, []);
 
   // 選択中のノードフィルタが削除済みになったら「すべて」へ戻す（設計メモ §5.4）。
-  useEffect(() => {
+  const syncValidNodeWorkbenchIds = useCallback((ids: ReadonlySet<string>) => {
     setFilters((current) => {
       if (current.nodeId === null) return current;
-      if (validNodeWorkbenchIds.has(current.nodeId)) return current;
+      if (ids.has(current.nodeId)) return current;
       return { ...current, nodeId: null };
     });
-  }, [validNodeWorkbenchIds]);
+  }, []);
 
   const visibleEntries = useMemo(
     () => applyCommsLogFilter(entries, filters),
@@ -162,5 +164,6 @@ export function useCommsLog(
     setNodeFilter,
     observeDiff,
     noteConnectionStatus,
+    syncValidNodeWorkbenchIds,
   };
 }

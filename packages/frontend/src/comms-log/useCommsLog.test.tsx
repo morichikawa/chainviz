@@ -10,13 +10,13 @@ const emptyState: WorldState = { entities: {}, edges: [] };
 
 describe("useCommsLog: accumulation via observeDiff", () => {
   it("starts with no entries", () => {
-    const { result } = renderHook(() => useCommsLog(new Set()));
+    const { result } = renderHook(() => useCommsLog());
     expect(result.current.entries).toEqual([]);
     expect(result.current.visibleEntries).toEqual([]);
   });
 
   it("accumulates entries derived from observed diffs, newest first", () => {
-    const { result } = renderHook(() => useCommsLog(new Set()));
+    const { result } = renderHook(() => useCommsLog());
 
     act(() => {
       result.current.observeDiff(
@@ -40,7 +40,7 @@ describe("useCommsLog: accumulation via observeDiff", () => {
   });
 
   it("keeps accumulating regardless of how the panel/filter is used (no dependency on visibility)", () => {
-    const { result } = renderHook(() => useCommsLog(new Set()));
+    const { result } = renderHook(() => useCommsLog());
     act(() => {
       result.current.toggleCategory("environment"); // カテゴリを off にしても
     });
@@ -56,7 +56,7 @@ describe("useCommsLog: accumulation via observeDiff", () => {
   });
 
   it("caps retained entries at COMMS_LOG_RETENTION, dropping the oldest", () => {
-    const { result } = renderHook(() => useCommsLog(new Set()));
+    const { result } = renderHook(() => useCommsLog());
 
     act(() => {
       for (let i = 0; i < COMMS_LOG_RETENTION + 10; i += 1) {
@@ -77,7 +77,7 @@ describe("useCommsLog: accumulation via observeDiff", () => {
 
 describe("useCommsLog: filters", () => {
   it("toggleCategory flips visibility for that category only", () => {
-    const { result } = renderHook(() => useCommsLog(new Set()));
+    const { result } = renderHook(() => useCommsLog());
     expect(result.current.filters.categories.tx).toBe(true);
     act(() => result.current.toggleCategory("tx"));
     expect(result.current.filters.categories.tx).toBe(false);
@@ -85,7 +85,7 @@ describe("useCommsLog: filters", () => {
   });
 
   it("setNodeFilter narrows visibleEntries to matching actorIds", () => {
-    const { result } = renderHook(() => useCommsLog(new Set(["reth-1", "reth-2"])));
+    const { result } = renderHook(() => useCommsLog());
     act(() => {
       result.current.observeDiff(
         emptyState,
@@ -110,37 +110,37 @@ describe("useCommsLog: filters", () => {
   });
 
   it("resets the node filter to 'all' once the selected node/workbench is no longer valid", () => {
-    const { result, rerender } = renderHook(
-      ({ validIds }: { validIds: ReadonlySet<string> }) => useCommsLog(validIds),
-      { initialProps: { validIds: new Set(["reth-1"]) } },
-    );
-    act(() => result.current.setNodeFilter("reth-1"));
+    const { result } = renderHook(() => useCommsLog());
+    act(() => {
+      result.current.syncValidNodeWorkbenchIds(new Set(["reth-1"]));
+      result.current.setNodeFilter("reth-1");
+    });
     expect(result.current.filters.nodeId).toBe("reth-1");
 
-    rerender({ validIds: new Set() }); // reth-1 が削除された
+    act(() => result.current.syncValidNodeWorkbenchIds(new Set())); // reth-1 が削除された
     expect(result.current.filters.nodeId).toBeNull();
   });
 
   it("keeps the node filter untouched while it still refers to a valid node", () => {
-    const { result, rerender } = renderHook(
-      ({ validIds }: { validIds: ReadonlySet<string> }) => useCommsLog(validIds),
-      { initialProps: { validIds: new Set(["reth-1", "reth-2"]) } },
-    );
-    act(() => result.current.setNodeFilter("reth-1"));
-    rerender({ validIds: new Set(["reth-1", "reth-2", "reth-3"]) });
+    const { result } = renderHook(() => useCommsLog());
+    act(() => {
+      result.current.syncValidNodeWorkbenchIds(new Set(["reth-1", "reth-2"]));
+      result.current.setNodeFilter("reth-1");
+    });
+    act(() => result.current.syncValidNodeWorkbenchIds(new Set(["reth-1", "reth-2", "reth-3"])));
     expect(result.current.filters.nodeId).toBe("reth-1");
   });
 });
 
 describe("useCommsLog: noteConnectionStatus", () => {
   it("does not log anything for the very first status observed (baseline, not a real transition)", () => {
-    const { result } = renderHook(() => useCommsLog(new Set()));
+    const { result } = renderHook(() => useCommsLog());
     act(() => result.current.noteConnectionStatus("connected"));
     expect(result.current.entries).toEqual([]);
   });
 
   it("does not log the initial connecting -> connected sequence", () => {
-    const { result } = renderHook(() => useCommsLog(new Set()));
+    const { result } = renderHook(() => useCommsLog());
     act(() => {
       result.current.noteConnectionStatus("disconnected");
       result.current.noteConnectionStatus("connecting");
@@ -150,7 +150,7 @@ describe("useCommsLog: noteConnectionStatus", () => {
   });
 
   it("logs a disconnection when transitioning from connected to disconnected", () => {
-    const { result } = renderHook(() => useCommsLog(new Set()));
+    const { result } = renderHook(() => useCommsLog());
     act(() => {
       result.current.noteConnectionStatus("connected"); // baseline
       result.current.noteConnectionStatus("disconnected");
@@ -161,7 +161,7 @@ describe("useCommsLog: noteConnectionStatus", () => {
   });
 
   it("logs a reconnection when transitioning from disconnected back to connected (through connecting)", () => {
-    const { result } = renderHook(() => useCommsLog(new Set()));
+    const { result } = renderHook(() => useCommsLog());
     act(() => {
       result.current.noteConnectionStatus("connected"); // baseline
       result.current.noteConnectionStatus("disconnected");
@@ -174,7 +174,7 @@ describe("useCommsLog: noteConnectionStatus", () => {
   });
 
   it("does not log a redundant call with the same status twice in a row", () => {
-    const { result } = renderHook(() => useCommsLog(new Set()));
+    const { result } = renderHook(() => useCommsLog());
     act(() => {
       result.current.noteConnectionStatus("connected");
       result.current.noteConnectionStatus("disconnected");
