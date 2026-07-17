@@ -419,6 +419,31 @@ flowchart LR
 `ownerWorkbenchId` を `null` に更新する `entityUpdated` を送る。
 コントラクトは一度現れたら以後そのまま残る）。
 
+**例外: チェーンリセット時のパージ（Issue #357）**。「削除しない」は
+チェーンが生き続けることが前提であり、チェーン自体が破棄されて別の
+チェーンとして再作成された（`docker compose down -v` → `up` で genesis が
+再生成された）場合は前提ごと崩れる。collector はホスト上の長寿命プロセスで
+`down -v` の影響を直接受けないため、放置すると旧チェーンのウォレット・
+コントラクトがワールドステートに残留し続ける。そこでアダプタがチェーン
+リセットを検知した（`subscribeChainResets`。§4）とき、store は
+`purgeChainDerivedState()` で**チェーン由来のエンティティ（wallet /
+contract / block / transaction）を全て削除し、それぞれ通常の
+`entityRemoved` として配信する**（リセット専用の DiffEvent 種別は
+追加しない。フロントの `applyDiff` は既存の `entityRemoved` 処理だけで
+追従でき、プロトコルの前方互換も保てるため。対象エンティティ数は保持窓で
+有界なのでイベント量も問題にならない）。あわせて block 保持窓の基準
+（観測済み最大ブロック番号）もリセットする（リセットしないと、新チェーンの
+若い番号のブロックが旧チェーン基準の保持窓に弾かれて取り込めない）。
+パージしないもの: `NodeEntity` / `WorkbenchEntity`（Docker の現実は
+チェーンリセットでは変わらず、A層ポーリングが引き続き照合する）、
+`PeerEdge`（毎 tick の全量突き合わせで自己修復する）、ノード/ワークベンチ
+のライフサイクルレジストリ（管理コンテナの実在を映すもので、真実の情報源は
+Docker ラベル＝Issue #65。チェーンリセット＝コンテナ消滅ではない）。
+旧チェーンのゴーストウォレットが新ワークベンチに「再所有」される副作用も、
+ゴースト自体をパージすることで解消する（同じ導出インデックス＝同じ
+アドレスの再利用自体は mnemonic 由来の正しい挙動で、パージ後は新チェーンの
+観測から作り直される）。
+
 コントラクト関連の観測（新 Phase 4 / C層 拡張）は既存のイベント型に乗せ、
 新しい DiffEvent 種別は追加しない:
 
@@ -588,6 +613,9 @@ interface ChainAdapter {
     onInternals: (nodeId: string, internals: NodeInternals) => void;
     onLinkActivity: (activity: NodeLinkActivity) => void;
   }): Promise<void>;
+  // チェーンリセット（チェーン自体の破棄・再作成）の検知。検知手段は
+  // チェーンごとにアダプタが決める。実装しなくてよい（省略可。Issue #357）
+  subscribeChainResets?(onReset: () => void): void;
 }
 ```
 
@@ -734,6 +762,48 @@ interface ChainAdapter {
   ポーリングし、`NodeInternals`（対象ノードへのパッチとして store が反映）と
   `NodeLinkActivity`（揮発性。passthrough 配信）を渡す。Ethereum プロファイル
   の観測方法・設計判断は §7 参照
+
+- `subscribeChainResets` — チェーンリセットの検知（Issue #357）。「観測対象の
+  チェーン自体が破棄され、別のチェーンとして再作成された」ことを検知して
+  onReset を呼ぶ。通常のノード再起動・一時的な観測不能はリセットではない。
+  Ethereum プロファイルの検知手段は **block 0（genesis）のハッシュの変化**:
+  - 周期ポーリング（`subscribePeers` と同型の setTimeout ループ）で、到達
+    可能な Execution ノードの HTTP JSON-RPC から block 0 のハッシュを 1 回
+    取得し、アダプタ内にキャッシュした前回の観測値と比較する。初回観測は
+    キャッシュを埋めるだけ（リセットではない）。**異なるハッシュを実際に
+    観測できたときだけ**リセットと判定し、キャッシュを新しい値へ更新する
+  - 問い合わせ失敗（チェーン停止中・全ノード到達不能）は「観測の欠測」で
+    あって「リセットの証拠」ではないため、リセット判定せずキャッシュを
+    保持して次の tick で再試行する（§4 `subscribePeers` の CL 観測
+    ヒステリシス＝Issue #288 と同じ「欠測を状態変化と混同しない」原則）。
+    したがって `down -v` 中はゴーストが残ったままだが、新チェーンが観測
+    可能になってから最大 1 tick でパージされる
+  - ブロック番号の後退検知を採らない理由: addNode 直後の追いつき中ノードが
+    同一チェーンの過去ブロックを大量に流すケース（§2 の block 保持窓が
+    前提とする正常系）と区別できず誤検知するため。genesis ハッシュは
+    チェーンの同一性そのものであり、profiles/ethereum の genesis は生成の
+    たびにタイムスタンプ（`generate-genesis.sh` の `date +%s`）が変わるので
+    `down -v` → `up` で必ず変化する
+  - コストは tick あたり固定 1 回の軽量 RPC（ブロック数・tx 数に比例しない。
+    Issue #86 の「ブロックあたりの RPC 回数を増やさない」方針と両立）
+
+  リセット検知時の collector（`main` の配線）の処理順序:
+
+  1. アダプタ内部のチェーン由来キャッシュのクリア
+     （`resetChainDerivedState()`）: ContractTracker（追跡コントラクト・
+     pendingCatalogKeys。これを先にクリアしないと WalletTracker /
+     NftTracker が旧チェーンのトークン・NFT アドレスをポーリングし続けて
+     エラーを出す）、TransactionLifecycleTracker、
+     BlockPropagationTracker、HeadTipCache、EL/CL の syncStatus キャッシュ、
+     デプロイ tx 生ログの保持バッファ（Issue #244）
+  2. store のパージ（`purgeChainDerivedState()`。§2 の「例外: チェーン
+     リセット時のパージ」参照）
+  3. パージで生じた `entityRemoved` 群を `broadcastDiff` で配信
+
+  フロント側の対応は不要（既存の `entityRemoved` 処理で追従する）。
+  リセットをユーザーへ明示する UI 通知は本設計では追加しない（旧カードの
+  消滅とブロック番号の巻き戻りで視覚的に伝わる。必要なら UX 設計を経て
+  揮発性イベントとして別 Issue で追加できる形を保つ）
 
 いずれも `BlockEntity` / `TransactionEntity` / `ContractEntity` を返し、
 ワールドステートへの反映（差分計算・エンティティ更新）は store 側が担う。

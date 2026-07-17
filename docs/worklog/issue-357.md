@@ -98,3 +98,99 @@ wallet-index 採番)もリセットされないため、リセット後に作っ
   第2の問題は隔離した最小 compose プロジェクトで検証した(検証後に掃除済み)。
 - 調査用に起動したスタック(profiles/ethereum)は e2e が使用中のため
   起動したままにしてある。
+
+### 2026-07-17 Issue #357 チェーンリセット検知とパージの設計(designer)
+
+- 担当: designer
+- ブランチ: issue-357-eoa-not-cleared-on-down
+- 内容: 上記調査結果を受けて、チェーンリセット(genesis 変更)の検知方法と
+  検知時のパージ方針を設計した。`packages/shared` の型定義
+  (`ChainAdapter.subscribeChainResets?`)を先行実装し、全パッケージの
+  `pnpm build && pnpm test` が通ることを確認済み(shared 74 / collector
+  1523 / e2e 171 / frontend 2460 全て pass)。設計の正式な記述は
+  `docs/ARCHITECTURE.md` に反映済み(§2「例外: チェーンリセット時の
+  パージ」、§4 `subscribeChainResets` の項)。以下は実装担当(collector)
+  向けの要約と、ドキュメントに書ききれない実装上の指針。
+
+#### 決定した設計(要約)
+
+1. **検知方法 = block 0(genesis)ハッシュの変化**。アダプタ内の周期
+   ポーリング(`subscribePeers` と同型の setTimeout ループ、間隔は既定
+   3 秒・コンストラクタオプションで注入可能にしてテスト容易性を確保)で、
+   到達可能な Execution ノード 1 台から `eth_getBlockByNumber(0x0)` の
+   ハッシュを取得し、前回観測値と比較する。
+   - 初回観測はキャッシュを埋めるだけ。**異なるハッシュを実際に観測できた
+     ときだけ**リセット判定(観測失敗=欠測はリセットの証拠にしない。
+     Issue #288 と同じ原則)
+   - ブロック番号の後退検知は不採用(addNode 追いつき中の過去ブロック
+     流入と区別できない)。genesis ハッシュは `generate-genesis.sh` が
+     生成のたびに `date +%s` を焼き込むため `down -v`→`up` で必ず変わる
+     ことを確認済み
+2. **パージ範囲(store)**: 新メソッド `WorldStateStore.
+   purgeChainDerivedState()` が kind ∈ {wallet, contract, block,
+   transaction} の全エンティティを削除し、通常の `entityRemoved` の配列と
+   して返す。**あわせて `maxObservedBlockNumber` を undefined に戻す**
+   (戻さないと新チェーンのブロック 1〜N が旧チェーン基準の保持窓
+   `BLOCK_RETENTION` に弾かれて取り込めない。これ自体が第2の不具合に
+   なるので必須)。node/workbench・PeerEdge は削除しない(A層/B層の毎 tick
+   照合で自己修復するため)。
+3. **パージ範囲(アダプタ内部キャッシュ)**: 新メソッド `EthereumAdapter.
+   resetChainDerivedState()` でクリアする。対象: ContractTracker
+   (contracts + pendingCatalogKeys。**最重要**。残すと WalletTracker /
+   NftTracker が旧チェーンのトークン・NFT アドレスをポーリングし続けて
+   エラーを出し続ける=今回実測されたログ 5MB 超の直接原因)、
+   TransactionLifecycleTracker、BlockPropagationTracker、HeadTipCache、
+   NodeSyncStatusCache / BeaconSyncStatusCache、デプロイ tx 生ログ保持
+   バッファ(Issue #244 の再復号用)。ピア観測キャッシュ(Issue #288)は
+   次回成功観測で上書きされるためクリア必須ではない(実装担当の裁量)。
+4. **DiffEvent は追加しない**。パージは既存 `entityRemoved` の連発で表現
+   する。フロントの `applyDiff`(`frontend/src/world-state/store.ts` L83)
+   は entityRemoved を kind 非依存で処理するためフロント実装は不要。
+   エンティティ数は保持窓(block 32 / pending tx 256 / included tx は
+   block 連動 / wallet・contract は少数)で有界なのでイベント量も問題ない。
+5. **`EthereumNodeLifecycle` のレジストリ(wallet-index 採番)はパージ
+   しない**。レジストリは「managed コンテナの実在」を映すもので、真実の
+   情報源は Docker ラベル(Issue #65)。チェーンリセットはコンテナの消滅を
+   意味しない(調査どおり managed コンテナは `down -v` を生き延び得る)。
+   調査記録にある「ゴーストウォレットの再所有」の副作用は、ゴースト
+   エンティティ自体を store からパージすることで解消する(同じ導出
+   インデックス=同じアドレスの再利用は mnemonic 由来の正しい挙動で、
+   パージ後は新チェーンの観測から正しく作り直される)。
+6. **UI 通知は追加しない**(旧カードの消滅+ブロック番号の巻き戻りで視覚的
+   に伝わる。必要と判断されたら UX 設計を経て揮発性イベントとして別 Issue
+   で追加できる形を保つ)。
+
+#### 実装分担と配線(collector のみ。frontend / node-env 作業なし)
+
+- 新規ファイル `packages/collector/src/adapters/ethereum/
+  chain-reset-watcher.ts`(+ テスト): genesis ハッシュの観測・比較ロジック。
+  1ファイル1責務のため、ループ・キャッシュ・判定をここに閉じ、RPC 到達は
+  既存の `eth-rpc-client.ts` / `targets.ts`(`executionTargets`)を使う
+- `adapters/ethereum/index.ts`: `subscribeChainResets(onReset)` の実装
+  (watcher の起動)と `resetChainDerivedState()` の追加。各トラッカー/
+  キャッシュクラスに `reset()`(名称は既存慣習に合わせて可)を追加
+- `world-state/store.ts`: `purgeChainDerivedState()` の追加
+- `index.ts`(main): 配線。順序は (1) `adapter.resetChainDerivedState()`
+  → (2) `store.purgeChainDerivedState()` → (3) `server.broadcastDiff(...)`。
+  アダプタのキャッシュを先にクリアするのは、パージ直後の tick で旧
+  アドレスの再ポーリング・旧エンティティの再投入が走らないようにするため
+
+#### 実装担当が前提にしてよいこと / 実装時に判断してよいこと
+
+- 前提: shared の `subscribeChainResets?(onReset: () => void): void` は
+  実装済み(本設計でコミット)。省略可メソッドなので他アダプタへの影響なし
+- 前提: フロントは無変更で追従する(entityRemoved の一般処理)
+- 裁量: watcher を専用ループにするか既存ループへ相乗りさせるか(推奨は
+  `subscribePeers` と同型の専用ループ)、問い合わせ先ノードの選び方
+  (到達可能な最初の 1 台でよい。全ノードは同一 genesis を共有する前提)、
+  ピア観測キャッシュをクリアするか
+- テスト観点(tester への引き継ぎ含む): 初回観測でリセットしない/ハッシュ
+  変化でリセットする/観測失敗でリセットしない/パージ後に block 番号 1 の
+  `applyBlock` が受理される(maxObservedBlockNumber リセットの回帰)/
+  パージが node・workbench・エッジを残す
+- QA 観点: 実際に collector を動かしたまま `docker compose down -v` →
+  `up` し、(1) 旧 wallet/contract がパージされる、(2) NftTracker のエラー
+  ログが止まる、(3) 新規 addWorkbench のウォレットが正常に観測される、
+  (4) フロントで開いたままのポップオーバー(wallet/contract)がパージ時に
+  クラッシュしない(フロントが wallet の entityRemoved を受けるのは今回が
+  初)ことを確認する
