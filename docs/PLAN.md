@@ -886,6 +886,14 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       または表記変更が論点。catalog.json・operationCatalog.ts・
       mockData.ts等CVZに依存する既存コードへの影響範囲の洗い出しが必要)
       [#364](https://github.com/morichikawa/chainviz/issues/364)
+- [ ] 追加ワークベンチの命名が静的ワークベンチと衝突する
+      (コンテナ名409・stableId重複による操作の誤配送)
+      (ユーザーが実際のワークベンチ追加・送金操作で遭遇。chainviz-detective
+      が原因調査済み(docs/worklog/meta.md)。静的ワークベンチがlifecycle
+      レジストリから不可視なのに、コンテナ名・service名を占有している
+      ことが根本原因。フレッシュ起動後の初回addWorkbenchで確実に発生。
+      応急対処は追加時に既定以外のラベルを付けること)
+      [#366](https://github.com/morichikawa/chainviz/issues/366)
 
 ## 運用ルール（全ステップ共通）
 
