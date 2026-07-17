@@ -583,3 +583,86 @@ worktree 環境ではブラウザ起動に必要なシステムライブラリ(l
 - あわせて `docs/PLAN.md` の #315 チェックボックスをチェックした(node-env・
   collector・frontend の3担当分が揃ったため、設計メモの申し送りどおり
   まとめて更新)。PR 作成・マージ・Issue クローズは統括に委ねる
+
+## QA検証(2026-07-17)
+
+- 担当: qa
+- ブランチ: `issue-315-erc721-ownership-frontend`
+- 判定: **合格**。node-env・collector・frontend の3担当分すべてについて、
+  実環境を起動してエンドツーエンドで動作を確認した。
+
+### 検証環境
+
+- `profiles/ethereum` の Docker スタックを `docker compose up -d` で起動
+  (reth×2・lighthouse beacon×2・validator×2・workbench の7コンテナ)。
+  チェーンがブロックを生成し続けることを確認(検証中に #40 台まで進行)。
+- collector を `node packages/collector/dist/index.js` で起動
+  (WebSocket ポート 4000、ロギングプロキシ 4001 → reth1)。
+- frontend を vite dev server(ポート 5173、`VITE_COLLECTOR_URL=ws://127.0.0.1:4000`)
+  で起動し、ブラウザ(Playwright/Chromium)で実画面を確認した。
+  ※前フェーズの worklog にあった「libnspr4.so 欠如でブラウザ起動不可」の
+  制約は、`~/chrome-deps` に展開済みの NSS/NSPR 一式を
+  `LD_LIBRARY_PATH` で参照させることで回避し、実画面のレンダリングまで
+  確認できた。
+
+### 実施した操作(すべて WebSocket コマンド = 定型操作経由)
+
+1. `deployContract`(contractKey=ChainvizNFT)でデプロイ。collector が
+   カタログ照合してコントラクトを追跡開始し、`ContractEntity.nft` に
+   `{ symbol: "CVN" }` が反映されることを確認。
+2. `callContract mint(address)` を4回実行し、tokenId 1〜4 を発行。
+   宛先は tokenId 1・3=ワークベンチ(0x2BB7…、追跡中ウォレット)、
+   tokenId 2=0xfCd9…、tokenId 4=0xaD77…(いずれも追跡外アドレス)と
+   混在させ、追跡中/追跡外の両ケースを網羅した。
+3. `callContract transferFrom(address,address,uint256)` で tokenId 1 を
+   ワークベンチ(0x2BB7…)から 0xfCd9… へ移転。
+
+### 確認できたこと(完了条件との対応)
+
+1. **collector が ownerOf 群を実取得し nftTokens を反映する**: mint 後の
+   スナップショットで `nftTokens` に4件(tokenId 1〜4 と各所有者)が載り、
+   `ownerAddress` は小文字へ正規化されていた。3秒周期のポーリングで
+   実チェーンの `totalSupply()` + `ownerOf(1..totalSupply)` を取得できて
+   いることを確認。
+2. **frontend の2視点表示**: 実画面で
+   - コントラクトカード「発行済み NFT」: `#1 · 0xfcd956…44d6` /
+     `#2 · 0xfcd956…44d6` / `#3 · 0x2BB7Dc…d4c0` / `#4 · 0xad7773…c628`
+     のチップが tokenId 昇順で所有者短縮アドレス付きで表示。追跡中の
+     ワークベンチ所有分(#3)は EIP-55 表記、追跡外アドレス所有分は
+     ownerOf 由来の小文字表記で表示され、`addressCasing` による照合が
+     実データでも機能していることを確認。
+   - ウォレットカード「保有 NFT」(ワークベンチ 0x2BB7…): `CVN #3` を表示。
+     追跡外アドレス(0xfCd9…/0xaD77…)にはウォレットカードが無く、
+     台帳側(発行済み NFT)にのみ生の所有者表記で現れる設計どおりの挙動を確認。
+3. **tokenId 昇順が実環境のポーリングでも維持される(レビュー担当の申し送り)**:
+   スナップショット・差分イベント・UI 表示のいずれでも tokenId は
+   `[1,2,3,4]` の昇順を保っていた。collector は index(1..totalSupply)で
+   配列を組み立てるため、`ownerOf` の Promise.all の解決順に依存せず
+   昇順が保証されることを実データで確認(frontend の
+   `resolveContractNftLedger` が入力順をそのまま使う前提が崩れていない)。
+4. **transferFrom 後の台帳更新(3秒周期)**: transferFrom 実行後、次の
+   ポーリング周期で collector が `entityUpdated` 差分イベントを発行し、
+   tokenId 1 の所有者が 0x2bb7… → 0xfcd9… へ更新された(昇順は維持)。
+   UI 側もウォレットカードの「保有 NFT」がワークベンチについて
+   `CVN #1, CVN #3` → `CVN #3` へ更新され(移転した #1 が外れた)、旧所有者
+   から新所有者への移転が正しく反映されることを確認。
+5. **完了条件**: `docs/PLAN.md` #315「各tokenIdとウォレットが1対1で対応する
+   所有関係を可視化する」を、実データで満たしていることを確認した。
+
+### 補足観察(#315 の対象外・差し戻し不要)
+
+- コントラクトカードの「直近の呼び出し・イベント」およびウォレットカードの
+  「直近の tx」が検証終盤には「なし」表示になっていた。これは操作時のブロック
+  (#5〜#15 付近)が tx/ブロック保持窓(BLOCK_RETENTION 等、Issue #303/#320)
+  から退去したためで、tx 履歴表示側の仕様どおりの挙動。一方で NFT 台帳
+  (`nftTokens`)はブロック退去に依存せず ownerOf ポーリングで維持され続けて
+  おり、設計が「イベント畳み込みではなくステートレスなポーリング」を採用した
+  狙い(取りこぼし・退去に強く自己修復する)が実挙動として確認できた。#315 の
+  範囲外であり差し戻しは不要。
+
+### 後片付け
+
+- 検証で使った Docker スタックは `docker compose down -v` で破棄済み
+  (検証用にデプロイした ChainvizNFT・発行済み NFT を含むチェーン状態を
+  残さないため)。collector / frontend プロセスも停止済み。
+- PR 作成・マージ・Issue クローズは統括に委ねる(QA は判定と記録のみ)。
