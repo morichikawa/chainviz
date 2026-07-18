@@ -953,10 +953,11 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       QA(実ブラウザでpreventDefault呼び出しとスクロール抑止を実証)を
       経て完了)
       [#353](https://github.com/morichikawa/chainviz/issues/353)
-- [ ] i18n translate()にObject.prototype由来キー(toString等)への防御が無い
+- [x] i18n translate()にObject.prototype由来キー(toString等)への防御が無い
       (Issue #341のレビュー中に発見。型`MessageKey`により通常のコードから
       到達不能で#341以前からの既存挙動だが、既存の`format()`と同じく
-      `hasOwnProperty`ガードを追加する軽微な堅牢性向上)
+      `hasOwnProperty`ガードを追加して解消。プロトタイプ由来11キーの
+      網羅テストで確認)
       [#371](https://github.com/morichikawa/chainviz/issues/371)
 - [ ] 用語集パネルのフォントサイズを変更できるようにする
       (ユーザーからの要望。フォントサイズ変更UIの要否・設定の永続化要否・

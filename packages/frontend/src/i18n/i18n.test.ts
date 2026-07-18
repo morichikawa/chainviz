@@ -78,6 +78,16 @@ describe("translate", () => {
     // 「により時間とともに自動で増えます」が混入してはならない。
     expect(translate("legend.hint.suffix", "en")).toBe("");
   });
+
+  it("returns the key itself for Object.prototype-derived keys instead of resolving through the prototype chain (Issue #371)", () => {
+    // hasOwnProperty ガードが無いと messages["toString"] がプロトタイプ
+    // チェーン経由で Function を拾い、entry[lang] が undefined になって
+    // 「未知キーはキー文字列を返す」契約が破れる。MessageKey 型により通常
+    // の呼び出しではこの入力は起こらないため as never でキャストする。
+    expect(translate("toString" as never, "ja")).toBe("toString");
+    expect(translate("constructor" as never, "en")).toBe("constructor");
+    expect(translate("hasOwnProperty" as never, "ja")).toBe("hasOwnProperty");
+  });
 });
 
 describe("loadLanguage / saveLanguage", () => {
