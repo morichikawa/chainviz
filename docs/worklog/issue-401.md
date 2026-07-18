@@ -25,3 +25,17 @@
 - Issue #402(署名・検証の可視化)と同じ「暗号学的な仕組みが静的な説明は
   あるが動的に理解できない」というテーマのため、ユーザーの意向により
   別Issueとして起票しつつ、同じchainviz-uxに一括して検討させる方針。
+
+### 2026-07-18 Issue #401・#402 起票・バックログ追記のレビュー
+
+- 担当: reviewer
+- ブランチ: issue-401-402-hash-signature-viz-backlog
+- 判定: **合格**
+- Issue本文とdocs/PLAN.md追記の一致、参照事実の実在確認
+  (chainRibbon.tsの`connectedToPrevious`判定、TxLifecyclePopover.tsx、
+  collectorがecrecoverを使わずeth_getTransactionByHashのfromを信頼して
+  いること、glossaryにhashエントリが無いこと、ARCHITECTURE.mdの各節番号
+  等)、docs/WORKLOG.md索引、コミット粒度、Conventional Commits形式、
+  `pnpm lint && pnpm build && pnpm test`全パッケージ通過をすべて確認
+- docs配下のみの変更のため、CLAUDE.mdの例外規定に基づきchainviz-qaは
+  省略(reviewer合格のみ)
