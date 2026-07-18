@@ -10,7 +10,10 @@ import {
   readProfileMnemonic,
   walletTrackingDisabledWarning,
 } from "./adapters/ethereum/mnemonic.js";
-import { EthereumNodeLifecycle } from "./adapters/ethereum/node-lifecycle.js";
+import {
+  DEFAULT_COMPOSE_PROJECT,
+  EthereumNodeLifecycle,
+} from "./adapters/ethereum/node-lifecycle.js";
 import { NftTracker } from "./adapters/ethereum/nft-tracker.js";
 import { WalletTracker } from "./adapters/ethereum/wallet-tracker.js";
 import { CommandHandler } from "./commands/handler.js";
@@ -124,6 +127,26 @@ export function resolveWorkbenchRpcUrl(
   env: NodeJS.ProcessEnv = process.env,
 ): string {
   return `http://${resolveWorkbenchRpcHost(env)}:${resolveProxyPort(env)}`;
+}
+
+/**
+ * addNode/addWorkbench が作成するコンテナに付ける Docker Compose の project
+ * を解決する。環境変数 CHAINVIZ_COMPOSE_PROJECT があれば優先し、未設定・
+ * 空白のみなら DEFAULT_COMPOSE_PROJECT（Ethereum プロファイルの既定値。
+ * node-lifecycle.js からアダプタ固有の語彙として import する）を使う。
+ * QA 等で独立した合成環境を使う場合に、collector が管理するネットワーク/
+ * ボリューム名（composeProject から導出される）を静的ワークベンチの
+ * "chainviz-ethereum" と衝突させずに切り替えるための上書き口（Issue #369）。
+ * `COMPOSE_PROJECT_NAME` 自体は使わない。docker compose CLI 自身が解釈する
+ * 変数であり、同じシェルで collector と docker compose を両方操作する場合に
+ * 両方へ効いてしまうため、collector 専用の変数として分離している。
+ */
+export function resolveComposeProject(
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const raw = env.CHAINVIZ_COMPOSE_PROJECT;
+  if (raw === undefined || raw.trim() === "") return DEFAULT_COMPOSE_PROJECT;
+  return raw.trim();
 }
 
 /**
@@ -293,6 +316,7 @@ export async function main(port: number = DEFAULT_PORT): Promise<void> {
   // 別に決め打ちにせず、resolveWorkbenchRpcUrl() で同じ実行時設定から導出する。
   const lifecycle = new EthereumNodeLifecycle(createDockerOperations(docker), {
     profileDir,
+    composeProject: resolveComposeProject(),
     ethRpcUrl: resolveWorkbenchRpcUrl(),
     // GUI の定型操作（runWorkbenchOperation の deployContract）が成功した
     // デプロイについて、デプロイ先アドレスとカタログキーの対応を adapter の

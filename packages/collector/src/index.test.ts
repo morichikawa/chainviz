@@ -1,6 +1,7 @@
 import type { NodeEntity, WorldStateSnapshot } from "@chainviz/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EthereumAdapter } from "./adapters/ethereum/index.js";
+import { DEFAULT_COMPOSE_PROJECT } from "./adapters/ethereum/node-lifecycle.js";
 import type { CollectorServer } from "./server/websocket-server.js";
 import {
   DEFAULT_PORT,
@@ -8,6 +9,7 @@ import {
   DEFAULT_PROXY_TARGET,
   DEFAULT_WORKBENCH_RPC_HOST,
   installProcessSafetyNet,
+  resolveComposeProject,
   resolvePort,
   resolveProxyPort,
   resolveProxyTarget,
@@ -242,6 +244,25 @@ describe("resolveProxyTarget", () => {
     expect(
       resolveProxyTarget({ CHAINVIZ_PROXY_TARGET: " http://reth1:8545 " }),
     ).toBe("http://reth1:8545");
+  });
+});
+
+describe("resolveComposeProject", () => {
+  it("returns DEFAULT_COMPOSE_PROJECT when the env var is unset or blank", () => {
+    expect(resolveComposeProject({})).toBe(DEFAULT_COMPOSE_PROJECT);
+    expect(resolveComposeProject({ CHAINVIZ_COMPOSE_PROJECT: "   " })).toBe(
+      DEFAULT_COMPOSE_PROJECT,
+    );
+  });
+
+  it("defaults to chainviz-ethereum, matching the static profile's compose project name", () => {
+    expect(DEFAULT_COMPOSE_PROJECT).toBe("chainviz-ethereum");
+  });
+
+  it("returns the trimmed override project name when set", () => {
+    expect(
+      resolveComposeProject({ CHAINVIZ_COMPOSE_PROJECT: "  my-synth-env  " }),
+    ).toBe("my-synth-env");
   });
 });
 
