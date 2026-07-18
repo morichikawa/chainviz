@@ -1,5 +1,7 @@
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useLanguage } from "../i18n/LanguageProvider.js";
+import { type KeyValueStorage, getBrowserStorage } from "../platform/storage.js";
+import { useSidePanelResize } from "./useSidePanelResize.js";
 
 export interface SidePanelProps {
   /** ヘッダーに出すタイトル（表示用。ReactNode を許容し、GlossaryTerm 等も置ける）。 */
@@ -8,6 +10,12 @@ export interface SidePanelProps {
   ariaLabel: string;
   onClose: () => void;
   children: ReactNode;
+  /**
+   * 幅の永続化ストレージ（Issue #362）。既定はブラウザ localStorage
+   * （無ければメモリ代替。`LanguageProvider` と同じ注入パターン）。
+   * テストで差し替え可能にするための optional prop。
+   */
+  storage?: KeyValueStorage;
 }
 
 /**
@@ -23,9 +31,22 @@ export interface SidePanelProps {
  * 仕組みを流用する。ただしこちらは常設ドックパネルであり、外側クリックでは
  * 閉じない（コントラクトのソースを読みながら他のカードを操作し続けられる
  * ようにするため。閉じる手段は × ボタンと Esc のみ）。
+ *
+ * 幅は Issue #362 でユーザーがリサイズできるようにした（左端のハンドルを
+ * ドラッグ、またはハンドルにフォーカスして←→キー）。幅の状態管理・
+ * 永続化は `useSidePanelResize` に切り出し、このコンポーネントは
+ * ハンドルの描画と `storage` の解決（既定 `getBrowserStorage()`）だけを持つ。
  */
-export function SidePanel({ title, ariaLabel, onClose, children }: SidePanelProps) {
+export function SidePanel({
+  title,
+  ariaLabel,
+  onClose,
+  children,
+  storage,
+}: SidePanelProps) {
   const { t } = useLanguage();
+  const [store] = useState<KeyValueStorage>(() => storage ?? getBrowserStorage());
+  const { width, resizing, handleProps } = useSidePanelResize(store);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
@@ -43,7 +64,18 @@ export function SidePanel({ title, ariaLabel, onClose, children }: SidePanelProp
       role="dialog"
       aria-label={ariaLabel}
       data-testid="side-panel"
+      style={{ width }}
     >
+      <div
+        {...handleProps}
+        className={
+          resizing
+            ? "side-panel__resize-handle side-panel__resize-handle--active"
+            : "side-panel__resize-handle"
+        }
+        aria-label={t("sidePanel.resizeHandle")}
+        data-testid="side-panel-resize-handle"
+      />
       <div className="side-panel__header">
         <span className="side-panel__title">{title}</span>
         <button

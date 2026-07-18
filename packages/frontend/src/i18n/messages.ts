@@ -505,6 +505,8 @@ export const messages = {
   "layerBadge.d": { ja: "D層", en: "Layer D" },
   // --- 汎用サイドパネル機構（Issue #321。docs/ARCHITECTURE.md §12.2） ---
   "sidePanel.close": { ja: "閉じる", en: "Close" },
+  // Issue #362: リサイズハンドルの aria-label（role="separator"）。
+  "sidePanel.resizeHandle": { ja: "パネルの幅を変更", en: "Resize panel width" },
   // --- コントラクトソースビュー（kind: "contractSource"。Issue #321。
   // docs/ARCHITECTURE.md §12.3） ---
   "contract.viewSource": { ja: "ソースコードを見る", en: "View source code" },
