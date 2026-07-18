@@ -846,13 +846,14 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       translate()をpickLocale()経由からentry[lang]直接参照に変更して
       修正し、pickLocale()自体はglossaryデータ向けの防御として現行維持)
       [#341](https://github.com/morichikawa/chainviz/issues/341)
-- [ ] UI層E2Eテストの一部が実.hover()依存・描画安定性不足でflakyになりうる
+- [x] UI層E2Eテストの一部が実.hover()依存・描画安定性不足でflakyになりうる
       (Issue #322のQA検証中に偶発的に観測。UI-C-04/UI-CMD-07/UI-ERR-02/
       UI-D-03で個別再現。slot time変更とは無関係の既存のテスト脆さ。
       UI-C-04/UI-D-03はIssue #245のportal化でlocatorスコープが壊れて
       いたことが判明し修正、UI-ERR-02はIssue #235の修正にテストが
       追随していなかったことが判明し修正。UI-CMD-07(削除ボタンが
-      stableにならない)は原因不明のまま再現できず、Issue #373として分割)
+      stableにならない)は原因不明のまま再現できず、Issue #373として分割し、
+      #373の修正取り込み後にクリーンスタックで解消を確認)
       [#346](https://github.com/morichikawa/chainviz/issues/346)
 - [x] UI-CMD-07: ワークベンチ削除ボタンがE2E上でstableにならないことがある
       (Issue #346から分割。chainviz-detectiveが独立した合成環境で原因を
