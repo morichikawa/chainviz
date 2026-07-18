@@ -17,6 +17,15 @@ import { useFrozenRibbonTiles } from "./useFrozenRibbonTiles.js";
  * ホバー強調（`isParentHighlighted`）・tx チップ等からの逆方向ホバー強調
  * （`RibbonHoverContext` の `hoveredBlockHash`）の3種類の見た目状態を持つ
  * （docs/worklog/issue-298.md §4.3/§4.4、ARCHITECTURE.md §9.1）。
+ *
+ * ポップオーバー（`ChainRibbonPopover`）はタイル div の**内側の子**として
+ * 描画する（`WalletCard`/`ContractCard`/`InfraNodeCard` 等の既存パターンと
+ * 同じ配置。Issue #351）。`PopoverPortal` は `document.body` 直下へ実際の
+ * DOM を portal するが、React はイベントの合成をこの JSX 上の親子関係
+ * （React ツリー）で行うため、こう並べることでポップオーバーへのホバーが
+ * タイルへのホバーの延長として扱われる。以前は Fragment で兄弟として
+ * 描いており、この恩恵を受けられず離脱直後に閉じてしまっていた
+ * （docs/worklog/issue-351.md 参照）。
  */
 function ChainRibbonTileView({
   tile,
@@ -45,40 +54,38 @@ function ChainRibbonTileView({
   const isReverseHighlighted = hoveredBlockHash === block.hash;
 
   return (
-    <>
-      <div
-        ref={tileRef}
-        className={[
-          "chain-ribbon-tile",
-          isLanding ? "chain-ribbon-tile--landing" : "",
-          isParentHighlighted || isReverseHighlighted
-            ? "chain-ribbon-tile--highlight"
-            : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        onMouseEnter={() => {
-          onMouseEnter();
-          setHoveredBlockHash(block.hash);
-        }}
-        onMouseLeave={() => {
-          onMouseLeave();
-          setHoveredBlockHash(null);
-        }}
-        data-testid={`chain-ribbon-tile-${block.hash}`}
-        data-connected-to-previous={connectedToPrevious}
-      >
-        <span className="chain-ribbon-tile__number">#{block.number}</span>
-        <span className="chain-ribbon-tile__hash">{shortHex(block.hash, 4, 3)}</span>
-        {txCount !== undefined && txCount > 0 && (
-          <span
-            className="chain-ribbon-tile__tx-badge"
-            data-testid={`chain-ribbon-tile-tx-${block.hash}`}
-          >
-            {format(t("chainRibbon.txBadge"), { count: String(txCount) })}
-          </span>
-        )}
-      </div>
+    <div
+      ref={tileRef}
+      className={[
+        "chain-ribbon-tile",
+        isLanding ? "chain-ribbon-tile--landing" : "",
+        isParentHighlighted || isReverseHighlighted
+          ? "chain-ribbon-tile--highlight"
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      onMouseEnter={() => {
+        onMouseEnter();
+        setHoveredBlockHash(block.hash);
+      }}
+      onMouseLeave={() => {
+        onMouseLeave();
+        setHoveredBlockHash(null);
+      }}
+      data-testid={`chain-ribbon-tile-${block.hash}`}
+      data-connected-to-previous={connectedToPrevious}
+    >
+      <span className="chain-ribbon-tile__number">#{block.number}</span>
+      <span className="chain-ribbon-tile__hash">{shortHex(block.hash, 4, 3)}</span>
+      {txCount !== undefined && txCount > 0 && (
+        <span
+          className="chain-ribbon-tile__tx-badge"
+          data-testid={`chain-ribbon-tile-tx-${block.hash}`}
+        >
+          {format(t("chainRibbon.txBadge"), { count: String(txCount) })}
+        </span>
+      )}
       {hovered && (
         <ChainRibbonPopover
           anchorRef={tileRef}
@@ -88,7 +95,7 @@ function ChainRibbonTileView({
           onParentHover={onParentHover}
         />
       )}
-    </>
+    </div>
   );
 }
 
