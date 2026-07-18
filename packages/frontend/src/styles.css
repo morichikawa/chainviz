@@ -3091,6 +3091,192 @@ button.mempool-panel__row:hover {
   box-shadow: 0 0 0 2px rgba(79, 157, 255, 0.35);
 }
 
+/* --- Issue #401: 「ハッシュのしくみ」デモ(kind: hashChainDemo) ---
+   3ブロックを縦に並べる砂場。「自分のハッシュは自分の中に無い」を配置で
+   伝えるため、導出ハッシュは格納情報の枠(.hash-chain-demo__stored)の外・
+   下端に置く(UX設計 docs/worklog/issue-401.md §3レイアウト)。 */
+.hash-chain-demo__intro {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+
+.hash-chain-demo__row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.hash-chain-demo__connector {
+  width: 0;
+  height: 16px;
+  border-left: 2px solid var(--synced);
+}
+
+.hash-chain-demo__connector--broken {
+  border-left-style: dashed;
+  border-left-color: #ff6b6b;
+}
+
+.hash-chain-demo__block {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: linear-gradient(180deg, rgba(32, 39, 58, 0.9), rgba(24, 30, 46, 0.95));
+}
+
+.hash-chain-demo__block--invalid {
+  border-color: #ff6b6b;
+}
+
+.hash-chain-demo__stored {
+  border: 1px dashed var(--divider);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.hash-chain-demo__stored-heading {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.hash-chain-demo__field {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  padding: 2px 0;
+}
+
+.hash-chain-demo__field--input {
+  align-items: center;
+}
+
+.hash-chain-demo__field-label {
+  color: var(--muted);
+  flex: none;
+}
+
+.hash-chain-demo__field-value {
+  font-variant-numeric: tabular-nums;
+  cursor: help;
+}
+
+.hash-chain-demo__genesis-note {
+  font-size: 11px;
+  color: var(--muted);
+  font-style: italic;
+  margin: 2px 0 4px;
+}
+
+.hash-chain-demo__data-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 3px 6px;
+  font-size: 12px;
+}
+
+.hash-chain-demo__compute {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.hash-chain-demo__compute-fn {
+  font-family: monospace;
+  color: var(--accent);
+}
+
+.hash-chain-demo__hash {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.hash-chain-demo__hash-label {
+  color: var(--muted);
+}
+
+.hash-chain-demo__hash-value {
+  font-variant-numeric: tabular-nums;
+  cursor: help;
+}
+
+/* Issue #401: ハッシュ変化の短いフラッシュ(既存の新着ハイライトの流儀
+   `chainviz-new-arrival` を再利用。上方で定義済み)。 */
+.hash-chain-demo__hash-value--flash {
+  animation: chainviz-new-arrival 1.4s ease-in-out infinite;
+}
+
+.hash-chain-demo__badge {
+  margin-top: 6px;
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.hash-chain-demo__badge--valid {
+  color: #a8f0d4;
+  border: 1px solid var(--synced);
+  background: rgba(56, 211, 159, 0.14);
+}
+
+.hash-chain-demo__badge--invalid {
+  color: #ffb4b4;
+  border: 1px solid #ff6b6b;
+  background: rgba(255, 107, 107, 0.14);
+}
+
+.hash-chain-demo__relink {
+  display: block;
+  margin-top: 6px;
+  background: none;
+  border: 1px solid #ff6b6b;
+  border-radius: 6px;
+  color: #ffb4b4;
+  font-size: 12px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.hash-chain-demo__summary {
+  margin-top: 14px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--syncing);
+  background: rgba(245, 181, 68, 0.1);
+  font-size: 13px;
+}
+
+.hash-chain-demo__reset {
+  display: block;
+  margin: 14px 0;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.hash-chain-demo__footer-note {
+  color: var(--muted);
+  font-size: 11px;
+  margin: 6px 0;
+}
+
 /* --- Issue #327 フォールバック ---
    backdrop-filter 非対応環境では var(--glass-bg)/var(--glass-popover-bg) の
    半透明地だけが残り、ぼかしが効かない分ちらつき・可読性低下につながる

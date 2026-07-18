@@ -617,6 +617,41 @@ export const messages = {
   "commsLog.environment.collectorDisconnected": { ja: "接続が切れた", en: "Lost connection" },
   "commsLog.environment.collectorReconnected": { ja: "再接続した", en: "Reconnected" },
   "commsLog.environment.collectorSubject": { ja: "collector", en: "Collector" },
+  // --- 「ハッシュのしくみ」デモ（kind: "hashChainDemo"。Issue #401。
+  // docs/worklog/issue-401.md UX設計 §5。英語版は初稿で、
+  // chainviz-i18n のレビュー対象） ---
+  "hashDemo.open": { ja: "ハッシュのしくみを試す", en: "Try how hashes work" },
+  "hashDemo.title": { ja: "ハッシュのしくみ", en: "How hashes chain blocks" },
+  "hashDemo.intro": {
+    ja: "ここは学習用の砂場です。実際のチェーンには影響しません。下の3つのブロックは、キャンバスの「チェーン」カードと同じ仕組みでつながっています。どれかのブロックの「データ」を書き換えてみてください。",
+    en: "This is a learning sandbox. It does not affect the real chain. The three blocks below are linked with the same mechanism as the \"Chain\" card on the canvas. Try editing the \"data\" of any block.",
+  },
+  "hashDemo.storedLabel": { ja: "ブロックに格納されている情報", en: "Information stored in the block" },
+  "hashDemo.field.number": { ja: "ブロック番号", en: "Block number" },
+  "hashDemo.field.parentHash": { ja: "親ブロックのハッシュ", en: "Parent block's hash" },
+  "hashDemo.field.data": { ja: "データ", en: "Data" },
+  "hashDemo.compute": { ja: "keccak256 でハッシュ化", en: "Hashed with keccak256" },
+  "hashDemo.blockHash": { ja: "このブロックのハッシュ", en: "This block's hash" },
+  "hashDemo.badge.valid": { ja: "有効", en: "Valid" },
+  "hashDemo.badge.invalid": {
+    ja: "無効: 親ブロックのハッシュと食い違っています",
+    en: "Invalid: does not match the recorded parent hash",
+  },
+  "hashDemo.relink": { ja: "親ハッシュをつなぎ直す", en: "Re-link parent hash" },
+  "hashDemo.reset": { ja: "最初に戻す", en: "Reset" },
+  "hashDemo.genesisNote": { ja: "（この砂場の起点。親はいません）", en: "(The start of this sandbox. It has no parent.)" },
+  "hashDemo.repairedSummary": {
+    ja: "全部つなぎ直せてしまいました。1台のマシンの中では、後続のブロックをすべて作り直せば改ざんの辻褄を合わせられます。しかし実際のネットワークでは、同じチェーンのコピーを他の多くのノードが持っており、各ブロックには提案者の署名と検証（attestation）も必要です。1人で作り直したチェーンは受け入れられません。",
+    en: "You managed to re-link everything. On a single machine, rebuilding every following block is enough to make a tampered chain look consistent again. But on a real network, many other nodes hold the same chain, and every block also needs the proposer's signature and attestations. A chain rebuilt alone would not be accepted.",
+  },
+  "hashDemo.whoComputes": {
+    ja: "実際のチェーンでは、このハッシュ計算はブロックを作った実行クライアント（reth など）が行い、受け取った各ノードも自分で再計算して検証します。chainviz（collector）はノードが報告した値をそのまま表示しています。",
+    en: "On a real chain, this hash is computed by the execution client that built the block (e.g. reth), and every node that receives it recomputes and verifies the hash itself. chainviz (the collector) simply displays the value each node reported.",
+  },
+  "hashDemo.simplifiedNote": {
+    ja: "実際のブロックはここに出した項目のほかにも多くの情報（state root など）を含み、決められた形式（RLP）で並べてからハッシュ化します。この砂場では「中身が変わればハッシュが変わる」ことに絞って簡略化しています。",
+    en: "A real block header contains many more fields than shown here (such as the state root) and is encoded in a fixed format (RLP) before hashing. This sandbox is simplified down to the single idea that changing the contents changes the hash.",
+  },
 } as const satisfies Record<string, Localized>;
 
 export type MessageKey = keyof typeof messages;
