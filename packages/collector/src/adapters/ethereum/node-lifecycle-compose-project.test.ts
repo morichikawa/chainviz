@@ -237,4 +237,121 @@ describe("EthereumNodeLifecycle composeProject override (Issue #369)", () => {
     // composeProject 自体は依然として上書き値を使う（コンテナ名・ラベル）。
     expect(reth.name).toBe("synth-env-reth3");
   });
+
+  it("lets clpeerVolume/elpeerVolume overrides take priority while other keys stay derived", async () => {
+    // 既存テストは networkName/genesisVolume の上書きのみを固定していたため、
+    // 残る個別ボリューム上書きキー（clpeerVolume/elpeerVolume）も導出値より
+    // 優先されること、かつ上書きしていないキーは composeProject から導出された
+    // ままであることを固定する（全キーの優先順位を網羅する）。
+    const ops = fakeOps();
+    const lifecycle = new EthereumNodeLifecycle(ops, {
+      profileDir: "/repo/profiles/ethereum",
+      ethRpcUrl: "http://host.docker.internal:4001",
+      composeProject: "synth-env",
+      clpeerVolume: "custom-clpeer",
+      elpeerVolume: "custom-elpeer",
+    });
+    await lifecycle.addNode("ethereum");
+
+    const [reth, beacon] = ops.created;
+    // 上書きしたキーは優先される。
+    expect(beacon.binds).toContain("custom-clpeer:/clpeer:ro");
+    expect(reth.binds).toContain("custom-elpeer:/elpeer:ro");
+    // 上書きしていないキーは composeProject から導出されたまま。
+    expect(reth.networkName).toBe("synth-env_chain");
+    expect(reth.binds).toContain("synth-env_genesis:/genesis:ro");
+  });
+
+  it("derives volume/network names from the default project when only networkName is overridden (no composeProject)", async () => {
+    // composeProject を上書きせず個別キーだけを上書きした場合、composeProject
+    // とその他の導出名は DEFAULT のまま、上書きしたキーだけが差し替わることを
+    // 固定する（個別上書きと project 上書きが独立に効くことの確認）。
+    const ops = fakeOps();
+    const lifecycle = new EthereumNodeLifecycle(ops, {
+      profileDir: "/repo/profiles/ethereum",
+      ethRpcUrl: "http://host.docker.internal:4001",
+      networkName: "custom-net",
+    });
+    await lifecycle.addNode("ethereum");
+
+    const [reth] = ops.created;
+    expect(reth.networkName).toBe("custom-net");
+    // composeProject を上書きしていないので、コンテナ名・ラベル・他の導出名は
+    // 既定プロジェクトのまま。
+    expect(reth.name).toBe(`${DEFAULT_COMPOSE_PROJECT}-reth3`);
+    expect(reth.labels?.[COMPOSE_PROJECT_LABEL]).toBe(DEFAULT_COMPOSE_PROJECT);
+    expect(reth.binds).toContain(`${DEFAULT_COMPOSE_PROJECT}_genesis:/genesis:ro`);
+  });
+
+  it("produces degenerate derived names when composeProject is an explicit empty string (constructor boundary)", async () => {
+    // resolveComposeProject は空文字を DEFAULT へ変換するため main() 経路では
+    // 空文字がここへ到達しないが、コンストラクタを直接呼ぶ経路では
+    // `config.composeProject ?? DEFAULT` が空文字を捕捉しない（?? は null/
+    // undefined のみ）。その結果、導出名が "_chain" / "-reth3" のように
+    // 退化する現状の挙動を固定する（懸念点として worklog に記録済み。実装は
+    // 変更しない）。
+    const ops = fakeOps();
+    const lifecycle = new EthereumNodeLifecycle(ops, {
+      profileDir: "/repo/profiles/ethereum",
+      ethRpcUrl: "http://host.docker.internal:4001",
+      composeProject: "",
+    });
+    await lifecycle.addNode("ethereum");
+
+    const [reth] = ops.created;
+    expect(reth.name).toBe("-reth3");
+    expect(reth.networkName).toBe("_chain");
+    expect(reth.binds).toContain("_genesis:/genesis:ro");
+    expect(reth.labels?.[COMPOSE_PROJECT_LABEL]).toBe("");
+  });
+
+  it("passes composeProject through to names/labels without sanitizing invalid characters", async () => {
+    // lifecycle 側も composeProject の文字種を検証・サニタイズしない
+    // （resolveComposeProject と同じく素通し）。不正な文字を含む値でも
+    // そのままコンテナ名・ラベル・導出名に反映される現状の挙動を固定する
+    // （懸念点として worklog に記録済み）。service 名側は slug() で安全化
+    // されるが、composeProject プレフィックスは安全化されないことを示す。
+    const ops = fakeOps();
+    const lifecycle = new EthereumNodeLifecycle(ops, {
+      profileDir: "/repo/profiles/ethereum",
+      ethRpcUrl: "http://host.docker.internal:4001",
+      composeProject: "Synth_Env",
+    });
+    await lifecycle.addNode("ethereum");
+
+    const [reth] = ops.created;
+    expect(reth.name).toBe("Synth_Env-reth3");
+    expect(reth.labels?.[COMPOSE_PROJECT_LABEL]).toBe("Synth_Env");
+    expect(reth.networkName).toBe("Synth_Env_chain");
+  });
+
+  it("builds recovered stableIds from each container's own project label, not from cfg.composeProject", async () => {
+    // recover のラベルフィルタと stableId 組み立ての整合を固定する。
+    // toManagedContainer は stableId をコンテナ自身の project ラベルから
+    // 組み立てる（cfg.composeProject では補完しない）。そのため、config を
+    // 別の composeProject 値で作り直しても、既存の managed コンテナは自身の
+    // ラベルどおりの stableId で回収され、removeNode がその id と整合する。
+    // （実運用では listContainersByLabels のフィルタが cfg と一致する
+    // コンテナしか返さないため両者は一致するが、フェイクで異なる値を返して
+    // 防御的挙動を確認する。）
+    const ops = fakeOps({
+      managedContainers: [
+        managed("reth5", "execution", "reth-cid", "other-project"),
+      ],
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, {
+      profileDir: "/repo/profiles/ethereum",
+      ethRpcUrl: "http://host.docker.internal:4001",
+      composeProject: "synth-env",
+    });
+    await lifecycle.recoverManagedContainers();
+
+    // cfg は "synth-env" だが、コンテナのラベルは "other-project" なので
+    // stableId は "other-project/reth5" になる。cfg の値では削除できない。
+    await expect(
+      lifecycle.removeNode("synth-env/reth5"),
+    ).rejects.toThrow(/was not added via addNode/);
+    await lifecycle.removeNode("other-project/reth5");
+    expect(ops.stopAndRemove).toHaveBeenCalledWith("reth-cid");
+  });
 });
