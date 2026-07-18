@@ -31,9 +31,9 @@ function tx(
   return { kind: "transaction", hash, from: "0xa", to: "0xb", status };
 }
 
-function renderCard(data: WalletFlowNode["data"]) {
+function renderTree(data: WalletFlowNode["data"]) {
   const props = { data } as unknown as Parameters<typeof WalletCard>[0];
-  render(
+  return (
     <ReactFlowProvider>
       <LanguageProvider initialLanguage="ja">
         <GlossaryProvider glossary={{}}>
@@ -44,8 +44,15 @@ function renderCard(data: WalletFlowNode["data"]) {
           </RibbonHoverProvider>
         </GlossaryProvider>
       </LanguageProvider>
-    </ReactFlowProvider>,
+    </ReactFlowProvider>
   );
+}
+
+// Issue #388: 属性の状態遷移（pending → included）を確認するテストが
+// rerender できるよう、render 結果をそのまま返す（既存の呼び出しは戻り値を
+// 使わないため非破壊）。
+function renderCard(data: WalletFlowNode["data"]) {
+  return render(renderTree(data));
 }
 
 function data(overrides: Partial<WalletFlowNode["data"]> = {}): WalletFlowNode["data"] {
@@ -72,6 +79,23 @@ describe("WalletCard", () => {
     renderCard(data({ entity: wallet({ recentTxHashes: [t.hash] }), transactions: [t] }));
     const chip = screen.getByTestId(`wallet-tx-chip-${t.hash}`);
     expect(chip.getAttribute("data-status")).toBe("pending");
+  });
+
+  it("does not render data-block-hash on a pending tx chip (Issue #388)", () => {
+    const t = tx("0xdeadbeef00000000", "pending");
+    renderCard(data({ entity: wallet({ recentTxHashes: [t.hash] }), transactions: [t] }));
+    const chip = screen.getByTestId(`wallet-tx-chip-${t.hash}`);
+    expect(chip.hasAttribute("data-block-hash")).toBe(false);
+  });
+
+  it("exposes the full blockHash via data-block-hash once the tx is included (Issue #388)", () => {
+    const t = {
+      ...tx("0xabc1230000000000", "included"),
+      blockHash: `0x${"f".repeat(64)}`,
+    };
+    renderCard(data({ entity: wallet({ recentTxHashes: [t.hash] }), transactions: [t] }));
+    const chip = screen.getByTestId(`wallet-tx-chip-${t.hash}`);
+    expect(chip.getAttribute("data-block-hash")).toBe(t.blockHash);
   });
 
   it("adds the settling class to a tx currently in the settling set", () => {
@@ -107,6 +131,92 @@ describe("WalletCard", () => {
   it("labels a smart account differently from an EOA", () => {
     renderCard(data({ entity: wallet({ isSmartAccount: true }) }));
     expect(screen.getByText("スマートアカウント")).toBeTruthy();
+  });
+});
+
+// Issue #388: TxChip の `data-block-hash` は UI-B-06 が対象タイルを逆引き
+// せず直接特定するための計装。e2e 側は `data-status="included"` のチップを
+// 掴んでから `data-block-hash` を読み、空なら throw するガードを持つ
+// （chain-ribbon.spec.ts）。その前提となる「属性の有無は blockHash の有無
+// だけで決まる」「完全な hash が一意に載る」を境界・遷移の観点で固定する。
+describe("WalletCard tx chip data-block-hash (Issue #388)", () => {
+  const INCLUDED_BLOCK_HASH = `0x${"f".repeat(64)}`;
+
+  function includedTx(
+    hash: string,
+    blockHash: string | undefined,
+  ): TransactionEntity {
+    return {
+      kind: "transaction",
+      hash,
+      from: "0xa",
+      to: "0xb",
+      status: "included",
+      ...(blockHash === undefined ? {} : { blockHash }),
+    };
+  }
+
+  it("omits data-block-hash on an included tx that still lacks a blockHash", () => {
+    // 属性の有無は status ではなく blockHash の有無で決まる。included でも
+    // blockHash 未確定（collector が block 突き合わせ前の一瞬など）なら
+    // 属性は出ず、e2e 側の空チェック（?? "" → throw）が意味を持つ。
+    const t = includedTx("0xabc1230000000000", undefined);
+    renderCard(data({ entity: wallet({ recentTxHashes: [t.hash] }), transactions: [t] }));
+    const chip = screen.getByTestId(`wallet-tx-chip-${t.hash}`);
+    expect(chip.getAttribute("data-status")).toBe("included");
+    expect(chip.hasAttribute("data-block-hash")).toBe(false);
+  });
+
+  it("starts blockHash-less on a pending tx and gains the full hash once included (rerender)", () => {
+    const hash = "0xlifecycle0000000";
+    const pending: TransactionEntity = {
+      kind: "transaction",
+      hash,
+      from: "0xa",
+      to: "0xb",
+      status: "pending",
+    };
+    const { rerender } = renderCard(
+      data({ entity: wallet({ recentTxHashes: [hash] }), transactions: [pending] }),
+    );
+    const before = screen.getByTestId(`wallet-tx-chip-${hash}`);
+    expect(before.hasAttribute("data-block-hash")).toBe(false);
+
+    // 同一チップが pending → included に遷移した瞬間、属性が「無し → 完全な
+    // hash」へ切り替わる（マウントし直しではなく状態更新として確認）。
+    rerender(
+      renderTree(
+        data({
+          entity: wallet({ recentTxHashes: [hash] }),
+          transactions: [includedTx(hash, INCLUDED_BLOCK_HASH)],
+        }),
+      ),
+    );
+    const after = screen.getByTestId(`wallet-tx-chip-${hash}`);
+    expect(after.getAttribute("data-block-hash")).toBe(INCLUDED_BLOCK_HASH);
+  });
+
+  it("carries a distinct full blockHash per chip so the exact-match selector is unique", () => {
+    // e2e は `[data-block-hash="<hash>"]` の完全一致で1件だけ掴む。複数の
+    // included tx が別々のブロックに載っている場合でも、各チップが自分の
+    // 値のみを持ち混線しないことを確認する。
+    const hashA = `0x${"a".repeat(64)}`;
+    const hashB = `0x${"b".repeat(64)}`;
+    const txA = includedTx("0xtxa0000000000000", hashA);
+    const txB = includedTx("0xtxb0000000000000", hashB);
+    renderCard(
+      data({
+        entity: wallet({ recentTxHashes: [txA.hash, txB.hash] }),
+        transactions: [txA, txB],
+      }),
+    );
+    const chipA = screen.getByTestId(`wallet-tx-chip-${txA.hash}`);
+    const chipB = screen.getByTestId(`wallet-tx-chip-${txB.hash}`);
+    expect(chipA.getAttribute("data-block-hash")).toBe(hashA);
+    expect(chipB.getAttribute("data-block-hash")).toBe(hashB);
+    // 完全な hash（0x + 64桁）であること。短縮 hash では e2e の
+    // blockHash 直接特定が成立しない。
+    expect(chipA.getAttribute("data-block-hash")).toHaveLength(66);
   });
 });
 
