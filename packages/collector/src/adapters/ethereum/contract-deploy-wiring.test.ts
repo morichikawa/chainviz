@@ -135,7 +135,7 @@ const testCatalog: ContractCatalog = {
   ChainvizToken: {
     name: "ChainvizToken",
     abi: [],
-    token: { symbol: "CVZ", decimals: 18 },
+    token: { symbol: "CVZDEMO", decimals: 18 },
   },
 };
 
@@ -222,7 +222,7 @@ describe("EthereumNodeLifecycle + EthereumAdapter contract deploy wiring (Issue 
         createdByTxHash: "0xdeploytx",
         name: "ChainvizToken",
         catalogKey: "ChainvizToken",
-        token: { symbol: "CVZ", decimals: 18 },
+        token: { symbol: "CVZDEMO", decimals: 18 },
       },
     ]);
   });
@@ -286,7 +286,7 @@ describe("EthereumNodeLifecycle + EthereumAdapter contract deploy wiring (Issue 
       createdByTxHash: "0xdeploytx",
       name: "ChainvizToken",
       catalogKey: "ChainvizToken",
-      token: { symbol: "CVZ", decimals: 18 },
+      token: { symbol: "CVZDEMO", decimals: 18 },
     });
   });
 

@@ -87,7 +87,7 @@ describe("tokenizeSolidity", () => {
       "pragma solidity ^0.8.24;",
       "",
       "contract Counter {",
-      '    string public constant symbol = "CVZ";',
+      '    string public constant symbol = "CVZDEMO";',
       "    uint256 public count;",
       "}",
       "",

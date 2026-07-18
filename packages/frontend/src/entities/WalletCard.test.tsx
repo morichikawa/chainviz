@@ -149,7 +149,7 @@ describe("WalletCard token balances (ARCHITECTURE.md §6.7)", () => {
             contract({
               address: tokenAddress,
               name: "ChainvizToken",
-              token: { symbol: "CVZ", decimals: 18 },
+              token: { symbol: "CVZDEMO", decimals: 18 },
             }),
           ],
         ]),
@@ -158,7 +158,7 @@ describe("WalletCard token balances (ARCHITECTURE.md §6.7)", () => {
     const chip = screen.getByTestId(
       `wallet-token-chip-${wallet().address}-${tokenAddress}`,
     );
-    expect(chip.textContent).toBe("5.0000 CVZ");
+    expect(chip.textContent).toBe("5.0000 CVZDEMO");
   });
 
   it("distinguishes two same-named token contracts by address in the chip title (Issue #218 派生)", () => {
@@ -178,7 +178,7 @@ describe("WalletCard token balances (ARCHITECTURE.md §6.7)", () => {
             contract({
               address: addressA,
               name: "ChainvizToken",
-              token: { symbol: "CVZ", decimals: 18 },
+              token: { symbol: "CVZDEMO", decimals: 18 },
             }),
           ],
           [
@@ -186,7 +186,7 @@ describe("WalletCard token balances (ARCHITECTURE.md §6.7)", () => {
             contract({
               address: addressB,
               name: "ChainvizToken",
-              token: { symbol: "CVZ", decimals: 18 },
+              token: { symbol: "CVZDEMO", decimals: 18 },
             }),
           ],
         ]),

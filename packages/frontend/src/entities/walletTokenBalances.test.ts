@@ -31,7 +31,7 @@ describe("resolveWalletTokenBalances (ARCHITECTURE.md §6.7)", () => {
         contract({
           address: tokenAddress,
           name: "ChainvizToken",
-          token: { symbol: "CVZ", decimals: 18 },
+          token: { symbol: "CVZDEMO", decimals: 18 },
         }),
       ],
     ]);
@@ -41,7 +41,7 @@ describe("resolveWalletTokenBalances (ARCHITECTURE.md §6.7)", () => {
     expect(resolveWalletTokenBalances(balances, byAddress)).toEqual([
       {
         contractAddress: tokenAddress,
-        symbol: "CVZ",
+        symbol: "CVZDEMO",
         contractName: "ChainvizToken",
         formatted: "5.0000",
       },
@@ -76,7 +76,7 @@ describe("resolveWalletTokenBalances (ARCHITECTURE.md §6.7)", () => {
         contract({
           address: knownAddress,
           name: "ChainvizToken",
-          token: { symbol: "CVZ", decimals: 18 },
+          token: { symbol: "CVZDEMO", decimals: 18 },
         }),
       ],
     ]);
@@ -104,7 +104,7 @@ describe("resolveWalletTokenBalances (ARCHITECTURE.md §6.7)", () => {
         contract({
           address: lower,
           name: "ChainvizToken",
-          token: { symbol: "CVZ", decimals: 18 },
+          token: { symbol: "CVZDEMO", decimals: 18 },
         }),
       ],
     ]);
@@ -166,7 +166,7 @@ describe("resolveWalletTokenBalances (ARCHITECTURE.md §6.7)", () => {
     const byAddress = new Map([
       [
         tokenAddress,
-        contract({ address: tokenAddress, token: { symbol: "CVZ", decimals: 18 } }),
+        contract({ address: tokenAddress, token: { symbol: "CVZDEMO", decimals: 18 } }),
       ],
     ]);
     const balances: TokenBalance[] = [

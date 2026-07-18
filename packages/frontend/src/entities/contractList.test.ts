@@ -34,7 +34,7 @@ describe("buildContractListEntries", () => {
     const node = contractNode({
       address: "0xaaa",
       name: "ChainvizToken",
-      token: { symbol: "CVZ", decimals: 18 },
+      token: { symbol: "CVZDEMO", decimals: 18 },
     });
     const entries = buildContractListEntries([node], []);
     expect(entries).toEqual<ContractListEntry[]>([
@@ -43,7 +43,7 @@ describe("buildContractListEntries", () => {
         status: "deployed",
         name: "ChainvizToken",
         address: "0xaaa",
-        tokenSymbol: "CVZ",
+        tokenSymbol: "CVZDEMO",
       },
     ]);
   });

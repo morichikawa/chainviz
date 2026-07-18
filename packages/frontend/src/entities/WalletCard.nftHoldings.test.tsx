@@ -29,7 +29,7 @@ function nftContract(overrides: Partial<ContractEntity> = {}): ContractEntity {
     kind: "contract",
     address: `0x${"c".repeat(40)}`,
     chainType: "ethereum",
-    nft: { symbol: "CVN" },
+    nft: { symbol: "CVNDEMO" },
     ...overrides,
   };
 }
@@ -86,7 +86,7 @@ describe("WalletCard NFT holdings (Issue #315)", () => {
     const chip = screen.getByTestId(
       `wallet-nft-chip-${wallet().address}-${nftAddress}-1`,
     );
-    expect(chip.textContent).toBe("CVN #1");
+    expect(chip.textContent).toBe("CVNDEMO #1");
   });
 
   it("omits an NFT owned by a different address", () => {

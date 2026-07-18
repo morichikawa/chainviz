@@ -13,7 +13,7 @@ describe("ContractEntity.sourceCode (Issue #321)", () => {
       "pragma solidity ^0.8.24;",
       "",
       "contract ChainvizToken {",
-      '    string public constant symbol = "CVZ";',
+      '    string public constant symbol = "CVZDEMO";',
       "}",
       "",
     ].join("\n"),
