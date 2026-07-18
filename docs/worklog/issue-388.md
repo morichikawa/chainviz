@@ -32,3 +32,129 @@
   全パッケージ通過をすべて確認
 - docs配下のみの変更のため、CLAUDE.mdの例外規定に基づきchainviz-qaは
   省略(reviewer合格のみ)
+
+### 2026-07-18 Issue #388 設計メモ（待機戦略の見直し）
+
+- 担当: designer
+- ブランチ: issue-388-ui-b06-flaky
+- 内容: UI-B-06の併走時flakyを構造的に解消するテスト戦略を設計した。
+  設計の要旨は `docs/ARCHITECTURE.md` §10.6（新設）に反映済み。
+  `packages/shared` の型変更は不要（確認済み。必要な
+  `TransactionEntity.blockHash` は既存フィールド）。
+
+#### 問題の分解（なぜ間欠的に失敗するか）
+
+UI-B-06の現行構造には、独立した2つのタイミング依存がある:
+
+1. **表示窓との競合**: 「included チップ観測 → Fit View クリック →
+   チップへ実ホバー」の間にチェーンが進行すると、対象ブロックのタイルが
+   表示窓（直近8タイル）から流れ出て、逆方向ハイライトの
+   `toHaveCount(1)` が永遠に0のままになる（#298 QA検証で実測済みの
+   メカニズム。表示窓の凍結 `useFrozenRibbonTiles` はホバー開始後に
+   しか効かないため、ホバー開始前の流出は防げない）
+2. **実マウスホバーの脆さ**: 実マウス座標に紐づくホバーは、併走負荷時の
+   頻繁な再描画で要素がポインタの下から動くと `mouseleave` が発火して
+   `hoveredBlockHash` が落ち、強調が消える（#298 QAの観測「一瞬点灯した
+   後に消えて戻らない」、#346で体系化された実 `.hover()` 依存の脆さと
+   同根）。#351 QAが観測したround1（正方向でカード強調が付かず）・
+   round2（逆方向でタイル強調0件）の両方をこの2要因で説明できる
+
+さらに現行テストは「チップにホバーして強調されたタイルを逆引きし、その
+testidで正方向の対象を決める」構造のため、逆方向の成立が正方向の前提に
+なっており、失敗が連鎖しやすい。
+
+#### 設計判断（3点）
+
+1. **フロントの製品挙動は変えない**（表示窓・凍結条件・ハイライト
+   ロジックは現状のまま）。#298のQA差し戻し対応で製品側の窓流出は
+   「ホバー中の凍結」として解決済みであり、今回のflakyは「ホバー開始
+   までの競合」というテスト構造の問題。テスト都合で製品のUX（窓の
+   前進仕様）を変える方向は採らない
+2. **`TxChip` に `data-block-hash` を計装する**（唯一のフロント変更。
+   1属性の追加のみ）。#351の `data-parent-hash`・#298の
+   `data-connected-to-previous` と同じ「完全なhashをe2e用に露出する」
+   既存流儀。これにより逆引きの往復が不要になり、対象タイルを
+   `chain-ribbon-tile-<blockHash>` で直接・即座に特定できる。
+   `blockHash` はワールドステートの既存語彙でありChainAdapter境界も
+   越えない
+3. **UI-B-06のホバーを `dispatchHover` / `dispatchUnhover`（新設）に
+   置き換える**（#346の確立済み方針の踏襲）。合成イベントによるホバー
+   状態はポインタ位置に依存せず、再描画で落ちない。解除は
+   `page.mouse.move(0,0)` の代わりに `mouseout` を直接 dispatch する
+   （dispatch化すると実ポインタは一度も要素上に無いため、実マウス移動
+   では `mouseout` が発火しない）。UI-B-05は#351の要件（実マウス軌跡での
+   維持検証）を担うため**変更しない**
+
+#### 新しいUI-B-06の構造（実装担当への引き継ぎ）
+
+対象パッケージ: `packages/frontend`（1属性+単体テスト）、`packages/e2e`
+（ヘルパー+spec+SCENARIOS.md）。作業は1人（frontend担当）で直列に
+実施できる規模。依存順序: フロントの属性追加 → e2e書き換え。
+
+1. `packages/frontend/src/entities/WalletCard.tsx` の `TxChip` に
+   `data-block-hash={tx.blockHash}` を追加（pending中はundefinedで
+   属性ごと出ない。Reactの標準挙動）。単体テストで「pending中は属性
+   なし・included後は完全なblockHashが載る」ことを固定する
+2. `packages/e2e/src/ui/support/interactions.ts` に `dispatchUnhover`
+   （`target.dispatchEvent("mouseout")`）を追加し、docコメントに
+   「dispatchHoverで開始したホバーは実ポインタが要素上に無いため、
+   実マウス移動では解除できない」理由を書く。Reactの `onMouseLeave` は
+   ネイティブ `mouseout`（relatedTarget無し=画面外へ抜けた扱い）から
+   合成される想定だが、**実ブラウザで解除が実際に効くことの実測確認を
+   実装時に必ず行う**こと。効かない場合のフォールバックは
+   `dispatchEvent("mouseout", { relatedTarget: <外部要素のハンドル> })`
+3. `chain-ribbon.spec.ts` UI-B-06 を識別ベースに再構成:
+   - ステップ1（前提・既存）: 送金 → included チップ待ち。チップの
+     `data-block-hash` から対象ブロックのhashを取得する
+   - ステップ2（新設・前提）: `chain-ribbon-tile-<blockHash>` が表示窓内に
+     見えることを明示的に待つ。タイルはincludedチップより先（blockが
+     included更新に先行する。ARCHITECTURE.md §10.4の観測順序）に届いて
+     いるため、待つのは描画反映の遅延のみ。タイムアウトは
+     `SLOT_DURATION_MS` 由来+固定オーバーヘッドで導出（値は実装判断。
+     前提条件コメント必須）
+   - ステップ3（逆方向）: `dispatchHover(チップ)` → 対象タイルに
+     `chain-ribbon-tile--highlight` が付くこと（識別ベース）+ 強調が
+     ちょうど1件であること（二重強調の回帰検出。#351の教訓）→
+     `dispatchUnhover(チップ)` → 強調0件
+   - ステップ4（正方向）: `dispatchHover(タイル)` → 送信元ウォレット
+     カードに `infra-card--ribbon-highlight` が付く
+   - ステップ5（既存）: `dispatchUnhover(タイル)` → 強調が消える
+   - `.react-flow__controls-fitview` のクリックはホバー経路から撤去する
+     （dispatch化で「ビューポート内に収める」必要が消えるため）。ただし
+     finally の後始末（削除ボタンの実クリック）は実マウス操作のため、
+     後始末の直前に Fit View クリックを移設して到達性を保つ
+4. `packages/e2e/SCENARIOS.md` の UI-B-06 を新構造に同期する（前提に
+   「対象ブロックのタイルが表示窓内に表示されている」、操作・確認に
+   逆方向（チップ→タイル強調）を明文化。文言は実装判断。test.step と
+   1対1の規約を維持）
+
+#### この設計で競合が解消する根拠（タイミング前提）
+
+- includedチップ観測時点で対象ブロックは最新タイル（表示窓の右端）。
+  窓から流れ出るまで約7スロットの猶予（slot=2秒でも約14秒、12秒なら
+  84秒）がある
+- 新構造でホバー開始までに挟まる操作は「属性読み取り→タイル可視待ち
+  （通常は即時）→dispatch」のみで、実クリックやポインタ移動の
+  actionability 待ちを含まず、併走負荷時でも数秒で完了する
+- ホバー開始後は既存の凍結（`useFrozenRibbonTiles`）が効くため流出しない。
+  ステップ3の解除→ステップ4の再ホバーの間だけ凍結が一瞬外れるが、その
+  時点でタイルの経過は高々2〜3スロットで、残り猶予（5スロット以上）に
+  対しギャップはミリ秒オーダー
+- この前提（表示件数8・blockがtxより先に届く観測順序）はspec上の
+  コメントと ARCHITECTURE.md §10.6 に明記する
+
+#### 検証プロトコル（実装担当・QAへ）
+
+- CLAUDE.mdの「直したはずで済ませない」ルールに従い、修正前に
+  `chain-ribbon.spec.ts` のファイル単位実行（UI-B-05+UI-B-06併走）を
+  複数round実施してflakyを再現し、修正後に同条件で複数round（目安3回）
+  連続greenを確認する。UI-B-06単独でも3回greenを確認する
+- `dispatchUnhover` による解除（強調が消える・ポップオーバーが閉じる）が
+  実ブラウザで機能することを、単発の実行で必ずアサーションで確認する
+
+#### 決めきれなかった点（実装時に判断してよい）
+
+- タイル可視待ちのタイムアウト具体値（`SLOT_DURATION_MS` 由来の導出式）
+- SCENARIOS.md の箇条書きの最終文言
+- `dispatchUnhover` のイベント初期化詳細（relatedTargetの要否は実測で
+  決める）
