@@ -11,7 +11,7 @@ const testCatalog: ContractCatalog = {
   ChainvizToken: {
     name: "ChainvizToken",
     abi: [],
-    token: { symbol: "CVZ", decimals: 18 },
+    token: { symbol: "CVZDEMO", decimals: 18 },
   },
 };
 
@@ -105,7 +105,7 @@ describe("EthereumAdapter.subscribeContracts (Issue #161)", () => {
         createdByTxHash: "0xdeploy",
         name: "ChainvizToken",
         catalogKey: "ChainvizToken",
-        token: { symbol: "CVZ", decimals: 18 },
+        token: { symbol: "CVZDEMO", decimals: 18 },
       },
     ]);
   });
@@ -155,7 +155,7 @@ describe("EthereumAdapter.subscribeContracts (Issue #161)", () => {
       createdByTxHash: "0xdeploy",
       name: "ChainvizToken",
       catalogKey: "ChainvizToken",
-      token: { symbol: "CVZ", decimals: 18 },
+      token: { symbol: "CVZDEMO", decimals: 18 },
     });
   });
 

@@ -10,7 +10,7 @@ pragma solidity ^0.8.24;
 ///         （docs/ARCHITECTURE.md §4「コントラクトカタログ」）。
 contract ChainvizToken {
     string public constant name = "Chainviz Token";
-    string public constant symbol = "CVZ";
+    string public constant symbol = "CVZDEMO";
     uint8 public constant decimals = 18;
 
     uint256 public totalSupply;

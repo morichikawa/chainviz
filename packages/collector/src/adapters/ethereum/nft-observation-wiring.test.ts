@@ -19,12 +19,12 @@ const testCatalog: ContractCatalog = {
   ChainvizNFT: {
     name: "ChainvizNFT",
     abi: [],
-    nft: { symbol: "CVN" },
+    nft: { symbol: "CVNDEMO" },
   },
   ChainvizToken: {
     name: "ChainvizToken",
     abi: [],
-    token: { symbol: "CVZ", decimals: 18 },
+    token: { symbol: "CVZDEMO", decimals: 18 },
   },
 };
 
