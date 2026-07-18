@@ -1,7 +1,7 @@
 import { format } from "../i18n/i18n.js";
 import type { MessageKey } from "../i18n/messages.js";
 import { shortHex } from "../entities/transaction.js";
-import type { CommsLogEntry } from "./commsLogEntry.js";
+import type { CommsLogEntry, CommsLogOperationEntry } from "./commsLogEntry.js";
 
 /** `useLanguage().t` と同じ形の翻訳関数（React に依存しない、テスト容易性のため引数化）。 */
 export type Translate = (key: MessageKey) => string;
@@ -11,6 +11,23 @@ export interface CommsLogEntryText {
   subject: string;
   /** 2行目の内容。 */
   body: string;
+  /**
+   * 操作（RPC）エントリのみ: 2行目に `body` へ続けて表示する成否・所要時間
+   * の追加テキスト（設計メモ §3.4）。`outcome`/`durationMs` がどちらも無い
+   * 場合は undefined（従来どおり `body` のみ表示）。
+   *
+   * `tone`/`ariaLabel` は `outcome` が観測できた場合のみ入る（durationMs単独
+   * の場合は色分けもスクリーンリーダー向けの言語化も不要。可視テキストの
+   * 数値がそのまま読み上げられるため）。色分けの実装は `CommsLogEntryRow`
+   * 側（既存CSS変数の再利用のみ。新色は作らない）。
+   */
+  operationSuffix?: {
+    /** `body` の直後に連結して表示するテキスト（例: " · 12ms" / " · ✓" / " · ✓ 12ms"）。 */
+    text: string;
+    tone?: "ok" | "error";
+    /** tone がある場合のみ、成否+所要時間をスクリーンリーダー向けに言語化したテキスト。 */
+    ariaLabel?: string;
+  };
 }
 
 /**
@@ -25,6 +42,7 @@ export function describeCommsLogEntry(entry: CommsLogEntry, t: Translate): Comms
       return {
         subject: `${entry.workbenchLabel} → ${entry.nodeLabel}`,
         body: entry.method,
+        operationSuffix: describeOperationSuffix(entry, t),
       };
 
     case "internal":
@@ -89,6 +107,55 @@ export function describeCommsLogEntry(entry: CommsLogEntry, t: Translate): Comms
     case "environment":
       return describeEnvironmentEntry(entry, t);
   }
+}
+
+/**
+ * 操作（RPC）エントリの成否・所要時間表示（設計メモ §3.4）を組み立てる。
+ * `outcome`/`durationMs` は独立に欠落しうるため、4通りの組み合わせを扱う:
+ *
+ * - どちらも無い: undefined（`body` はメソッド名のみ、従来どおり）
+ * - `durationMs` のみ: 内部APIエントリの `commsLog.internal.latency`
+ *   （" · 12ms"）と同じ表記。色分け不要（可視テキストがそのまま読み上げ
+ *   られるため `tone`/`ariaLabel` は付けない）
+ * - `outcome` のみ: アイコン（✓/✕）のみを追加し、色分け + aria-label で
+ *   言語化する
+ * - 両方: アイコン + 所要時間をまとめて1つの色分け対象にし、aria-label にも
+ *   両方の情報を含める（アイコンの後ろに数値だけを裸で置くと、aria-label
+ *   を持つ要素の子テキストはスクリーンリーダーに読まれない＝所要時間が
+ *   欠落するため、アイコンと所要時間をまとめて言語化する）
+ */
+function describeOperationSuffix(
+  entry: Pick<CommsLogOperationEntry, "outcome" | "durationMs">,
+  t: Translate,
+): CommsLogEntryText["operationSuffix"] {
+  if (entry.outcome === undefined) {
+    if (entry.durationMs === undefined) return undefined;
+    return { text: format(t("commsLog.operation.duration"), { ms: String(entry.durationMs) }) };
+  }
+
+  const icon = entry.outcome === "ok" ? "✓" : "✕";
+  if (entry.durationMs === undefined) {
+    return {
+      text: ` · ${icon}`,
+      tone: entry.outcome,
+      ariaLabel: t(
+        entry.outcome === "ok" ? "commsLog.operation.outcomeOk" : "commsLog.operation.outcomeError",
+      ),
+    };
+  }
+
+  return {
+    text: ` · ${icon} ${entry.durationMs}ms`,
+    tone: entry.outcome,
+    ariaLabel: format(
+      t(
+        entry.outcome === "ok"
+          ? "commsLog.operation.outcomeOkDuration"
+          : "commsLog.operation.outcomeErrorDuration",
+      ),
+      { ms: String(entry.durationMs) },
+    ),
+  };
 }
 
 function describeEnvironmentEntry(
