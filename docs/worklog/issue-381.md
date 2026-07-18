@@ -215,3 +215,29 @@
     修正対象と無関係な環境要因のため、QA が実 Docker 環境で
     `pnpm test:e2e:ui -g UI-C-06` を実行して最終確認することを申し送る。
 - 発見した注意点: 特になし。設計メモの引き継ぎ内容と実装後の差異は無い。
+
+### 2026-07-18 Issue #381 テスト強化メモ
+
+- 担当: tester
+- ブランチ: issue-381-workbench-rpc-url
+- 既存テストの確認結果:
+  - `playwright-global-setup.unit.test.ts` は `UI_E2E_PROXY_PORT === 4126` と
+    `startCollector(4125, 4126)` の明示渡しを既に検証済み（網羅十分）。
+  - `deployUncatalogedContractInWorkbench` の呼び出し箇所は
+    `contract-lifecycle.spec.ts` の 1 箇所のみで、新シグネチャ（proxyPort 必須）
+    に更新済み。`restartCollector`（connection-errors.spec.ts）も
+    `UI_E2E_PROXY_PORT` を明示的に渡しており漏れなし。
+  - ポート整合（本 Issue の item #3）: `startCollector` が渡す
+    `CHAINVIZ_PROXY_PORT=4126` を collector 側 `resolveProxyPort` が honor する
+    ことは `collector/src/index.test.ts` で既にカバー済み。整合性は担保されている。
+- 強化方針: 本 Issue の修正の核心である「exec 時の `-e ETH_RPC_URL` 上書き」の
+  引数組み立てに対する自動回帰テストが皆無だったため、`node:child_process` の
+  `execFile` をモックして `deployUncatalogedContractInWorkbench(proxyPort)` が
+  組み立てる `docker compose exec` 引数を検証する `docker.unit.test.ts` を新設する。
+  実 Docker には触れないため `pnpm test`（vitest.unit.config.ts）で回る。
+  特に docker compose exec のセマンティクス上 load-bearing な「`-e` が
+  サービス名 `workbench` より前に来ること」を回帰対象として固定する。
+- 異常系（item #4）: `proxyPort` は TypeScript 上 `number` 型で、唯一の呼び出し元は
+  定数 `UI_E2E_PROXY_PORT` を渡すため、実行時に NaN/負値が渡る経路が無い。
+  関数側にも検証は無く（garbage-in-garbage-out）、検証不在をテストで固定するのは
+  望ましい契約ではないため、異常値テストは追加しない（下記報告参照）。
