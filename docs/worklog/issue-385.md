@@ -4,9 +4,10 @@
 
 - 担当: 統括
 - ブランチ: issue-385-workbench-orphan-container-backlog
-- 内容: Issue #369の最終QA検証(docs/worklog/issue-369.md「2026-07-18 Issue #369
-  最終QA検証」節)でchainviz-qaが偶発的に観測した既存の堅牢性ギャップを
-  Issue化し、`docs/PLAN.md`のバックログ節末尾に追記した。
+- 内容: Issue #369の最終QA検証(docs/worklog/issue-369.md「2026-07-18
+  実動検証(qa)」節の「発見した問題(#369の差分に起因しない既存の
+  堅牢性ギャップ)」小節)でchainviz-qaが偶発的に観測した既存の堅牢性
+  ギャップをIssue化し、`docs/PLAN.md`のバックログ節末尾に追記した。
 - 事実関係: `addWorkbench`(`createAndStart`経路一般)は、`container.start()`が
   失敗した場合(存在しないネットワークを指定した場合等)に、直前に作成済みの
   「Created」状態コンテナを削除せずorphanとして残す。エラー自体は握りつぶさず
