@@ -237,3 +237,96 @@ CSS カスタムプロパティ方式にする。JS はスケール値を1つ管
   `page.addStyleTag` で注入して 0.85 / 1.4 倍を撮影し、折り返し・
   チップ配置が破綻しないことを確認した(この手順は実装後の
   目視確認にも再利用できる)
+
+### 2026-07-18 Issue #377 実装設計メモ(frontend)
+
+- 担当: frontend
+- ブランチ: issue-377-glossary-font-size
+- UX設計メモ(上記)をそのまま採用する。着手前に既存コード
+  (`sidePanelWidth.ts`/`useSidePanelResize.ts`/`SidePanel.tsx`/
+  `styles.css`/`GlossaryPanelView.tsx`/`ContractSourceView.tsx`/
+  `CommsLogView.tsx`/`CommsLogEntryRow.tsx`/`CommsLogFilterBar.tsx`)を
+  読み、設計メモ §6 の対象セレクタ一覧が実装と一致することを確認した。
+
+**確認した差異と対応方針**
+
+- `comms-log-view__note` と `comms-log-entry__code` は設計メモでは
+  変換対象に挙がっているが、実装を見ると現状どちらも明示 `font-size` を
+  持たず、親要素(`comms-log-view__empty` 12px / `comms-log-entry__body`
+  12px)から継承しているだけだった。親を `calc()` に変換すれば継承先も
+  連動して拡大されるため、この2つには個別の `calc()` ルールを追加
+  しない(追加すると明示値が生まれ、将来親の値を変えたときに追従しなく
+  なるほうが問題)。既定 1.0 倍時の見た目は変わらない
+
+**実装方針(設計メモ §6 のとおり)**
+
+1. `side-panel/sidePanelFontScale.ts`(純ロジック、`sidePanelWidth.ts` と
+   対になる新規ファイル):
+   - 定数: `SIDE_PANEL_FONT_SCALE_STORAGE_KEY`、
+     `SIDE_PANEL_FONT_SCALE_STEPS = [0.85, 1, 1.15, 1.3, 1.5]`、
+     `SIDE_PANEL_DEFAULT_FONT_SCALE = 1`
+   - `nearestFontScaleStepIndex(value)`(内部ヘルパー): 5段階から最も
+     近い値のインデックスを返す
+   - `stepSidePanelFontScale(current, direction)`: 現在値に最も近い
+     刻みのインデックスを求め、`direction`(+1/-1)だけ動かした刻みを
+     返す(配列の端では同じインデックスに留まり同値を返す)
+   - `loadSidePanelFontScale(storage)`: `loadSidePanelWidth` と同じ
+     防御的パターン(非数・非有限 → 既定、刻み外の有限値 → 最近傍へ
+     スナップ)
+   - `saveSidePanelFontScale(storage, scale)`: `saveSidePanelWidth` と
+     同じ try/catch + `console.warn`
+2. `side-panel/useSidePanelFontScale.ts`(新規フック):
+   - `useSidePanelFontScale(storage)` → `{ scale, increase, decrease,
+     reset, canIncrease, canDecrease }`
+   - increase/decrease/reset は状態更新と同時に `saveSidePanelFontScale`
+     を呼ぶ(離散操作なので毎回保存。`useSidePanelResize` のキーボード
+     操作と同じ判断)
+   - `canIncrease`/`canDecrease` は現在値が最大/最小の刻みと厳密一致
+     するかで判定(それ以外はどちらも押せる)
+3. `SidePanel.tsx`:
+   - 既存の `store`(`useSidePanelResize` と共用する解決済み storage)を
+     `useSidePanelFontScale` にも渡す
+   - ヘッダーに `side-panel__font-controls` を追加(タイトルと閉じる
+     ボタンの間)。中身は A− ボタン・現在値ボタン(リセット兼用)・A+
+     ボタン
+   - ルート div の `style` を `{ width, "--side-panel-font-scale": scale
+     }` に拡張。カスタムプロパティは `React.CSSProperties` の型に
+     無いため、`Object.assign` ではなく `as React.CSSProperties` で
+     型を逃がす(このパッケージの他箇所で同種の逃げ方が無いか確認した
+     が前例が無かったため、最小限のキャストに留める)
+4. `styles.css`:
+   - `.side-panel__body` に `font-size: calc(16px * var(--side-panel-font-scale, 1))`
+     を追加(既定値のフォールバックはインラインで確実に渡るので保険)
+   - 設計メモ §6-4 に列挙されたパネル本文セレクタの明示 `font-size` を
+     `calc(Npx * var(--side-panel-font-scale, 1))` に機械変換(上記の
+     2つの例外を除く)
+   - `.side-panel__font-controls` とボタン・現在値表示のスタイルを新設
+     (`.side-panel__close` と同系の枠なし・控えめ発光)
+5. `i18n/messages.ts`: 設計メモ §5 の3キーを `sidePanel.resizeHandle`
+   の直後に追加。`sidePanel.fontReset` は `{value}` プレースホルダを
+   持たせ、呼び出し側で `format()` する
+6. `docs/ARCHITECTURE.md` §12.2 に幅と並べて文字サイズの永続化仕様を
+   追記する
+
+**実装時に決めた事項(設計メモが実装判断に委ねた点)**
+
+- ボタン見た目: 文言は `A−` / `A+`(半角ハイフンマイナス)。現在値表示は
+  `100%` 形式の丸め表示(`Math.round(scale * 100)}%`)
+- `sidePanel.fontReset` のプレースホルダは `{value}` を使い、
+  呼び出し側で `format(t("sidePanel.fontReset"), { value: \`${percent}%\` })`
+  として埋める
+- 上限 1.5 の ±1 段の微調整: UX設計メモの5段階
+  (0.85/1.0/1.15/1.3/1.5)をそのまま採用し変更しない(実機確認済みの
+  値を尊重する)
+
+**テスト方針(1ファイル1責務)**
+
+- `sidePanelFontScale.test.ts`: ステップ送り(端で停止)・スナップ・
+  壊れた値のフォールバック・保存失敗
+- `useSidePanelFontScale.test.ts`: increase/decrease/reset の状態遷移・
+  保存タイミング・can フラグの境界
+- `SidePanel.fontScale.test.tsx`: ボタン描画・押下でルートのカスタム
+  プロパティが変わる・端で disabled・注入した storage に保存される・
+  リセットボタンの挙動(新規ファイル。既存 `SidePanel.test.tsx` /
+  `SidePanel.resize.test.tsx` には追加しない)
+- E2E: 設計メモの判断(jsdom の unit test で十分)を踏襲し追加しない
