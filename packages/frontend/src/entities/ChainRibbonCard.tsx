@@ -1,5 +1,5 @@
 import type { NodeProps } from "@xyflow/react";
-import { Fragment, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { format } from "../i18n/i18n.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
@@ -15,8 +15,19 @@ import { useFrozenRibbonTiles } from "./useFrozenRibbonTiles.js";
 /**
  * タイル1件。着地アニメーション（`chain-ribbon-tile--landing`）・親ブロック
  * ホバー強調（`isParentHighlighted`）・tx チップ等からの逆方向ホバー強調
- * （`RibbonHoverContext` の `hoveredBlockHash`）の3種類の見た目状態を持つ
- * （docs/worklog/issue-298.md §4.3/§4.4、ARCHITECTURE.md §9.1）。
+ * （`RibbonHoverContext` の `hoveredBlockHash`。ただし自分自身の親ブロック行を
+ * 見ている間は `isDrivingParentHighlight` で抑制。Issue #351）の3種類の
+ * 見た目状態を持つ（docs/worklog/issue-298.md §4.3/§4.4、
+ * ARCHITECTURE.md §9.1）。
+ *
+ * ポップオーバー（`ChainRibbonPopover`）はタイル div の**内側の子**として
+ * 描画する（`WalletCard`/`ContractCard`/`InfraNodeCard` 等の既存パターンと
+ * 同じ配置。Issue #351）。`PopoverPortal` は `document.body` 直下へ実際の
+ * DOM を portal するが、React はイベントの合成をこの JSX 上の親子関係
+ * （React ツリー）で行うため、こう並べることでポップオーバーへのホバーが
+ * タイルへのホバーの延長として扱われる。以前は Fragment で兄弟として
+ * 描いており、この恩恵を受けられず離脱直後に閉じてしまっていた
+ * （docs/worklog/issue-351.md 参照）。
  */
 function ChainRibbonTileView({
   tile,
@@ -24,14 +35,18 @@ function ChainRibbonTileView({
   nodeLabelById,
   isLanding,
   isParentHighlighted,
+  isDrivingParentHighlight,
   onParentHover,
+  onPopoverOpenChange,
 }: {
   tile: ChainRibbonTile;
   txCount: number | undefined;
   nodeLabelById: ReadonlyMap<string, string>;
   isLanding: boolean;
   isParentHighlighted: boolean;
-  onParentHover: (parentHash: string | null) => void;
+  isDrivingParentHighlight: boolean;
+  onParentHover: (parentHash: string | null, sourceHash: string) => void;
+  onPopoverOpenChange: (blockHash: string, isOpen: boolean) => void;
 }) {
   const { t } = useLanguage();
   // Issue #221: 隙間を通過する一瞬の mouseleave で消えないよう遅延クローズ。
@@ -41,44 +56,59 @@ function ChainRibbonTileView({
   const { block, connectedToPrevious } = tile;
 
   // 順方向（このタイルを直接ホバー）・逆方向（tx/活動チップのホバーから
-  // このブロックの hash が立った）のどちらでも同じ強調を出す。
-  const isReverseHighlighted = hoveredBlockHash === block.hash;
+  // このブロックの hash が立った）のどちらでも同じ強調を出す。ただし
+  // 「自分自身の親ブロック行を今まさにホバーしている」間（
+  // `isDrivingParentHighlight`）は自己強調を抑制する。QA差し戻し対応
+  // （docs/worklog/issue-351.md）: 抑制しないと「ホバー中タイル自身」と
+  // 「親タイル」の2つが同時に光り、どちらが見比べるべき親タイルか曖昧に
+  // なる。他タイルの逆方向ハイライトや、親行を見ていない単純な直接ホバー
+  // には影響しない。
+  const isReverseHighlighted =
+    hoveredBlockHash === block.hash && !isDrivingParentHighlight;
+
+  // Issue #351: 表示窓の凍結条件（下記 ChainRibbonCard）に、
+  // `hoveredBlockHash` だけでなくこのタイルのポップオーバー開閉状態も
+  // 反映させる。`hoveredBlockHash` はタイル div の mouseleave で即座に
+  // null へ戻る一方、ポップオーバー自体は 200ms の猶予でまだ開いている
+  // ことがあり（隙間通過中）、その間も表示窓を凍結し続ける必要がある。
+  useEffect(() => {
+    onPopoverOpenChange(block.hash, hovered);
+    return () => onPopoverOpenChange(block.hash, false);
+  }, [hovered, block.hash, onPopoverOpenChange]);
 
   return (
-    <>
-      <div
-        ref={tileRef}
-        className={[
-          "chain-ribbon-tile",
-          isLanding ? "chain-ribbon-tile--landing" : "",
-          isParentHighlighted || isReverseHighlighted
-            ? "chain-ribbon-tile--highlight"
-            : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        onMouseEnter={() => {
-          onMouseEnter();
-          setHoveredBlockHash(block.hash);
-        }}
-        onMouseLeave={() => {
-          onMouseLeave();
-          setHoveredBlockHash(null);
-        }}
-        data-testid={`chain-ribbon-tile-${block.hash}`}
-        data-connected-to-previous={connectedToPrevious}
-      >
-        <span className="chain-ribbon-tile__number">#{block.number}</span>
-        <span className="chain-ribbon-tile__hash">{shortHex(block.hash, 4, 3)}</span>
-        {txCount !== undefined && txCount > 0 && (
-          <span
-            className="chain-ribbon-tile__tx-badge"
-            data-testid={`chain-ribbon-tile-tx-${block.hash}`}
-          >
-            {format(t("chainRibbon.txBadge"), { count: String(txCount) })}
-          </span>
-        )}
-      </div>
+    <div
+      ref={tileRef}
+      className={[
+        "chain-ribbon-tile",
+        isLanding ? "chain-ribbon-tile--landing" : "",
+        isParentHighlighted || isReverseHighlighted
+          ? "chain-ribbon-tile--highlight"
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      onMouseEnter={() => {
+        onMouseEnter();
+        setHoveredBlockHash(block.hash);
+      }}
+      onMouseLeave={() => {
+        onMouseLeave();
+        setHoveredBlockHash(null);
+      }}
+      data-testid={`chain-ribbon-tile-${block.hash}`}
+      data-connected-to-previous={connectedToPrevious}
+    >
+      <span className="chain-ribbon-tile__number">#{block.number}</span>
+      <span className="chain-ribbon-tile__hash">{shortHex(block.hash, 4, 3)}</span>
+      {txCount !== undefined && txCount > 0 && (
+        <span
+          className="chain-ribbon-tile__tx-badge"
+          data-testid={`chain-ribbon-tile-tx-${block.hash}`}
+        >
+          {format(t("chainRibbon.txBadge"), { count: String(txCount) })}
+        </span>
+      )}
       {hovered && (
         <ChainRibbonPopover
           anchorRef={tileRef}
@@ -88,7 +118,7 @@ function ChainRibbonTileView({
           onParentHover={onParentHover}
         />
       )}
-    </>
+    </div>
   );
 }
 
@@ -99,10 +129,14 @@ function ChainRibbonTileView({
  * つなぐ Handle は持たない（このカードへ/から張られるエッジは無い設計。
  * ARCHITECTURE.md §9.1）。
  *
- * 「親ブロック」行ホバーでの直前タイル強調（`parentHighlightHash`）は、この
+ * 「親ブロック」行ホバーでの直前タイル強調（`parentHighlight`）は、この
  * カード内で完結する局所的な state（複数タイルにまたがる相互作用のため）。
- * ウォレット/コントラクトカードとの相互ハイライト（第2段階。tx/活動チップ
- * ⇔ タイル）は `RibbonHoverContext` 経由の `hoveredBlockHash` を使う。
+ * `targetHash`（強調すべき親タイル）と `sourceHash`（今どのタイルの
+ * 親ブロック行がホバー中か）の組を持ち、後者は「ホバー中タイル自身の
+ * 自己強調を一時的に抑制する」ためだけに使う（QA差し戻し対応。
+ * docs/worklog/issue-351.md）。ウォレット/コントラクトカードとの相互
+ * ハイライト（第2段階。tx/活動チップ ⇔ タイル）は `RibbonHoverContext`
+ * 経由の `hoveredBlockHash` を使う。
  *
  * QA差し戻し対応（docs/worklog/issue-298.md）: ホバー中
  * （`hoveredBlockHash !== null`）は `useFrozenRibbonTiles` で表示窓の前進を
@@ -110,15 +144,53 @@ function ChainRibbonTileView({
  * （直近8タイル）が前進し続けるため、他カードのチップホバーで一瞬点灯した
  * ハイライトが、窓外へ流出したタイルとともに即座に失われ二度と復帰しない
  * 不具合が実機検証で確認されたための対策。
+ *
+ * Issue #351: 上記に加え、いずれかのタイルのポップオーバーが開いている間
+ * （`openPopoverHashes`）も凍結条件に含める。タイル → 隙間 → ポップオーバー
+ * の移動中、`hoveredBlockHash` はタイル div の mouseleave で即座に null に
+ * 戻る一方、ポップオーバー自体は `useHoverPopover` の 200ms 猶予でまだ
+ * 開いていることがあり、その間に凍結が外れると表示窓が前進してしまう
+ * （issue-298 に記録されていた既知の残課題）。
  */
 export function ChainRibbonCard({ data }: NodeProps<ChainRibbonFlowNode>) {
   const { txCountByHash, nodeLabelById, landingHashes, blocks } = data;
   const { t } = useLanguage();
   const { hoveredBlockHash } = useRibbonHover();
-  const tiles = useFrozenRibbonTiles(data.tiles, hoveredBlockHash !== null);
-  const [parentHighlightHash, setParentHighlightHash] = useState<string | null>(
-    null,
+  const [openPopoverHashes, setOpenPopoverHashes] = useState<ReadonlySet<string>>(
+    () => new Set(),
   );
+  const handlePopoverOpenChange = useCallback((blockHash: string, isOpen: boolean) => {
+    setOpenPopoverHashes((prev) => {
+      if (prev.has(blockHash) === isOpen) return prev;
+      const next = new Set(prev);
+      if (isOpen) {
+        next.add(blockHash);
+      } else {
+        next.delete(blockHash);
+      }
+      return next;
+    });
+  }, []);
+  const isHoverActive = hoveredBlockHash !== null || openPopoverHashes.size > 0;
+  const tiles = useFrozenRibbonTiles(data.tiles, isHoverActive);
+  // `targetHash`: 強調すべき親タイルの hash。`sourceHash`: 今どのタイルの
+  // 「親ブロック」行がホバー中か（そのタイル自身の逆方向ハイライトを
+  // 抑制するために使う。QA差し戻し対応。docs/worklog/issue-351.md）。
+  const [parentHighlight, setParentHighlight] = useState<
+    { sourceHash: string; targetHash: string } | null
+  >(null);
+  const handleParentHover = useCallback(
+    (targetHash: string | null, sourceHash: string) => {
+      setParentHighlight(targetHash === null ? null : { sourceHash, targetHash });
+    },
+    [],
+  );
+  // 任意項目（UX設計 §3 末尾）: ホバー中の「親ブロック」行が指す親が現在の
+  // 表示窓の外（最古タイルより前）にあるとき、左端の「⋯」を同系統の強調で
+  // 光らせる。「親は存在するが表示範囲より前にある」ことが伝わる。
+  const isOldestParentHighlighted =
+    parentHighlight !== null &&
+    !tiles.some((tile) => tile.block.hash === parentHighlight.targetHash);
   const latest = tiles.length > 0 ? tiles[tiles.length - 1] : undefined;
   // ブロック生成タイミングのインジケータ（Issue #343。ARCHITECTURE.md §10.5）。
   // チェーン全体で1つ、ヘッダに表示する（ノードカードごとには出さない）。
@@ -179,7 +251,11 @@ export function ChainRibbonCard({ data }: NodeProps<ChainRibbonFlowNode>) {
       ) : (
         <div className="chain-ribbon-card__row">
           <span
-            className="chain-ribbon-card__older"
+            className={
+              isOldestParentHighlighted
+                ? "chain-ribbon-card__older chain-ribbon-card__older--highlight"
+                : "chain-ribbon-card__older"
+            }
             title={t("chainRibbon.older.tooltip")}
             data-testid="chain-ribbon-older"
           >
@@ -202,8 +278,10 @@ export function ChainRibbonCard({ data }: NodeProps<ChainRibbonFlowNode>) {
                 txCount={txCountByHash.get(tile.block.hash)}
                 nodeLabelById={nodeLabelById}
                 isLanding={landingHashes.has(tile.block.hash)}
-                isParentHighlighted={parentHighlightHash === tile.block.hash}
-                onParentHover={setParentHighlightHash}
+                isParentHighlighted={parentHighlight?.targetHash === tile.block.hash}
+                isDrivingParentHighlight={parentHighlight?.sourceHash === tile.block.hash}
+                onParentHover={handleParentHover}
+                onPopoverOpenChange={handlePopoverOpenChange}
               />
             </Fragment>
           ))}

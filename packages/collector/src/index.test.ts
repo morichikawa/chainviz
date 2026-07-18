@@ -1,6 +1,7 @@
 import type { NodeEntity, WorldStateSnapshot } from "@chainviz/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EthereumAdapter } from "./adapters/ethereum/index.js";
+import { DEFAULT_COMPOSE_PROJECT } from "./adapters/ethereum/node-lifecycle.js";
 import type { CollectorServer } from "./server/websocket-server.js";
 import {
   DEFAULT_PORT,
@@ -8,6 +9,7 @@ import {
   DEFAULT_PROXY_TARGET,
   DEFAULT_WORKBENCH_RPC_HOST,
   installProcessSafetyNet,
+  resolveComposeProject,
   resolvePort,
   resolveProxyPort,
   resolveProxyTarget,
@@ -242,6 +244,60 @@ describe("resolveProxyTarget", () => {
     expect(
       resolveProxyTarget({ CHAINVIZ_PROXY_TARGET: " http://reth1:8545 " }),
     ).toBe("http://reth1:8545");
+  });
+});
+
+describe("resolveComposeProject", () => {
+  it("returns DEFAULT_COMPOSE_PROJECT when the env var is unset or blank", () => {
+    expect(resolveComposeProject({})).toBe(DEFAULT_COMPOSE_PROJECT);
+    expect(resolveComposeProject({ CHAINVIZ_COMPOSE_PROJECT: "   " })).toBe(
+      DEFAULT_COMPOSE_PROJECT,
+    );
+  });
+
+  it("defaults to chainviz-ethereum, matching the static profile's compose project name", () => {
+    expect(DEFAULT_COMPOSE_PROJECT).toBe("chainviz-ethereum");
+  });
+
+  it("returns the trimmed override project name when set", () => {
+    expect(
+      resolveComposeProject({ CHAINVIZ_COMPOSE_PROJECT: "  my-synth-env  " }),
+    ).toBe("my-synth-env");
+  });
+
+  it("treats tab/newline-only values as blank (trim removes all whitespace kinds)", () => {
+    // .trim() は半角スペースだけでなくタブ・改行も除去するため、これらのみの
+    // 値でも既定へ落ちる（「空白のみ」の判定が半角スペース限定でないことを固定）。
+    expect(resolveComposeProject({ CHAINVIZ_COMPOSE_PROJECT: "\t" })).toBe(
+      DEFAULT_COMPOSE_PROJECT,
+    );
+    expect(resolveComposeProject({ CHAINVIZ_COMPOSE_PROJECT: "\n" })).toBe(
+      DEFAULT_COMPOSE_PROJECT,
+    );
+    expect(
+      resolveComposeProject({ CHAINVIZ_COMPOSE_PROJECT: " \t \n " }),
+    ).toBe(DEFAULT_COMPOSE_PROJECT);
+  });
+
+  it("preserves internal whitespace, trimming only the ends", () => {
+    // trim は前後だけを落とすので、内部の空白は保持される（値をそのまま
+    // project 名として扱う設計であることの固定。内部空白の折りたたみ等は
+    // しない）。
+    expect(
+      resolveComposeProject({ CHAINVIZ_COMPOSE_PROJECT: "  my env  " }),
+    ).toBe("my env");
+  });
+
+  it("passes through characters that are invalid for a Docker Compose project name without sanitizing", () => {
+    // resolveComposeProject は文字種の検証・サニタイズを行わない。operator
+    // 向けの上書き口であり、不正値は Docker 側で fail-fast する前提。現状の
+    // 「trim して素通し」の挙動を固定する（勝手に小文字化・記号除去しない）。
+    expect(
+      resolveComposeProject({ CHAINVIZ_COMPOSE_PROJECT: "My_Synth.Env/1" }),
+    ).toBe("My_Synth.Env/1");
+    expect(
+      resolveComposeProject({ CHAINVIZ_COMPOSE_PROJECT: "UPPER" }),
+    ).toBe("UPPER");
   });
 });
 
