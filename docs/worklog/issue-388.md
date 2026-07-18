@@ -17,3 +17,18 @@
   流れ出るまでの時間との競合であり(docs/worklog/issue-298.mdに既出の課題)、
   併走時の負荷でこの競合を跨ぎやすくなる既存由来のタイミング依存と
   考えられる。
+
+### 2026-07-18 Issue #388 起票・バックログ追記のレビュー
+
+- 担当: reviewer
+- ブランチ: issue-388-ui-b06-flaky-backlog
+- 判定: **合格**
+- Issue本文と`docs/PLAN.md`追記の一致、参照事実の実在確認
+  (`packages/e2e/src/ui/chain-ribbon.spec.ts`のUI-B-05/UI-B-06、
+  `docs/worklog/issue-298.md`のタイミング課題の記録、Issue #346の実在)、
+  `docs/worklog/issue-388.md`とissue-351.mdの最終QA記録との整合性、
+  `docs/WORKLOG.md`の#351行更新内容の整合性、コミット粒度、
+  Conventional Commits形式、`pnpm lint && pnpm build && pnpm test`
+  全パッケージ通過をすべて確認
+- docs配下のみの変更のため、CLAUDE.mdの例外規定に基づきchainviz-qaは
+  省略(reviewer合格のみ)
