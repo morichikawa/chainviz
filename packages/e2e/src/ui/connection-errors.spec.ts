@@ -21,7 +21,10 @@ import {
   registerCollector,
   stopRegisteredCollector,
 } from "../helpers/collector-registry.js";
-import { UI_E2E_COLLECTOR_PORT } from "../helpers/playwright-global-setup.js";
+import {
+  UI_E2E_COLLECTOR_PORT,
+  UI_E2E_PROXY_PORT,
+} from "../helpers/playwright-global-setup.js";
 
 /**
  * 切断バッジ反映待ちの上限。collector プロセスの終了は OS レベルで TCP
@@ -37,7 +40,10 @@ function anyGhostCard(page: Page) {
 
 /** collector を再起動し、レジストリ(受け渡しファイル)へ登録し直す。 */
 async function restartCollector(): Promise<void> {
-  const restarted = await startCollector(UI_E2E_COLLECTOR_PORT);
+  // 暗黙の +1 既定に頼らず、globalSetup と同じ UI_E2E_PROXY_PORT を明示的に
+  // 渡す(結果は同じ 4126 だが、Issue #381 で導入した「+1 の知識は
+  // playwright-global-setup.ts の定数定義 1 箇所に集約する」方針と揃える)。
+  const restarted = await startCollector(UI_E2E_COLLECTOR_PORT, UI_E2E_PROXY_PORT);
   registerCollector(restarted);
 }
 
