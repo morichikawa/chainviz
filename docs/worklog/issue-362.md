@@ -369,3 +369,59 @@
   （208ファイル2706テスト）。追加分の対象3ファイルは56テスト。eslint も
   クリーン。実装ファイル・`SidePanelHost.tsx`・`SidePanelContext.tsx`・
   `docs/ARCHITECTURE.md` などには変更なし。
+
+### 2026-07-18 Issue #362 静的レビュー（reviewer）
+
+- 担当: reviewer
+- ブランチ: issue-362-sidepanel-resize
+- 内容: サイドパネル幅リサイズ実装（frontend + tester強化後）の静的レビュー。
+- 確認結果:
+  1. `sidePanelWidth.ts` のclamp/load/save: 既定420px・最小300px・最大は
+     `viewportWidth * 0.9`（実行時に測る。`sidePanelMaxWidth` で
+     min<=max の下限保証あり）で設計メモどおり。保存形式は
+     `i18n.ts` の `saveLanguage` と同じスカラー方式で既存パターンと一貫。
+     testerが発見した「空文字/空白の保存値は `Number("")===0` のため
+     既定420ではなく最小300に落ちる」挙動は**許容と判断**:
+     `saveSidePanelWidth` は数値文字列しか書かないため空文字は
+     localStorage の外部改変でしか発生せず、結果も有効範囲内（300）で
+     UIは壊れない。挙動はコメント付きテストで固定済みであり、修正不要
+  2. `useSidePanelResize.ts` の window リスナー方式: リスナー登録は
+     `resizing` が true の間だけで、`useEffect` のクリーンアップで
+     pointerup 時・アンマウント時とも確実に解除される（アンマウント時の
+     解除はテストで検証済み）。リークなし。フロント内に既存の自前
+     ポインタドラッグ実装は無く（カードのドラッグは React Flow 任せ）、
+     jsdom の `setPointerCapture` 未実装を踏まえた設計判断も worklog・
+     コード内コメントの両方に記録されており妥当
+  3. `SidePanelHost.tsx` / `SidePanelContext.tsx`: `git diff main..HEAD`
+     で無変更を確認（設計どおり）
+  4. a11y: `role="separator"` + `aria-orientation="vertical"` +
+     `aria-valuenow/min/max`（now/max は `Math.round` 済み）+
+     `tabIndex=0` + ←→キー操作 + i18n化された `aria-label`
+     （ja/en 両方をテストで検証）+ CSS の `:focus-visible` アウトライン。
+     WAI-ARIA の focusable separator パターンに適合
+  5. エラー握りつぶし: catch は `saveSidePanelWidth` の1箇所のみで、
+     `console.warn` でエラー内容を出力し、握りつぶす理由（保存失敗が
+     ドラッグ操作を壊さないため。`layoutStore.saveLayout` と同じ防御的
+     パターン）がコメントに明記されている。問題なし
+  6. 固定値の扱い: 最大幅は実行時のビューポート幅から動的に導出。
+     420/300/24px は環境状態に依存しない設計定数で、根拠がコード
+     コメントと worklog の両方にある。E2E も `expect.poll` + 緩い閾値
+     （150px ドラッグで +100 超）で決め打ちに依存しない。問題なし
+  7. コミット粒度: `git log main..HEAD` の9コミットはいずれも単一の
+     関心事（設計docs / 永続化ロジック / フック / シェル組み込み /
+     E2E / worklog記録 / テスト強化）に分かれており、Conventional
+     Commits 形式にも適合
+  8. `pnpm lint` / `pnpm build` / `pnpm test` 全パッケージ通過
+     （shared 75 / e2e 179 / collector 1636 / frontend 2706）
+- 差し戻し指摘（軽微・1件）:
+  - `docs/ARCHITECTURE.md` §12.2（2583-2584行目）の「読み込み時は
+    壊れた値・**範囲外の値を既定値へフォールバック**し」が実装と不一致。
+    実装（`loadSidePanelWidth`）は非有限値（非数・±Infinity）のみ
+    既定420pxへフォールバックし、**範囲外の有限値はクランプ**する
+    （保存値"5"→300、保存値"900"+ビューポート500→450。テストで固定済み）。
+    クランプの方がウィンドウ縮小後もユーザーの調整幅に近い値を保てる
+    ため、**実装側が正**と判断。ARCHITECTURE.md の当該文を
+    「非数などの壊れた値は既定値へフォールバックし、範囲外の値は
+    現在の[最小, 最大]範囲へクランプする」の趣旨に修正すること
+- 判定: 上記1件の docs 修正をもって合格。実装コード・テストへの
+  差し戻しは無し
