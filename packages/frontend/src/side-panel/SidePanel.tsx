@@ -36,6 +36,10 @@ export interface SidePanelProps {
  * ドラッグ、またはハンドルにフォーカスして←→キー）。幅の状態管理・
  * 永続化は `useSidePanelResize` に切り出し、このコンポーネントは
  * ハンドルの描画と `storage` の解決（既定 `getBrowserStorage()`）だけを持つ。
+ *
+ * ドラッグ中（`resizing`）はルート要素に `side-panel--resizing` 修飾
+ * クラスを足し、`styles.css` 側でパネル配下のテキスト選択を止める
+ * （Issue #391。左ボタン以外でのドラッグ開始も同 Issue で防ぐ）。
  */
 export function SidePanel({
   title,
@@ -60,7 +64,11 @@ export function SidePanel({
 
   return (
     <div
-      className="side-panel nodrag nowheel nopan"
+      className={
+        resizing
+          ? "side-panel nodrag nowheel nopan side-panel--resizing"
+          : "side-panel nodrag nowheel nopan"
+      }
       role="dialog"
       aria-label={ariaLabel}
       data-testid="side-panel"
