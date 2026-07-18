@@ -959,9 +959,11 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       `hasOwnProperty`ガードを追加して解消。プロトタイプ由来11キーの
       網羅テストで確認)
       [#371](https://github.com/morichikawa/chainviz/issues/371)
-- [ ] 用語集パネルのフォントサイズを変更できるようにする
+- [x] 用語集パネルのフォントサイズを変更できるようにする
       (ユーザーからの要望。フォントサイズ変更UIの要否・設定の永続化要否・
-      他のサイドパネルへの適用範囲が論点)
+      他のサイドパネルへの適用範囲が論点)。ヘッダーのA−/現在値/A+
+      ステッパー(5段階0.85〜1.5)で実装。3パネル(contractSource/glossary/
+      commsLog)共通、localStorage永続化(`chainviz.sidePanel.fontScale.v1`)
       [#377](https://github.com/morichikawa/chainviz/issues/377)
 - [x] UI-C-06: workbenchのETH_RPC_URLがdev collectorプロキシ(4001)に固定で
       UI E2E単独実行時に到達できない
