@@ -854,12 +854,22 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       追随していなかったことが判明し修正。UI-CMD-07(削除ボタンが
       stableにならない)は原因不明のまま再現できず、Issue #373として分割)
       [#346](https://github.com/morichikawa/chainviz/issues/346)
-- [ ] UI-CMD-07: ワークベンチ削除ボタンがE2E上でstableにならないことがある
-      (原因不明)
-      (Issue #346から分割。クリーンな環境で6回連続実行しても再現できず、
-      preserveDraggingState(Issue #328)のコードレビューでも断定できる
-      原因が見つからなかった。着手時はまずchainviz-detectiveによる原因
-      調査から始める。クリーンな独立した合成環境で行うことが望ましい)
+- [x] UI-CMD-07: ワークベンチ削除ボタンがE2E上でstableにならないことがある
+      (Issue #346から分割。chainviz-detectiveが独立した合成環境で原因を
+      特定: 実際は削除ボタンがビューポート外にありPlaywrightのクリックが
+      永久リトライしていた。根本原因はReact Flowの`fitView` propが
+      ワールドステート到着前から存在するチェーンリボン1枚だけに対して
+      発火し、zoomが最大値に張り付いたまま再フィットされないタイミング
+      競合。`fitView` propをやめ、最初のスナップショット反映・全ノード
+      計測完了後に`fitView({ maxZoom: 1 })`を1回だけ呼ぶ方式に変更して
+      解消。この本質修正自体はQAが実Docker+実ブラウザで修正前後の挙動を
+      確認済み。e2e側は`support/viewport.ts`の`fitCanvasView`ヘルパーを
+      UI-MULTI-01・cleanup.tsの安全網に適用したが、QA検証でUI-MULTI-01への
+      適用箇所(pageBロード後にdiffで追加されたカードが対象)に回帰が見つかり
+      (フィット直後、対象カードがReact Flowの内部計測ストアへ未反映のまま
+      フィットすると対象が視野外になる窓がある)、`fitCanvasView`を
+      「対象が実際に視野内へ入るまでフィットボタンを再試行する」方式に
+      差し戻し修正した)
       [#373](https://github.com/morichikawa/chainviz/issues/373)
 - [ ] チェーンリボンの「親ブロック」行ホバー強調が実質使えない
       (ホバーが約200msで閉じる。Issue #313のUX設計中にchainviz-uxが実測で

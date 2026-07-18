@@ -16,6 +16,7 @@ import {
   submitAddWorkbench,
 } from "./support/operations.js";
 import { serviceEntityId } from "./support/serviceIds.js";
+import { fitCanvasView } from "./support/viewport.js";
 
 /** compose起動の6ノードカードが揃うまで待つ(baseline確立。#200と同じ理由)。 */
 async function waitForBaselineNodes(page: Page): Promise<void> {
@@ -82,7 +83,15 @@ test.describe("UI-MULTI 複数クライアント・再接続シナリオ", () =>
       );
 
       await test.step("B でそのワークベンチを削除する", async () => {
-        await pageB.getByTestId(`infra-card-remove-${workbenchId}`).click();
+        // pageB のロード後に pageA が追加したワークベンチは、pageB 側の
+        // 初期フィットの対象外(Issue #373)。実座標クリック前にフィット
+        // ボタンで視野に収める(support/viewport.ts 参照。削除ボタン自体を
+        // 対象として渡し、視野内へ入ったことを確認してから進める)。
+        const removeButton = pageB.getByTestId(
+          `infra-card-remove-${workbenchId}`,
+        );
+        await fitCanvasView(pageB, removeButton);
+        await removeButton.click();
       });
 
       await test.step("A と B の両方からカードが消える", async () => {
