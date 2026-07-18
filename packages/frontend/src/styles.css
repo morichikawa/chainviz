@@ -1475,13 +1475,16 @@ button.mempool-panel__row:hover {
    全高を使う（コード全文のような分量のあるコンテンツを収めるため）。
    「静かな夜のガラス」方針（Issue #327）のポップオーバー地（--glass-popover-bg。
    ContractListPanel 等の浮遊パネルより不透明にし、長文を読む間の可読性を
-   優先する）を使う。 */
+   優先する）を使う。
+   幅は Issue #362 でユーザーがリサイズできるようにした。唯一の出どころは
+   `side-panel/sidePanelWidth.ts` の定数 + `SidePanel.tsx` のインライン
+   style（`width`）とし、ここでは固定幅を持たない。`max-width: 90vw` は
+   ウィンドウ縮小時のライブなガードとして残す。 */
 .side-panel {
   position: absolute;
   top: 0;
   right: 0;
   bottom: 0;
-  width: 420px;
   max-width: 90vw;
   z-index: 8;
   display: flex;
@@ -1493,6 +1496,33 @@ button.mempool-panel__row:hover {
   box-shadow:
     -8px 0 28px rgba(0, 0, 0, 0.45),
     inset 1px 0 0 var(--glass-highlight);
+}
+
+/* リサイズハンドル（Issue #362）。`.side-panel` が position: absolute
+   なのでこれを基準に左端へ重ねて配置し、ヘッダー/ボディのフレックス
+   レイアウトには影響しない。ヒット領域はハンドル自体（8px）より
+   広めに取り、細い線でも掴みやすくする。 */
+.side-panel__resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  width: 9px;
+  cursor: ew-resize;
+  touch-action: none;
+  z-index: 1;
+  background: transparent;
+  border-radius: 4px;
+}
+
+.side-panel__resize-handle:hover,
+.side-panel__resize-handle--active {
+  background: var(--glass-highlight);
+}
+
+.side-panel__resize-handle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .side-panel__header {
