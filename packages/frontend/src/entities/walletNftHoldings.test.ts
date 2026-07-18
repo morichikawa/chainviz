@@ -7,7 +7,7 @@ function nftContract(overrides: Partial<ContractEntity> = {}): ContractEntity {
     kind: "contract",
     address: `0x${"c".repeat(40)}`,
     chainType: "ethereum",
-    nft: { symbol: "CVN" },
+    nft: { symbol: "CVNDEMO" },
     ...overrides,
   };
 }
@@ -34,7 +34,7 @@ describe("resolveWalletNftHoldings (Issue #315)", () => {
     expect(resolveWalletNftHoldings(wallet, [contract])).toEqual([
       {
         contractAddress: contract.address,
-        symbol: "CVN",
+        symbol: "CVNDEMO",
         contractName: "ChainvizNFT",
         tokenId: "1",
       },
@@ -65,7 +65,7 @@ describe("resolveWalletNftHoldings (Issue #315)", () => {
     expect(resolveWalletNftHoldings(upper, [contract])).toEqual([
       {
         contractAddress: contract.address,
-        symbol: "CVN",
+        symbol: "CVNDEMO",
         contractName: undefined,
         tokenId: "1",
       },
@@ -189,6 +189,6 @@ describe("resolveWalletNftHoldings (Issue #315)", () => {
 
 describe("formatNftChipLabel", () => {
   it("formats as 'SYMBOL #tokenId'", () => {
-    expect(formatNftChipLabel({ symbol: "CVN", tokenId: "1" })).toBe("CVN #1");
+    expect(formatNftChipLabel({ symbol: "CVNDEMO", tokenId: "1" })).toBe("CVNDEMO #1");
   });
 });

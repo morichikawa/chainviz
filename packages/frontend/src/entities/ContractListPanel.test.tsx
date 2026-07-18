@@ -62,11 +62,11 @@ describe("ContractListPanel", () => {
   it("appends the token symbol when present", () => {
     const address = `0x${"c".repeat(40)}`;
     wrap(
-      [{ nodeId: address, status: "deployed", name: "ChainvizToken", address, tokenSymbol: "CVZ" }],
+      [{ nodeId: address, status: "deployed", name: "ChainvizToken", address, tokenSymbol: "CVZDEMO" }],
       () => {},
     );
     const row = screen.getByTestId(`contract-list-row-${address}`);
-    expect(row.textContent).toContain("CVZ");
+    expect(row.textContent).toContain("CVZDEMO");
   });
 
   it("shows a deploying row with the ghost's label", () => {

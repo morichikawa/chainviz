@@ -7,7 +7,7 @@ const TOKEN_ENTRY: ContractCatalogEntry = {
   catalogKey: "ChainvizToken",
   displayName: { ja: "ChainvizToken", en: "ChainvizToken" },
   description: { ja: "最小のERC20", en: "minimal ERC20" },
-  token: { symbol: "CVZ", decimals: 18 },
+  token: { symbol: "CVZDEMO", decimals: 18 },
   constructorArgs: [{ name: "initialSupply", type: "uint", unit: "token" }],
   functions: [],
 };
@@ -94,7 +94,7 @@ describe("deriveDeployedContracts", () => {
         contract({ name: "ChainvizToken", catalogKey: "ChainvizToken", token: undefined }),
       ];
       const candidates = deriveDeployedContracts(entities, catalog);
-      expect(candidates[0].token).toEqual({ symbol: "CVZ", decimals: 18 });
+      expect(candidates[0].token).toEqual({ symbol: "CVZDEMO", decimals: 18 });
     });
 
     it("prefers the entity's observed token metadata over the catalog's static value", () => {
@@ -102,11 +102,11 @@ describe("deriveDeployedContracts", () => {
         contract({
           name: "ChainvizToken",
           catalogKey: "ChainvizToken",
-          token: { symbol: "CVZ2", decimals: 6 },
+          token: { symbol: "CVZDEMO2", decimals: 6 },
         }),
       ];
       const candidates = deriveDeployedContracts(entities, catalog);
-      expect(candidates[0].token).toEqual({ symbol: "CVZ2", decimals: 6 });
+      expect(candidates[0].token).toEqual({ symbol: "CVZDEMO2", decimals: 6 });
     });
 
     it("passes a malformed observed token through as-is without falling back to the catalog value", () => {
@@ -121,11 +121,11 @@ describe("deriveDeployedContracts", () => {
         contract({
           name: "ChainvizToken",
           catalogKey: "ChainvizToken",
-          token: { symbol: "CVZ", decimals: -1 },
+          token: { symbol: "CVZDEMO", decimals: -1 },
         }),
       ];
       const candidates = deriveDeployedContracts(entities, catalog);
-      expect(candidates[0].token).toEqual({ symbol: "CVZ", decimals: -1 });
+      expect(candidates[0].token).toEqual({ symbol: "CVZDEMO", decimals: -1 });
     });
 
     it("leaves token undefined for a contract whose catalog entry has no token metadata (e.g. Counter)", () => {

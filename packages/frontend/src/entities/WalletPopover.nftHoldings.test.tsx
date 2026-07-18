@@ -26,7 +26,7 @@ function nftContract(overrides: Partial<ContractEntity> = {}): ContractEntity {
     kind: "contract",
     address: `0x${"c".repeat(40)}`,
     chainType: "ethereum",
-    nft: { symbol: "CVN" },
+    nft: { symbol: "CVNDEMO" },
     ...overrides,
   };
 }
@@ -71,7 +71,7 @@ describe("WalletPopover NFT holdings (Issue #315)", () => {
       `wallet-popover-nft-${wallet().address}-${nftAddress}-1`,
     );
     expect(item.textContent).toBe(
-      `ChainvizNFT (${nftAddress.slice(0, 8)}…${nftAddress.slice(-4)})CVN #1`,
+      `ChainvizNFT (${nftAddress.slice(0, 8)}…${nftAddress.slice(-4)})CVNDEMO #1`,
     );
   });
 

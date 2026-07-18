@@ -209,14 +209,14 @@ describe("WalletPopover token balances (ARCHITECTURE.md §6.7)", () => {
           contract({
             address: tokenAddress,
             name: "ChainvizToken",
-            token: { symbol: "CVZ", decimals: 18 },
+            token: { symbol: "CVZDEMO", decimals: 18 },
           }),
         ],
       ]),
     );
     const item = screen.getByTestId(`wallet-token-${wallet().address}-${tokenAddress}`);
     // Issue #218 派生: 同名トークンを区別できるよう短縮アドレスが常に併記される。
-    expect(item.textContent).toBe("ChainvizToken (0xaaaaaa…aaaa)5.0000 CVZ");
+    expect(item.textContent).toBe("ChainvizToken (0xaaaaaa…aaaa)5.0000 CVZDEMO");
   });
 
   it("distinguishes two same-named token contracts by address (Issue #218 派生)", () => {
@@ -233,7 +233,7 @@ describe("WalletPopover token balances (ARCHITECTURE.md §6.7)", () => {
           contract({
             address: addressA,
             name: "ChainvizToken",
-            token: { symbol: "CVZ", decimals: 18 },
+            token: { symbol: "CVZDEMO", decimals: 18 },
           }),
         ],
         [
@@ -241,7 +241,7 @@ describe("WalletPopover token balances (ARCHITECTURE.md §6.7)", () => {
           contract({
             address: addressB,
             name: "ChainvizToken",
-            token: { symbol: "CVZ", decimals: 18 },
+            token: { symbol: "CVZDEMO", decimals: 18 },
           }),
         ],
       ]),
