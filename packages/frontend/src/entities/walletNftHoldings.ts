@@ -77,7 +77,7 @@ export function resolveWalletNftHoldings(
 
 /**
  * NFT保有チップ（`WalletCard`）／ポップオーバーの保有行（`WalletPopover`）に
- * 出す「SYMBOL #tokenId」形式のラベル（設計メモ「CVN #1」形式）。
+ * 出す「SYMBOL #tokenId」形式のラベル（設計メモ「CVNDEMO #1」形式）。
  */
 export function formatNftChipLabel(
   holding: Pick<WalletNftHolding, "symbol" | "tokenId">,
