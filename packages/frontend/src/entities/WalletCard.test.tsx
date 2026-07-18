@@ -74,6 +74,23 @@ describe("WalletCard", () => {
     expect(chip.getAttribute("data-status")).toBe("pending");
   });
 
+  it("does not render data-block-hash on a pending tx chip (Issue #388)", () => {
+    const t = tx("0xdeadbeef00000000", "pending");
+    renderCard(data({ entity: wallet({ recentTxHashes: [t.hash] }), transactions: [t] }));
+    const chip = screen.getByTestId(`wallet-tx-chip-${t.hash}`);
+    expect(chip.hasAttribute("data-block-hash")).toBe(false);
+  });
+
+  it("exposes the full blockHash via data-block-hash once the tx is included (Issue #388)", () => {
+    const t = {
+      ...tx("0xabc1230000000000", "included"),
+      blockHash: `0x${"f".repeat(64)}`,
+    };
+    renderCard(data({ entity: wallet({ recentTxHashes: [t.hash] }), transactions: [t] }));
+    const chip = screen.getByTestId(`wallet-tx-chip-${t.hash}`);
+    expect(chip.getAttribute("data-block-hash")).toBe(t.blockHash);
+  });
+
   it("adds the settling class to a tx currently in the settling set", () => {
     const t = tx("0xabc1230000000000", "included");
     renderCard(
