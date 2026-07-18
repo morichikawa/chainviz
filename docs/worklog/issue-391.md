@@ -39,3 +39,33 @@
   `pnpm --filter @chainviz/frontend test`を実行し、実際に落ちることを
   確認する。その後ガード節を実装し、同テストが通ることを確認する
   (CLAUDE.mdの「直したはずで済ませない」運用ルールに従う)。
+
+### 2026-07-18 実装完了
+
+- 担当: chainviz-frontend
+- 実施内容:
+  1. `useSidePanelResize.ts`の`handlePointerDown`冒頭に
+     `if (event.button !== 0) return;`を追加。左ボタン以外での
+     ドラッグ開始を防いだ。回帰テストとして
+     `useSidePanelResize.test.ts`に「右ボタンpointerdownでは
+     resizingにならず幅も変化しない」ケースを追加(`pointerDownEvent`
+     ヘルパーに`button`引数を追加)。
+  2. `resizing`中は`SidePanel.tsx`のルート要素に`side-panel--resizing`
+     修飾クラスを追加し、`styles.css`に
+     `.side-panel--resizing, .side-panel--resizing * { user-select: none; }`
+     を追加。`SidePanel.resize.test.tsx`に、ドラッグ中はクラスが付与され
+     pointerup後に外れることを確認するケースと、右ボタン
+     pointerdownではクラスも幅変化も起きないことを確認する統合レベルの
+     ケースを追加。
+- 再現確認: いずれの修正も、テスト追加後・修正前の状態で実際に
+  `pnpm vitest run`が失敗することを確認してから実装し、実装後に
+  グリーンになることを確認した(修正前後の両方を自分の手で確認する
+  CLAUDE.mdの運用ルールに従った)。
+- 確認結果: `pnpm lint`・`pnpm build`・`pnpm test`をリポジトリ全体
+  (shared/collector/frontend/e2e)に対して実行し、いずれも成功
+  (frontend 210 test files / 2733 tests 全通過)。
+- コミットは、設計メモ(docs)・ボタンガード修正+テスト(fix)・
+  テキスト選択抑止修正+テスト(fix)の3つに分けた。
+- 次の担当への申し送り: `docs/PLAN.md`のIssue #391チェックボックス
+  更新は統括の依頼によりまだ行っていない。レビュー・QAを経てPRが
+  マージされる運用に従うこと。
