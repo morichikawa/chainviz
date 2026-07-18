@@ -33,3 +33,25 @@
     返ること)もあわせて書く
   - docs 配下のみの変更のため、CLAUDE.md の例外規定に基づき
     chainviz-qa は省略(reviewer 合格のみ)
+
+### 2026-07-18 Issue #371 実装設計メモ
+
+- 担当: frontend
+- ブランチ: issue-371-i18n-prototype-guard
+- 方針:
+  - `packages/frontend/src/i18n/i18n.ts` の `translate()` を、
+    `messages[key]` への無ガードアクセスから
+    `Object.prototype.hasOwnProperty.call(messages, key)` で自己プロパティを
+    確認するガードに変更する。ガードが false のときは既存の「未知キーは
+    キー文字列を返す」契約どおり `key` を返す。同ファイル内の `format()`
+    (`params` に対する同種のガード)と実装パターンを揃える
+  - `messages` はモジュールスコープの単一オブジェクトで再代入されないため、
+    ガード対象は関数引数の `key`(`MessageKey` 型の文字列)のみでよい。
+    `entry` を取り出した後に `entry[lang]` を読む処理自体は変更しない
+  - 修正前に `translate("toString", "ja")` 等を実行し、実際に `undefined`
+    が返る(契約違反)ことを手元で確認してから着手する。修正後は同じ入力で
+    `"toString"` のようにキー文字列がそのまま返ることを確認する
+- 影響範囲: `translate()` の呼び出し元は `LanguageProvider.tsx` の1箇所
+  (レビュー時点で確認済み)のみで、通常の呼び出しは型 `MessageKey` により
+  プロトタイプ由来キーを渡せないため、実装ロジック側への挙動変化はない
+  (テストコードでの型キャスト経由の呼び出しのみ影響)
