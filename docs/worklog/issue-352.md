@@ -283,6 +283,48 @@ shared の型変更は本設計で完了済み。**collector と frontend は互
 確認を追加する。失敗ケースの決定的な実環境E2Eは作りにくいためユニット
 テスト側で担保し、E2Eには含めない（設計メモ §4.2の指示どおり）。
 
+### 2026-07-18 Issue #352 実装(frontend)完了
+
+- 担当: frontend
+- ブランチ: issue-352-comms-log-rpc-response-frontend（cherry-pick合流用の
+  一時ブランチ。collector側の実装と並行に進めた）
+- 内容: 上記の設計メモどおりに実装した。
+  - `comms-log/commsLogEntry.ts`: `CommsLogOperationEntry` に
+    `outcome?: "ok" | "error"` / `durationMs?: number` を追加
+  - `comms-log/deriveCommsLogEntries.ts`: `operationObserved` ケースで
+    `OperationEdge` の両フィールドをそのまま写す
+  - `comms-log/commsLogText.ts`: `describeCommsLogEntry` の operation
+    ケースに `operationSuffix`（設計メモの4パターン）を追加する純関数
+    `describeOperationSuffix` を新設
+  - `i18n/messages.ts`: `commsLog.operation.duration` /
+    `outcomeOk[Duration]` / `outcomeError[Duration]` を追加
+  - `side-panel/CommsLogEntryRow.tsx` / `styles.css`: `operationSuffix.tone`
+    に応じて既存CSS変数（成功=`--synced`、失敗=tx失敗と同じ`#ffb4b4`）で
+    色分けし、aria-label を付与
+  - `websocket/mockData.ts`: `mockOperationObserved` が通し番号から
+    outcome/durationMs を決定的に生成するように変更
+  - `packages/e2e/SCENARIOS.md` の UI-LOG-02 と
+    `packages/e2e/src/ui/comms-log.spec.ts` に、所要時間・成功表示の確認を
+    追記
+  - 各変更にユニットテストを追加（
+    `deriveCommsLogEntries.operation.test.ts` に追加、
+    `commsLogText.operationOutcome.test.ts` /
+    `CommsLogEntryRow.operationOutcome.test.tsx` /
+    `mockData.operationOutcome.test.ts` を新規作成。CLAUDE.mdのテスト分割
+    方針に従い、既存の基本ケーステストとは別ファイルに分けた）
+  - `entities/operationEdge.ts`（キャンバスの操作パルス）は設計判断どおり
+    変更していない
+- 決定事項・注意点:
+  - `pnpm lint && pnpm build && pnpm test`（shared/collector/frontend/e2e
+    全パッケージ）が通ることを確認済み
+  - i18n の英語文言（`commsLog.operation.outcomeOk`/`outcomeError`/
+    `outcomeOkDuration`/`outcomeErrorDuration` の en 訳）は
+    chainviz-i18n のレビュー対象。"Succeeded"/"Failed" とした語感が
+    他のUI文言と馴染むかは未確認
+  - `docs/PLAN.md` のIssue #352チェックボックスは、collector側の実装も
+    含めた本Issue全体が完了してから更新する（本コミット時点では未更新。
+    frontend単独では該当箇所の一部でしかないため）
+
 ## 6. 反映済みドキュメント
 
 - `docs/ARCHITECTURE.md`: `OperationEdge` スキーマ記述、§12.5(通信ログ
