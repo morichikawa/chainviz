@@ -65,8 +65,8 @@ describe("ETHEREUM_OPERATION_CATALOG", () => {
 
   it("gives ChainvizToken token metadata matching the deployed source's symbol/decimals (Issue #219)", () => {
     const entry = getOperationCatalogEntry("ChainvizToken");
-    // profiles/ethereum/contracts/src/ChainvizToken.sol: symbol="CVZ", decimals=18.
-    expect(entry?.token).toEqual({ symbol: "CVZ", decimals: 18 });
+    // profiles/ethereum/contracts/src/ChainvizToken.sol: symbol="CVZDEMO", decimals=18.
+    expect(entry?.token).toEqual({ symbol: "CVZDEMO", decimals: 18 });
   });
 
   it("gives Counter no token metadata (it is not a token contract)", () => {
