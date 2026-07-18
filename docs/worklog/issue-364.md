@@ -287,3 +287,18 @@
   - `docs/ARCHITECTURE.md`の該当2箇所（2690行目・2735行目）・
     collector/shared/e2eの表記統一はこのブランチの対象外（node-env担当・
     別コミットで対応予定）
+
+### 2026-07-18 Issue #364 node-env/frontend合流・残作業(統括)
+
+- 担当: 統括
+- 内容: node-env実装ブランチとfrontend実装ブランチ(cherry-pick)を合流させ、
+  frontendの申し送りどおり最終整合性を確認した。
+  - `catalog.json`の再生成結果を`grep`で確認: `symbol`は`CVZDEMO`/
+    `CVNDEMO`に更新済み
+  - `operationCatalog.test.ts`の「matches the real catalog.json ABI」を
+    含め`pnpm lint && pnpm build && pnpm test`を全パッケージで実行し、
+    全通過を確認(shared 75/collector 1636/e2e 179/frontend 2650)
+  - node-env・frontend担当の分担に残っていた「表記統一の追随」の残り分
+    (collector 8ファイル・shared 2ファイル・e2eのコメント2箇所)と
+    `docs/ARCHITECTURE.md`の該当2箇所を統括が実施(機械的な文字列置換の
+    ため実装担当への差し戻しは行わず直接対応。2コミットに分割)
