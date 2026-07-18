@@ -51,3 +51,41 @@
      `preventDefault` が呼ばれる(トグルや条件分岐でスキップされない)
      ことを確認する。本コンポーネントにトグル動作は無く常に同じ用語で
      開き直すが、押下ごとにスクロール抑止が効くことを固定する。
+
+#### レビュー記録(reviewer)
+
+- 担当: reviewer
+- 結果: **合格**
+- 確認内容:
+  - 修正の妥当性: `GlossaryTerm.tsx` の `onKeyDown` で Enter/Space 以外は
+    早期 return し、該当キーのみ `event.preventDefault()` を呼んでから
+    `openPanel(event)` を実行する構造になっている。`openPanel` 本体
+    (クリックと共用)には `preventDefault` を入れておらず、クリック経路への
+    影響は無い。固定値も無条件 catch も無く、既存の `stopPropagation` /
+    `close()` の挙動は不変。コード上のコメントで Issue 番号と理由
+    (role="button" の span はネイティブ button と違い Space の既定スクロール
+    を自動抑止しない)が説明されている。
+  - 回帰テストの検出力: レビュー時に作業ツリー上で `GlossaryTerm.tsx` のみを
+    修正前(`826f5c7^`)の状態に一時的に戻して
+    `GlossaryTerm.panelIntegration.test.tsx` を実行し、Issue #353 関連の
+    3テスト(Space/Enter の preventDefault、パネル既開時の再押下)が実際に
+    失敗する(戻り値 `true` = 未キャンセル)ことを確認。HEAD に復元後は
+    19テスト全て成功。テストが実装の壊れを検出できることを独立に検証した。
+  - テスト強化3観点: 無関係キー(Tab/矢印/文字キー)で preventDefault が
+    呼ばれないこと、クリック経路の戻り値が `true` のままであること、
+    パネル既開状態での再度の Space 押下でも抑止が効くこと。いずれも
+    `fireEvent` の戻り値(dispatchEvent の戻り値)で副作用そのものを検証して
+    おり、実装をなぞるだけの無意味なテストにはなっていない。
+  - コミット粒度: `git log main..HEAD` は4コミット(実装+回帰テスト /
+    実装worklog / テスト強化 / テスト強化worklog)で、いずれも
+    Conventional Commits 形式。修正とその回帰テストが同一コミットなのは
+    「ロジック変更と対応テストを同じ変更で書く」ルールに沿っており適切。
+  - `pnpm lint` / `pnpm build` / `pnpm test` をリポジトリ全体で実行し、
+    全パッケージ通過(shared 74 / collector 1597 / e2e 179 /
+    frontend 2630、いずれも全件成功)を確認。
+- 軽微な指摘(差し戻し不要): 本ファイルには「着手前」の設計メモ・テスト強化
+  メモのみで、実装完了後の実施記録の節が無い。「修正前に再現→修正後に解消」
+  の確認実施は `docs/WORKLOG.md` の索引行にのみ記述されている。索引は1行
+  要約、詳細はIssueファイル側という役割分担からすると、実施記録は本ファイル
+  に書くのが望ましかった。ただし再現確認の事実自体はレビューで独立に検証
+  済みのため、本Issueでは追記までは求めない(次回以降の改善点)。
