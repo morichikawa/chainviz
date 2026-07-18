@@ -28,3 +28,398 @@
     未着手。着手時に設計判断が必要(Issue 本文にも明記あり)
   - docs 配下のみの変更のため、CLAUDE.md の例外規定に基づき
     chainviz-qa は省略(reviewer 合格のみ)
+
+### 2026-07-18 設計メモ(designer)
+
+- 担当: designer
+- ブランチ: issue-369-compose-project-env
+- 内容: composeProject を環境変数で上書きできるようにするための設計。
+  ハードコード箇所の洗い出し・環境変数の命名・derived な名前
+  (ネットワーク/ボリューム)の扱い・後方互換の方針を決定した。
+  実装コードはまだ書いていない(collector 担当へ引き継ぐ)。
+
+#### 現状調査の結果(ハードコード箇所の洗い出し)
+
+`packages/collector/src` の非テストコードで `"chainviz-ethereum"` を
+ハードコードしているのは **`adapters/ethereum/node-lifecycle.ts` の
+`DEFAULTS` オブジェクト(1箇所に集約済み)のみ**:
+
+- `composeProject: "chainviz-ethereum"`
+- `networkName: "chainviz-ethereum_chain"`
+- `genesisVolume: "chainviz-ethereum_genesis"`
+- `clpeerVolume: "chainviz-ethereum_clpeer"`
+- `elpeerVolume: "chainviz-ethereum_elpeer"`
+
+上記以外は動的で、修正不要:
+
+- `docker/observe.ts` の `computeStableId` はコンテナのラベル
+  (`com.docker.compose.project`)を実測で読むため、別プロジェクト名でも
+  そのまま追従する(A 層の観測はプロジェクト名でフィルタしていない)
+- `recoverManagedContainers()` / `findWorkbenchContainer()` /
+  `existingWorkbenchServiceNames()` のラベルフィルタは
+  `this.cfg.composeProject` を参照しており、config 経由で切り替わる
+- `node-lifecycle.ts` の 17 行目・379 行目のコメント内
+  `"chainviz-ethereum/<service>"` は例示(実装時に「既定の compose project
+  の場合」と分かる表現へ直すとよいが必須ではない)
+
+スコープ外(今回は変更しない):
+
+- `packages/e2e/src/helpers/docker.ts`・
+  `packages/e2e/src/ui/support/serviceIds.ts` の `"chainviz-ethereum"` は
+  「実プロファイル環境を対象にした E2E テスト」の前提値であり、Issue #369
+  の対象(`packages/collector`)外。E2E を合成環境で回す必要が出たら別 Issue
+  とする
+- `packages/frontend` に該当なし(コメント内の言及のみ)
+
+#### 設計
+
+**環境変数: `CHAINVIZ_COMPOSE_PROJECT`**
+
+- 既存の collector 実行時設定(`CHAINVIZ_COLLECTOR_PORT` /
+  `CHAINVIZ_PROXY_PORT` / `CHAINVIZ_PROXY_TARGET` /
+  `CHAINVIZ_WORKBENCH_RPC_HOST` / `CHAINVIZ_ETHEREUM_PROFILE_DIR`)と同じ
+  `CHAINVIZ_` プレフィックスの命名に合わせる
+- `COMPOSE_PROJECT_NAME` そのものは使わない。Docker Compose CLI 自身が
+  解釈する変数のため、collector と同じシェルで `docker compose` を操作
+  したときに双方へ効いてしまう。collector 専用の上書き口として分離する
+- `CHAINVIZ_ETHEREUM_COMPOSE_PROJECT` も検討したが不採用。collector
+  プロセスは現状 1 環境のみを観測・管理し、`resolve*` 系はプロセスレベル
+  設定として `CHAINVIZ_<対象>` の命名で統一されている。マルチプロファイル
+  対応時は設定体系ごと見直す(CLAUDE.md「先回り実装をしない」)
+
+**解決関数: `resolveComposeProject()`(`packages/collector/src/index.ts`)**
+
+既存の `resolvePort()` / `resolveProxyTarget()` と同じパターン:
+
+```ts
+export function resolveComposeProject(
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const raw = env.CHAINVIZ_COMPOSE_PROJECT;
+  if (raw === undefined || raw.trim() === "") return DEFAULT_COMPOSE_PROJECT;
+  return raw.trim();
+}
+```
+
+- 既定値 `DEFAULT_COMPOSE_PROJECT = "chainviz-ethereum"` は Ethereum
+  プロファイルの語彙なので `adapters/ethereum/node-lifecycle.ts` 側で
+  export し、`index.ts` はそれを import して使う(ChainAdapter 境界)
+- `main()` で lifecycle config に `composeProject: resolveComposeProject()`
+  を渡す
+
+**derived な名前の導出(`node-lifecycle.ts`)**
+
+`networkName` / `genesisVolume` / `clpeerVolume` / `elpeerVolume` は
+Compose の命名慣習 `<project>_<リソースキー>` に従い composeProject から
+導出する。固定オブジェクト `DEFAULTS` を、composeProject を受け取って
+既定 config を返す関数(例 `defaultConfigFor(composeProject)`)に変える:
+
+- ``networkName: `${project}_chain` ``、``genesisVolume:
+  `${project}_genesis` ``、``clpeerVolume: `${project}_clpeer` ``、
+  ``elpeerVolume: `${project}_elpeer` ``
+- イメージ名(rethImage 等)は project に依存しないので従来どおり固定
+- config で `networkName` 等を明示指定した場合は導出値より優先する
+  (既存の個別上書き口を維持。テストで使われている)
+- **前提条件**(固定値ではなく導出にした理由と成立条件):
+  `profiles/ethereum/docker-compose.yml` が network `chain`・volume
+  `genesis`/`clpeer`/`elpeer` に固定の `name:` を付けていないこと。
+  現状はトップレベルの `name: chainviz-ethereum` のみで、これは
+  `docker compose -p <別名>` / `COMPOSE_PROJECT_NAME` で上書きされ、
+  network/volume は `<project>_<キー>` に展開される。この前提は実装時に
+  コード内コメントにも明記すること(CLAUDE.md「固定値の前提条件を明記」)
+
+**コンストラクタの注意点**
+
+現状の `this.cfg = { ...DEFAULTS, ...rest }` は、`composeProject:
+undefined` という**キーだけ存在して値が undefined** の config を渡されると
+既定値を undefined で潰す。実装時は
+`const project = config.composeProject ?? DEFAULT_COMPOSE_PROJECT;` の
+ように先に project を確定させてから `defaultConfigFor(project)` を
+スプレッドの土台にし、undefined 値のキーが既定を潰さない形にする
+(`resolveComposeProject()` は常に string を返すので `main()` 経路では
+起きないが、テスト・将来の呼び出し元への安全のため)。
+
+**後方互換**
+
+- 環境変数未設定・空文字なら従来どおり `chainviz-ethereum` とその派生名
+  (`chainviz-ethereum_chain` 等)になり、挙動は一切変わらない
+- `packages/shared` の型変更は**不要**(`EthereumNodeLifecycleConfig` は
+  collector 内部の型。ワールドステートのスキーマ・WS プロトコルに変化なし。
+  stableId の形式 `<project>/<service>` も従来から project 可変の設計)
+
+**テスト観点(実装担当が基本テストを書く。tester が強化)**
+
+- `resolveComposeProject()`: 未設定→既定 / 空白のみ→既定 / 設定→trim 値
+  (既存の `index.test.ts` の resolve 系テストと同じ流儀)
+- lifecycle: `composeProject` を上書きした config で
+  - `addNode` の ContainerSpec(コンテナ名・ラベル・binds のボリューム名・
+    networkName)と登録される stableId が上書き値に追従する
+  - `recoverManagedContainers()` / `findWorkbenchContainer()` のラベル
+    フィルタが上書き値で走査する
+  - `composeProject` 未指定なら従来値のまま(後方互換の回帰確認)
+
+**影響範囲(変更するファイル一覧)**
+
+- `packages/collector/src/index.ts` — `resolveComposeProject()` 追加、
+  `main()` で lifecycle config へ渡す
+- `packages/collector/src/adapters/ethereum/node-lifecycle.ts` —
+  `DEFAULT_COMPOSE_PROJECT` の export、`DEFAULTS` の関数化
+  (project からの導出)、コンストラクタの組み立て変更
+- `packages/collector/src/index.test.ts` /
+  `packages/collector/src/adapters/ethereum/node-lifecycle.test.ts`
+  (または 1 ファイル 1 責務に沿った新設テストファイル) — 上記テスト観点
+- `docs/ARCHITECTURE.md` — 「未確定のまま残す項目」の状態ストアの項に
+  確定(Issue #369)として記載済み(本設計フェーズで反映済み)
+
+- 決定事項・注意点:
+  - 環境変数名は `CHAINVIZ_COMPOSE_PROJECT`(理由は上記)
+  - network/volume 名は project 名から Compose 慣習で導出(個別上書きは維持)
+  - `packages/shared` の変更なし。frontend への影響なし
+  - e2e パッケージのハードコードは今回のスコープ外
+
+### 2026-07-18 実装設計メモ(collector)
+
+- 担当: collector
+- ブランチ: issue-369-compose-project-env
+- 設計メモ(上記)の方針をそのまま実装する。着手前に確認した実装上の
+  具体的な手順は以下のとおり。
+
+1. `node-lifecycle.ts`
+   - `DEFAULT_COMPOSE_PROJECT = "chainviz-ethereum"` を export する
+     （既定値の語彙をアダプタ側に置くという設計方針どおり）。
+   - 現行の固定 `DEFAULTS` オブジェクトを `defaultConfigFor(composeProject:
+     string)` 関数に置き換える。返り値は `composeProject` 自身を含む
+     `Omit<ResolvedConfig, "profileDir" | "ethRpcUrl">` 相当のオブジェクトで、
+     `networkName`/`genesisVolume`/`clpeerVolume`/`elpeerVolume` は
+     `` `${composeProject}_chain|_genesis|_clpeer|_elpeer` `` から導出し、
+     `rethImage`/`lighthouseImage`/`foundryImage` は project に依存しない
+     固定値のまま。
+   - コンストラクタは
+     `const project = config.composeProject ?? DEFAULT_COMPOSE_PROJECT;`
+     で先に project を確定させ、
+     `this.cfg = { ...defaultConfigFor(project), ...rest, composeProject:
+     project };` の順でスプレッドする（`rest` 内に
+     `composeProject: undefined` というキーが残っていても、最後に明示
+     代入することで既定を潰さないようにする。`networkName` 等の個別上書き
+     キーは `rest` のスプレッドが `defaultConfigFor` の導出値より後に来る
+     ため、従来どおり優先される）。
+   - 17 行目・379 行目付近のコメント中の `"chainviz-ethereum/<service>"`
+     という例示は、`DEFAULT_COMPOSE_PROJECT` を使った場合の例だと分かる
+     形に軽く補記する（必須ではないが紛らわしさの解消として実施）。
+
+2. `index.ts`
+   - `resolveComposeProject(env)` を `resolvePort`/`resolveProxyTarget` と
+     同じパターンで追加し、`node-lifecycle.js` から
+     `DEFAULT_COMPOSE_PROJECT` を import して既定値に使う。
+   - `main()` の `EthereumNodeLifecycle` 構築時に渡す config へ
+     `composeProject: resolveComposeProject()` を追加する。
+
+3. テスト
+   - `index.test.ts`: `resolveComposeProject` の未設定/空白/trim
+     テストを既存の `resolveProxyTarget` 等と同じ describe ブロックの
+     並びに追加する。
+   - lifecycle 側は 1 ファイル 1 責務の原則に従い、`node-lifecycle.test.ts`
+     を肥大化させず新規ファイル
+     `adapters/ethereum/node-lifecycle-compose-project.test.ts` に分離する
+     （`node-lifecycle-workbench-naming.test.ts` と同じ切り出しパターン）。
+     - `composeProject` を上書きした config で `addNode` の
+       ContainerSpec（コンテナ名・ラベル・binds のボリューム名・
+       networkName）と登録される stableId が上書き値に追従すること
+     - `recoverManagedContainers()` のラベルフィルタが上書き値で走査
+       すること
+     - `findWorkbenchContainer()`（`runWorkbenchOperation` 経由）の
+       ラベルフィルタが上書き値で走査すること
+     - `composeProject` 未指定なら従来値 `chainviz-ethereum` のままである
+       こと（回帰確認）
+     - コンストラクタの安全策として、`composeProject: undefined` という
+       キーを明示的に持つ config を渡しても既定値が保たれること
+       （設計メモの「注意点」で挙げられた回帰ケース）
+
+### 2026-07-18 テスト強化メモ(tester)
+
+- 担当: tester
+- ブランチ: issue-369-compose-project-env
+- 実装担当が書いた基本テスト（`index.test.ts` の resolveComposeProject
+  3ケース、`node-lifecycle-compose-project.test.ts` の9ケース）を土台に、
+  異常系・境界値の観点で以下を追加する。実装ロジックには手を入れず、
+  現状の挙動を固定するテストのみを追加する。
+- 追加する観点:
+  1. `resolveComposeProject`: タブ/改行のみの空白（`.trim()` が空白全般を
+     除去し既定へ落ちること）、内部の空白は trim されず保持されること、
+     Docker Compose project 名として不正な文字（大文字・アンダースコア・
+     ドット・スラッシュ）がサニタイズされずそのまま通ること（＝この関数は
+     検証を行わない設計であることの固定）。
+  2. `defaultConfigFor`（コンストラクタ経由）: `composeProject: ""` を
+     直接渡した場合の導出結果（`_chain`・`-reth3` 等の退化した名前になる。
+     `?? ` は空文字を捕捉しないため既定へ落ちない）を固定する。
+     resolveComposeProject 経由では空文字は既定に落ちるためこの経路は
+     通常発生しないが、コンストラクタの直接呼び出しに対する現状の挙動を
+     記録する。
+  3. 個別上書きキーと composeProject 上書きの全組み合わせ:
+     clpeerVolume/elpeerVolume の個別上書き、composeProject を上書きせず
+     networkName だけ上書きした場合、といった既存テスト未カバーの組み合わせ
+     での優先順位を固定する。
+  4. recover のラベルフィルタ整合: 回収対象のコンテナが cfg と異なる
+     project ラベルを持つ場合、stableId が cfg ではなくコンテナ自身の
+     ラベルから組み立てられること（`toManagedContainer` の防御的挙動）を
+     固定する。
+- 発見した懸念点（実装は変更しない。報告に留める）:
+  - resolveComposeProject / lifecycle とも composeProject の文字種を
+    検証・サニタイズしない。operator が不正な project 名を与えると
+    コンテナ名・ラベルが不正になり、Docker 作成時に失敗しうる。QA 用の
+    operator 向け上書き口であり Docker 側で fail-fast するため許容範囲と
+    判断するが、テストで現状挙動として固定した。
+  - コンストラクタの `config.composeProject ?? DEFAULT_COMPOSE_PROJECT`
+    は空文字を既定へ落とさない。main() 経路では resolveComposeProject が
+    空文字を既定に変換するため到達しないが、直接呼び出しでは退化した
+    導出名になる点をテストで固定した。
+
+### 2026-07-18 静的レビュー(reviewer)
+
+- 担当: reviewer
+- ブランチ: issue-369-compose-project-env
+- 内容: composeProject 環境変数上書き(設計→実装→テスト強化まで完了済み)の
+  静的レビュー。
+- レビュー結果: **合格**
+- 確認した内容:
+  1. **tester の懸念点2件(文字種未検証・空文字非ガード)の再確認 →
+     差し戻し不要の判断は妥当**。前提「Docker 側で fail-fast する」の
+     成立をコード上で確認した:
+     - 不正な文字(スラッシュ・空白等)を含む composeProject は、addNode の
+       最初の Docker 呼び出し `usedNetworkIps("<project>_chain")`
+       (dockerode の `network.inspect()`)が該当ネットワーク不在の 404 で
+       throw するか、そこを通過しても `createAndStart` のコンテナ名
+       バリデーション(Docker Engine の 400)で throw する。
+       `dockerode-operations.ts` の `createAndStart` は名前衝突(409)のみ
+       専用型に変換し、それ以外の失敗は「握りつぶさずそのまま伝播させる」
+       実装であること、`CommandHandler.handle` の catch が
+       `err.message` をそのまま `{ok:false, error}` に載せること
+       (汎用メッセージへのすり替え無し)を確認。静かに壊れる経路は無い
+     - 大文字を含む project 名は Docker Compose 自体が合成環境の作成時に
+       拒否するため、collector 側でも network 不在の 404 で顕在化する
+     - 空文字はコンストラクタ直接呼び出し経路のみで到達し得るが、
+       `main()` 経路は `resolveComposeProject()` が既定値へ変換して防ぐ。
+       仮に到達しても導出名 `-reth3` は Docker のコンテナ名規則
+       (先頭は英数字)に反し 400 で fail-fast する。テストで現状挙動が
+       固定されており許容範囲
+  2. **決め打ち導出の前提条件の明記** — `defaultConfigFor()` の doc
+     コメントに「`profiles/ethereum/docker-compose.yml` が network
+     `chain`・volume `genesis`/`clpeer`/`elpeer` に固定の `name:` を
+     付けていないこと」が明記され、本 worklog の設計メモ(前提条件の項)
+     および `docs/ARCHITECTURE.md` の確定記述にも同内容がある。実際の
+     `docker-compose.yml` を確認し、`name:` はトップレベルの
+     `chainviz-ethereum` のみで前提を満たすことを実測で確認
+  3. **エラー握りつぶし** — 本変更で追加された catch は無し。変更範囲に
+     接する既存の catch(`extractHost` の URL パース失敗→undefined、
+     addNode の beacon 失敗時ロールバック)はいずれも理由コメント付きで
+     問題なし
+  4. **`packages/shared` の型変更が無いこと** — diff 対象は
+     `packages/collector` と docs のみ。設計判断
+     (`EthereumNodeLifecycleConfig` は collector 内部型、WS プロトコル・
+     ワールドステートのスキーマに変化なし)どおり
+  5. **コミット粒度・形式** — 6コミットすべて Conventional Commits 形式。
+     「導出ロジック(feat)」「環境変数上書き口(feat)」「テスト強化(test)」
+     「docs 3件」が関心事ごとに分離され、各 feat コミットに対応する
+     ユニットテストが同一コミットに含まれている(CLAUDE.md のルールどおり)
+  6. **品質ゲート** — `pnpm lint` / `pnpm build` / `pnpm test` 全パッケージ
+     通過(shared 75 / e2e 179 / collector 1655 / frontend 2650)
+  7. その他 — ChainAdapter 境界の観点で、既定値 `DEFAULT_COMPOSE_PROJECT`
+     (Ethereum プロファイルの語彙)がアダプタ側(`node-lifecycle.ts`)に
+     置かれ、`index.ts` が import する向きになっていることを確認。
+     テストファイルも1ファイル1責務に沿って
+     `node-lifecycle-compose-project.test.ts` に分離されている
+- 決定事項・注意点:
+  - push / PR 作成 / マージは統括が実施する(reviewer は行わない)。
+    次工程は chainviz-qa による実動検証(合成環境で
+    `CHAINVIZ_COMPOSE_PROJECT` を指定した collector の観測・操作)
+
+### 2026-07-18 実動検証(qa)
+
+- 担当: qa
+- ブランチ: issue-369-compose-project-env
+- 作業ディレクトリ: /tmp/chainviz-issue-369
+- 前提: 検証時、共有 Docker スタック `chainviz-ethereum` は別セッションの
+  collector(pid 783542、ポート4000/4001)と frontend(5173)がアクティブに
+  使用中だった(collector ログに直近のワークベンチ操作・プロキシ RPC が
+  流れていた)。共有スタックを止める/衝突するスタックを起動する破壊的操作は
+  避け、自分の collector は別ポート(4010/4011)で起動して非破壊で検証した。
+
+#### 検証結果
+
+1. 後方互換(環境変数未設定): 合格
+   - `CHAINVIZ_COMPOSE_PROJECT` 未設定で collector を起動し、既存の
+     `chainviz-ethereum` スタックを正しく観測。スナップショットに
+     `chainviz-ethereum/<service>` 形式の stableId で全ノード・ワークベンチ
+     (leftover の managed ワークベンチ `chainviz-ethereum/hogehoge` を含む)が
+     現れ、差分で blockHeight 進行(483→485)・headBlockHash 更新・
+     nodeLinkActivity(engine_* API 呼び出し)が仕様どおり流れた。既定の
+     composeProject が従来どおり `chainviz-ethereum` で動作することを確認。
+
+2. 環境変数 override(`CHAINVIZ_COMPOSE_PROJECT=chainviz-ethereum-qa-test`):
+   ターゲット切り替え・分離は合格。ただし完全な独立稼働デモは未実施(下記)。
+   - override 時に `addNode` を実行すると
+     `(HTTP code 404) no such network - network chainviz-ethereum-qa-test_chain
+     not found` で fail-fast。collector の Docker 操作先が override 値の
+     project(ネットワーク `chainviz-ethereum-qa-test_chain`)へ切り替わり、
+     ハードコードの `chainviz-ethereum_chain` を参照していないことを実測で確認。
+     エラーは commandResult にそのまま載り、汎用メッセージへのすり替えは無い。
+   - `addWorkbench` も同様に `chainviz-ethereum-qa-test_chain` を参照して失敗。
+     このとき生成された(そして下記のとおり残った)コンテナは名前
+     `chainviz-ethereum-qa-test-qa-wb-1`・project ラベル
+     `chainviz-ethereum-qa-test`・`com.chainviz.managed=true`・接続先ネット
+     ワーク `chainviz-ethereum-qa-test_chain` と、いずれも override した
+     project 名のプレフィックスで組み立てられており、コンテナ生成側にも #369 の
+     命名導出が効いていることを確認できた。
+   - 一連の操作後、`chainviz-ethereum` 側のコンテナ(8個)・ネットワーク
+     `chainviz-ethereum_chain`・ボリューム群は一切変化せずブロックも進行し続けた
+     (既存環境と干渉しないことを確認)。
+   - 未実施: qa-test の完全なベーススタック(validator まで含む合成環境)を
+     起動しての「独立したチェーンがブロックを進める・ワークベンチ経由で cast が
+     通る」エンドツーエンドのデモは、(a) ベーススタックの公開ポート 8545/5052 が
+     稼働中の `chainviz-ethereum` と衝突する、(b) 観測は project でフィルタせず
+     Docker ラベルで全 project のコンテナを拾うため、qa-test スタックを起動すると
+     稼働中の別セッションの collector 観測に混入する、の2点から、アクティブな
+     共有スタックセッションを乱さないために見送った。空いた時間帯での実施を推奨。
+
+3. 不正な文字を含む composeProject の fail-fast(reviewer 申し送り): 合格
+   - `CHAINVIZ_COMPOSE_PROJECT='Bad Name!/@x'` で `addNode` を実行すると
+     `Request path contains unescaped characters` で fail-fast し、エラーが
+     commandResult に表出。静かに壊れる経路は無いことを実測で確認。
+
+#### 発見した問題(#369 の差分に起因しない既存の堅牢性ギャップ)
+
+- `addWorkbench`(および `createAndStart` 経路一般)は、`container.start()` が
+  失敗した場合(今回はターゲットネットワーク不在)に、直前に
+  `docker.createContainer` で作成済みの「Created」状態のコンテナを削除せず
+  残す。エラー自体は握りつぶさず呼び出し元へ伝播する(＝静かには壊れない)が、
+  作りかけのコンテナが orphan として残留する。
+  - `addNode` は最初に `usedNetworkIps`(network.inspect)でネットワークの
+    存在を確認してから作成に進むため、ネットワーク不在時はコンテナを作らずに
+    fail-fast する(orphan は残らない)。`addWorkbench` にはこの事前チェックが
+    無く createAndStart に直行するため差が出る。reviewer の fail-fast 分析は
+    addNode を対象にしており妥当だが、addWorkbench のこの create→start 失敗で
+    orphan が残る経路はカバーされていなかった。
+  - これは #369 の変更が生んだものではなく、既存の createAndStart /
+    addWorkbench の挙動(ネットワーク不在・イメージ未取得など start 失敗全般で
+    同様に発生しうる)。通常運用(ネットワークが存在する正常系)では発生しない
+    エッジケースであり、#369 の合否を左右する不具合ではないと判断。ただし
+    #369 は「まだ用意されていない project を collector に指させる」使い方を
+    可能にするため、"network not found" 時に orphan が積もる可能性が上がる。
+    createAndStart で start 失敗時に作成済みコンテナを force remove する、または
+    addWorkbench にも addNode 同様のネットワーク事前チェックを入れる改善を、
+    別 Issue として起票することを推奨する(差し戻し先: collector)。
+  - 検証で生成した orphan コンテナ `chainviz-ethereum-qa-test-qa-wb-1` は
+    `docker rm -fv` で削除済み。qa-test 系のネットワーク・ボリューム・コンテナは
+    残っていないことを確認した。
+
+#### 判定
+
+- Issue #369 の変更点そのもの(環境変数 `CHAINVIZ_COMPOSE_PROJECT` による
+  composeProject 上書き・派生名の導出・未設定時の後方互換・fail-fast)は、
+  実動で仕様どおりに動作することを確認した(合格)。
+- ただし上記のとおり (a) qa-test 完全ベーススタックでの独立稼働
+  エンドツーエンドデモは稼働中の共有セッションを乱さないため見送り、
+  (b) addWorkbench の orphan コンテナ残留(既存挙動)を発見したため、
+  統括に以下を委ねる: 空き時間帯での (a) の実施可否、(b) の別 Issue 起票。
+- PLAN.md のチェックボックス更新・push/PR/マージ・Issue クローズは行っていない
+  (統括が判断・実施)。
