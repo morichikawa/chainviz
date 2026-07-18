@@ -257,6 +257,11 @@ describe("ChainRibbonCard", () => {
       expect(screen.queryByTestId("chain-ribbon-tile-0x3")).toBeNull(); // まだ凍結中
 
       fireEvent.mouseLeave(screen.getByTestId("chain-ribbon-tile-0x2"));
+      // Issue #351: 凍結条件はポップオーバーの開閉状態も見るため、
+      // 遅延クローズの猶予（200ms）が経過するまでは凍結が続く。
+      act(() => {
+        vi.advanceTimersByTime(HOVER_POPOVER_CLOSE_DELAY_MS);
+      });
       expect(screen.getByTestId("chain-ribbon-tile-0x3")).toBeTruthy();
       expect(screen.queryByTestId("chain-ribbon-tile-0x1")).toBeNull();
     });
