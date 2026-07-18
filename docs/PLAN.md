@@ -987,12 +987,13 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       負荷で顕在化しやすくなると考えられる。Issue #346と同種の問題であり
       対応方針を踏襲できないか検討する)
       [#388](https://github.com/morichikawa/chainviz/issues/388)
-- [ ] サイドパネルのリサイズハンドルが右ボタンドラッグに反応し
+- [x] サイドパネルのリサイズハンドルが右ボタンドラッグに反応し
       テキスト選択も抑止されない
       (Issue #362の最終QA検証中に偶発的に観測。`handlePointerDown`が
       event.buttonを未チェックのため右ボタンドラッグでもリサイズが
       開始する。resizing中にuser-select抑止も無くテキスト選択が起きる。
-      完了条件は損なわないため差し戻し対象外とし別Issueへ分離)
+      完了条件は損なわないため差し戻し対象外とし別Issueへ分離。
+      event.button!==0ガードとresizing中のuser-select:none抑止で解消)
       [#391](https://github.com/morichikawa/chainviz/issues/391)
 
 ## 運用ルール（全ステップ共通）
