@@ -160,3 +160,36 @@
     単一の真実の情報源であり、チェーン上の定数は読まないため）。学習環境は
     使い捨て（docker compose down -v で再構築）前提なので許容する
   - glossary/ 配下に CVZ/CVN への言及は無いことを確認済み（i18n 影響なし）
+
+### 2026-07-18 Issue #364 実装（node-env: Solidity定数変更・catalog.json再生成・README追随）
+
+- 担当: node-env
+- ブランチ: issue-364-cvz-token-symbol
+- 実装設計メモ（node-env）:
+  - 設計メモの決定どおり、`profiles/ethereum/contracts/src/ChainvizToken.sol`の
+    `symbol`定数を`"CVZ"`→`"CVZDEMO"`、
+    `profiles/ethereum/contracts/src/ChainvizNFT.sol`の`symbol`定数を
+    `"CVN"`→`"CVNDEMO"`に変更する。`name`定数・コントラクト名・`decimals`は
+    変更しない
+  - `build-catalog.sh`はスクリプト本体（`add_entry`呼び出しのJSONリテラル）と
+    直上のコメント（「symbol="CVZ"と一致させること」等の記述）の両方に
+    ハードコードされた旧シンボルがあるため、両方を新シンボルに合わせて
+    修正してからスクリプトを実行し、`catalog.json`を再生成する
+    （catalog.jsonは手編集しない）
+  - `README.md`はコード変更ではなくドキュメントだが、実装ファイル・生成物と
+    矛盾しないよう同一コミットに含める（324行目のトークン説明表・368行目の
+    コメント例）
+  - コミット分割: worklogの分担案どおり「Sol 2ファイル + build-catalog.sh +
+    catalog.json再生成 + README」を1コミット（node-env担当分はこれで完結。
+    frontend担当分・テストフィクスチャの表記統一・docs(ARCHITECTURE.md)は
+    別担当・別コミット）
+  - 実装後、`pnpm lint && pnpm build && pnpm test`を実行し、
+    node-env配下（profiles/）の変更に起因するテスト失敗が無いことを確認する。
+    frontend/collector側のCVZ固定文字列テストは別エージェントが並行対応中の
+    ため、その分の失敗は本タスクの完了条件に含めない
+  - `profiles/`配下を`grep -rl "CVZ\|CVN"`で確認したところ、対象は
+    `src/ChainvizToken.sol` / `src/ChainvizNFT.sol` / `build-catalog.sh` /
+    `README.md` / `catalog.json`（再生成で追随）の5点のみで、
+    profiles配下に単独のテストファイルは存在しない（テスト・コメント追随の
+    対象は無し）
+
