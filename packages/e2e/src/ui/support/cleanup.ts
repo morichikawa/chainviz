@@ -22,6 +22,7 @@
 
 import type { Browser, Page } from "@playwright/test";
 import { expect } from "@playwright/test";
+import { fitCanvasView } from "./viewport.js";
 
 /**
  * カード削除の後始末を構成する3つの非同期アクション。実 Playwright の
@@ -67,7 +68,9 @@ export async function removeCardIfPresent(
  *
  * `infra-card-remove-<entityId>` の出現を `timeoutMs` まで待ってからクリック
  * し、対応する `infra-card-<entityId>` が実際に消える(`count === 0`)まで
- * `timeoutMs` を上限に待つ。
+ * `timeoutMs` を上限に待つ。クリック前に `fitCanvasView` で視野を確保する
+ * (Issue #373。安全網はコンテナ残留に直結するため、ビューポート外クリックの
+ * 永久リトライへの頑健化の価値が高い。docs/worklog/issue-373.md 参照)。
  */
 export async function removeInfraCardIfPresent(
   page: Page,
@@ -77,7 +80,10 @@ export async function removeInfraCardIfPresent(
   const removeButton = page.getByTestId(`infra-card-remove-${entityId}`);
   await removeCardIfPresent({
     waitForButton: () => removeButton.waitFor({ timeout: timeoutMs }),
-    click: () => removeButton.click(),
+    click: async () => {
+      await fitCanvasView(page);
+      await removeButton.click();
+    },
     waitForRemoved: () =>
       expect(page.getByTestId(`infra-card-${entityId}`)).toHaveCount(0, {
         timeout: timeoutMs,
