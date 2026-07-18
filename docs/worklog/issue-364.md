@@ -153,6 +153,7 @@
     operationCatalog.ts / catalog.json の値は完全一致が必須**。先に
     このworklogの決定値（CVZDEMO / CVNDEMO）を両担当が前提にすること
 - 注意点:
+
   - catalog.json の再生成には forge（無ければ docker 経由のフォール
     バック）と jq が必要（build-catalog.sh 冒頭コメント参照）
   - 稼働中のチェーンに旧シンボル定数でデプロイ済みのコントラクトが
@@ -193,3 +194,60 @@
     profiles配下に単独のテストファイルは存在しない（テスト・コメント追随の
     対象は無し）
 
+### 2026-07-18 Issue #364 実装設計メモ(frontend)
+
+- 担当: frontend
+- ブランチ: issue-364-cvz-token-symbol-frontend（designerのissue-364-cvz-token-symbol
+  から分岐した一時ブランチ。node-env担当と並行作業のためworktreeを分けている。
+  後で統括がcherry-pickして合流させる）
+- 前提: 上記designerの設計メモに従い、案B（命名変更のみ）を採用。新シンボルは
+  `CVZDEMO`（ChainvizToken）・`CVNDEMO`（ChainvizNFT）。node-env側が
+  `catalog.json`を並行して再生成中のため、本ブランチでは`catalog.json`を
+  変更せず、`operationCatalog.ts`のロジック（catalog.jsonを読み込む処理）にも
+  手を入れない。あくまでテストの期待値・モックデータの表示値のみを変更する
+- 実装方針:
+  1. `operationCatalog.ts`の93行目`token: { symbol: "CVZ", decimals: 18 }`を
+     `"CVZDEMO"`に更新し、同じ箇所の日本語コメント（「ソース...の
+     symbol/decimals定数と一致させる」）はそのまま残す（値のみ変更）
+  2. `operationCatalog.test.ts`の実値アサート（`{ symbol: "CVZ", decimals: 18 }`）
+     を`"CVZDEMO"`に更新。このテストのみ「放置すると落ちる」箇所（catalog.json
+     とは無関係にoperationCatalog.ts自身の値をハードコードでアサートしている
+     ため）
+  3. `mockData.ts`はモックモードでユーザーが実際に目にする表示値なので必須で
+     更新する。対象は次の3種類:
+     - リテラル値: `token: { symbol: "CVZ", decimals: 18 }` →
+       `"CVZDEMO"`、`nft: { symbol: "CVN" }` → `"CVNDEMO"`（
+       `chainvizTokenContract`/`chainvizNftContract`/`MOCK_DEPLOYABLE_CATALOG`
+       の3箇所ずつ）、埋め込みソース文字列
+       `'    string public constant symbol = "CVZ";'`
+     - 定数名: `ALICE_CVZ_BALANCE_WEI` → `ALICE_CVZDEMO_BALANCE_WEI`、
+       `BOB_CVZ_BALANCE_WEI` → `BOB_CVZDEMO_BALANCE_WEI`（宣言・参照箇所とも
+       リネーム。値自体は変更しない）
+     - コメント中の「CVZ」「CVN」表記（例:「CVZ残高」「CVZトークン残高」
+       「"ChainvizToken" / "CVZ" と完全に一致させる」）も表示値に揃えて
+       `CVZDEMO`/`CVNDEMO`に更新する
+  4. `OperationArgInput.tsx`（44行目）・`walletNftHoldings.ts`（80行目）の
+     コメント内の例（「（CVZ単位）」「CVN #1」）を`CVZDEMO`/`CVNDEMO`に更新
+     （コードロジックへの変更はない）
+  5. worklogの「表記統一の追随」リストのfrontend 15ファイルは、いずれも
+     自己完結フィクスチャ内のテスト用文字列（symbol/表示ラベルの期待値・
+     テスト内で組み立てるダミーコントラクトのsymbolなど）を`CVZDEMO`/
+     `CVNDEMO`に置換する。ロジック（フォーマット関数・コンポーネント）は
+     変更しない
+- コミット分割の方針: 「1つの変更=1コミット」に従い、
+  1) `operationCatalog.ts`＋同テスト（1コミット。唯一「放置すると落ちる」
+     箇所であり独立してレビュー・巻き戻しできるようにする）、
+  2) `mockData.ts`（1コミット。モック表示値の変更というまとまった関心事）、
+  3) コメント2箇所（`OperationArgInput.tsx`/`walletNftHoldings.ts`。
+     ロジック変更を伴わないコメントのみの変更として分離）、
+  4) 表記統一の追随（frontend テスト15ファイルの機械的な置換。1コミント）
+  の4コミットに分ける
+- 注意点:
+  - `catalog.json`は本ブランチで一切変更しない。`operationCatalog.test.ts`
+    後半の「ETHEREUM_OPERATION_CATALOG matches the real catalog.json ABI」
+    describeブロックはcatalog.jsonを読み込んで突き合わせるテストであり、
+    node-env側の再生成が本ブランチのworktreeに反映されるまでは対象外
+    （symbol自体はこのdescribeブロックの比較対象に含まれない -
+    constructorArgs/functions/payableのみ突き合わせているため、catalog.json
+    が旧シンボルのままでもこのテスト自体は落ちない見込み。ただし
+    `pnpm test`実行結果は本項下部に事実として記録する）
