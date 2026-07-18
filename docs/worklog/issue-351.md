@@ -253,3 +253,98 @@ Playwright（`packages/e2e` 同梱の chromium を
 - `useHoverPopover` の 200ms（worklog UX設計メモの通り）
 - `packages/shared` の型定義
 - 他カードのポップオーバー実装
+
+### 2026-07-18 Issue #351 実装完了
+
+- 担当: frontend
+- ブランチ: issue-351-parent-block-hover-highlight
+
+#### 実施内容
+
+1. `packages/frontend/src/entities/ChainRibbonCard.tsx`:
+   `ChainRibbonTileView` の外側 `Fragment` を廃止し、
+   `{hovered && <ChainRibbonPopover />}` をタイル div の内側の子として
+   描画するよう変更（本丸の修正）。加えて `ChainRibbonCard` に
+   `openPopoverHashes` を追加し、表示窓の凍結条件を
+   `hoveredBlockHash !== null || openPopoverHashes.size > 0` に拡張した
+2. `packages/frontend/src/entities/ChainRibbonPopover.tsx`: 「親ブロック」
+   行のホバー状態を `parentRowHoveredRef` で追跡し、ポップオーバーの
+   unmount 時にホバー中のままなら `onParentHover(null)` を呼んで確実に
+   強調を解除するようにした（固着バグの解消）
+3. 「⋯」強調（任意項目）を採用した。`parentHighlightHash` が現在の表示窓
+   のどのタイルの hash とも一致しないとき（＝親が画面外）、
+   `chain-ribbon-card__older` に `--highlight` 修飾クラスを付け、
+   `.chain-ribbon-tile--highlight` と同系統の見た目（`--accent`）にした
+   （`packages/frontend/src/styles.css`）。実装コストが小さく UX設計の
+   推奨事項でもあるため採用
+4. テストは1ファイル1責務で分割し、新規
+   `packages/frontend/src/entities/ChainRibbonPopoverHoverBridge.test.tsx`
+   にポップオーバーのホバー領域化・表示窓凍結の拡張・固着バグ回帰・
+   「⋯」強調の4観点をまとめた。既存 `ChainRibbonCard.test.tsx` は
+   基本表示テストのみ残し、凍結解除のタイミングが変わった既存1ケース
+   （`resumes tracking the latest tiles once the hover ends`）だけ、
+   遅延クローズ猶予の経過待ちを追加する形で更新した
+5. e2e: `packages/e2e/src/ui/chain-ribbon.spec.ts`（UI-B-05）に、実マウス
+   （`page.mouse.move` の複数ステップ移動）でタイル→ポップオーバー→
+   「親ブロック」行と辿り、遅延クローズ猶予（200ms）を超えて静止しても
+   開いたまま・強調も持続することを確認するステップを追加した。対象タイル
+   は初期表示窓内（React Flow 初期ビューポート内）にあるため、Issue #346
+   の分類では「ビューポート内要素への実マウス hover」に該当し、実マウス
+   経路（座標非依存の `dispatchHover` ではなく）を使った
+   （`packages/e2e/SCENARIOS.md` の UI-B-05 記述も同期更新）
+6. e2e 修正中に、既存の `[data-testid^="chain-ribbon-tile-"]` セレクタが
+   tx件数バッジの testid（`chain-ribbon-tile-tx-<hash>`）にも接頭辞一致
+   してしまい、tx を含むブロックが最新タイルのときに `.last()` がタイル
+   本体ではなくバッジ要素を誤って返しうる潜在バグを発見した（実際に
+   frontend をモックモードで起動した実ブラウザ検証中に踏んだ）。タイル
+   本体だけが持つ `data-connected-to-previous` 属性で絞り込む
+   `CHAIN_RIBBON_TILE_SELECTOR` を定義し、既存2箇所・新規1箇所すべての
+   セレクタをこれに統一した（Issue #351 の直接のスコープではないが、
+   同じファイル・同じ変更のついでに発見した実バグのため別コミットで修正）
+
+#### 固着バグの再現確認（CLAUDE.md 運用ルール対応）
+
+修正前のコードに対して、以下の手順で実際に再現することを確認してから
+実装した:
+
+1. 修正前のコードに、後の回帰テスト（固着バグのケース）と同内容の
+   一時テスト（`fireEvent.mouseEnter`/`mouseLeave` を該当要素へ直接
+   dispatch し、行自身の `mouseleave` を一度も発火させずにクローズ
+   タイマーを満了させる）を書いて実行し、実際に失敗する
+   （`chain-ribbon-tile--highlight` が消えずに残る）ことを確認した
+2. 実装（構造修正 + `ChainRibbonPopover` の unmount 時クリーンアップ）を
+   適用した後、同じテストが成功する（強調が確実に消える）ことを確認した
+3. 同様に、本丸の「ポップオーバーが閉じてしまう」バグについても、
+   `fireEvent.mouseOver`/`mouseOut` + `relatedTarget` を使う一時テストで
+   修正前は失敗（4/5ケースが失敗）・修正後は全て成功することを確認した
+
+一時テストは検証後に削除し、最終的な回帰テストは
+`ChainRibbonPopoverHoverBridge.test.tsx` にまとめて残した。
+
+#### 追加の実ブラウザ確認（jsdom を経由しない裏取り）
+
+jsdom でのイベント合成は React の実装詳細に依存する部分があるため、
+frontend をモックデータモード（`VITE_COLLECTOR_URL` 未設定の vite dev
+server）で起動し、Playwright（`chromium.launch({ channel: "chromium" })` +
+`LD_LIBRARY_PATH=/home/zoe/chrome-deps/root/usr/lib/x86_64-linux-gnu`。
+issue-298.md §8 と同じ手順）の一時スクリプトで、実ブラウザ上でも
+「タイル→ポップオーバー→親ブロック行、と実マウスで移動し、遅延クローズ
+猶予（200ms）を大きく超える500ms静止してもポップオーバー・強調ともに
+維持され、マウスを離すと両方消える」ことを確認した。一時スクリプトは
+削除済み（コミットには含めていない）。
+
+#### ビルド・テスト確認
+
+`pnpm lint` / `pnpm build` / `pnpm test` をリポジトリ全体で実行し、
+全パッケージ（shared 74・collector 1597・e2e 179・frontend 2630）が
+通ることを確認した。
+
+#### 次の担当への申し送り
+
+- レビュー・QA未実施。`docs/PLAN.md` のチェックボックス更新もまだ
+- e2e の新規ステップ（UI-B-05 拡張分）は実際のドッカースタックに対しては
+  未実行（frontend engineerはDockerに触れない方針のため、モックモードでの
+  実ブラウザ確認に留めた）。chainviz-qa による実スタックでの最終確認を
+  推奨する
+- `CHAIN_RIBBON_TILE_SELECTOR` のバグ修正は本Issueのスコープ外で発見した
+  実バグの副次修正のため、レビュー時にコミット分割の妥当性を確認してほしい
