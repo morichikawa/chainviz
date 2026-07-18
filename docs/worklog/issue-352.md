@@ -435,3 +435,67 @@ shared の型変更は本設計で完了済み。**collector と frontend は互
     作業中)が完了していないため今回は更新していない。両方揃った時点で
     更新する想定(この判断は統括が最終的に確認すること)
   - このブランチではshared型・frontend側のファイルには一切触れていない
+
+### 2026-07-18 テスト強化メモ
+
+- 担当: tester
+- ブランチ: issue-352-comms-log-rpc-response
+- 対象: collector/frontend の実装担当が書いた基本テストを、異常系・境界値・
+  判定不能パターンの観点で補強する。新機能の実装は行わない。
+- 既存カバレッジの確認結果:
+  - `response-outcome.test.ts`: forward失敗/非2xx(500,301)/単発ok・error/
+    非JSON/スカラー/バッチ突き合わせ・欠落・id重複・通知(null)・1件バッチ・
+    非レコード配列は網羅済み
+  - `logging-proxy.test.ts`: 発行タイミング・durationMs計測/丸め/バッチ共有/
+    非JSON時outcome省略/転送失敗時のerror伝搬は網羅済み
+  - frontend の commsLogText / CommsLogEntryRow / mockData / deriveCommsLog
+    の各 operationOutcome テストは4パターン+ja+モックの基本性質を網羅済み
+- 追加する観点（抜けていたもの）:
+  1. `resolveResponseOutcomes` の境界: 観測0件、HTTPステータス境界値
+     (199/299/300)、2xxだが空ボディ(204相当→JSON解釈不能→判定不能)、
+     `error`キーが `null`/`false` の場合の扱い(キー存在で error に倒す
+     現仕様の固定)、単発オブジェクト応答なのに観測が複数件、空配列応答、
+     バッチのid型不一致(数値vs文字列)・文字列id一致・id=0境界
+  2. `handleRpcRequest` の異常系: 転送がresolveした非2xx(上流500)を透過
+     しつつoutcome=errorにすること、時計が逆行した場合のdurationMs=0
+     クランプ、onObserve未指定でも例外を出さないこと
+  3. `describeOperationSuffix` の境界値: durationMs=0(欠落と区別して表示)、
+     非常に大きい値(単位切替せずms表記のまま)
+  4. `CommsLogEntryRow`: durationMs=0の描画、outcome span が描画される
+     ときは常にaria-labelを持つこと(モレの検出)
+  5. `mockOperationObserved`: 「7回に1回error」を21連続呼び出しで厳密に
+     error=3件と固定、durationMsが15連続で3〜45msの15値を網羅すること
+- ファイル分割方針: collector の境界ケースは
+  `response-outcome.boundary.test.ts` を新規作成して基本仕様テストと分離。
+  `handleRpcRequest` の異常系は関心が同じなので既存 `logging-proxy.test.ts`
+  の describe に追記。frontend は既存の各 operationOutcome テストへ境界値
+  ケースを追記する（同一関心のため新ファイルは作らない）。
+
+### 2026-07-18 テスト強化 完了
+
+- 担当: tester
+- ブランチ: issue-352-comms-log-rpc-response
+- 追加したテスト:
+  - `packages/collector/src/proxy/response-outcome.boundary.test.ts`（新規、
+    16ケース）: 観測0件・HTTPステータス境界(199/299/300)・204空ボディ・
+    `error`キーが null/false のときの扱い・応答形状と件数の不一致・空配列
+    応答・バッチのid型不一致/文字列id/id=0/通知混在
+  - `packages/collector/src/proxy/logging-proxy.test.ts`（追記、3ケース）:
+    resolveした非2xx上流の透過とoutcome=error・時計逆行時のdurationMs=0
+    クランプ・onObserve未指定でも動作
+  - `packages/frontend/src/comms-log/commsLogText.operationOutcome.test.ts`
+    （追記、4ケース）: durationMs=0の表示・非常に大きい値でms単位維持
+  - `packages/frontend/src/side-panel/CommsLogEntryRow.operationOutcome.test.tsx`
+    （追記、3ケース）: durationMs=0の描画・outcome span描画時は常にaria-label
+    を持つこと
+  - `packages/frontend/src/websocket/mockData.operationOutcome.test.ts`
+    （追記、2ケース）: 21連続でerror厳密3件・15連続でdurationMsが15値網羅
+- 実施結果: `pnpm build`（collector/frontend）・`pnpm test`（collector 1636 /
+  frontend 2650）・`pnpm lint` 通過。
+- 実装への懸念（バグではないが申し送り）:
+  - `resolveResponseOutcomes` は JSON-RPC 応答の `error` キーの「存在」だけで
+    error に倒す（値が null/false でも error）。準拠サーバは成功時に error
+    メンバーを含めないため通常は問題ないが、非準拠サーバが成功時に
+    `error: null` を返すと成功が error 表示になる。設計メモ §3.3 の割り切り
+    どおりの挙動であり現時点では妥当と判断。将来 error 詳細を載せる別Issueで
+    再検討の余地あり（テストで現挙動を固定済み）。
