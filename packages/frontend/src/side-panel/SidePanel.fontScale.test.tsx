@@ -4,6 +4,7 @@
 // useSidePanelFontScale.test.ts / sidePanelFontScale.test.ts に分ける
 // （CLAUDE.md のテスト分割方針）。
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { LanguageProvider } from "../i18n/LanguageProvider.js";
 import type { KeyValueStorage } from "../platform/storage.js";
@@ -22,11 +23,16 @@ function memoryStorage(initial: Record<string, string> = {}): KeyValueStorage {
   };
 }
 
-function wrap(storage: KeyValueStorage, lang: "ja" | "en" = "ja") {
+function wrap(
+  storage: KeyValueStorage,
+  lang: "ja" | "en" = "ja",
+  title: ReactNode = "ソースコード",
+  children: ReactNode = <p>body content</p>,
+) {
   return render(
     <LanguageProvider initialLanguage={lang}>
-      <SidePanel ariaLabel="ソースコード" title="ソースコード" onClose={() => {}} storage={storage}>
-        <p>body content</p>
+      <SidePanel ariaLabel="ソースコード" title={title} onClose={() => {}} storage={storage}>
+        {children}
       </SidePanel>
     </LanguageProvider>,
   );
@@ -111,5 +117,80 @@ describe("SidePanel font scale controls", () => {
     const panel = screen.getByTestId("side-panel");
     expect(panel.style.width).not.toBe("");
     expect(panel.style.getPropertyValue("--side-panel-font-scale")).toBe("1");
+  });
+
+  it("does not change the scale when a disabled larger button is clicked at the maximum", () => {
+    const storage = memoryStorage({ [SIDE_PANEL_FONT_SCALE_STORAGE_KEY]: "1.5" });
+    wrap(storage);
+    const larger = screen.getByTestId("side-panel-font-larger");
+    expect(larger.hasAttribute("disabled")).toBe(true);
+
+    fireEvent.click(larger);
+
+    // native disabled のため onClick は発火せず、倍率も保存値も変わらない。
+    expect(screen.getByTestId("side-panel-font-reset").textContent).toBe("150%");
+    expect(screen.getByTestId("side-panel").style.getPropertyValue("--side-panel-font-scale")).toBe(
+      "1.5",
+    );
+    expect(storage.getItem(SIDE_PANEL_FONT_SCALE_STORAGE_KEY)).toBe("1.5");
+  });
+
+  it("does not change the scale when a disabled smaller button is clicked at the minimum", () => {
+    const storage = memoryStorage({ [SIDE_PANEL_FONT_SCALE_STORAGE_KEY]: "0.85" });
+    wrap(storage);
+    const smaller = screen.getByTestId("side-panel-font-smaller");
+    expect(smaller.hasAttribute("disabled")).toBe(true);
+
+    fireEvent.click(smaller);
+
+    expect(screen.getByTestId("side-panel-font-reset").textContent).toBe("85%");
+    expect(storage.getItem(SIDE_PANEL_FONT_SCALE_STORAGE_KEY)).toBe("0.85");
+  });
+
+  it("keeps an accessible label on a disabled button so screen readers still announce it", () => {
+    // native `disabled` はフォーカス不可・SR は「無効」と読み上げる。
+    // その際もボタンの意味(何のボタンか)が失われないよう aria-label を保持する。
+    wrap(memoryStorage({ [SIDE_PANEL_FONT_SCALE_STORAGE_KEY]: "1.5" }), "en");
+    const larger = screen.getByTestId("side-panel-font-larger");
+    expect(larger.hasAttribute("disabled")).toBe(true);
+    expect(larger.getAttribute("aria-label")).toBe("Increase text size");
+  });
+
+  it("never disables the reset button, even at the maximum or minimum step", () => {
+    for (const raw of ["1.5", "0.85"]) {
+      const { unmount } = wrap(memoryStorage({ [SIDE_PANEL_FONT_SCALE_STORAGE_KEY]: raw }));
+      expect(screen.getByTestId("side-panel-font-reset").hasAttribute("disabled")).toBe(false);
+      unmount();
+    }
+  });
+
+  it("keeps the font-scale controls as real buttons that do not submit a form", () => {
+    wrap(memoryStorage());
+    for (const testId of [
+      "side-panel-font-smaller",
+      "side-panel-font-reset",
+      "side-panel-font-larger",
+    ]) {
+      expect(screen.getByTestId(testId).getAttribute("type")).toBe("button");
+    }
+  });
+
+  it("preserves the scale across a kind switch (unmount + remount) with the same storage", () => {
+    // SidePanelHost は kind ごとに別の SidePanel をマウントし直すが、倍率は
+    // kind 非依存の共通1値(同じ storage キー)。用語集で拡大した倍率が
+    // 通信ログに切り替えても維持されることを、再マウントで再現する。
+    const storage = memoryStorage();
+    const first = wrap(storage, "ja", "用語集", <p>glossary body</p>);
+    fireEvent.click(screen.getByTestId("side-panel-font-larger"));
+    fireEvent.click(screen.getByTestId("side-panel-font-larger"));
+    expect(screen.getByTestId("side-panel-font-reset").textContent).toBe("130%");
+    first.unmount();
+
+    // 別 kind 相当(タイトル・本文が違う新しい SidePanel)を同じ storage で開く。
+    wrap(storage, "ja", "通信ログ", <p>comms body</p>);
+    expect(screen.getByTestId("side-panel-font-reset").textContent).toBe("130%");
+    expect(screen.getByTestId("side-panel").style.getPropertyValue("--side-panel-font-scale")).toBe(
+      "1.3",
+    );
   });
 });

@@ -101,4 +101,65 @@ describe("useSidePanelFontScale", () => {
     expect(result.current.scale).toBe(1.5);
     expect(storage.getItem(SIDE_PANEL_FONT_SCALE_STORAGE_KEY)).toBe("1.5");
   });
+
+  it("resets idempotently when already at the default scale", () => {
+    const storage = memoryStorage();
+    const { result } = renderHook(() => useSidePanelFontScale(storage));
+
+    act(() => result.current.reset());
+
+    expect(result.current.scale).toBe(1);
+    expect(storage.getItem(SIDE_PANEL_FONT_SCALE_STORAGE_KEY)).toBe("1");
+  });
+
+  it("returns to the original scale after a decrease then increase round trip", () => {
+    const storage = memoryStorage();
+    const { result } = renderHook(() => useSidePanelFontScale(storage));
+
+    act(() => result.current.decrease());
+    expect(result.current.scale).toBe(0.85);
+    act(() => result.current.increase());
+
+    expect(result.current.scale).toBe(1);
+    expect(storage.getItem(SIDE_PANEL_FONT_SCALE_STORAGE_KEY)).toBe("1");
+  });
+
+  it("snaps a stored non-step value to the nearest step on mount", () => {
+    // 1.4 は同点タイで若い刻み 1.3 に丸められる(loadSidePanelFontScale の帰結)。
+    const storage = memoryStorage({ [SIDE_PANEL_FONT_SCALE_STORAGE_KEY]: "1.4" });
+    const { result } = renderHook(() => useSidePanelFontScale(storage));
+    expect(result.current.scale).toBe(1.3);
+    expect(result.current.canIncrease).toBe(true);
+    expect(result.current.canDecrease).toBe(true);
+  });
+
+  it("updates the can flags as the scale walks toward each edge", () => {
+    const storage = memoryStorage();
+    const { result } = renderHook(() => useSidePanelFontScale(storage));
+
+    // 1.0(中央) -> 1.15 -> 1.3 -> 1.5(最大)
+    act(() => result.current.increase());
+    expect(result.current.canIncrease).toBe(true);
+    expect(result.current.canDecrease).toBe(true);
+
+    act(() => result.current.increase());
+    expect(result.current.scale).toBe(1.3);
+    expect(result.current.canIncrease).toBe(true);
+
+    act(() => result.current.increase());
+    expect(result.current.scale).toBe(1.5);
+    expect(result.current.canIncrease).toBe(false);
+    expect(result.current.canDecrease).toBe(true);
+  });
+
+  it("keeps persisting the edge value when increase is called past the maximum", () => {
+    const storage = memoryStorage({ [SIDE_PANEL_FONT_SCALE_STORAGE_KEY]: "1.5" });
+    const { result } = renderHook(() => useSidePanelFontScale(storage));
+
+    act(() => result.current.increase());
+    act(() => result.current.increase());
+
+    expect(result.current.scale).toBe(1.5);
+    expect(storage.getItem(SIDE_PANEL_FONT_SCALE_STORAGE_KEY)).toBe("1.5");
+  });
 });
