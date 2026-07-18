@@ -169,3 +169,72 @@
   ローカル state + storage で完結し、コンテキストに載せると
   pointermove ごとに全コンシューマが再レンダーされるため載せない）
 - kind ごとの個別幅・下部ドロワー等のレイアウト拡張
+
+### 2026-07-18 Issue #362 実装設計メモ（frontend、着手前）
+
+- 担当: frontend
+- ブランチ: issue-362-sidepanel-resize
+- 設計メモ 1〜7 をそのまま踏襲する。実装前に確認した既存コードとの
+  対応・関数構成のみここに残す。
+
+1. `side-panel/sidePanelWidth.ts`（純ロジック）:
+   - 定数はエクスポートする
+     `SIDE_PANEL_WIDTH_STORAGE_KEY` / `SIDE_PANEL_DEFAULT_WIDTH` /
+     `SIDE_PANEL_MIN_WIDTH`。最大比率 0.9 はモジュール内部定数に留め、
+     代わりに `sidePanelMaxWidth(viewportWidth)` を公開する（ハンドルの
+     `aria-valuemax` 計算にも使うため、比率をハンドル側に漏らさない）
+   - `clampSidePanelWidth(width, viewportWidth)` は `sidePanelMaxWidth`
+     を内部で使う。`min` が常に `max` 以下になるよう
+     `Math.max(SIDE_PANEL_MIN_WIDTH, viewportWidth * 0.9)` で下限保証
+     する（極端に狭いビューポートでも矛盾したレンジにならない）
+   - 保存フォーマットは `layoutStore.ts`（JSON）ではなく `i18n.ts` の
+     `saveLanguage`（生文字列）と同じスカラー方式にする
+     （`String(width)` / `Number(raw)`）。壊れた値・範囲外は
+     `loadSidePanelWidth` 内で `SIDE_PANEL_DEFAULT_WIDTH` にフォール
+     バックしてから clamp する
+   - 保存失敗（`saveSidePanelWidth`）は `layoutStore.saveLayout` と
+     同じ try/catch + `console.warn` パターンを流用する
+2. `side-panel/useSidePanelResize.ts`（フック）:
+   - 引数は `storage: KeyValueStorage` のみ（既定値の解決は
+     `SidePanel.tsx` 側で `useState(() => storage ?? getBrowserStorage())`
+     により1回だけ行い、`LanguageProvider.tsx` と同じ注入パターンに揃える。
+     フック自体には省略可能性を持たせない）
+   - ドラッグの開始位置・開始幅は `useRef` に保持し、pointermove /
+     pointerup のイベントリスナーは `resizing` が true の間だけ window に
+     登録する（`useEffect` の依存配列は `[resizing, storage]` のみとし、
+     幅の state 自体は依存に含めない。pointermove のたびに listener を
+     張り替えないため）。pointerup 時も同じ計算式で最終幅を確定させ、
+     その場で1回だけ保存する
+   - ビューポート幅は `window.innerWidth` を都度読む（保存や resize
+     イベント購読はしない。ウィンドウ縮小時の見た目の破綻防止は既存の
+     CSS `max-width: 90vw` に委ねる。設計メモの決定どおり）
+   - キーボード操作（←→、24px 刻み）は都度 `saveSidePanelWidth` を呼ぶ
+     （ドラッグと違って離散的な操作なので毎回保存してもコストが低い）
+3. `SidePanel.tsx`:
+   - `storage?: KeyValueStorage` を追加し、ルート要素に
+     `style={{ width }}` を付与。ハンドルは `.side-panel` 内の先頭に
+     `position: absolute` な `div` として追加する（`.side-panel` 自体が
+     既に `position: absolute` なので、フレックスレイアウト
+     （ヘッダー/ボディ）に影響を与えずに重ねられる）
+   - ハンドルの aria 属性はフックの `handleProps` をスプレッドし、
+     `aria-label` のみ `SidePanel.tsx` が `t()` で解決して追加する
+     （フックは i18n を知らない）
+4. `styles.css`: `.side-panel` から `width: 420px` を削除。
+   `.side-panel__resize-handle` を新設（左端に重ねる縦帯、
+   `cursor: ew-resize`、`touch-action: none`、hover/active/focus-visible
+   のフィードバック）
+5. `i18n/messages.ts`: `sidePanel.resizeHandle` を
+   `sidePanel.close` の直後に追加する
+6. テストファイル分割（1ファイル1責務。CLAUDE.md 運用ルール）:
+   - `sidePanelWidth.test.ts`: クランプ境界・壊れた値・保存失敗
+   - `useSidePanelResize.test.ts`: フック単体（`renderHook` 相当。
+     ドラッグの開始→移動→終了、クランプ、キーボード操作、保存タイミング）
+   - `SidePanel.test.tsx` は既存のシェルのテストのまま変更せず、幅・
+     ハンドル関連は新規 `SidePanel.resize.test.tsx` に分ける（既存
+     ファイルの肥大化を避ける）
+7. E2E: 既存の e2e パッケージ構成を確認してから、実ブラウザでの
+   pointer ドラッグシミュレーションが必要かを判断する（jsdom の
+   `PointerEvent` 制約は vitest 側の unit test で吸収できる想定のため、
+   E2E は「ハンドルが表示され、キーボードで幅が変わる」程度の
+   最小限に留めるか、既存のE2E範囲と重複するなら追加しない判断も
+   あり得る）
