@@ -311,6 +311,56 @@ describe("handleRpcRequest", () => {
     });
     expect(observed.map((o) => o.outcome)).toEqual(["error", "error"]);
   });
+
+  it("passes a resolved non-2xx upstream response through verbatim while marking outcome error", async () => {
+    // 転送は throw せず resolve するが上流が 500 を返したケース。透過性は
+    // 崩さず（status/body をそのまま返す）、観測だけ error に倒す。
+    const observed: RpcObservation[] = [];
+    const upstreamError: ForwardResponse = {
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, error: { code: -32000, message: "server" } }),
+    };
+    const now = vi.fn().mockReturnValueOnce(100).mockReturnValueOnce(140);
+    const result = await handleRpcRequest({
+      rawBody: JSON.stringify({ id: 1, method: "eth_chainId", params: [] }),
+      callerIp: "ip",
+      contentType: "application/json",
+      forward: stubForward(upstreamError),
+      onObserve: (o) => observed.push(o),
+      now,
+    });
+    // 透過: 上流の status/body をそのまま返す（502 に潰さない）。
+    expect(result.status).toBe(500);
+    expect(result.body).toBe(upstreamError.body);
+    expect(observed[0].outcome).toBe("error");
+    expect(observed[0].durationMs).toBe(40);
+  });
+
+  it("clamps durationMs to 0 when the clock appears to move backwards", async () => {
+    // now() の逆行（時刻補正など）でも負値を出さず 0 に丸める。
+    const observed: RpcObservation[] = [];
+    const now = vi.fn().mockReturnValueOnce(1000).mockReturnValueOnce(950);
+    await handleRpcRequest({
+      rawBody: JSON.stringify({ id: 1, method: "eth_chainId", params: [] }),
+      callerIp: "ip",
+      contentType: "application/json",
+      forward: stubForward(OK_RESPONSE),
+      onObserve: (o) => observed.push(o),
+      now,
+    });
+    expect(observed[0].durationMs).toBe(0);
+  });
+
+  it("does not throw when no onObserve is provided (observation is simply not emitted)", async () => {
+    const result = await handleRpcRequest({
+      rawBody: JSON.stringify({ id: 1, method: "eth_chainId", params: [] }),
+      callerIp: "ip",
+      contentType: "application/json",
+      forward: stubForward(OK_RESPONSE),
+    });
+    expect(result.status).toBe(200);
+  });
 });
 
 describe("createFetchForwarder", () => {
