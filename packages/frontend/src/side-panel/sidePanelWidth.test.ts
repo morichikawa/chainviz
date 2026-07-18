@@ -31,6 +31,14 @@ describe("sidePanelMaxWidth", () => {
   it("never goes below the minimum width even on a very narrow viewport", () => {
     expect(sidePanelMaxWidth(200)).toBe(SIDE_PANEL_MIN_WIDTH);
   });
+
+  it("floors to the minimum exactly at the viewport where 0.9*vw crosses the min", () => {
+    // 0.9 * vw == SIDE_PANEL_MIN_WIDTH のちょうどの分岐点。
+    const crossover = SIDE_PANEL_MIN_WIDTH / 0.9; // ≒ 333.33
+    expect(sidePanelMaxWidth(crossover)).toBe(SIDE_PANEL_MIN_WIDTH);
+    // わずかに広いビューポートでは比率計算が最小幅を上回る。
+    expect(sidePanelMaxWidth(crossover + 100)).toBeCloseTo((crossover + 100) * 0.9);
+  });
 });
 
 describe("clampSidePanelWidth", () => {
@@ -55,6 +63,31 @@ describe("clampSidePanelWidth", () => {
     // viewportWidth * 0.9 (180) は最小幅 (300) を下回るため、
     // sidePanelMaxWidth 側で下限保証されていることを確認する。
     expect(clampSidePanelWidth(250, 200)).toBe(SIDE_PANEL_MIN_WIDTH);
+  });
+
+  it("collapses to the single min==max value on a narrow viewport regardless of input", () => {
+    // 最狭ビューポートでは min も max も 300 に潰れる。範囲内・範囲外・
+    // 境界のいずれの入力でも同じ 300 に落ちる（矛盾レンジで NaN 等を
+    // 出さない）ことを確認する。
+    expect(clampSidePanelWidth(100, 200)).toBe(SIDE_PANEL_MIN_WIDTH);
+    expect(clampSidePanelWidth(300, 200)).toBe(SIDE_PANEL_MIN_WIDTH);
+    expect(clampSidePanelWidth(9999, 200)).toBe(SIDE_PANEL_MIN_WIDTH);
+  });
+
+  it("clamps a negative width up to the minimum", () => {
+    expect(clampSidePanelWidth(-100, 1200)).toBe(SIDE_PANEL_MIN_WIDTH);
+    expect(clampSidePanelWidth(-Infinity, 1200)).toBe(SIDE_PANEL_MIN_WIDTH);
+  });
+
+  it("keeps a value exactly at the maximum boundary and clamps one above it", () => {
+    const max = sidePanelMaxWidth(1000); // 900
+    expect(clampSidePanelWidth(max, 1000)).toBe(max);
+    expect(clampSidePanelWidth(max + 0.001, 1000)).toBe(max);
+    expect(clampSidePanelWidth(max - 0.001, 1000)).toBe(max - 0.001);
+  });
+
+  it("preserves fractional widths that fall inside the range", () => {
+    expect(clampSidePanelWidth(512.5, 1200)).toBe(512.5);
   });
 });
 
@@ -87,6 +120,48 @@ describe("loadSidePanelWidth", () => {
     const storage = memoryStorage({ [SIDE_PANEL_WIDTH_STORAGE_KEY]: "1e999" });
     // "1e999" parses to Infinity, which is not finite -> default, then clamp.
     expect(loadSidePanelWidth(storage, 1200)).toBe(SIDE_PANEL_DEFAULT_WIDTH);
+  });
+
+  it("falls back to the default width for the literal strings NaN/Infinity/-Infinity", () => {
+    // Number("NaN") -> NaN, Number("Infinity"/"-Infinity") -> ±Infinity。
+    // いずれも非有限なので既定幅にフォールバックする。
+    for (const raw of ["NaN", "Infinity", "-Infinity"]) {
+      const storage = memoryStorage({ [SIDE_PANEL_WIDTH_STORAGE_KEY]: raw });
+      expect(loadSidePanelWidth(storage, 1200)).toBe(SIDE_PANEL_DEFAULT_WIDTH);
+    }
+  });
+
+  it("clamps a negative stored value up to the minimum (finite, so not treated as corrupt)", () => {
+    const storage = memoryStorage({ [SIDE_PANEL_WIDTH_STORAGE_KEY]: "-100" });
+    expect(loadSidePanelWidth(storage, 1200)).toBe(SIDE_PANEL_MIN_WIDTH);
+  });
+
+  it("treats empty/whitespace stored values as 0 and clamps them to the minimum", () => {
+    // 注意: Number("") と Number(" ") はどちらも 0（NaN ではない）ため、
+    // これらは「壊れた値 → 既定 420」ではなく「範囲外 → 最小 300」に
+    // クランプされる。saveSidePanelWidth は空文字を書き込まないため、
+    // 空文字は外部改変でしか発生しない。実挙動を固定して記録する。
+    for (const raw of ["", " "]) {
+      const storage = memoryStorage({ [SIDE_PANEL_WIDTH_STORAGE_KEY]: raw });
+      expect(loadSidePanelWidth(storage, 1200)).toBe(SIDE_PANEL_MIN_WIDTH);
+    }
+  });
+
+  it("accepts a hexadecimal stored value the way Number() parses it", () => {
+    // Number("0x1F4") === 500。実挙動を固定（意図的な仕様ではないが、
+    // 生文字列を Number() に通す方式の帰結として記録する）。
+    const storage = memoryStorage({ [SIDE_PANEL_WIDTH_STORAGE_KEY]: "0x1F4" });
+    expect(loadSidePanelWidth(storage, 1200)).toBe(500);
+  });
+
+  it("preserves a fractional stored value inside the range", () => {
+    const storage = memoryStorage({ [SIDE_PANEL_WIDTH_STORAGE_KEY]: "512.5" });
+    expect(loadSidePanelWidth(storage, 1200)).toBe(512.5);
+  });
+
+  it("returns exactly the minimum when the stored value equals the minimum", () => {
+    const storage = memoryStorage({ [SIDE_PANEL_WIDTH_STORAGE_KEY]: String(SIDE_PANEL_MIN_WIDTH) });
+    expect(loadSidePanelWidth(storage, 1200)).toBe(SIDE_PANEL_MIN_WIDTH);
   });
 });
 

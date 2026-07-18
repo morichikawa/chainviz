@@ -86,6 +86,31 @@ describe("SidePanel resize handle", () => {
     );
   });
 
+  it("spreads the aria value attributes from the hook onto the handle element", () => {
+    // handleProps がハンドル DOM に確実に届いていること（スプレッド漏れの
+    // 回帰防止）。数値そのものはフックの単体テストで検証済みなので、ここは
+    // 属性が DOM に存在することの確認に絞る。
+    const storage = memoryStorage({ [SIDE_PANEL_WIDTH_STORAGE_KEY]: "500" });
+    wrap(storage);
+    const handle = screen.getByTestId("side-panel-resize-handle");
+    expect(handle.getAttribute("aria-valuenow")).toBe("500");
+    expect(handle.getAttribute("aria-valuemin")).toBe("300");
+    expect(handle.getAttribute("aria-valuemax")).not.toBeNull();
+    expect(handle.getAttribute("aria-orientation")).toBe("vertical");
+    expect(handle.tabIndex).toBe(0);
+  });
+
+  it("clamps to the minimum via keyboard on the handle and persists it", () => {
+    const storage = memoryStorage({ [SIDE_PANEL_WIDTH_STORAGE_KEY]: "312" });
+    wrap(storage);
+    const handle = screen.getByTestId("side-panel-resize-handle");
+    const panel = screen.getByTestId("side-panel");
+
+    fireEvent.keyDown(handle, { key: "ArrowRight" }); // 312 - 24 = 288 -> clamp 300
+    expect(panel.style.width).toBe("300px");
+    expect(storage.getItem(SIDE_PANEL_WIDTH_STORAGE_KEY)).toBe("300");
+  });
+
   it("renders the handle's accessible label in English when the language is English", () => {
     render(
       <LanguageProvider initialLanguage="en">
