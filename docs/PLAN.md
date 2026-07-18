@@ -904,12 +904,16 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       解消確認)。READMEとdocker-compose.ymlの片付け手順も
       `--remove-orphans`必須に更新。詳細はdocs/worklog/issue-359.md)
       [#359](https://github.com/morichikawa/chainviz/issues/359)
-- [ ] サイドパネル(コントラクトソース表示・用語集表示)の幅をリサイズ
+- [x] サイドパネル(コントラクトソース表示・用語集表示)の幅をリサイズ
       できるようにする
       (ユーザーからの要望。現状は幅固定(ARCHITECTURE.md §12.2に「400px
       目安」と記載)。ドラッグリサイズハンドル・幅の永続化要否・最小/
       最大幅が論点。`contractSource`/`glossary`/`commsLog`のkindによらず
-      共通シェル(`SidePanel.tsx`)で一括対応できる見込み)
+      共通シェル(`SidePanel.tsx`)で一括対応できる見込み)。既定420px/
+      最小300px/最大90vw、localStorage永続化(`chainviz.sidePanel.width.v1`)、
+      role="separator"+←→キー操作対応で実装。実Docker環境でドラッグ・
+      キーボード操作・クランプ・永続化を確認。QA中に発見した軽微なUX上の
+      粗さ(右ボタンドラッグに反応・テキスト選択抑止なし)はIssue #391へ分離
       [#362](https://github.com/morichikawa/chainviz/issues/362)
 - [ ] サンプルコントラクトのトークンシンボル(CVZ等)がSolidityの定数で
       ハードコードされておりデプロイ時に変更できない
