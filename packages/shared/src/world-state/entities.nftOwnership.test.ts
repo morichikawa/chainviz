@@ -13,7 +13,7 @@ function nftContract(overrides: Partial<ContractEntity> = {}): ContractEntity {
     chainType: "ethereum",
     name: "ChainvizNFT",
     catalogKey: "ChainvizNFT",
-    nft: { symbol: "CVN" },
+    nft: { symbol: "CVNDEMO" },
     ...overrides,
   };
 }
@@ -29,7 +29,7 @@ describe("ContractEntity NFT ownership (Issue #315)", () => {
       ],
     });
     const roundTripped = JSON.parse(JSON.stringify(contract)) as ContractEntity;
-    expect(roundTripped.nft).toEqual({ symbol: "CVN" });
+    expect(roundTripped.nft).toEqual({ symbol: "CVNDEMO" });
     expect(roundTripped.nftTokens).toHaveLength(2);
     expect(roundTripped.nftTokens?.[0]).toEqual({
       tokenId: "1",
@@ -75,7 +75,7 @@ describe("ContractEntity NFT ownership (Issue #315)", () => {
       address: "0x000000000000000000000000000000000000f00d",
       chainType: "ethereum",
       name: "ChainvizToken",
-      token: { symbol: "CVZ", decimals: 18 },
+      token: { symbol: "CVZDEMO", decimals: 18 },
     };
     const serialized = JSON.stringify(erc20Like);
     expect(serialized).not.toContain("nftTokens");
@@ -90,7 +90,7 @@ describe("ContractEntity NFT ownership (Issue #315)", () => {
     // token を持たず、フロントは nft の有無で台帳表示を切り替える。
     const contract = nftContract();
     expect(contract.token).toBeUndefined();
-    expect(contract.nft?.symbol).toBe("CVN");
+    expect(contract.nft?.symbol).toBe("CVNDEMO");
   });
 
   it("does not guarantee referential integrity between ownerAddress and wallets", () => {
