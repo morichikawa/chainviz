@@ -854,8 +854,8 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       追随していなかったことが判明し修正。UI-CMD-07(削除ボタンが
       stableにならない)は原因不明のまま再現できず、Issue #373として分割)
       [#346](https://github.com/morichikawa/chainviz/issues/346)
-- [x] UI-CMD-07: ワークベンチ削除ボタンがE2E上でstableにならないことがある
-      (原因判明・修正済み)
+- [ ] UI-CMD-07: ワークベンチ削除ボタンがE2E上でstableにならないことがある
+      (原因判明・コア修正はQA確認済みだがUI-MULTI-01への適用箇所に回帰あり)
       (Issue #346から分割。chainviz-detectiveが独立した合成環境で原因を
       特定: 実際は削除ボタンがビューポート外にありPlaywrightのクリックが
       永久リトライしていた。根本原因はReact Flowの`fitView` propが
