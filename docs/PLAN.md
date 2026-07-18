@@ -570,11 +570,14 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
 - [x] beaconStableIdForExecutionがdocker composeプロジェクトをスコープ
       しない(複数プロジェクト同時観測時にキー混線の恐れ)
       [#153](https://github.com/morichikawa/chainviz/issues/153)
-- [ ] collectorのcomposeProjectが"chainviz-ethereum"にハードコードされ
+- [x] collectorのcomposeProjectが"chainviz-ethereum"にハードコードされ
       環境変数での上書き口が無く、QA検証時に独立した合成環境で
       ワークベンチ経由の操作(runWorkbenchOperation等)を検証できない
       (以前から本ファイルに記載されていたがGitHub Issue化されずに残って
-      いた項目。統括が2026-07-17にIssue化)
+      いた項目。統括が2026-07-17にIssue化。環境変数CHAINVIZ_COMPOSE_PROJECT
+      で上書き可能にし、実Docker環境でターゲット切替・既存スタックとの
+      無干渉・不正値のfail-fastを確認。QA中に発見したaddWorkbenchの
+      orphanコンテナ残留(既存の挙動)はIssue #385として分離)
       [#369](https://github.com/morichikawa/chainviz/issues/369)
 - [x] デプロイのコンストラクタ引数にABI型と不一致な値を入力するとforgeの
       生エラーがそのままトーストに表示される
@@ -958,6 +961,14 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       collector(4125/4126)とworkbenchのRPC向き先が一致しない環境結合。
       着手時はまずchainviz-designerによる設計を先行させる)
       [#381](https://github.com/morichikawa/chainviz/issues/381)
+- [ ] addWorkbench(createAndStart)でcontainer.start()失敗時に作成済み
+      コンテナがorphanとして残留する
+      (Issue #369の最終QA検証中に偶発的に観測。存在しないネットワークを
+      指定した場合等にstartが失敗しても、作成済みのCreated状態コンテナが
+      削除されない。addNodeは事前にネットワーク存在確認をするためこの
+      経路では発生しない。通常運用では発生しないが、Issue #369で
+      「未用意のprojectを指させる」使い方が可能になったため顕在化しうる)
+      [#385](https://github.com/morichikawa/chainviz/issues/385)
 
 ## 運用ルール（全ステップ共通）
 
