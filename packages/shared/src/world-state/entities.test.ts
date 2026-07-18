@@ -504,6 +504,43 @@ describe("world-state entities", () => {
     expect(edge.fromWorkbenchId).toBe("workbench-alice");
     expect(edge.toNodeId).toBe("node-1");
     expect(edge.operation).toBe("sendRawTransaction");
+    // レスポンス観測（outcome/durationMs。Issue #352）は optional なので、
+    // 省略した上記の edge がそのまま型検査を通ることが互換性の確認になる。
+    expect(JSON.stringify(edge)).not.toContain("outcome");
+    expect(JSON.stringify(edge)).not.toContain("durationMs");
+  });
+
+  it("carries an optional response observation (outcome/durationMs) on an OperationEdge", () => {
+    // Issue #352: ロギングプロキシがレスポンスから観測した成否・所要時間。
+    const succeeded: OperationEdge = {
+      kind: "operation",
+      fromWorkbenchId: "workbench-alice",
+      toNodeId: "node-1",
+      operation: "sendRawTransaction",
+      observedAt: 1_700_000_000_000,
+      outcome: "ok",
+      durationMs: 12,
+    };
+    const failed: OperationEdge = {
+      ...succeeded,
+      outcome: "error",
+    };
+    // 片方だけの観測も許す（例: 応答の対応付けに失敗して成否は判定不能だが
+    // HTTP 往復の所要時間は測れた場合）。
+    const durationOnly: OperationEdge = {
+      kind: "operation",
+      fromWorkbenchId: "workbench-alice",
+      toNodeId: "node-1",
+      operation: "call",
+      observedAt: 1_700_000_000_000,
+      durationMs: 3,
+    };
+
+    expect(succeeded.outcome).toBe("ok");
+    expect(succeeded.durationMs).toBe(12);
+    expect(failed.outcome).toBe("error");
+    expect(durationOnly.outcome).toBeUndefined();
+    expect(durationOnly.durationMs).toBe(3);
   });
 
   it("discriminates WorldStateEdge members by kind", () => {

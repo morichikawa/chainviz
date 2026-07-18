@@ -127,9 +127,11 @@ describe("handleRpcRequest", () => {
     expect(forward).toHaveBeenCalledWith(rawBody, "application/json");
   });
 
-  it("emits an observation for the observed call", async () => {
+  it("emits an observation for the observed call, with outcome/durationMs from the response", async () => {
     const observed: RpcObservation[] = [];
-    const now = vi.fn(() => 12_345);
+    // timestamp 取得（受信時） → forward → durationMs 計測（応答受信時）の
+    // 2 回だけ now() が呼ばれる想定で固定値を返す。
+    const now = vi.fn().mockReturnValueOnce(12_345).mockReturnValueOnce(12_357);
     await handleRpcRequest({
       rawBody: JSON.stringify({ id: 1, method: "eth_sendRawTransaction", params: ["0xraw"] }),
       callerIp: "172.28.0.9",
@@ -145,8 +147,84 @@ describe("handleRpcRequest", () => {
         method: "eth_sendRawTransaction",
         params: ["0xraw"],
         id: 1,
+        outcome: "ok",
+        durationMs: 12,
       },
     ]);
+  });
+
+  it("emits onObserve only after the forward call resolves (not before)", async () => {
+    const events: string[] = [];
+    const forward: ForwardFn = vi.fn(async () => {
+      events.push("forward-called");
+      return OK_RESPONSE;
+    });
+    await handleRpcRequest({
+      rawBody: JSON.stringify({ id: 1, method: "eth_chainId", params: [] }),
+      callerIp: "ip",
+      contentType: "application/json",
+      forward,
+      onObserve: () => events.push("observed"),
+    });
+    expect(events).toEqual(["forward-called", "observed"]);
+  });
+
+  it("rounds durationMs to a non-negative integer", async () => {
+    const observed: RpcObservation[] = [];
+    const now = vi.fn().mockReturnValueOnce(1000).mockReturnValueOnce(1000.6);
+    await handleRpcRequest({
+      rawBody: JSON.stringify({ id: 1, method: "eth_chainId", params: [] }),
+      callerIp: "ip",
+      contentType: "application/json",
+      forward: stubForward(OK_RESPONSE),
+      onObserve: (o) => observed.push(o),
+      now,
+    });
+    expect(observed[0].durationMs).toBe(1);
+  });
+
+  it("shares a single durationMs across all observations in a batch", async () => {
+    const observed: RpcObservation[] = [];
+    const now = vi.fn().mockReturnValueOnce(0).mockReturnValueOnce(20);
+    const batchResponse: ForwardResponse = {
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([
+        { jsonrpc: "2.0", id: 1, result: "0x1" },
+        { jsonrpc: "2.0", id: 2, result: "0x2" },
+      ]),
+    };
+    await handleRpcRequest({
+      rawBody: JSON.stringify([
+        { id: 1, method: "eth_chainId", params: [] },
+        { id: 2, method: "eth_blockNumber", params: [] },
+      ]),
+      callerIp: "ip",
+      contentType: "application/json",
+      forward: stubForward(batchResponse),
+      onObserve: (o) => observed.push(o),
+      now,
+    });
+    expect(observed.map((o) => o.durationMs)).toEqual([20, 20]);
+    expect(observed.map((o) => o.outcome)).toEqual(["ok", "ok"]);
+  });
+
+  it("omits outcome when the response cannot be judged (e.g. non-JSON body)", async () => {
+    const observed: RpcObservation[] = [];
+    const badResponse: ForwardResponse = {
+      status: 200,
+      contentType: "application/json",
+      body: "not json",
+    };
+    await handleRpcRequest({
+      rawBody: JSON.stringify({ id: 1, method: "eth_chainId", params: [] }),
+      callerIp: "ip",
+      contentType: "application/json",
+      forward: stubForward(badResponse),
+      onObserve: (o) => observed.push(o),
+    });
+    expect(observed[0].outcome).toBeUndefined();
+    expect(observed[0].durationMs).toBeTypeOf("number");
   });
 
   it("still forwards when the body cannot be parsed for observation", async () => {
@@ -189,8 +267,9 @@ describe("handleRpcRequest", () => {
     );
   });
 
-  it("emits observations even when forwarding fails", async () => {
+  it("emits observations with outcome error and a measured durationMs even when forwarding fails", async () => {
     const observed: RpcObservation[] = [];
+    const now = vi.fn().mockReturnValueOnce(5000).mockReturnValueOnce(5030);
     await handleRpcRequest({
       rawBody: JSON.stringify({ id: 1, method: "eth_chainId", params: [] }),
       callerIp: "ip",
@@ -200,8 +279,87 @@ describe("handleRpcRequest", () => {
       }),
       onObserve: (o) => observed.push(o),
       log: vi.fn(),
+      now,
     });
-    expect(observed.map((o) => o.method)).toEqual(["eth_chainId"]);
+    expect(observed).toEqual([
+      {
+        timestamp: 5000,
+        callerIp: "ip",
+        method: "eth_chainId",
+        params: [],
+        id: 1,
+        outcome: "error",
+        durationMs: 30,
+      },
+    ]);
+  });
+
+  it("marks every observation in a batch as error when forwarding fails", async () => {
+    const observed: RpcObservation[] = [];
+    await handleRpcRequest({
+      rawBody: JSON.stringify([
+        { id: 1, method: "eth_chainId", params: [] },
+        { id: 2, method: "eth_blockNumber", params: [] },
+      ]),
+      callerIp: "ip",
+      contentType: "application/json",
+      forward: vi.fn(async () => {
+        throw new Error("down");
+      }),
+      onObserve: (o) => observed.push(o),
+      log: vi.fn(),
+    });
+    expect(observed.map((o) => o.outcome)).toEqual(["error", "error"]);
+  });
+
+  it("passes a resolved non-2xx upstream response through verbatim while marking outcome error", async () => {
+    // 転送は throw せず resolve するが上流が 500 を返したケース。透過性は
+    // 崩さず（status/body をそのまま返す）、観測だけ error に倒す。
+    const observed: RpcObservation[] = [];
+    const upstreamError: ForwardResponse = {
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, error: { code: -32000, message: "server" } }),
+    };
+    const now = vi.fn().mockReturnValueOnce(100).mockReturnValueOnce(140);
+    const result = await handleRpcRequest({
+      rawBody: JSON.stringify({ id: 1, method: "eth_chainId", params: [] }),
+      callerIp: "ip",
+      contentType: "application/json",
+      forward: stubForward(upstreamError),
+      onObserve: (o) => observed.push(o),
+      now,
+    });
+    // 透過: 上流の status/body をそのまま返す（502 に潰さない）。
+    expect(result.status).toBe(500);
+    expect(result.body).toBe(upstreamError.body);
+    expect(observed[0].outcome).toBe("error");
+    expect(observed[0].durationMs).toBe(40);
+  });
+
+  it("clamps durationMs to 0 when the clock appears to move backwards", async () => {
+    // now() の逆行（時刻補正など）でも負値を出さず 0 に丸める。
+    const observed: RpcObservation[] = [];
+    const now = vi.fn().mockReturnValueOnce(1000).mockReturnValueOnce(950);
+    await handleRpcRequest({
+      rawBody: JSON.stringify({ id: 1, method: "eth_chainId", params: [] }),
+      callerIp: "ip",
+      contentType: "application/json",
+      forward: stubForward(OK_RESPONSE),
+      onObserve: (o) => observed.push(o),
+      now,
+    });
+    expect(observed[0].durationMs).toBe(0);
+  });
+
+  it("does not throw when no onObserve is provided (observation is simply not emitted)", async () => {
+    const result = await handleRpcRequest({
+      rawBody: JSON.stringify({ id: 1, method: "eth_chainId", params: [] }),
+      callerIp: "ip",
+      contentType: "application/json",
+      forward: stubForward(OK_RESPONSE),
+    });
+    expect(result.status).toBe(200);
   });
 });
 

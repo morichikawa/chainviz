@@ -877,12 +877,13 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       発見。Issue #298の「既知の残課題」で既に言及されていた問題が今回
       顕在化。着手時はまずchainviz-uxによるUX設計を先行させる)
       [#351](https://github.com/morichikawa/chainviz/issues/351)
-- [ ] ノード間通信ログにRPC呼び出しのレスポンス(成否・所要時間)を追加する
+- [x] ノード間通信ログにRPC呼び出しのレスポンス(成否・所要時間)を追加する
       (Issue #317第1弾の設計時にchainviz-uxが分割した論点。
       OperationEdgeへのフィールド追加(shared型変更)とロギングプロキシからの
       レスポンス観測(collector変更)を伴うため、フロントのみで完結する
-      第1弾からは分離。Issue #317マージ後に着手し、まずchainviz-designerに
-      設計を依頼する)
+      第1弾からは分離。designer設計→collector/frontend並行実装→テスト強化→
+      レビュー→i18nレビュー→QA(実Docker環境で成功/失敗両ケースの観測と
+      表示を確認)まで完了)
       [#352](https://github.com/morichikawa/chainviz/issues/352)
 - [x] docker compose down -v後もEOA(ウォレット)が削除されずに残る
       (原因特定済み: collectorがチェーンリセット(genesis変更)を検知して

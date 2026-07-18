@@ -13,6 +13,10 @@
 // onObserve コールバックで観測データを外へ渡すだけにとどめる（Issue #80）。
 
 import { createServer, type IncomingMessage, type Server } from "node:http";
+import {
+  resolveResponseOutcomes,
+  type RpcOutcome,
+} from "./response-outcome.js";
 
 /** JSON-RPC の id フィールド。仕様上 string / number / null を取りうる。 */
 export type JsonRpcId = string | number | null;
@@ -32,6 +36,19 @@ export interface RpcObservation {
   params: unknown;
   /** JSON-RPC リクエスト id。 */
   id: JsonRpcId;
+  /**
+   * 呼び出しの成否（レスポンス観測、Issue #352）。転送先のレスポンスから
+   * 判定できた場合のみ入る（省略 = 判定不能。proxy/response-outcome.ts の
+   * 判定規則に従う）。
+   */
+  outcome?: RpcOutcome;
+  /**
+   * 呼び出しの所要時間（ms、0 以上の整数）。プロキシがリクエストを受け
+   * 取り終えてから転送先のレスポンスボディを受け取り終えるまで。バッチ
+   * リクエストは 1 回の HTTP 往復を共有するため、同一バッチ内の全観測が
+   * 同じ値を持つ。
+   */
+  durationMs?: number;
 }
 
 /** 観測データの受け取り口。後続処理（world-state への組み込み）へ渡す。 */
@@ -181,20 +198,30 @@ export async function handleRpcRequest(args: {
   const log = args.log ?? defaultLog;
   const timestamp = now();
 
-  // 観測: 転送の成否に関わらず「呼び出しがあった」事実を記録・発行する。
+  // 観測: 呼び出しがあった事実自体はここで記録する（従来どおり転送前）。
+  // ただし onObserve の発行は転送完了後（成否・所要時間が確定した後）へ
+  // 移す（docs/worklog/issue-352.md §3.1）。
   const observations = extractObservations(rawBody, callerIp, timestamp);
   for (const observation of observations) {
     log(
       `[proxy] rpc call from ${observation.callerIp}: ${observation.method}`,
       observation.params,
     );
-    args.onObserve?.(observation);
   }
 
   // 転送: 受け取ったボディを改変せずそのまま実ノードへ送り、レスポンスを
-  // そのまま返す（透過プロキシ）。
+  // そのまま返す（透過プロキシ）。所要時間の起点は上で取得済みの timestamp
+  // （リクエストボディ受領完了時点）をそのまま使う（§3.2。now() を余分に
+  // 呼び直さない）。
   try {
     const forwarded = await forward(rawBody, contentType);
+    const durationMs = elapsedMs(timestamp, now());
+    const outcomes = resolveResponseOutcomes(observations, {
+      kind: "success",
+      status: forwarded.status,
+      body: forwarded.body,
+    });
+    emitObservations(observations, outcomes, durationMs, args.onObserve);
     return {
       status: forwarded.status,
       contentType: forwarded.contentType,
@@ -204,6 +231,9 @@ export async function handleRpcRequest(args: {
     // 転送失敗は握りつぶさずログに残す。透過性を保てないケースなので、
     // JSON-RPC のエラー形式で 502 を返し、呼び出し側が失敗を検知できるようにする。
     log("[proxy] forward to upstream failed:", err);
+    const durationMs = elapsedMs(timestamp, now());
+    const outcomes = resolveResponseOutcomes(observations, { kind: "failure" });
+    emitObservations(observations, outcomes, durationMs, args.onObserve);
     const id = observations.length === 1 ? observations[0].id : null;
     return {
       status: 502,
@@ -215,6 +245,33 @@ export async function handleRpcRequest(args: {
       }),
     };
   }
+}
+
+/** 所要時間（ms）を 0 以上の整数に丸める。 */
+function elapsedMs(startedAt: number, endedAt: number): number {
+  return Math.max(0, Math.round(endedAt - startedAt));
+}
+
+/**
+ * 観測ごとに outcome/durationMs を付与して onObserve へ発行する。outcome が
+ * undefined（判定不能）のときはフィールドごと省略する（省略 = 判定不能、を
+ * 3値目として使う設計。§3.3）。
+ */
+function emitObservations(
+  observations: RpcObservation[],
+  outcomes: (RpcOutcome | undefined)[],
+  durationMs: number,
+  onObserve: RpcObserver | undefined,
+): void {
+  if (!onObserve) return;
+  observations.forEach((observation, index) => {
+    const outcome = outcomes[index];
+    onObserve({
+      ...observation,
+      ...(outcome !== undefined ? { outcome } : {}),
+      durationMs,
+    });
+  });
 }
 
 export interface LoggingProxyOptions {

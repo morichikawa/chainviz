@@ -69,7 +69,23 @@ export function CommsLogEntryRow({ entry }: CommsLogEntryRowProps) {
         <span className="comms-log-entry__subject">{text.subject}</span>
       </div>
       <div className="comms-log-entry__body">
-        {entry.category === "operation" || entry.category === "internal" ? (
+        {entry.category === "operation" ? (
+          <code className="comms-log-entry__code">
+            {text.body}
+            {text.operationSuffix &&
+              (text.operationSuffix.tone ? (
+                <span
+                  className={`comms-log-entry__outcome comms-log-entry__outcome--${text.operationSuffix.tone}`}
+                  aria-label={text.operationSuffix.ariaLabel}
+                  data-testid="comms-log-entry-outcome"
+                >
+                  {text.operationSuffix.text}
+                </span>
+              ) : (
+                text.operationSuffix.text
+              ))}
+          </code>
+        ) : entry.category === "internal" ? (
           <code className="comms-log-entry__code">{text.body}</code>
         ) : (
           text.body
