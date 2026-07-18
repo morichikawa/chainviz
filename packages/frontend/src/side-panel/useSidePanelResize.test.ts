@@ -95,6 +95,60 @@ describe("useSidePanelResize", () => {
     expect(result.current.width).toBe(startWidth);
   });
 
+  // Issue #391: ガードは `event.button !== 0` なので、右ボタン(2)だけでなく
+  // 中ボタン(1)・戻る/進むボタン(3, 4)を含む全ての非プライマリボタンで
+  // ドラッグが始まらない。代表値を固定しておく（button 定数の意味は
+  // https://developer.mozilla.org/docs/Web/API/MouseEvent/button に準拠）。
+  it.each([
+    [1, "middle"],
+    [3, "back"],
+    [4, "forward"],
+  ])("ignores a pointerdown from button %i (%s)", (button) => {
+    const { result } = renderHook(() => useSidePanelResize(memoryStorage()));
+    const startWidth = result.current.width;
+
+    act(() => {
+      result.current.handleProps.onPointerDown(pointerDownEvent(1000, button));
+    });
+    expect(result.current.resizing).toBe(false);
+
+    act(() => {
+      dispatchPointer("pointermove", 900);
+    });
+    expect(result.current.width).toBe(startWidth);
+  });
+
+  it("keeps the original anchor when a non-primary pointerdown interrupts an in-progress drag", () => {
+    // Issue #391: 左ボタンでドラッグ中に右クリック等が割り込んでも、
+    // その pointerdown は弾かれ、ドラッグの開始アンカー（dragRef）は
+    // 元のまま保たれる。上の「左ボタン再 pointerdown はアンカーし直す」
+    // テストと対になる回帰: 右クリック割り込みでは幅計算が乱れない。
+    const { result } = renderHook(() => useSidePanelResize(memoryStorage()));
+    const startWidth = result.current.width;
+
+    act(() => {
+      result.current.handleProps.onPointerDown(pointerDownEvent(1000)); // 左ボタン
+    });
+    act(() => {
+      dispatchPointer("pointermove", 900); // width => startWidth + 100
+    });
+    expect(result.current.width).toBe(startWidth + 100);
+
+    // ドラッグ継続中に右ボタン pointerdown が別の X（700）で割り込む。
+    // 弾かれるので dragRef は startX=1000 のまま。
+    act(() => {
+      result.current.handleProps.onPointerDown(pointerDownEvent(700, 2));
+    });
+    expect(result.current.resizing).toBe(true);
+
+    // 元アンカー(1000)基準で計算される。仮に 700 へ再アンカーされていれば
+    // startWidth + 150 ではなく別の値になる。
+    act(() => {
+      dispatchPointer("pointermove", 850); // startWidth + (1000 - 850) = +150
+    });
+    expect(result.current.width).toBe(startWidth + 150);
+  });
+
   it("shrinks the width while dragging the handle to the right", () => {
     const { result } = renderHook(() => useSidePanelResize(memoryStorage()));
     const startWidth = result.current.width;
