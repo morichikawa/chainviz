@@ -27,6 +27,24 @@ export async function dispatchHover(target: Locator): Promise<void> {
 }
 
 /**
+ * `dispatchHover` で開始したホバー状態を解除する（Issue #388）。
+ *
+ * 背景: `dispatchHover` は実ポインタを一切動かさないため、解除側を
+ * `page.mouse.move(0, 0)`（実マウス移動）で行っても、対象要素はポインタの
+ * 「下」に一度も入っていない扱いのままで `mouseleave` が発火しない
+ * （chain-ribbon.spec.ts の UI-B-06 併走 flaky の一因。docs/worklog/
+ * issue-388.md）。対になる `mouseout` を直接 dispatch すれば、実ポインタの
+ * 位置に関係なく確実に解除できる。`relatedTarget` は省略している
+ * （＝画面外へ抜けたのと同じ扱い）。実ブラウザでの動作確認（docs/worklog/
+ * issue-388.md 検証プロトコル）で、この形のままでも React の
+ * `onMouseLeave` が問題なく合成され、強調・ポップオーバーの解除が確実に
+ * 反映されることを実測済み。
+ */
+export async function dispatchUnhover(target: Locator): Promise<void> {
+  await target.dispatchEvent("mouseout");
+}
+
+/**
  * `scope` 配下から、指定した `data-testid` を子孫に持つ要素を、ブラウザ組み込み
  * の CSS `:has()` セレクタで絞り込む。
  *
