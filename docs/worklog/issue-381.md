@@ -172,3 +172,46 @@
   壊れないが、設計メモの「実装時に判断してよい点」に従い、一貫性のため
   `UI_E2E_PROXY_PORT` を明示的に渡す形に揃える（ARCHITECTURE.md §8.3 の
   「暗黙の +1 既定に頼らない」方針と整合させる）。
+
+### 2026-07-18 Issue #381 実装完了
+
+- 担当: frontend
+- ブランチ: issue-381-workbench-rpc-url
+- 実装内容（設計メモどおり、コミットを分けて実施）:
+  1. `playwright-global-setup.ts` に `UI_E2E_PROXY_PORT`（= 4126）を追加し、
+     `startCollector(UI_E2E_COLLECTOR_PORT, UI_E2E_PROXY_PORT)` と明示的に
+     渡すよう変更。対応するユニットテストも両ポートの検証に更新。
+  2. `docker.ts` の `deployUncatalogedContractInWorkbench` に `proxyPort`
+     必須引数を追加し、`docker compose exec -T -e
+     ETH_RPC_URL=http://host.docker.internal:<proxyPort>` で exec 実行にのみ
+     RPC 向き先を上書きするよう変更（コンテナ本体の環境・compose 定義は
+     不変）。呼び出し元 `contract-lifecycle.spec.ts` を新シグネチャに合わせて
+     更新（`UI_E2E_PROXY_PORT` を import）。
+  3. 一貫性のため `connection-errors.spec.ts` の `restartCollector()` も
+     `UI_E2E_PROXY_PORT` を明示的に渡す形に揃えた（追加コミット、値自体は
+     従来と同じ 4126 で回帰なし）。
+- `pnpm lint && pnpm build && pnpm test` は全パッケージで通過（frontend
+  2730件・e2e ユニット・collector・shared すべて green）。
+- 実 Docker 環境での確認: この作業環境では headless Chromium が
+  `libnspr4.so` 不足で起動できず（サンドボックスの制約。sudo にパスワードが
+  必要でシステムパッケージの追加インストールはできなかった）、
+  Playwright 経由の UI-C-06 フル実行はできなかった。代わりに Docker
+  レイヤーの核心部分（`docker compose exec -T -e ETH_RPC_URL=... workbench`
+  で `forge create` を実行する箇所）を実際のワークベンチコンテナに対して
+  手動で再現し、以下を実測確認した:
+  - 一時的に別ポート（4901/4902）で collector を起動し、`exec -e
+    ETH_RPC_URL=http://host.docker.internal:4902` で forge create が
+    成功すること（デプロイが完了しトランザクションハッシュが返る）。
+  - 何も listen していないポート（4903）を指定すると、修正前と同じ
+    `Connection refused (os error 111)` で失敗すること（不具合の再現）。
+  - 上書きなしで `exec workbench sh -c 'echo $ETH_RPC_URL'` を実行すると
+    コンテナ本体の環境は変わらず `http://host.docker.internal:4001`
+    のままであること（`-e` がコンテナ本体ではなく exec 実行にだけ効くこと
+    の確認）。
+  - この検証は既に稼働中だった共有スタック（`chainviz-ethereum-*`、別
+    セッションが `/home/zoe/workspace/chainviz` から起動していたもの）を
+    そのまま再利用し、既存プロセス・コンテナには手を加えていない。
+  - Playwright 経由のブラウザ実行そのもの（chromium 起動）は本 Issue の
+    修正対象と無関係な環境要因のため、QA が実 Docker 環境で
+    `pnpm test:e2e:ui -g UI-C-06` を実行して最終確認することを申し送る。
+- 発見した注意点: 特になし。設計メモの引き継ぎ内容と実装後の差異は無い。
