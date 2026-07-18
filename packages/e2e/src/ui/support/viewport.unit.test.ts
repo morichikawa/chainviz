@@ -30,4 +30,42 @@ describe("fitCanvasView", () => {
 
     await expect(fitCanvasView(page)).rejects.toThrow(clickError);
   });
+
+  it(
+    "クリック対象のカードやビューポート状態に関する前提を持たない" +
+      "（フィットボタン以外の locator を一切参照しない。対象が既に視野内でも" +
+      "安全に呼べることの裏づけ。点検観点4）",
+    async () => {
+      const click = vi.fn().mockResolvedValue(undefined);
+      const seenSelectors: string[] = [];
+      const locator = vi.fn((selector: string): Locator => {
+        seenSelectors.push(selector);
+        return { click } as unknown as Locator;
+      });
+      const page = { locator } as unknown as Page;
+
+      await fitCanvasView(page);
+
+      // 参照した locator はフィットボタンだけ。カードの視野内外を判定する
+      // ような条件分岐を持たず、常にフィット操作へ一本化されている。
+      expect(seenSelectors).toEqual([".react-flow__controls-fitview"]);
+    },
+  );
+
+  it(
+    "続けて複数回呼んでも毎回フィットボタンを押すだけで冪等に成功する" +
+      "（既に全体が視野に収まっている状態で再度呼んでも安全）",
+    async () => {
+      const click = vi.fn().mockResolvedValue(undefined);
+      const locator = vi.fn(
+        (): Locator => ({ click } as unknown as Locator),
+      );
+      const page = { locator } as unknown as Page;
+
+      await fitCanvasView(page);
+      await fitCanvasView(page);
+
+      expect(click).toHaveBeenCalledTimes(2);
+    },
+  );
 });
