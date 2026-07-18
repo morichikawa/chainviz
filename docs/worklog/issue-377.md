@@ -366,3 +366,38 @@ CSS カスタムプロパティ方式にする。JS はスケール値を1つ管
 - `docs/PLAN.md` のIssue #377チェックボックス更新は行っていない(運用
   ルールどおりレビュー・QA完了後に統括が行う)
 - E2E: 設計メモの判断(jsdom の unit test で十分)を踏襲し追加しない
+
+### 2026-07-18 Issue #377 テスト強化メモ(tester)
+
+- 担当: tester
+- ブランチ: issue-377-glossary-font-size
+- 実装担当の基本テスト(sidePanelFontScale/useSidePanelFontScale/
+  SidePanel.fontScale の3ファイル)を読み、ハッピーパスと主要な端の
+  停止・スナップ・保存失敗は既にカバー済みであることを確認した。
+  以下の観点で異常系・境界値のテストを追加する(新機能の実装はしない)。
+- 追加する観点:
+  1. `sidePanelFontScale.ts` のスナップ同点タイの一般化: 実装は「距離が
+     同点なら配列の若い(小さい)刻みを採用」する。既存は 1.4 の1点のみ
+     固定。0.925 / 1.075 / 1.225 の各境界でも同じ規則が成り立つことを
+     追加で固定する。加えて空文字・空白文字の保存値は `Number("")===0`
+     で有限値になり既定 1.0 ではなく最小刻み 0.85 にスナップされる
+     (「非数→既定」ではない)実装の帰結をピン留めする
+  2. `stepSidePanelFontScale` の範囲外入力(5 / -5 など刻み外の current)
+     からの送り、非刻み値からの縮小方向、全刻みの降順ウォークを追加
+  3. `useSidePanelFontScale` のリセット冪等性(既定からのリセット)・
+     decrease→increase の往復・保存済み非刻み値(1.4)からの起動スナップ・
+     can フラグが歩行に応じて更新されること
+  4. `SidePanel.fontScale.test.tsx`: disabled ボタンのクリックが
+     onClick を発火せず保存値も変わらないこと(キーボード/SR には native
+     `disabled` で伝わる)、disabled でも aria-label を保持すること、
+     リセットボタンは端でも決して disabled にならないこと、パネルを
+     kind 切り替え相当で再マウントしても同じ storage から倍率が維持される
+     こと(点4: kind 共通1値)
+  5. `styles.css` の calc() 変換の回帰固定(新規 css テスト): パネル本文の
+     全対象セレクタが `calc(Npx * var(--side-panel-font-scale))` を持つこと、
+     および `comms-log-view__note`/`comms-log-entry__code` は明示 font-size
+     を持たず親から継承する(点3: 実装担当の判断が正しいことを DOM 入れ子
+     で確認済み。CSS 側でも個別 font-size を持たないことを固定)ことを
+     ファイル内容の検査で固定する(`walletPopoverStyles.test.ts` の前例に倣う)
+- 実装は変更しない。上記のうち空文字→0.85 のスナップは実害の無い
+  防御挙動なので固定テストとして記録するに留める(バグ差し戻しはしない)。
