@@ -15,7 +15,7 @@ const TOKEN_WITH_UNIT: ContractCatalogEntry = {
   catalogKey: "ChainvizToken",
   displayName: { ja: "ChainvizToken", en: "ChainvizToken" },
   description: { ja: "最小のERC20", en: "minimal ERC20" },
-  token: { symbol: "CVZ", decimals: 18 },
+  token: { symbol: "CVZDEMO", decimals: 18 },
   constructorArgs: [{ name: "initialSupply", type: "uint", unit: "token" }],
   functions: [],
 };
@@ -32,7 +32,7 @@ function renderForm(onSubmit = vi.fn()) {
 describe("DeployForm with a token-unit constructor arg (Issue #219)", () => {
   it("shows the symbol suffix on the constructor arg label", () => {
     renderForm();
-    expect(screen.getByText("initialSupply（CVZ単位）")).toBeTruthy();
+    expect(screen.getByText("initialSupply（CVZDEMO単位）")).toBeTruthy();
   });
 
   it("converts a decimal token-unit amount to the minimal unit on submit", () => {

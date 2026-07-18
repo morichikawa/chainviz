@@ -321,7 +321,7 @@ contracts/
   build-catalog.sh       # catalog.json の再生成スクリプト
 ```
 
-- **ChainvizToken**: `name`(Chainviz Token)/ `symbol`(CVZ)/ `decimals`(18)
+- **ChainvizToken**: `name`(Chainviz Token)/ `symbol`(CVZDEMO)/ `decimals`(18)
   を持つ最小 ERC20。`transfer` / `approve` / `transferFrom` と
   `Transfer` / `Approval` イベントを実装する。デプロイ時のコンストラクタ
   引数(`initialSupply`)でデプロイヤーへ初期供給できるほか、デプロイヤー
@@ -365,7 +365,7 @@ docker compose exec workbench sh
 forge build
 
 # プリマイン済みアカウント(index 0)からデプロイ。constructor-args は
-# initialSupply(wei 単位、decimals=18)。ここでは 100万 CVZ を初期供給する例
+# initialSupply(wei 単位、decimals=18)。ここでは 100万 CVZDEMO を初期供給する例
 forge create src/ChainvizToken.sol:ChainvizToken \
   --rpc-url "$ETH_RPC_URL" \
   --mnemonic "$EL_AND_CL_MNEMONIC" --mnemonic-index 0 \

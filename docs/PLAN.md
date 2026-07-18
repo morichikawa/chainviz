@@ -570,11 +570,14 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
 - [x] beaconStableIdForExecutionがdocker composeプロジェクトをスコープ
       しない(複数プロジェクト同時観測時にキー混線の恐れ)
       [#153](https://github.com/morichikawa/chainviz/issues/153)
-- [ ] collectorのcomposeProjectが"chainviz-ethereum"にハードコードされ
+- [x] collectorのcomposeProjectが"chainviz-ethereum"にハードコードされ
       環境変数での上書き口が無く、QA検証時に独立した合成環境で
       ワークベンチ経由の操作(runWorkbenchOperation等)を検証できない
       (以前から本ファイルに記載されていたがGitHub Issue化されずに残って
-      いた項目。統括が2026-07-17にIssue化)
+      いた項目。統括が2026-07-17にIssue化。環境変数CHAINVIZ_COMPOSE_PROJECT
+      で上書き可能にし、実Docker環境でターゲット切替・既存スタックとの
+      無干渉・不正値のfail-fastを確認。QA中に発見したaddWorkbenchの
+      orphanコンテナ残留(既存の挙動)はIssue #385として分離)
       [#369](https://github.com/morichikawa/chainviz/issues/369)
 - [x] デプロイのコンストラクタ引数にABI型と不一致な値を入力するとforgeの
       生エラーがそのままトーストに表示される
@@ -872,10 +875,14 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       「対象が実際に視野内へ入るまでフィットボタンを再試行する」方式に
       差し戻し修正した)
       [#373](https://github.com/morichikawa/chainviz/issues/373)
-- [ ] チェーンリボンの「親ブロック」行ホバー強調が実質使えない
+- [x] チェーンリボンの「親ブロック」行ホバー強調が実質使えない
       (ホバーが約200msで閉じる。Issue #313のUX設計中にchainviz-uxが実測で
       発見。Issue #298の「既知の残課題」で既に言及されていた問題が今回
-      顕在化。着手時はまずchainviz-uxによるUX設計を先行させる)
+      顕在化。ポップオーバーをホバー対象タイルのReactツリー子として描く
+      既存パターンへ合流し解消。1回目のQAで発見した二重強調(ホバー中
+      タイル自身も同時に強調される)は自己強調抑制で解消し2回目のQAで
+      合格。副次的に発見したUI-B-06の併走時flakyは#351非依存の既存課題
+      としてIssue #388へ分離)
       [#351](https://github.com/morichikawa/chainviz/issues/351)
 - [x] ノード間通信ログにRPC呼び出しのレスポンス(成否・所要時間)を追加する
       (Issue #317第1弾の設計時にchainviz-uxが分割した論点。
@@ -904,12 +911,16 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       解消確認)。READMEとdocker-compose.ymlの片付け手順も
       `--remove-orphans`必須に更新。詳細はdocs/worklog/issue-359.md)
       [#359](https://github.com/morichikawa/chainviz/issues/359)
-- [ ] サイドパネル(コントラクトソース表示・用語集表示)の幅をリサイズ
+- [x] サイドパネル(コントラクトソース表示・用語集表示)の幅をリサイズ
       できるようにする
       (ユーザーからの要望。現状は幅固定(ARCHITECTURE.md §12.2に「400px
       目安」と記載)。ドラッグリサイズハンドル・幅の永続化要否・最小/
       最大幅が論点。`contractSource`/`glossary`/`commsLog`のkindによらず
-      共通シェル(`SidePanel.tsx`)で一括対応できる見込み)
+      共通シェル(`SidePanel.tsx`)で一括対応できる見込み)。既定420px/
+      最小300px/最大90vw、localStorage永続化(`chainviz.sidePanel.width.v1`)、
+      role="separator"+←→キー操作対応で実装。実Docker環境でドラッグ・
+      キーボード操作・クランプ・永続化を確認。QA中に発見した軽微なUX上の
+      粗さ(右ボタンドラッグに反応・テキスト選択抑止なし)はIssue #391へ分離
       [#362](https://github.com/morichikawa/chainviz/issues/362)
 - [ ] サンプルコントラクトのトークンシンボル(CVZ等)がSolidityの定数で
       ハードコードされておりデプロイ時に変更できない
@@ -954,6 +965,28 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       collector(4125/4126)とworkbenchのRPC向き先が一致しない環境結合。
       着手時はまずchainviz-designerによる設計を先行させる)
       [#381](https://github.com/morichikawa/chainviz/issues/381)
+- [ ] addWorkbench(createAndStart)でcontainer.start()失敗時に作成済み
+      コンテナがorphanとして残留する
+      (Issue #369の最終QA検証中に偶発的に観測。存在しないネットワークを
+      指定した場合等にstartが失敗しても、作成済みのCreated状態コンテナが
+      削除されない。addNodeは事前にネットワーク存在確認をするためこの
+      経路では発生しない。通常運用では発生しないが、Issue #369で
+      「未用意のprojectを指させる」使い方が可能になったため顕在化しうる)
+      [#385](https://github.com/morichikawa/chainviz/issues/385)
+- [ ] UI-B-06(chain-ribbon.spec.ts)がUI-B-05との併走時に間欠的にflakyになる
+      (Issue #351の最終QA検証中に偶発的に観測。単独実行では安定合格。
+      #351のコード変更には起因せず、対象ブロックが表示窓から流れ出るまで
+      の時間との既存由来のタイミング競合(issue-298.mdに既出)が、併走時の
+      負荷で顕在化しやすくなると考えられる。Issue #346と同種の問題であり
+      対応方針を踏襲できないか検討する)
+      [#388](https://github.com/morichikawa/chainviz/issues/388)
+- [ ] サイドパネルのリサイズハンドルが右ボタンドラッグに反応し
+      テキスト選択も抑止されない
+      (Issue #362の最終QA検証中に偶発的に観測。`handlePointerDown`が
+      event.buttonを未チェックのため右ボタンドラッグでもリサイズが
+      開始する。resizing中にuser-select抑止も無くテキスト選択が起きる。
+      完了条件は損なわないため差し戻し対象外とし別Issueへ分離)
+      [#391](https://github.com/morichikawa/chainviz/issues/391)
 
 ## 運用ルール（全ステップ共通）
 

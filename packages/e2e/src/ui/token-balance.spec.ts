@@ -81,7 +81,7 @@ test("UI-C-05: トークン残高の表示と変化が見える", async ({ page 
       recipientAddress = recipient.address;
 
       const before = await deployedContractAddresses(page, senderAddress);
-      // 1000 CVZ(decimals=18)をデプロイヤー(senderAddress)へ初期供給する。
+      // 1000 CVZDEMO(decimals=18)をデプロイヤー(senderAddress)へ初期供給する。
       await submitDeploy(page, STATIC_WORKBENCH_ID, {
         catalogKey: "ChainvizToken",
         constructorArgs: { initialSupply: "1000000000000000000000" },
@@ -106,7 +106,7 @@ test("UI-C-05: トークン残高の表示と変化が見える", async ({ page 
   const senderTokenBefore = await readTokenBalance(page, senderAddress, tokenAddress);
 
   await test.step("トークンの transfer をコントラクト呼び出しで実行する", async () => {
-    // 100 CVZ をrecipientへ送る。
+    // 100 CVZDEMO をrecipientへ送る。
     await submitCall(page, STATIC_WORKBENCH_ID, {
       contractAddress: tokenAddress,
       functionSignature: "transfer(address,uint256)",

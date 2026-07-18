@@ -26,7 +26,7 @@ describe("readContractCatalog", () => {
         ChainvizToken: {
           name: "ChainvizToken",
           abi: [{ type: "function", name: "transfer" }],
-          token: { symbol: "CVZ", decimals: 18 },
+          token: { symbol: "CVZDEMO", decimals: 18 },
         },
         Counter: { name: "Counter", abi: [] },
       }),
@@ -35,7 +35,7 @@ describe("readContractCatalog", () => {
     const catalog = readContractCatalog(profileDir, () => {});
     expect(catalog).toBeDefined();
     expect(catalog?.ChainvizToken.name).toBe("ChainvizToken");
-    expect(catalog?.ChainvizToken.token).toEqual({ symbol: "CVZ", decimals: 18 });
+    expect(catalog?.ChainvizToken.token).toEqual({ symbol: "CVZDEMO", decimals: 18 });
     expect(catalog?.Counter).toEqual({ name: "Counter", abi: [] });
   });
 
@@ -412,12 +412,12 @@ describe("readContractCatalog", () => {
         ChainvizNFT: {
           name: "ChainvizNFT",
           abi: [{ type: "function", name: "ownerOf" }],
-          nft: { symbol: "CVN" },
+          nft: { symbol: "CVNDEMO" },
         },
       }),
     );
     const catalog = readContractCatalog(profileDir, () => {});
-    expect(catalog?.ChainvizNFT.nft).toEqual({ symbol: "CVN" });
+    expect(catalog?.ChainvizNFT.nft).toEqual({ symbol: "CVNDEMO" });
     // token(数量) と nft(個体) は別軸のフィールドなので、nft コントラクトは
     // token を持たない。
     expect(catalog?.ChainvizNFT.token).toBeUndefined();

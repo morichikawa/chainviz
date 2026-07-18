@@ -72,7 +72,7 @@ describe("createMockClient runWorkbenchOperation: deployContract", () => {
     expect(entity.kind).toBe("contract");
     expect(entity.catalogKey).toBe("ChainvizToken");
     expect(entity.name).toBe("ChainvizToken");
-    expect(entity.token).toEqual({ symbol: "CVZ", decimals: 18 });
+    expect(entity.token).toEqual({ symbol: "CVZDEMO", decimals: 18 });
   });
 
   it("succeeds for Counter (no token metadata)", async () => {

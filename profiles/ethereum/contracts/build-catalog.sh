@@ -113,16 +113,16 @@ add_entry() {
 echo "[build-catalog] catalog.json を再構築する"
 
 # ChainvizToken: symbol/decimals は src/ChainvizToken.sol の定数
-# (symbol="CVZ" / decimals=18)と一致させること。ABI にはこれらの値自体は
+# (symbol="CVZDEMO" / decimals=18)と一致させること。ABI にはこれらの値自体は
 # 出てこない(constant の値であって関数シグネチャではないため)ので、
 # ソースを変更した場合はここも手動で合わせて直す。
-add_entry "ChainvizToken" '{"symbol": "CVZ", "decimals": 18}' ""
+add_entry "ChainvizToken" '{"symbol": "CVZDEMO", "decimals": 18}' ""
 add_entry "Counter" "" ""
 
-# ChainvizNFT: symbol は src/ChainvizNFT.sol の定数(symbol="CVN")と
+# ChainvizNFT: symbol は src/ChainvizNFT.sol の定数(symbol="CVNDEMO")と
 # 一致させること(token と同じ理由で ABI には出てこない)。decimals は
 # 個体ベースの NFT には概念が無いため持たない(docs/ARCHITECTURE.md §13.1)。
-add_entry "ChainvizNFT" "" '{"symbol": "CVN"}'
+add_entry "ChainvizNFT" "" '{"symbol": "CVNDEMO"}'
 
 jq -S '.' "$TMP_CATALOG" > "$CATALOG"
 echo "[build-catalog] 完了: ${CATALOG}"

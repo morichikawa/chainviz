@@ -13,7 +13,7 @@ const catalogWithSource: ContractCatalog = {
   ChainvizToken: {
     name: "ChainvizToken",
     abi: [],
-    token: { symbol: "CVZ", decimals: 18 },
+    token: { symbol: "CVZDEMO", decimals: 18 },
     source: {
       fileName: "ChainvizToken.sol",
       language: "solidity",

@@ -16,7 +16,7 @@ const TOKEN_CATALOG: ContractCatalogEntry = {
   catalogKey: "ChainvizToken",
   displayName: { ja: "ChainvizToken", en: "ChainvizToken" },
   description: { ja: "最小のERC20", en: "minimal ERC20" },
-  token: { symbol: "CVZ", decimals: 18 },
+  token: { symbol: "CVZDEMO", decimals: 18 },
   constructorArgs: [],
   functions: [
     {
@@ -37,7 +37,7 @@ const deployedContracts: DeployedContractCandidate[] = [
     address: "0xcccccccccccccccccccccccccccccccccccccc",
     label: "ChainvizToken (0xcccc…cccc)",
     catalog: TOKEN_CATALOG,
-    token: { symbol: "CVZ", decimals: 18 },
+    token: { symbol: "CVZDEMO", decimals: 18 },
   },
 ];
 
@@ -58,7 +58,7 @@ function renderForm(onSubmit = vi.fn()) {
 describe("CallForm with a token-unit function arg (Issue #219)", () => {
   it("shows the symbol suffix on the token-unit arg label", () => {
     renderForm();
-    expect(screen.getByText("amount（CVZ単位）")).toBeTruthy();
+    expect(screen.getByText("amount（CVZDEMO単位）")).toBeTruthy();
   });
 
   it("converts a decimal token-unit amount to the minimal unit on submit", () => {
@@ -123,7 +123,7 @@ describe("CallForm with a token-unit function arg (Issue #219)", () => {
       catalogKey: "ChainvizToken",
       displayName: { ja: "ChainvizToken", en: "ChainvizToken" },
       description: { ja: "最小のERC20", en: "minimal ERC20" },
-      token: { symbol: "CVZ", decimals: 18 },
+      token: { symbol: "CVZDEMO", decimals: 18 },
       constructorArgs: [],
       functions: [
         {
@@ -155,7 +155,7 @@ describe("CallForm with a token-unit function arg (Issue #219)", () => {
               address: "0xcccccccccccccccccccccccccccccccccccccc",
               label: "ChainvizToken (0xcccc…cccc)",
               catalog: mixedCatalog,
-              token: { symbol: "CVZ", decimals: 18 },
+              token: { symbol: "CVZDEMO", decimals: 18 },
             },
           ]}
           walletCandidates={[]}
@@ -166,7 +166,7 @@ describe("CallForm with a token-unit function arg (Issue #219)", () => {
     );
 
     // transfer（トークン単位）: 単位サフィックス付きラベル、小数 1.5 は有効。
-    expect(screen.getByText("amount（CVZ単位）")).toBeTruthy();
+    expect(screen.getByText("amount（CVZDEMO単位）")).toBeTruthy();
     fireEvent.change(screen.getByTestId("operation-call-arg-amount"), {
       target: { value: "1.5" },
     });
@@ -177,7 +177,7 @@ describe("CallForm with a token-unit function arg (Issue #219)", () => {
     fireEvent.change(screen.getByTestId("operation-call-function"), {
       target: { value: "incrementBy(uint256)" },
     });
-    expect(screen.queryByText("amount（CVZ単位）")).toBeNull();
+    expect(screen.queryByText("amount（CVZDEMO単位）")).toBeNull();
     expect(screen.getByText("amount")).toBeTruthy();
     fireEvent.change(screen.getByTestId("operation-call-arg-amount"), {
       target: { value: "1.5" },
@@ -193,7 +193,7 @@ describe("CallForm with a token-unit function arg (Issue #219)", () => {
       catalogKey: "ChainvizToken",
       displayName: { ja: "ChainvizToken", en: "ChainvizToken" },
       description: { ja: "最小のERC20", en: "minimal ERC20" },
-      token: { symbol: "CVZ", decimals: 18 },
+      token: { symbol: "CVZDEMO", decimals: 18 },
       constructorArgs: [],
       functions: [
         {
@@ -214,7 +214,7 @@ describe("CallForm with a token-unit function arg (Issue #219)", () => {
               address: "0xcccccccccccccccccccccccccccccccccccccc",
               label: "ChainvizToken (0xcccc…cccc)",
               catalog: mixedCatalog,
-              token: { symbol: "CVZ", decimals: 18 },
+              token: { symbol: "CVZDEMO", decimals: 18 },
             },
           ]}
           walletCandidates={[]}

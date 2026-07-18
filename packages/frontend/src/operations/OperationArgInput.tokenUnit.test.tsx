@@ -13,7 +13,7 @@ afterEach(cleanup);
  */
 const TOKEN_FIELD: OperationArgField = { name: "amount", type: "uint", unit: "token" };
 
-const DEFAULT_TOKEN_INFO = { symbol: "CVZ", decimals: 18 };
+const DEFAULT_TOKEN_INFO = { symbol: "CVZDEMO", decimals: 18 };
 
 /**
  * `tokenInfo` は「省略」と「明示的に undefined」を同一視するため、通常の
@@ -43,7 +43,7 @@ function renderInput(
 describe("OperationArgInput with a token-unit field (Issue #219)", () => {
   it("appends the token symbol suffix to the label", () => {
     renderInput("", vi.fn(), DEFAULT_TOKEN_INFO);
-    expect(screen.getByText("amount（CVZ単位）")).toBeTruthy();
+    expect(screen.getByText("amount（CVZDEMO単位）")).toBeTruthy();
   });
 
   it("accepts a decimal token-unit value without showing an error", () => {

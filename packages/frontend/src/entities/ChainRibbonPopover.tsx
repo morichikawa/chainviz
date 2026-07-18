@@ -1,4 +1,5 @@
 import type { ReactNode, RefObject } from "react";
+import { useEffect, useRef } from "react";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { format } from "../i18n/i18n.js";
@@ -26,6 +27,13 @@ function Field({ label, value }: { label: ReactNode; value: string }) {
  * `onParentHover` 経由で `ChainRibbonCard` 側の state を動かすだけで、この
  * コンポーネント自体はどのタイルが強調されているかを持たない。
  *
+ * `onParentHover` の第2引数（`sourceHash`）は「このポップオーバー自身の
+ * タイルの hash」を渡す。`ChainRibbonCard` 側はこれを使って、このタイル
+ * 自身が同時に逆方向ハイライト（`isReverseHighlighted`）で光るのを
+ * 一時的に抑え、強調対象が「親タイルのみ」になるようにする（QA差し戻し
+ * 対応。docs/worklog/issue-351.md 参照。行をホバーしていない間・他タイル
+ * が逆方向ハイライトされる場合には影響しない）。
+ *
  * `anchorRef` はこのポップオーバーを開いたタイルへの ref（Issue #245 の
  * 既存ポップオーバー群と同じ、body 直下への portal 描画のための基準位置）。
  */
@@ -40,10 +48,26 @@ export function ChainRibbonPopover({
   tile: ChainRibbonTile;
   txCount: number | undefined;
   receivedOrder: ReceivedOrderEntry[];
-  onParentHover: (parentHash: string | null) => void;
+  onParentHover: (parentHash: string | null, sourceHash: string) => void;
 }) {
   const { t } = useLanguage();
   const { block } = tile;
+  // Issue #351: 「親ブロック」行がホバーされたまま、行自身の mouseleave が
+  // 一度も発火せずにこのポップオーバーが unmount されると
+  // （`ChainRibbonCard` 側の `parentHighlightHash`）が解除されず、直前
+  // タイルの強調枠が固着したまま残る。行のホバー中かどうかをここで追跡し、
+  // unmount 時にホバー中のままなら確実に解除する（強調の寿命はこの
+  // ポップオーバーの寿命を超えない、という不変条件を保証する）。
+  const parentRowHoveredRef = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      if (parentRowHoveredRef.current) {
+        parentRowHoveredRef.current = false;
+        onParentHover(null, block.hash);
+      }
+    };
+  }, [onParentHover, block.hash]);
 
   return (
     <PopoverPortal
@@ -60,9 +84,19 @@ export function ChainRibbonPopover({
       <Field label={t("chainRibbon.popover.hash")} value={block.hash} />
       <div
         className="infra-field chain-ribbon-popover__parent"
-        onMouseEnter={() => onParentHover(block.parentHash)}
-        onMouseLeave={() => onParentHover(null)}
+        onMouseEnter={() => {
+          parentRowHoveredRef.current = true;
+          onParentHover(block.parentHash, block.hash);
+        }}
+        onMouseLeave={() => {
+          parentRowHoveredRef.current = false;
+          onParentHover(null, block.hash);
+        }}
         data-testid={`chain-ribbon-popover-parent-${block.hash}`}
+        // e2e/テスト専用の完全な親hash露出（`data-connected-to-previous`等と
+        // 同じ用途）。表示テキストは shortHex で切り詰めており、実チェーンの
+        // 本物のhashでは逆引きできないため（Issue #351 QA差し戻し対応）。
+        data-parent-hash={block.parentHash}
       >
         <span className="infra-field__label">{t("chainRibbon.popover.parent")}</span>
         <span className="infra-field__value">{shortHex(block.parentHash)}</span>
