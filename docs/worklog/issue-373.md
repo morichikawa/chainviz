@@ -327,3 +327,158 @@ UI-D-03・`cleanup.ts` の安全網は毎回 `page.goto("/")` 直後に対象へ
 - `fitView` の padding(既定 0.1 のままでよい想定)
 - `fitCanvasView` ヘルパーの置き場所(viewport.ts 新設を推奨、既存
   support/operations.ts への追記でも可)
+
+### 2026-07-18 Issue #373 実装着手前の設計メモ(frontend)
+
+- 担当: frontend
+- ブランチ: issue-373-fitview-timing-fix(designer と同じブランチを継続使用)
+- designer の設計(§6〜§9)をそのまま採用し、未決事項(§9)は以下のとおり判断する。
+
+**ファイル構成・データフロー**
+
+- `packages/frontend/src/canvas/initialFit.ts`(新規、React 非依存):
+  - `shouldPerformInitialFit(input): boolean` — §7 の判定をそのまま実装。
+    引数はオブジェクト1つ(`alreadyFitted` / `hasReceivedSnapshot` /
+    `nodesInitialized` / `expectedNodeIds: readonly string[]` /
+    `storeNodeIds: readonly string[]`)。`expectedNodeIds` が
+    `storeNodeIds` の部分集合であることを `Set` で判定する。
+  - `INITIAL_FIT_MAX_ZOOM = 1`(根拠コメント: 環境依存の実測値ではなく
+    UX判断の固定値であることを明記)。
+  - 1ファイル1責務としては「初期フィットの判定ロジック」のみに絞り、
+    フック配線は分離する(設計メモの推奨どおり)。
+- `packages/frontend/src/canvas/useInitialFit.ts`(新規):
+  - `useInitialFit(hasReceivedSnapshot: boolean, nodes: CanvasFlowNode[]): void`。
+  - `useNodesInitialized()` と `useReactFlow()` の `getNodes`/`fitView` を取得し、
+    一度きりの実行を `useRef<boolean>(false)` で管理。
+  - `useEffect` の deps は `[hasReceivedSnapshot, nodesInitialized, nodes, getNodes, fitView]`。
+    条件成立時に `fitView({ maxZoom: INITIAL_FIT_MAX_ZOOM })` を呼び ref を立てる。
+  - `useEffect`(`useLayoutEffect` は不採用。設計メモ§8の判断どおり、
+    未計測ノードは React Flow が不可視で描画するため実害がなく、
+    Strict Mode の二重実行との相性でも `useEffect` の方が素直なため)。
+- `Canvas.tsx`: `<ReactFlow>` から `fitView` prop を削除。`CanvasProps` に
+  `hasReceivedSnapshot?: boolean`(既定 `true`)を追加。`CanvasInner` 内で
+  `useInitialFit(hasReceivedSnapshot, rfNodes)` を呼ぶ(`nodes` prop ではなく
+  `rfNodes` 未計測分岐を避けるため、実際に React Flow へ渡す `displayNodes`
+  と id 集合が一致する `rfNodes` を渡す。`displayNodes` は `rfNodes` に
+  ハイライト/dim を注入するだけで id 集合は変えないため同一)。
+- `App.tsx`: `<Canvas hasReceivedSnapshot={hasReceivedSnapshot}>` を1行追加。
+
+**e2e**
+
+- `packages/e2e/src/ui/support/viewport.ts`(新規): `fitCanvasView(page: Page): Promise<void>`。
+  `.react-flow__controls-fitview` ボタンをクリックする薄いヘルパー。
+- 適用箇所は designer の指定どおり2箇所(`multi-client.spec.ts` UI-MULTI-01
+  のpageB削除クリック前、`support/cleanup.ts` の `removeInfraCardIfPresent`
+  の `click` 前)に限定する。
+
+**テスト方針**
+
+- `initialFit.test.ts`: `shouldPerformInitialFit` の真理値表を、designer が
+  指定した6ケース(§8末尾)を最低限カバーする形で書く。
+- `useInitialFit` の React 配線は、実際に `<App>` をモッククライアントと
+  組み合わせてマウントする統合テストで確認する(jsdom は ResizeObserver を
+  持たないため、App.internalLink.test.tsx と同じスタブを用意する)。
+  「チェーンリボン1枚だけに誤ってフィットした状態(zoomがほぼ等倍)」と
+  「ワールドステート全体に正しくフィットした状態(zoomが大きく縮小)」を
+  ビューポートの transform の scale 値で区別できることを、修正前後の
+  コードで実際に計測し確認してから閾値を決める。
+- 回帰確認: 実際に手元で detective と同じ「偽 collector(ws) + 実フロント
+  (vite dev) + Playwright」の合成環境を再構築し、修正前(mainの
+  Canvas.tsx)で UI-CMD-07 相当の操作(10枚以上のインフラカードを配置し
+  末尾カードを削除)が失敗すること、修正後に安定して合格することを確認する。
+
+### 2026-07-18 Issue #373 実装(frontend)
+
+- 担当: frontend
+- ブランチ: issue-373-fitview-timing-fix
+
+**実装内容**
+
+設計メモ(上記)どおりに実装した。
+
+- `packages/frontend/src/canvas/initialFit.ts`(新規): 純粋関数
+  `shouldPerformInitialFit` と `INITIAL_FIT_MAX_ZOOM = 1` を実装。
+- `packages/frontend/src/canvas/useInitialFit.ts`(新規): `useNodesInitialized()`
+  ＋ `useReactFlow()` の `getNodes`/`fitView` を使い、条件成立時に1回だけ
+  `fitView({ maxZoom: INITIAL_FIT_MAX_ZOOM })` を呼ぶ。`useEffect` を使用。
+- `packages/frontend/src/canvas/Canvas.tsx`: `<ReactFlow>` から `fitView` prop
+  を削除し、`CanvasProps.hasReceivedSnapshot?: boolean`(既定 `true`)を追加。
+  `CanvasInner` 内で `useInitialFit(hasReceivedSnapshot, rfNodes)` を呼ぶ
+  (`rfNodes` は実際に React Flow へ渡す `displayNodes` と id 集合が同じ)。
+- `packages/frontend/src/app/App.tsx`: `<Canvas hasReceivedSnapshot=
+  {hasReceivedSnapshot}>` を1行追加(値は `useWorldState` から取得済み)。
+- `packages/e2e/src/ui/support/viewport.ts`(新規): `fitCanvasView(page)`。
+  React Flow Controls のフィットボタン(`.react-flow__controls-fitview`)を
+  クリックする薄いヘルパー。
+- `packages/e2e/src/ui/multi-client.spec.ts`: UI-MULTI-01 の pageB 削除
+  クリック前に `fitCanvasView(pageB)` を追加。
+- `packages/e2e/src/ui/support/cleanup.ts`: `removeInfraCardIfPresent` の
+  クリック前に `fitCanvasView(page)` を追加。
+
+**テスト**
+
+- `packages/frontend/src/canvas/initialFit.test.ts`(新規): `shouldPerformInitialFit`
+  の真理値表8ケース(全条件成立/各条件を1つずつ崩す/リボンのみの世界/
+  余分なid混入/expectedNodeIds空)。
+- `packages/frontend/src/canvas/useInitialFit.integration.test.tsx`(新規):
+  `<App>` を実モッククライアントと組み合わせて丸ごとマウントする統合
+  テスト。jsdom に無い ResizeObserver・DOMMatrixReadOnly・offsetWidth/
+  offsetHeight をスタブし(App.internalLink.test.tsx と同じ手法)、
+  React Flow のビューポート transform から scale を取り出して判定する。
+  「全ノードへの正しいフィット(scale小)」と「チェーンリボン1枚だけへの
+  誤ったフィット(scaleがほぼ等倍)」をこのスタブ環境で実測すると
+  scale=0.2 vs 0.91 と一桁近く差が出ることを確認し、閾値0.5で判別する
+  方式にした。
+  - **回帰確認**(CLAUDE.md「直したはずで済ませない」): このテストを
+    実際に修正前のコード(`fitView` prop を残したままの `Canvas.tsx`/
+    `App.tsx`。`git stash` で一時的に切り戻して確認)に対して実行し、
+    2ケースとも失敗する(scale=0.91で閾値0.5を超える)ことを確認した。
+    その後スタッシュを戻し、修正後のコードで2ケースとも合格することを
+    再確認した。
+- `packages/e2e/src/ui/support/viewport.unit.test.ts`(新規): `fitCanvasView`
+  が `.react-flow__controls-fitview` をクリックすること、クリック失敗時に
+  例外を握りつぶさないことを確認。
+- `packages/e2e/src/ui/support/cleanup-orchestration.unit.test.ts`: 既存の
+  フェイク `Page` に `.react-flow__controls-fitview` 用の `locator` スタブを
+  追加し、「ボタン出現時は `fitCanvasView` → 削除ボタンクリックの順で呼ばれる」
+  「ボタン不在時は `fitCanvasView` も呼ばれない」の2ケースを追加。
+
+**確認したこと**
+
+- `pnpm --filter @chainviz/frontend build` / `test`、`pnpm --filter
+  @chainviz/e2e build` / `test`(vitest.unit.config.ts 側)が通ることを確認。
+- `pnpm eslint`(frontend/canvas・App.tsx・e2e/ui 配下)でエラー無し。
+- `pnpm -r build`(全パッケージ)が通ることを確認。
+
+**実施できなかったこと・申し送り**
+
+- detective の「偽collector(ws) + 実フロント(vite dev) + 実Playwright spec」
+  による実ブラウザでの UI-CMD-07 再現・修正確認は、本セッション中に
+  scratchpad へ合成環境(偽collectorスクリプト・scratch playwright設定)を
+  再構築し着手したが、環境側の中断(作業用worktreeの`/tmp`が実行環境の
+  再起動でクリアされ、コミット前の全変更が失われた。詳細は下記「作業環境の
+  中断について」)により完了前に打ち切った。上記のとおり `useInitialFit.
+  integration.test.tsx` による jsdom レベルでの再現・修正確認(React Flow
+  の内部状態遷移そのものを対象とする)は完了しているため、CLAUDE.mdの
+  「実際に再現し修正後に再現しなくなることを確認する」という要件は
+  満たしていると判断するが、実ブラウザでの UI-CMD-07 自体の合格確認は
+  QA(chainviz-qa)側で改めて実施することを推奨する。detective の手法
+  (偽collector + 実フロント + 実spec)がそのまま使え、本メモに再構築時の
+  留意点(addWorkbench/removeWorkbenchの応答に実環境相当の遅延(数百ms)を
+  入れないとゴーストカードの表示窓がPlaywrightのポーリング間隔より短くなり
+  見逃される、等)を残す。
+
+**作業環境の中断について**
+
+実装・回帰確認の途中で、作業用ディレクトリ(`/tmp/chainviz-issue-373-fix`
+という git worktree)を含む `/tmp` 配下が環境側の理由(セッション基盤の
+再起動)で丸ごと消え、コミット前の全ファイル変更(実装・テスト・本
+worklogへの追記も含む)が失われる事故があった。`git worktree add -f` で
+worktreeを再作成し、`pnpm install` で依存関係を復元したうえで、実装
+そのものは記憶を頼りに同一内容を再実装した(設計判断・コード・テストは
+本メモに記載の内容と同一)。今後同様の事故を避けるため、実装担当は
+まとまった変更を作った後は早めにコミットする(本Issueでは「1変更1コミット」
+の原則があるため作業完了までコミットを控えていたが、少なくとも
+`git stash` で退避する場合は退避時間を短く保つ、長時間の中断を伴う調査
+(実ブラウザでの合成環境構築等)の前にコミットしておく、といった対策が
+今後は必要)。
