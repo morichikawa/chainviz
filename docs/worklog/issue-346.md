@@ -323,3 +323,65 @@ GlossaryTerm / ActionHint / contract-activity-chip__popover）について、
   `beacon3`/`reth3`/`test-2`/`workbench-3` が存在しノード数が期待値と不一致
   だったため、破壊的な down/up を避けて見送られた）。クリーンなスタックで
   必ず実施すること
+
+### 2026-07-18 Issue #346 最終QA検証（クリーンスタックでのE2Eフル再実行）
+
+- 担当: qa
+- ブランチ: issue-346-e2e-hover-flakiness（`issue-346-impl-worktree` worktree、HEAD=77a577d mainマージ済み）
+- 判定: **合格**（#346のflaky問題は解消。実装担当への差し戻しなし）
+
+#### 実施環境
+
+- 稼働中の共有スタック（`chainviz-ethereum`）は開始時点で6ノード+workbench+genesis
+  （one-shot Exited 0）のみで、tester作業時に問題となった追加コンテナ
+  （`beacon3`/`reth3`/`test-2`/`workbench-3`）は存在しなかった。ただしconfigパスが
+  既に削除された別worktree由来だったため、自worktreeのcomposeで
+  `docker compose down -v` → `up -d` によりクリーンなgenesisから作り直した。
+  e2e排他ロック（`/tmp/chainviz-test-e2e.lock`）は空で、実行中のplaywright/
+  vitest/collectorプロセスも無く、並行利用が無いことを確認した上で実施。
+- chromiumはシステムライブラリ未導入ホストのため、既存の展開済みライブラリ
+  （`~/chrome-deps/root/usr/lib/x86_64-linux-gnu`）を `LD_LIBRARY_PATH` に足して実行
+  （ARCHITECTURE.md §8.6・過去の作業と同じ対応）。slot=12秒。
+
+#### 実行結果
+
+- **重点4spec（infra-display / node-internals / connection-errors / multi-client、
+  計12テスト）を3回連続実行し、いずれも12件全通過**（36テスト実行で失敗ゼロ）。
+  申し送りで未実施だった `infra-display.spec.ts`（UI-A-01〜UI-A-05）を
+  クリーンスタックで実行し、UI-A-02（`infra-popover`）・UI-A-05
+  （`glossary-popover-container`）のportalスコープ修正が実環境で正しく動作する
+  ことを確認した。
+- **#346が直接修正した他specも確認**:
+  - `contract-lifecycle.spec.ts` UI-C-04（ContractCard ActivityChipの
+    dispatchHover化・portal対応locator）: 通過。
+  - `commands-workbench.spec.ts` UI-CMD-07（#373のfitCanvasView堅牢化の対象）:
+    3回連続で通過。tester/impl時に「stableにならない」と報告されていた事象は
+    #373の修正取り込み後は再現しなかった。
+- **UI-C-06の扱い（#346対象外）**: `contract-lifecycle` 初回実行でUI-C-06のみ
+  セットアップ（`docker compose exec workbench forge create`）が
+  `host.docker.internal:4001` へのConnection refusedで失敗した。原因は
+  compose定義のworkbenchの `ETH_RPC_URL` がdev collectorのロギングプロキシ
+  （4001）を指す一方、UI E2Eのcollectorは4125/4126で動くため、クリーン環境で
+  4001に待受が無かったこと。UI-C-06は#346の変更範囲外
+  （#346はUI-C-04のみ変更、差分で確認）で、失敗はホバー/描画のflakiness
+  ではなく環境依存のプロキシ未起動。dev collectorを4000/4001で起動して
+  4001プロキシを用意した状態で再実行するとUI-C-06も通過し、環境要因である
+  ことを確認した。
+
+#### 検証結論
+
+- 申し送り事項（infra-displayのクリーンスタックでのフル再実行）を完了。
+  #346の修正対象（dispatchHover化・portalスコープ修正・UI-ERR-02追随）および
+  #373マージによるUI-CMD-07のstable化は、いずれも実Docker環境で複数回安定して
+  通過する。#346のflaky問題は解消したと判断する。
+
+#### 申し送り（#346とは別件・非ブロッキング）
+
+- UI-C-06は、compose workbenchの `ETH_RPC_URL` が固定で4001（dev collectorの
+  プロキシ）を指すため、UI E2E単独（dev collector無し）のクリーン環境では
+  セットアップの `forge create` が到達できず失敗する。E2E collector（4125/4126）
+  とworkbenchのRPC向き先が一致しない潜在的なテスト環境結合であり、#346以前から
+  存在する。今回は関係無いため対処しないが、backlog化を検討する価値がある。
+- 検証後、起動したdev collector（4000/4001）は停止済み。テストのafterAllにより
+  managedコンテナの残存は無く、スタックはbaseline（6ノード+workbench+genesis）へ
+  戻っていることを確認した。
