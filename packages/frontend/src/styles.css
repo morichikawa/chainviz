@@ -1525,6 +1525,16 @@ button.mempool-panel__row:hover {
   outline-offset: -2px;
 }
 
+/* ドラッグ中（Issue #391）。ハンドルはパネルの左端をわずかにはみ出す
+   （left: -4px）配置のため、ドラッグ中にポインタが少しパネル側へ入り
+   込むだけでヘッダーや本文のテキストが選択されてしまっていた。
+   `.side-panel--resizing` は `useSidePanelResize` の `resizing` を
+   反映してルート要素に足す修飾クラス（SidePanel.tsx 参照）。 */
+.side-panel--resizing,
+.side-panel--resizing * {
+  user-select: none;
+}
+
 .side-panel__header {
   display: flex;
   align-items: center;

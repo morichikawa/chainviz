@@ -140,6 +140,9 @@
   - **変更してはいけないもの**: `docs/worklog/` 配下の過去の記録・
     `docs/WORKLOG.md` の過去の要約・`docs/PLAN.md` バックログ項目の本文
     （いずれも当時の事実の記録。「CVZ」の記載が残っていてよい）
+- ユーザー確認: designerが提案した新シンボル名(CVZDEMO/CVNDEMO)は好みが
+  分かれうる箇所だったため、実装着手前に統括からユーザーへ
+  AskUserQuestionで確認し、「CVZDEMO/CVNDEMOで進める(推奨)」の回答を得た。
 - 実装分担とコミット分割の案:
   1. node-env（構築初）: Sol 2ファイル + build-catalog.sh 修正 +
      catalog.json 再生成 + README 追随（feat または fix、1コミット）

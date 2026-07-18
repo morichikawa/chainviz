@@ -146,7 +146,33 @@ export function createDockerOperations(docker: Docker): DockerOperations {
         }
         throw err;
       }
-      await container.start();
+      try {
+        await container.start();
+      } catch (err) {
+        // start() が失敗した場合、直前に作った「Created」状態のコンテナを
+        // 削除せずに例外だけ伝播すると、呼び出し側（ChainAdapter）が
+        // 個別にロールバックしない限り orphan として残り続ける
+        // （Issue #385。addNode は2つ目のコンテナ作成失敗時に1つ目を
+        // ロールバックしているが、1つの createAndStart 呼び出し内で
+        // start 自体が失敗するケースはカバーしていなかった）。
+        // createAndStart は「成功時は起動済みコンテナを返す、失敗時は
+        // 中間状態を残さない」という契約にするため、ここで force
+        // remove する。stopAndRemove と異なり、この呼び出し1回きりの
+        // 後始末なので 404/409 を成功扱いに変換する必要はなく、削除に
+        // 失敗した場合は握りつぶさずログへ残す（CLAUDE.md「エラーを
+        // 握りつぶすコードを見逃さない」）。ただし呼び出し元へは根本
+        // 原因である元の start() エラーを優先して再 throw し、後始末
+        // エラーに差し替えない。
+        try {
+          await container.remove({ force: true });
+        } catch (cleanupErr) {
+          console.error(
+            `[collector] failed to remove orphaned container ${container.id} (name=${spec.name}) after start() failure:`,
+            cleanupErr,
+          );
+        }
+        throw err;
+      }
       return { id: container.id };
     },
 
