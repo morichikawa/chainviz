@@ -83,3 +83,35 @@
 - 事前確認: 上記キー集合について実測し、いずれも
   `hasOwnProperty.call(messages, key) === false`、ガード無しでは
   `entry[lang] === undefined`(契約違反)になることを確認済み。
+
+### 2026-07-18 静的レビュー
+
+- 担当: reviewer
+- ブランチ: issue-371-i18n-prototype-guard
+- レビュー結果: 合格
+  - `translate()` の修正内容: `Object.prototype.hasOwnProperty.call(messages, key)`
+    で自己プロパティを確認し、false ならキー文字列を返す。既存 `format()`
+    (`params` に対する同一パターン)と完全に一致していることを確認。
+    シグネチャ `translate(key: MessageKey, lang: Language): string` は不変で、
+    型契約(`MessageKey = keyof typeof messages`)への影響なし。ガード後の
+    `as Localized` キャストも hasOwnProperty 通過後のみ到達するため安全
+  - 専用テスト `i18n.prototype-guard.test.ts`(102行)の質:
+    - プロトタイプ由来11キー + `__proto__`(値がオブジェクトになる特殊
+      ケースを別テストで明示)を ja/en 両言語でカバー
+    - 「キーが本当に継承プロパティである」前提の自己検証テストがあり、
+      環境差で前提が崩れた場合に検出できる
+    - 実在キー4件(`card.node` 等。`messages.ts` に実在することを確認)の
+      正常系回帰、`translate()`/`format()` のガード挙動一致の比較テストあり
+    - **ミューテーション確認を実施**: `i18n.ts` を修正前(main)の状態に
+      一時的に戻して該当テストを実行し、24件が実際に失敗することを確認
+      してから復元した。壊れたコードでも通る「意味のないテスト」ではない
+  - エラー握りつぶし: 変更範囲に catch 節・汎用メッセージへのすり替え・
+    偽の成功応答は無し
+  - コミット粒度: fix / test / docs×2 の4コミットで、いずれも単一の
+    関心事。Conventional Commits 形式に準拠
+  - `pnpm lint` / `pnpm build` / `pnpm test` 全パッケージ通過
+    (shared 75 / collector 1660 / e2e 179 / frontend 2770)
+- 注意点(統括向け):
+  - ブランチの分岐点(f3569cb)は main の先端よりやや古いが、ブランチの
+    コミットが触るファイルは i18n 関連と worklog のみで、main 側の先行
+    変更と競合しない。マージ時に特段の対応は不要の見込み
