@@ -1,5 +1,5 @@
 import type { NodeProps } from "@xyflow/react";
-import { Fragment, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { format } from "../i18n/i18n.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
@@ -34,6 +34,7 @@ function ChainRibbonTileView({
   isLanding,
   isParentHighlighted,
   onParentHover,
+  onPopoverOpenChange,
 }: {
   tile: ChainRibbonTile;
   txCount: number | undefined;
@@ -41,6 +42,7 @@ function ChainRibbonTileView({
   isLanding: boolean;
   isParentHighlighted: boolean;
   onParentHover: (parentHash: string | null) => void;
+  onPopoverOpenChange: (blockHash: string, isOpen: boolean) => void;
 }) {
   const { t } = useLanguage();
   // Issue #221: 隙間を通過する一瞬の mouseleave で消えないよう遅延クローズ。
@@ -52,6 +54,16 @@ function ChainRibbonTileView({
   // 順方向（このタイルを直接ホバー）・逆方向（tx/活動チップのホバーから
   // このブロックの hash が立った）のどちらでも同じ強調を出す。
   const isReverseHighlighted = hoveredBlockHash === block.hash;
+
+  // Issue #351: 表示窓の凍結条件（下記 ChainRibbonCard）に、
+  // `hoveredBlockHash` だけでなくこのタイルのポップオーバー開閉状態も
+  // 反映させる。`hoveredBlockHash` はタイル div の mouseleave で即座に
+  // null へ戻る一方、ポップオーバー自体は 200ms の猶予でまだ開いている
+  // ことがあり（隙間通過中）、その間も表示窓を凍結し続ける必要がある。
+  useEffect(() => {
+    onPopoverOpenChange(block.hash, hovered);
+    return () => onPopoverOpenChange(block.hash, false);
+  }, [hovered, block.hash, onPopoverOpenChange]);
 
   return (
     <div
@@ -117,12 +129,35 @@ function ChainRibbonTileView({
  * （直近8タイル）が前進し続けるため、他カードのチップホバーで一瞬点灯した
  * ハイライトが、窓外へ流出したタイルとともに即座に失われ二度と復帰しない
  * 不具合が実機検証で確認されたための対策。
+ *
+ * Issue #351: 上記に加え、いずれかのタイルのポップオーバーが開いている間
+ * （`openPopoverHashes`）も凍結条件に含める。タイル → 隙間 → ポップオーバー
+ * の移動中、`hoveredBlockHash` はタイル div の mouseleave で即座に null に
+ * 戻る一方、ポップオーバー自体は `useHoverPopover` の 200ms 猶予でまだ
+ * 開いていることがあり、その間に凍結が外れると表示窓が前進してしまう
+ * （issue-298 に記録されていた既知の残課題）。
  */
 export function ChainRibbonCard({ data }: NodeProps<ChainRibbonFlowNode>) {
   const { txCountByHash, nodeLabelById, landingHashes, blocks } = data;
   const { t } = useLanguage();
   const { hoveredBlockHash } = useRibbonHover();
-  const tiles = useFrozenRibbonTiles(data.tiles, hoveredBlockHash !== null);
+  const [openPopoverHashes, setOpenPopoverHashes] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const handlePopoverOpenChange = useCallback((blockHash: string, isOpen: boolean) => {
+    setOpenPopoverHashes((prev) => {
+      if (prev.has(blockHash) === isOpen) return prev;
+      const next = new Set(prev);
+      if (isOpen) {
+        next.add(blockHash);
+      } else {
+        next.delete(blockHash);
+      }
+      return next;
+    });
+  }, []);
+  const isHoverActive = hoveredBlockHash !== null || openPopoverHashes.size > 0;
+  const tiles = useFrozenRibbonTiles(data.tiles, isHoverActive);
   const [parentHighlightHash, setParentHighlightHash] = useState<string | null>(
     null,
   );
@@ -211,6 +246,7 @@ export function ChainRibbonCard({ data }: NodeProps<ChainRibbonFlowNode>) {
                 isLanding={landingHashes.has(tile.block.hash)}
                 isParentHighlighted={parentHighlightHash === tile.block.hash}
                 onParentHover={setParentHighlightHash}
+                onPopoverOpenChange={handlePopoverOpenChange}
               />
             </Fragment>
           ))}

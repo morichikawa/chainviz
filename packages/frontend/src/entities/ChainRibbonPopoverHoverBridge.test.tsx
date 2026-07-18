@@ -119,4 +119,54 @@ describe("ChainRibbonCard popover hover bridge (Issue #351)", () => {
 
     expect(screen.queryByTestId("chain-ribbon-popover-0x1")).toBeNull();
   });
+
+  it("keeps the tile window frozen through the gap-crossing moment when hoveredBlockHash has already reset to null", () => {
+    // issue-298 の既知の残課題（issue-351 で解消）: タイル div の
+    // mouseleave は即座に hoveredBlockHash を null に戻すが、ポップオーバー
+    // 自体は閉じるまでの猶予がある。その間も表示窓は凍結され続けるべき。
+    const tilesA = [tile("0x1", { number: 1 }), tile("0x2", { number: 2 })];
+    const { rerender } = render(
+      <ReactFlowProvider>
+        <LanguageProvider initialLanguage="ja">
+          <GlossaryProvider glossary={{}}>
+            <RibbonHoverProvider transactions={[]}>
+              <ChainRibbonCard
+                {...({ data: data({ tiles: tilesA }) } as unknown as Parameters<
+                  typeof ChainRibbonCard
+                >[0])}
+              />
+            </RibbonHoverProvider>
+          </GlossaryProvider>
+        </LanguageProvider>
+      </ReactFlowProvider>,
+    );
+
+    const tileEl = screen.getByTestId("chain-ribbon-tile-0x2");
+    fireEvent.mouseOver(tileEl, { relatedTarget: document.body });
+    // タイルを離れ、まだポップオーバーへ到達していない（隙間の途中）。
+    // hoveredBlockHash は既に null に戻っているはず。
+    fireEvent.mouseOut(tileEl, { relatedTarget: document.body });
+
+    const tilesB = [tile("0x2", { number: 2 }), tile("0x3", { number: 3 })];
+    rerender(
+      <ReactFlowProvider>
+        <LanguageProvider initialLanguage="ja">
+          <GlossaryProvider glossary={{}}>
+            <RibbonHoverProvider transactions={[]}>
+              <ChainRibbonCard
+                {...({ data: data({ tiles: tilesB }) } as unknown as Parameters<
+                  typeof ChainRibbonCard
+                >[0])}
+              />
+            </RibbonHoverProvider>
+          </GlossaryProvider>
+        </LanguageProvider>
+      </ReactFlowProvider>,
+    );
+
+    // ポップオーバーの遅延クローズがまだ効いている間は、hoveredBlockHash が
+    // null に戻っていても表示窓は前進しない。
+    expect(screen.getByTestId("chain-ribbon-tile-0x1")).toBeTruthy();
+    expect(screen.queryByTestId("chain-ribbon-tile-0x3")).toBeNull();
+  });
 });
