@@ -980,12 +980,15 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       「未用意のprojectを指させる」使い方が可能になったため顕在化しうる。
       createAndStartの共通経路でstart失敗時にforce removeする方式で解消)
       [#385](https://github.com/morichikawa/chainviz/issues/385)
-- [ ] UI-B-06(chain-ribbon.spec.ts)がUI-B-05との併走時に間欠的にflakyになる
+- [x] UI-B-06(chain-ribbon.spec.ts)がUI-B-05との併走時に間欠的にflakyになる
       (Issue #351の最終QA検証中に偶発的に観測。単独実行では安定合格。
       #351のコード変更には起因せず、対象ブロックが表示窓から流れ出るまで
       の時間との既存由来のタイミング競合(issue-298.mdに既出)が、併走時の
       負荷で顕在化しやすくなると考えられる。Issue #346と同種の問題であり
-      対応方針を踏襲できないか検討する)
+      対応方針を踏襲できないか検討する。TxChipにdata-block-hashを計装し
+      対象タイルを識別ベースで特定、dispatchHover/Unhoverによる合成
+      イベント化で解消。実Docker環境で修正前の再現・修正後の併走3round+
+      単独3round green確認済み)
       [#388](https://github.com/morichikawa/chainviz/issues/388)
 - [x] サイドパネルのリサイズハンドルが右ボタンドラッグに反応し
       テキスト選択も抑止されない
