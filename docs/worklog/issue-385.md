@@ -296,3 +296,64 @@ CLAUDE.md の運用ルールに従い、`dockerode-operations.ts` の force remo
 実装のバグに該当するものは見つからなかった。設計どおり、start 失敗の
 原因を問わず一律に force remove され、addNode の既存ロールバックとは
 別コンテナを対象とするため二重削除・競合は起きない。
+
+### 2026-07-18 静的レビュー
+
+- 担当: reviewer
+- ブランチ: issue-385-workbench-orphan-container
+- 判定: **合格**（差し戻しなし）
+
+#### 確認項目と結果
+
+1. 方針の妥当性（Issue本文の2案の比較）: 案1（共通経路 `createAndStart`
+   内での force remove）の採用は適切と判断した。案2（addWorkbench への
+   ネットワーク事前チェック追加）は、ネットワーク不在以外の start 失敗
+   要因（ポート競合・リソース不足等）を救えず、原因が増えるたびに
+   チェック項目を足す羽目になる。案1は `createAndStart` の契約
+   （「成功時は起動済みコンテナを返し、失敗時は中間状態を残さない」）
+   として後始末を完結させるため、addNode/addWorkbench 双方および将来
+   `createAndStart` を呼ぶ新経路にも一律に効く。既存の `stopAndRemove`
+   のパターンとも一貫している。設計メモの論拠（addNode の
+   `usedNetworkIps` は本来 IP 採番目的であり、存在確認への流用は目的の
+   混在になる）も妥当。
+2. エラー握りつぶしの不在: `dockerode-operations.ts` の実装を確認。
+   後始末 `remove({force: true})` の失敗は `console.error` にコンテナ id
+   と spec.name 付きで記録され、呼び出し元へは根本原因である元の
+   `start()` エラーが差し替えられずに再 throw される。404 を成功扱いに
+   変換しない設計判断もコメントで明記されている。失敗時に ok:true 相当を
+   返す箇所は無い。
+3. addNode 既存ロールバックとの相互作用: beacon の start 失敗時、
+   beacon は `createAndStart` 内の後始末（自身の `container.remove`）で、
+   reth は addNode 側の `stopAndRemove`（別コンテナ id）でそれぞれ1回ずつ
+   削除され、同一コンテナへの二重削除は起きない。reth 自身の start 失敗時
+   は beacon が未作成のため競合の余地が無い。統合テスト
+   `createandstart-orphan-cleanup.test.ts` が removedIds の突き合わせで
+   この性質を固定しており、万一将来重なっても `stopAndRemove` は
+   404/409(removal in progress) を成功相当として扱うため良性。
+4. テストの質: 単体（+9件）は 404 時のログ・orphan 追跡可能なログ内容・
+   失敗原因非依存の一律 force remove・start 失敗が
+   `ContainerNameConflictError` に誤変換されないこと・非 Error 値の
+   throw・後始末1回きり、と異常系・境界値を具体的にカバー。統合（+4件）
+   は fakeOps では通らない本物の後始末ロジックを `EthereumNodeLifecycle`
+   経由で検証し、対照群（成功時に remove が走らない）も含む。実装・
+   tester とも「意図的に壊して失敗を確認してから復元」の手順を記録して
+   おり、意味のないテストになっていない。
+5. 境界・環境依存値: 変更は collector の docker 層に閉じており、
+   `packages/shared`・frontend への影響なし。チェーンプロファイルへの
+   分岐追加なし。タイムアウト等の決め打ち定数の追加なし。
+6. docs との齟齬: `docs/ARCHITECTURE.md` は `DockerOperations` の契約を
+   個別に記述していないため追記不要とした実装担当の判断に同意。
+7. コミット粒度・形式: `git log main..HEAD` の5コミットはいずれも
+   1関心事（fix＋対応テスト / tester 単体 / tester 統合 / docs×2）で、
+   Conventional Commits 形式に適合。
+8. 品質ゲート: `pnpm lint` / `pnpm build` / `pnpm test` をリポジトリ全体で
+   実行し、すべて成功（shared 75 / collector 1673 / e2e 179 /
+   frontend 2730）。
+
+#### 記録上の軽微な訂正（差し戻し不要）
+
+実装記録の「collector 1663件（変更前 1661件から +2）」は数え違い。
+fix コミット（ca4fbd6）で追加された単体テストは3件であり、変更前は
+1660件（1660 + 3 = 1663、その後 tester が +10 で 1673）。変更後の
+1663・最終の 1673 という値自体は正しく、コード・テストの内容には
+影響しない。
