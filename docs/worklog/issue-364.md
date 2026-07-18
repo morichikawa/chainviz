@@ -338,3 +338,54 @@
      重複して持ち、スクリプトのコメントも「手動で合わせて直す」と明記している
      ため、片方だけ更新して再生成すると静かに乖離しうる。この手動同期の破綻を
      捕まえる回帰テスト
+
+### 2026-07-18 Issue #364 静的レビュー(reviewer)
+
+- 担当: reviewer
+- ブランチ: issue-364-cvz-token-symbol
+- 判定: **合格**
+- 確認内容:
+  1. **catalog.jsonの再現性**: testerの検証とは独立に、scratchpadへ
+     contracts/一式をコピーしたうえで`build-catalog.sh`を再実行
+     (forgeはdocker foundryイメージ、jqは静的バイナリを取得して使用)し、
+     コミット済み`catalog.json`と`cmp`で1バイトも違わないことを確認。
+     また埋め込みソース(`source.code`)3件ともディスク上の`.sol`と
+     完全一致することをスクリプトで照合(手編集の痕跡なし)
+  2. **回帰テストの実効性**: 意図的にドリフトさせて両テストが実際に
+     失敗することを確認し、確認後に復元した
+     - `catalog.json`の`token.symbol`だけ`"CVZ"`へ戻す →
+       `catalog.symbolConsistency.test.ts`が5件中2件失敗
+       (source.codeとの一致検証・旧ティッカー排除の両ガードが機能)
+     - `operationCatalog.ts`の`token.symbol`だけ`"CVZ"`へ戻す →
+       `operationCatalog.test.ts`が24件中2件失敗(新設の
+       「token metadata matches catalog.json」describeが、実値アサートとは
+       独立にcatalog.jsonとの突き合わせで検出)
+     テストにエラー握りつぶしは無し(`readContractCatalog`のエラー
+     コールバックはthrowしており、読み込み失敗を静かに通過させない)
+  3. **設計判断の妥当性**: コンストラクタ引数化(案A)不採用の理由
+     (カタログ=単一の真実の情報源の前提を崩す/collectorにオンチェーン
+     メタデータ読み取りの新規機構が必要/Issueの主眼は命名変更で解決)は
+     ARCHITECTURE.md §4および「Phase単体で動くデモを優先し先回り実装を
+     しない」原則と整合。将来の引数化はworklogにバックログ候補として
+     記録済み
+  4. **sharedの型変更なし**: `packages/shared`の差分はテストフィクスチャ
+     2ファイルの表記追随のみで、型定義・プロトコルに変更なし(設計どおり)
+  5. **コミット粒度**: `main..HEAD`は14コミット。node-env(Sol+スクリプト+
+     再生成+README=一体の変更で1コミット)/frontend 4コミット(catalog値+
+     テスト、mockData、コメントのみ、フィクスチャ置換)/統括2コミット
+     (collector/shared/e2eフィクスチャ、ARCHITECTURE.md)/tester 1コミット+
+     各worklog記録が適切に分離。全コミットがConventional Commits形式
+  6. **品質ゲート**: `pnpm lint && pnpm build && pnpm test`を全パッケージで
+     実行し全通過(shared 75/collector 1641/e2e 179/frontend 2652)。
+     報告値と一致
+  7. **残存文字列**: `grep -rnwP 'CVZ|CVN'`で`packages/*/src`・`profiles/`に
+     裸のCVZ/CVNが残っていないことを確認(唯一の出現は回帰テスト内の
+     「旧ティッカーへ戻っていないこと」を検証するガード用途で正当)。
+     docs/配下もworklog・WORKLOG.md・PLAN.mdバックログ(当時の事実の記録)
+     以外に旧表記なし
+- 注意点(統括向け):
+  - 「symbolのコンストラクタ引数化」は将来Issueのバックログ候補として
+    designerメモに記録されているが、`docs/PLAN.md`のバックログ節には
+    未記載。必要と判断すれば統括側で追記を検討されたい(本Issueの合否には
+    影響しない)
+  - push/PR作成/マージ/Issueクローズは統括の実行に委ねる
