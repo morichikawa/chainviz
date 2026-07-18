@@ -1,6 +1,8 @@
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
+import { format } from "../i18n/i18n.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { type KeyValueStorage, getBrowserStorage } from "../platform/storage.js";
+import { useSidePanelFontScale } from "./useSidePanelFontScale.js";
 import { useSidePanelResize } from "./useSidePanelResize.js";
 
 export interface SidePanelProps {
@@ -36,6 +38,14 @@ export interface SidePanelProps {
  * ドラッグ、またはハンドルにフォーカスして←→キー）。幅の状態管理・
  * 永続化は `useSidePanelResize` に切り出し、このコンポーネントは
  * ハンドルの描画と `storage` の解決（既定 `getBrowserStorage()`）だけを持つ。
+ *
+ * 本文の文字サイズは Issue #377 でユーザーが変更できるようにした
+ * （ヘッダーの A− / 現在値 / A+ ステッパー）。状態管理・永続化は
+ * `useSidePanelFontScale` に切り出し、幅と同じ解決済み `storage` を
+ * 共用する。倍率はルート要素の CSS カスタムプロパティ
+ * `--side-panel-font-scale` として渡し、実際の拡大は `styles.css` の
+ * `calc()` に寄せる（ヘッダー自体は拡大対象外。`side-panel__body` 配下
+ * のみが対象）。
  */
 export function SidePanel({
   title,
@@ -47,8 +57,18 @@ export function SidePanel({
   const { t } = useLanguage();
   const [store] = useState<KeyValueStorage>(() => storage ?? getBrowserStorage());
   const { width, resizing, handleProps } = useSidePanelResize(store);
+  const { scale, increase, decrease, reset, canIncrease, canDecrease } =
+    useSidePanelFontScale(store);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+
+  const fontScalePercent = `${Math.round(scale * 100)}%`;
+  // `--side-panel-font-scale` は React の `CSSProperties` に無いカスタム
+  // プロパティなので、インラインスタイルの型を最小限だけ逃がす。
+  const rootStyle = {
+    width,
+    "--side-panel-font-scale": scale,
+  } as CSSProperties;
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -64,7 +84,7 @@ export function SidePanel({
       role="dialog"
       aria-label={ariaLabel}
       data-testid="side-panel"
-      style={{ width }}
+      style={rootStyle}
     >
       <div
         {...handleProps}
@@ -78,6 +98,37 @@ export function SidePanel({
       />
       <div className="side-panel__header">
         <span className="side-panel__title">{title}</span>
+        <div className="side-panel__font-controls" data-testid="side-panel-font-controls">
+          <button
+            type="button"
+            className="side-panel__font-button"
+            aria-label={t("sidePanel.fontSmaller")}
+            onClick={decrease}
+            disabled={!canDecrease}
+            data-testid="side-panel-font-smaller"
+          >
+            {"A−"}
+          </button>
+          <button
+            type="button"
+            className="side-panel__font-value"
+            aria-label={format(t("sidePanel.fontReset"), { value: fontScalePercent })}
+            onClick={reset}
+            data-testid="side-panel-font-reset"
+          >
+            {fontScalePercent}
+          </button>
+          <button
+            type="button"
+            className="side-panel__font-button"
+            aria-label={t("sidePanel.fontLarger")}
+            onClick={increase}
+            disabled={!canIncrease}
+            data-testid="side-panel-font-larger"
+          >
+            {"A+"}
+          </button>
+        </div>
         <button
           type="button"
           className="side-panel__close"

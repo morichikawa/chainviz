@@ -507,6 +507,13 @@ export const messages = {
   "sidePanel.close": { ja: "閉じる", en: "Close" },
   // Issue #362: リサイズハンドルの aria-label（role="separator"）。
   "sidePanel.resizeHandle": { ja: "パネルの幅を変更", en: "Resize panel width" },
+  // Issue #377: 本文の文字サイズ変更ステッパー（A− / 現在値 / A+）。
+  "sidePanel.fontSmaller": { ja: "文字を小さく", en: "Decrease text size" },
+  "sidePanel.fontLarger": { ja: "文字を大きく", en: "Increase text size" },
+  "sidePanel.fontReset": {
+    ja: "文字の大きさを既定に戻す（現在 {value}）",
+    en: "Reset text size (current {value})",
+  },
   // --- コントラクトソースビュー（kind: "contractSource"。Issue #321。
   // docs/ARCHITECTURE.md §12.3） ---
   "contract.viewSource": { ja: "ソースコードを見る", en: "View source code" },
