@@ -270,3 +270,174 @@ interface DemoBlock {
 - 文言(§5)はすべて初稿。日本語の言い回しの調整は実装担当の裁量、
   英語版は chainviz-i18n のレビューで確定
 - E2E シナリオ(SCENARIOS.md)への追加要否は tester/qa の判断に委ねる
+
+### 2026-07-19 Issue #401 実装設計メモ
+
+- 担当: frontend
+- ブランチ: issue-401-hash-computation-viz
+- UX設計メモ(上記§1〜§9)をそのまま採用する。以下は実装時に確定させた
+  詳細。
+
+#### 依存関係
+
+- `@noble/hashes`(v2系、`^2.2.0`)を `packages/frontend` の
+  dependencies に追加した。v2 は sub-path importに拡張子 `.js` が必須
+  (`@noble/hashes/sha3.js` / `@noble/hashes/utils.js`)。
+  `keccak_256`(`sha3.js`)・`bytesToHex`/`utf8ToBytes`(`utils.js`)を使う。
+  既知ベクトル(keccak256("") / keccak256("abc"))を実際に計算して
+  参照値を確認した上でテストに固定値として使う。
+
+#### モジュール構成(`packages/frontend/src/crypto-demo/`)
+
+- `keccak256.ts`: `keccak256Hex(input: string): string`。UTF-8文字列→
+  keccak256→`0x`+64桁hexの薄いラッパー(1ファイル1責務。#402が同じ
+  ラッパーを再利用できる)
+- `hashChainDemo.ts`: 状態型・導出・純粋な操作関数のみ(React 非依存)。
+  - `HashChainDemoBlock { number, storedParentHash, data }` /
+    `HashChainDemoState { blocks }`
+  - `deriveBlockHash(block)`: `${number}|${storedParentHash}|${data}` を
+    UTF-8連結してkeccak256(RLPは再現しない簡略化。UX設計§2の合意どおり)
+  - `createInitialHashChainDemoState()`: #1のstoredParentHashは全ゼロ
+    (`GENESIS_PARENT_HASH`)、#2以降は直前ブロックの導出ハッシュを記録
+    した、3ブロックすべて有効な状態
+  - `isBlockValid(blocks, index)` / `isFullyRepaired(blocks)`:
+    「自身のstoredParentHashが直前ブロックの現在の導出ハッシュと
+    一致するか」のみを見る(index 0 は常に有効)
+  - `updateBlockData(state, index, data)` / `relinkBlock(state, index)` /
+    `resetHashChainDemoState()`
+  - **確定させた挙動(重要)**: ハッシュは各ブロック自身のフィールドだけ
+    から決まる。あるブロックの `data` を編集しても、それより後ろの
+    ブロックの `storedParentHash` は書き換わらないため、**即座に無効に
+    なるのは直後の1ブロックだけ**であり、その次のブロックは、直後の
+    ブロックを「つなぎ直す」操作で直後ブロック自身のハッシュが変わった
+    時点で初めて無効になる(1回の relink ごとに無効の先頭が1つずつ
+    後ろへ進む「連鎖修復」)。UX設計§3の操作フロー3
+    「そのブロックは有効に戻るが、自身のハッシュも変わるため次はまだ
+    無効」の記述に合わせた(§3冒頭の要約「後続ブロックがすべて無効に」は
+    高レベルな要約であり、実装は3の詳細な記述を正とする)。最後尾
+    ブロック(#3)を編集しても、この砂場には#4が無いため何も無効に
+    ならない(実チェーンでも「まだ誰も積み上げていない最新ブロックの
+    改ざんはハッシュ連結だけでは検知されない」という正しい挙動と一致
+    する)
+  - 「全部つなぎ直したらまとめメッセージ」の判定(`hasEverEdited &&
+    isFullyRepaired`)はコンポーネント側のローカル state(UIの一時状態)
+    で持ち、pure logic には持ち込まない(初期状態は無編集で既に有効
+    なので、判定に「一度でも操作したか」を混ぜないと開いた瞬間から
+    まとめメッセージが出てしまうため)
+- `HashChainDemoView.tsx`: パネル本体(状態は useState でローカル完結、
+  閉じたら破棄=毎回 `createInitialHashChainDemoState()` から)。ハッシュ
+  変化時のフラッシュは既存の `NEW_ARRIVAL_HIGHLIGHT_DURATION_MS` /
+  `chainviz-new-arrival` キーフレームを再利用する(新しい演出を作らない)
+- `HashChainBlockRow.tsx`: ブロック1件の表示(格納情報の枠・処理帯・
+  導出ハッシュ・バッジ・relinkボタン)。View から分離し1ファイル1責務を
+  保つ
+
+#### サイドパネル配線
+
+- `sidePanelView.ts` に `{ kind: "hashChainDemo" }` を追加(保持する
+  データなし。ビュー自身が閉じるたびに状態を作り直す設計のため
+  `SidePanelView` 側にも何も乗せない)
+- `SidePanelHost.tsx` に kind 分岐を1つ追加するだけ(対象エンティティを
+  持たないため commsLog と同じくダングリングガード対象外)
+
+#### 導線
+
+- チェーンリボンカードの `subtitle` 行を横並び(flex)にし、行末に
+  常設の入口ボタンを1つ追加する(cadence 表示はヘッダ側にあり競合しない
+  ため、決めきれていない点として挙げられていた配置はこれで確定)
+- `ChainRibbonPopover` の末尾に文脈導線ボタンを1つ追加
+- どちらも `useOptionalSidePanel()` を使う(`ChainRibbonCard`/
+  `ChainRibbonPopover` の既存テストは `SidePanelProvider` 無しで
+  レンダーしているため、`useSidePanel()` だと throw してしまう。
+  `GlossaryTerm.tsx` と同じパターン)
+
+#### 用語集・ポップオーバー
+
+- `glossary/ethereum/terms/c-transaction.yaml` に `hash` エントリを
+  新設、`block` の `relatedTerms` に `hash` を追加
+- `ChainRibbonPopover` の「ハッシュ」「親ブロック」ラベルに
+  `GlossaryTerm termKey="hash"` を付ける
+
+#### テスト方針
+
+- `hashChainDemo.ts`: pure logic のユニットテスト(初期状態の健全性、
+  編集による直後1件だけの無効化、relink連鎖、全修復判定、reset、
+  最後尾ブロック編集の無害さ)
+- `keccak256.ts`: 既知ベクトル1本
+- `HashChainDemoView`: コンポーネントテスト(編集→バッジ変化→relink→
+  まとめメッセージ→reset の一連の流れ、ja/en 文言)。1ファイルに
+  積みすぎないよう「操作フロー」と「文言・i18n」でテストファイルを分ける
+- 導線(`ChainRibbonCard`/`ChainRibbonPopover` からパネルが開くこと)は
+  既存ファイルに足すと既に400行超あるため、専用の
+  `*.hashDemoEntry.test.tsx` を新設する
+- `SidePanelHost` の kind 追加は既存の1kind1ファイル方針に従い
+  `SidePanelHost.hashChainDemo.test.tsx` を新設する
+- E2E: 完全にフロント内で閉じる砂場でチェーン進行や実データに依存
+  しないため、Docker起動を要する既存のUI層E2Eの重さに対して得られる
+  検証の増分が小さい(コンポーネントテストで操作フロー・状態遷移は
+  ほぼ検証できる)。一方で「実際のブラウザで入口ボタンから最後まで
+  一連の操作が通ること」は新規インタラクティブ機能として一度は
+  実ブラウザで確認する価値があるため、軽量な1シナリオ
+  (`UI-HASH-01`)だけ追加する(SCENARIOS.mdへの追記も行う)
+
+### 2026-07-19 Issue #401 実装完了報告
+
+- 担当: frontend
+- ブランチ: issue-401-hash-computation-viz
+- 実装内容(設計メモどおり):
+  - 依存: `packages/frontend/package.json` に `@noble/hashes@^2.2.0` を追加
+  - `packages/frontend/src/crypto-demo/`: `keccak256.ts`(薄いラッパー)・
+    `hashChainDemo.ts`(状態型・導出・純粋な操作関数)・
+    `HashChainBlockRow.tsx`・`HashChainDemoView.tsx`
+  - `side-panel/sidePanelView.ts` に `{ kind: "hashChainDemo" }` を追加、
+    `SidePanelHost.tsx` に分岐を1つ追加
+  - `entities/ChainRibbonCard.tsx`(subtitle 行末の常設入口ボタン)・
+    `entities/ChainRibbonPopover.tsx`(末尾の文脈導線ボタン、「ハッシュ」
+    「親ブロック」ラベルへの `GlossaryTerm termKey="hash"` 付与)
+  - `glossary/ethereum/terms/c-transaction.yaml`: `hash` エントリ新設、
+    `block` の `relatedTerms` に `hash` を追加
+  - `i18n/messages.ts`: `hashDemo.*` 名前空間を追加(ja確定・en初稿。
+    chainviz-i18n レビュー待ち)
+  - `styles.css`: `.hash-chain-demo*`(パネル本体)・
+    `.chain-ribbon-card__hash-demo-open` /
+    `.chain-ribbon-popover__hash-demo-open`(導線)を追加
+  - `docs/ARCHITECTURE.md` に §15 を新設(データフロー・連鎖修復の
+    仕組み・導線・#402との共有骨格)
+  - `packages/e2e/SCENARIOS.md` に「ハッシュのしくみ」デモ(UI-HASH)節、
+    `packages/e2e/src/ui/hash-chain-demo.spec.ts`(UI-HASH-01)を追加
+- 実装中に確定させた挙動(設計時点でやや曖昧だった箇所): データ編集で
+  即座に無効になるのは直後の1ブロックのみで、後続はrelinkのたびに
+  1つずつ連鎖する(実装設計メモの節を参照。UX設計§3冒頭の要約「後続が
+  すべて無効に」は高レベルな言い回しで、詳細な操作フロー3の記述と実装は
+  一致させた)
+- テスト: `pnpm lint && pnpm build && pnpm test` をリポジトリ全体
+  （shared/collector/e2e(unit)/frontend）で実行し全て通過
+  （frontend: 222 test files / 2894 tests）。新規追加したユニット・
+  コンポーネントテストは以下:
+  - `crypto-demo/keccak256.test.ts`(既知ベクトル・雪崩効果・決定性)
+  - `crypto-demo/hashChainDemo.test.ts`(初期状態・編集による直後1件の
+    無効化・relink連鎖・reset。意図的に「編集前は全有効」を確認してから
+    「編集後に直後だけ無効」を確認する形で回帰検出力を確保)
+  - `crypto-demo/HashChainDemoView.test.tsx` /
+    `HashChainDemoView.i18n.test.tsx`
+  - `side-panel/SidePanelHost.hashChainDemo.test.tsx`
+  - `entities/ChainRibbonCard.hashDemoEntry.test.tsx` /
+    `entities/ChainRibbonPopover.hashDemoEntry.test.tsx`
+- E2E(`UI-HASH-01`)の実行状況: `tsc --noEmit`(`packages/e2e`)は通過。
+  実ブラウザでの実行はこの作業環境ではできなかった
+  (`chrome-headless-shell: error while loading shared libraries:
+  libnspr4.so`。ARCHITECTURE.md §8.6 が前提とする
+  `playwright install-deps chromium` にはsudo権限が必要で、この作業
+  環境には無い)。テストIDは実装側と一致していること・シナリオの
+  各ステップがコンポーネントテスト(`HashChainDemoView.test.tsx`)で
+  検証済みの状態遷移と1対1で対応していることを確認した。
+  **chainviz-qa は実ブラウザでの `UI-HASH-01` 実行を必ず確認すること**
+  （このIssueの完了条件の一部として残っている）
+- 次の担当への注意点:
+  - `hashDemo.*` の英語文言は初稿。chainviz-i18n のレビューで文言が
+    変わる可能性がある(テストの `getByText` は日本語アサーションを
+    主にしているため、英語文言変更の影響は
+    `HashChainDemoView.i18n.test.tsx` の該当英語アサーションのみ)
+  - チェーンリボンカードの常設入口配置は「subtitle 行末」に決めた
+    (UX設計 §9 で決めきれていない点として挙げられていた項目)。cadence
+    表示(ヘッダ側)とは競合しないことを確認済み
