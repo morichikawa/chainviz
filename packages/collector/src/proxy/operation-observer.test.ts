@@ -108,6 +108,39 @@ describe("resolveOperationEdge", () => {
     });
   });
 
+  it("carries outcome and durationMs through when present on the observation", () => {
+    const resolver = resolverOf(
+      [workbench({ id: "w-1", ip: "172.28.2.5" })],
+      [node({ id: "n-1", ip: "172.28.1.1" })],
+    );
+    const result = resolveOperationEdge(
+      observation({ outcome: "error", durationMs: 42 }),
+      "172.28.1.1",
+      resolver,
+    );
+    expect(result).toEqual({
+      ok: true,
+      edge: expect.objectContaining({ outcome: "error", durationMs: 42 }),
+    });
+  });
+
+  it("omits outcome and durationMs fields entirely when absent on the observation", () => {
+    const resolver = resolverOf(
+      [workbench({ id: "w-1", ip: "172.28.2.5" })],
+      [node({ id: "n-1", ip: "172.28.1.1" })],
+    );
+    const result = resolveOperationEdge(
+      observation({ outcome: undefined, durationMs: undefined }),
+      "172.28.1.1",
+      resolver,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.edge).not.toHaveProperty("outcome");
+      expect(result.edge).not.toHaveProperty("durationMs");
+    }
+  });
+
   it("fails with workbench-unresolved when the caller ip matches no workbench", () => {
     const resolver = resolverOf([], [node({ ip: "172.28.1.1" })]);
     const result = resolveOperationEdge(
