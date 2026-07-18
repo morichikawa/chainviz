@@ -287,3 +287,47 @@ shared の型変更は本設計で完了済み。**collector と frontend は互
   (1ファイル1責務をテストにも適用)。`logging-proxy.test.ts` は既存の
   `describe("handleRpcRequest")` 内に outcome/durationMs 関連のケースを
   追加する形にとどめ、新規ファイルには分けない(既存の関心事の延長のため)
+
+### 2026-07-18 実装(collector)完了
+
+- 担当: collector
+- ブランチ: issue-352-comms-log-rpc-response-collector(designer の
+  `issue-352-comms-log-rpc-response` から分岐した一時ブランチ。統括が
+  cherry-pick して本流ブランチへ合流させる想定)
+- 実施内容: 上記「実装(collector)設計メモ」の方針どおりに実装した。
+  - `packages/collector/src/proxy/response-outcome.ts`(新規): 成否判定の
+    純関数 `resolveResponseOutcomes(observations, forwardOutcome)` を実装。
+    forward throw / 非2xx / 2xx(単発・バッチ・非JSON・対応欠落・id重複)の
+    全パターンを1関数に集約
+  - `packages/collector/src/proxy/logging-proxy.ts`:
+    `RpcObservation` に `outcome?` / `durationMs?` を追加。
+    `handleRpcRequest` の `onObserve` 発行を転送完了後(成功時・失敗時の
+    両方)へ移動し、`timestamp`(既存のリクエスト受領時計測)を起点、
+    `now()`(転送完了直後)を終点として `durationMs` を計測。ヘルパー
+    `elapsedMs` / `emitObservations` を追加
+  - `packages/collector/src/proxy/operation-observer.ts`:
+    `resolveOperationEdge` で `observation.outcome` /
+    `observation.durationMs` を、`undefined` ならフィールドごと省略する形で
+    `OperationEdge` へ伝搬
+  - テスト: `response-outcome.test.ts`(新規、13ケース)、
+    `logging-proxy.test.ts`(発行タイミング・durationMs計測・丸め・
+    バッチ共有・非JSON時のoutcome省略・転送失敗時のoutcome伝搬を追加、
+    既存の「転送前にonObserve」を前提にした期待値は転送後の値に更新)、
+    `operation-observer.test.ts`(outcome/durationMsの伝搬・省略を追加)
+  - `pnpm lint && pnpm build && pnpm test`(全パッケージ)通過を確認
+    (collector: 79 test files / 1617 tests、frontend含む全体も通過)
+- 実装中に気づいた点・申し送り:
+  - 単発/バッチの判定は「レスポンスボディの形(オブジェクトか配列か)」で
+    行った。JSON-RPC仕様上、バッチ呼び出しは要素数が1でも配列で応答する
+    ため、元のリクエストが単発かバッチかを別途保持しなくてもレスポンス
+    形状だけで一意に判定できる。ユニットテストにこの前提(バッチ1件の
+    ケース)を明示的なケースとして追加した
+  - `handleRpcRequest` 内で `now()` を呼ぶ回数は変更前後で変わらない
+    (タイムスタンプ取得時に1回、転送完了後に1回の計2回)。設計メモ§3.2の
+    「既存の `timestamp` 取得と同じタイミングを起点にする」を、単に
+    `timestamp` の値を再利用することで実現し、余分な `now()` 呼び出しは
+    増やしていない
+  - `docs/PLAN.md` のIssue #352チェックボックスは、frontend側の実装(並行
+    作業中)が完了していないため今回は更新していない。両方揃った時点で
+    更新する想定(この判断は統括が最終的に確認すること)
+  - このブランチではshared型・frontend側のファイルには一切触れていない
