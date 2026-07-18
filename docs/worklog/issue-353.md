@@ -89,3 +89,43 @@
   要約、詳細はIssueファイル側という役割分担からすると、実施記録は本ファイル
   に書くのが望ましかった。ただし再現確認の事実自体はレビューで独立に検証
   済みのため、本Issueでは追記までは求めない(次回以降の改善点)。
+
+#### QA検証記録(qa)
+
+- 担当: qa
+- 結果: **合格**
+- 検証環境: 稼働中の共有dev-upスタック(main checkout由来のcollector 4000/
+  frontend 5173、profiles/ethereumのDockerスタック)には手を加えず、本ブランチの
+  frontendを別ポート5273でvite dev起動し、既存collector(ws://127.0.0.1:4000)へ
+  接続して観測のみで検証した。実ブラウザはPlaywright同梱のchromium(headless)を
+  使用。
+- 検証内容と結果:
+  1. 実コンポーネントのA/B比較(実chromiumで、`preventDefault`が実際に呼ばれるかを
+     `Event.prototype.preventDefault`のラップで計測)。フォーカスした
+     GlossaryTerm(role="button"のspan)上でキー押下:
+     - 本ブランチ(5273, 修正あり): Space→preventDefault呼び出しあり / Enter→あり。
+       いずれも用語集パネル(.side-panel)が開く。
+     - main(5173, 修正なし): Space→呼び出しなし / Enter→なし(問題が再現)。
+       パネル自体は開く。
+     修正の有無で`preventDefault`の呼び出しが切り替わることを実ブラウザで確認した。
+  2. 実ブラウザでのスクロール抑止機構の実証(コンポーネントの`onKeyDown`と同一の
+     ロジックを、意図的にスクロール可能な高さ4000pxのページ上のrole="button"
+     spanで再現):
+     - preventDefaultなし: Space押下でwindow.scrollY 0→350(ページが下方向に
+       スクロール=修正前の症状)。
+     - preventDefaultあり: Space押下でwindow.scrollY 0→0(スクロールしない)。
+     修正が付加する`event.preventDefault()`が、実chromiumでSpaceによるページ
+     スクロールを実際に抑止することを確認した。
+  3. 既存のクリック動作: ツールバー内のGlossaryTermをクリックすると用語集パネルが
+     開き、用語集の内容が表示される。pageerror・consoleエラーなし。クリック経路は
+     影響を受けていない。
+- 補足: アプリのキャンバスはwindow自体をスクロールさせない構造(scrollHeight==
+  innerHeight)のため、実アプリ内で「window scrollが起きる/起きない」を直接
+  観測することはできなかった。そのため、実コンポーネントでの`preventDefault`
+  呼び出しの有無(1)と、同一ロジックによる実スクロール抑止(2)を分けて実証する
+  形で完了条件を満たすことを確認した。
+- 完了条件の達成:
+  - Tabでフォーカスした用語アンカーでSpace押下→パネルが開き、ページが下方向へ
+    スクロールしない: 達成(1・2)。
+  - Enterでも同様に動作: 達成(1)。
+  - 通常のクリックでパネルが開く既存動作に影響なし: 達成(3)。
