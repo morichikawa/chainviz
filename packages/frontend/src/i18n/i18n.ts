@@ -53,10 +53,18 @@ export function pickLocale(
  * よって `pickLocale()` のような空文字フォールバックはせず、
  * `entry[lang]` をそのまま返す（Issue #341: フォールバックにより
  * 日本語の断片が英語表示に混入していた不具合の修正）。
+ *
+ * `messages[key]` を直接参照すると、`key` が `"toString"` や
+ * `"constructor"` のような `Object.prototype` 由来のプロパティ名だった
+ * 場合にプロトタイプチェーン経由で関数を拾ってしまい、`entry[lang]` が
+ * `undefined` になって「未知キーはキー文字列を返す」契約が破れる。
+ * `MessageKey` 型により通常の呼び出しではこの入力は起こらないが、
+ * `format()`（下記）と同様に `hasOwnProperty` で自己プロパティかどうかを
+ * 確認してから読む（Issue #371）。
  */
 export function translate(key: MessageKey, lang: Language): string {
-  const entry = messages[key] as Localized | undefined;
-  if (!entry) return key;
+  if (!Object.prototype.hasOwnProperty.call(messages, key)) return key;
+  const entry = messages[key] as Localized;
   return entry[lang];
 }
 
