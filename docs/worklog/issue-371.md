@@ -55,3 +55,31 @@
   (レビュー時点で確認済み)のみで、通常の呼び出しは型 `MessageKey` により
   プロトタイプ由来キーを渡せないため、実装ロジック側への挙動変化はない
   (テストコードでの型キャスト経由の呼び出しのみ影響)
+
+### 2026-07-18 テスト強化メモ
+
+- 担当: tester
+- ブランチ: issue-371-i18n-prototype-guard
+- 既存テストの状況: `i18n.test.ts` の `translate` describe に
+  `toString`/`constructor`/`hasOwnProperty` を渡す回帰テストが1件あり、
+  `format` describe にも `{toString}` プレースホルダのガードテストがある。
+  正常系(実在キーの引き)も `card.node` 等でカバー済み。
+- 追加方針(依頼された3観点):
+  1. `Object.prototype` 由来の他キー(`valueOf`/`isPrototypeOf`/
+     `propertyIsEnumerable`/`toLocaleString`/`__proto__`/
+     `__defineGetter__`)でも `translate()` がキー文字列を返すことを
+     ja/en 両言語で確認する。`__proto__` は `messages["__proto__"]` が
+     プロトタイプ(object)を返す特殊ケースだが `hasOwnProperty` は false
+     のためガードで保護されることを別途確認する。
+  2. 実在する `MessageKey`(複数)がガード追加後も ja/en を正しく引ける
+     ことを回帰として確認する(既存の正常系が壊れていないことの担保)。
+  3. `translate()` の新ガードと `format()` の既存ガードが、同一の
+     プロトタイプ由来キー集合に対して同じ「素通し」挙動をすることを
+     並べて比較する。
+- ファイル分割: プロトタイプ汚染防御という単一の関心事のため、
+  `i18n.test.ts` を肥大化させず専用ファイル
+  `i18n.prototype-guard.test.ts` に追加する。既存の `i18n.test.ts` の
+  該当テストはそのまま残す(削除・移動はしない)。
+- 事前確認: 上記キー集合について実測し、いずれも
+  `hasOwnProperty.call(messages, key) === false`、ガード無しでは
+  `entry[lang] === undefined`(契約違反)になることを確認済み。
