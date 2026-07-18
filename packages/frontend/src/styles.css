@@ -3091,6 +3091,43 @@ button.mempool-panel__row:hover {
   box-shadow: 0 0 0 2px rgba(79, 157, 255, 0.35);
 }
 
+/* Issue #401: チェーンリボンカードの常設入口(subtitle 行末)。 */
+.chain-ribbon-card__subtitle-row {
+  margin-top: 2px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.chain-ribbon-card__hash-demo-open {
+  flex: none;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font-size: 11px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Issue #401: ポップオーバー末尾の文脈導線。 */
+.chain-ribbon-popover__hash-demo-open {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--divider);
+  background: none;
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+  color: var(--accent);
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
 /* --- Issue #401: 「ハッシュのしくみ」デモ(kind: hashChainDemo) ---
    3ブロックを縦に並べる砂場。「自分のハッシュは自分の中に無い」を配置で
    伝えるため、導出ハッシュは格納情報の枠(.hash-chain-demo__stored)の外・
