@@ -922,13 +922,14 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       キーボード操作・クランプ・永続化を確認。QA中に発見した軽微なUX上の
       粗さ(右ボタンドラッグに反応・テキスト選択抑止なし)はIssue #391へ分離
       [#362](https://github.com/morichikawa/chainviz/issues/362)
-- [ ] サンプルコントラクトのトークンシンボル(CVZ等)がSolidityの定数で
+- [x] サンプルコントラクトのトークンシンボル(CVZ等)がSolidityの定数で
       ハードコードされておりデプロイ時に変更できない
       (ユーザーからの指摘。ChainvizToken.solの`symbol = "CVZ"`が定数で、
       コンストラクタ引数はinitialSupplyのみ。「CVZ」が一般的なブロック
-      チェーン用語に見えてしまう。name/symbolのコンストラクタ引数化、
-      または表記変更が論点。catalog.json・operationCatalog.ts・
-      mockData.ts等CVZに依存する既存コードへの影響範囲の洗い出しが必要)
+      チェーン用語に見えてしまう。コンストラクタ引数化は範囲が広がり
+      すぎるため不採用とし、`CVZ`→`CVZDEMO`・`CVN`→`CVNDEMO`への命名
+      変更のみで解消(ユーザー確認済み)。catalog.json・operationCatalog.ts・
+      mockData.ts等の依存箇所とテストフィクスチャ全般を表記統一)
       [#364](https://github.com/morichikawa/chainviz/issues/364)
 - [x] 追加ワークベンチの命名が静的ワークベンチと衝突する
       (コンテナ名409・stableId重複による操作の誤配送)
