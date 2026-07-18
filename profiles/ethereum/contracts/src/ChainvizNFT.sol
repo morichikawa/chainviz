@@ -27,7 +27,7 @@ pragma solidity ^0.8.24;
 ///         ため collector 側の列挙方法も合わせて見直すこと。
 contract ChainvizNFT {
     string public constant name = "Chainviz NFT";
-    string public constant symbol = "CVN";
+    string public constant symbol = "CVNDEMO";
 
     uint256 public totalSupply;
     address public immutable owner;
