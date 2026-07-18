@@ -7,6 +7,44 @@ import {
   getOperationCatalogEntry,
 } from "./operationCatalog.js";
 
+interface AbiInput {
+  name: string;
+  type: string;
+}
+interface AbiEntry {
+  type: string;
+  name?: string;
+  stateMutability?: string;
+  inputs?: AbiInput[];
+}
+/** catalog.json の値部分（このテストで突き合わせる ABI と静的メタ情報のみ）。 */
+interface RealCatalogEntry {
+  abi: AbiEntry[];
+  token?: { symbol: string; decimals: number };
+  nft?: { symbol: string };
+}
+
+// カタログ JSON はリポジトリ直下 profiles/ にあり、パッケージ相対では
+// テスト実行時の cwd（vitest はパッケージ配下）に依存する。cwd から上へ
+// たどって profiles/ethereum/contracts/catalog.json を探す（実行位置に
+// 依存しないようにする）。
+function findCatalogJson(): string {
+  const relative = "profiles/ethereum/contracts/catalog.json";
+  let dir = process.cwd();
+  for (;;) {
+    const candidate = resolve(dir, relative);
+    if (existsSync(candidate)) return candidate;
+    const parent = dirname(dir);
+    if (parent === dir) {
+      throw new Error(`could not locate ${relative} above ${process.cwd()}`);
+    }
+    dir = parent;
+  }
+}
+const catalogJson = JSON.parse(
+  readFileSync(findCatalogJson(), "utf8"),
+) as Record<string, RealCatalogEntry>;
+
 describe("ETHEREUM_OPERATION_CATALOG", () => {
   it("keys every entry with the exact catalogKey collector/catalog.json use (ChainvizToken/ChainvizNFT/Counter)", () => {
     const keys = ETHEREUM_OPERATION_CATALOG.map((entry) => entry.catalogKey);
@@ -165,37 +203,6 @@ describe("getOperationCatalogEntry", () => {
  * node の fs で直接読んで突き合わせる。
  */
 describe("ETHEREUM_OPERATION_CATALOG matches the real catalog.json ABI", () => {
-  interface AbiInput {
-    name: string;
-    type: string;
-  }
-  interface AbiEntry {
-    type: string;
-    name?: string;
-    stateMutability?: string;
-    inputs?: AbiInput[];
-  }
-  // カタログ JSON はリポジトリ直下 profiles/ にあり、パッケージ相対では
-  // テスト実行時の cwd（vitest はパッケージ配下）に依存する。cwd から上へ
-  // たどって profiles/ethereum/contracts/catalog.json を探す（実行位置に
-  // 依存しないようにする）。
-  function findCatalogJson(): string {
-    const relative = "profiles/ethereum/contracts/catalog.json";
-    let dir = process.cwd();
-    for (;;) {
-      const candidate = resolve(dir, relative);
-      if (existsSync(candidate)) return candidate;
-      const parent = dirname(dir);
-      if (parent === dir) {
-        throw new Error(`could not locate ${relative} above ${process.cwd()}`);
-      }
-      dir = parent;
-    }
-  }
-  const catalogJson = JSON.parse(
-    readFileSync(findCatalogJson(), "utf8"),
-  ) as Record<string, { abi: AbiEntry[] }>;
-
   /** ABI のソリディティ型を UI 側の入力補助分類へ写す。 */
   function abiTypeToArgType(abiType: string): OperationArgType {
     if (abiType === "address") return "address";
@@ -269,5 +276,38 @@ describe("ETHEREUM_OPERATION_CATALOG matches the real catalog.json ABI", () => {
         expect(fn.payable).toBe(abiFn.stateMutability === "payable");
       }
     }
+  });
+});
+
+/**
+ * トークンの `symbol`/`decimals` は Solidity の `constant` であって ABI には
+ * 出てこないため、上の「matches the real catalog.json ABI」の照合対象には
+ * 含まれない。一方で `operationCatalog.ts` の `token` メタ情報（デプロイタブの
+ * 単位ラベル「CVZDEMO 単位」等に使う静的値）と `catalog.json` の `token`
+ * フィールド（collector が `ContractEntity.token` にそのまま転記する単一の
+ * 真実の情報源）は同じ値を指すべきで、片方だけ更新すると表示が食い違う。
+ * ABI 照合ではこの乖離を検出できない隙間を埋めるため、両者の一致を直接
+ * 突き合わせる（Issue #364: シンボル表記の整合を単一の真実の情報源と揃える）。
+ */
+describe("ETHEREUM_OPERATION_CATALOG token metadata matches catalog.json", () => {
+  it("keeps each entry's token metadata (symbol/decimals) equal to catalog.json's token field", () => {
+    for (const entry of ETHEREUM_OPERATION_CATALOG) {
+      // catalog.json 側に token が無いエントリ（Counter / ChainvizNFT）は
+      // operationCatalog 側も token を持たない（両者 undefined）ことを保証する。
+      expect(entry.token).toEqual(catalogJson[entry.catalogKey].token);
+    }
+  });
+
+  it("carries token metadata for exactly the catalog.json entries that declare a token field", () => {
+    const catalogTokenKeys = Object.entries(catalogJson)
+      .filter(([, value]) => value.token !== undefined)
+      .map(([key]) => key)
+      .sort();
+    const operationTokenKeys = ETHEREUM_OPERATION_CATALOG.filter(
+      (entry) => entry.token !== undefined,
+    )
+      .map((entry) => entry.catalogKey)
+      .sort();
+    expect(operationTokenKeys).toEqual(catalogTokenKeys);
   });
 });
