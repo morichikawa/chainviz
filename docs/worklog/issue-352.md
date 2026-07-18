@@ -558,3 +558,34 @@ shared の型変更は本設計で完了済み。**collector と frontend は互
   - i18n の英語文言("Succeeded"/"Failed" 系)は chainviz-i18n のレビュー
     対象として残っている(frontend 実装メモに記載のとおり)
   - E2E(UI-LOG-02)の追加検証は実環境依存のため chainviz-qa の確認対象
+
+### 2026-07-18 i18n レビュー(chainviz-i18n)
+
+- 担当: i18n
+- ブランチ: issue-352-comms-log-rpc-response
+- 判定: **合格。修正なし**
+- 確認対象: `packages/frontend/src/i18n/messages.ts` の新規5キー
+  (`commsLog.operation.outcomeOk` / `outcomeError` / `outcomeOkDuration` /
+  `outcomeErrorDuration` / `duration`)の `en` フィールド。実際の使われ方
+  (`commsLog/commsLogText.ts` の `describeOperationSuffix`。所要時間欠落時は
+  アイコンのみのaria-label、両方観測時はアイコン+所要時間をまとめた
+  aria-label)とテスト(`commsLogText.operationOutcome.test.ts`)を突き合わせて
+  確認した
+- 確認内容:
+  - `outcomeOk`: "Succeeded" / `outcomeError`: "Failed" — 過去形で自然。
+    特に "Failed" は既存の `tx.status.failed`・`commsLog.tx.failed`・
+    `commsLog.tx.failedUnknownBlock` と同一語で、コードベース内の成否表現の
+    語感がすでに統一されている点と整合する
+  - `outcomeOkDuration`: "Succeeded ({ms}ms)" / `outcomeErrorDuration`:
+    "Failed ({ms}ms)" — 半角括弧+単位の書式は既存の `tx.status.pending`
+    ("Pending (mempool)") と同じスタイルで一貫している
+  - `duration`: " · {ms}ms" — 実装コメントどおり `commsLog.internal.latency`
+    と完全一致。意図的な流用ではなく別キーとして新設した理由(既存の
+    カテゴリごとに専用キーを持つ流儀への統一)も設計メモ・実装メモに明記
+    されており妥当
+  - 直訳調ではなく、技術用語(RPC/ms)も業界標準表記のまま。日本語側
+    「成功」「失敗」「成功（12ms）」「失敗（12ms）」との対応関係にも
+    過不足なし。内容変更(日本語側の記述内容そのもの)の提案もなし
+- 結論: `packages/frontend/src/i18n/messages.ts` への修正は行っていない
+  (レビューのみで変更なしのため、`pnpm lint && pnpm build && pnpm test` の
+  再実行・コミットも不要)
