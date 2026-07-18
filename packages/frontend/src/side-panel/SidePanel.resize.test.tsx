@@ -73,6 +73,34 @@ describe("SidePanel resize handle", () => {
     );
   });
 
+  it("suppresses text selection on the panel while dragging (Issue #391)", () => {
+    const storage = memoryStorage();
+    wrap(storage);
+    const handle = screen.getByTestId("side-panel-resize-handle");
+    const panel = screen.getByTestId("side-panel");
+
+    expect(panel.className).not.toMatch(/side-panel--resizing/);
+
+    fireEvent(handle, new MouseEvent("pointerdown", { clientX: 1000, bubbles: true, button: 0 }));
+    expect(panel.className).toMatch(/side-panel--resizing/);
+
+    fireEvent(window, new MouseEvent("pointerup", { clientX: 900 }));
+    expect(panel.className).not.toMatch(/side-panel--resizing/);
+  });
+
+  it("does not start a drag (and does not add the no-select class) on a right-button pointerdown (Issue #391)", () => {
+    const storage = memoryStorage();
+    wrap(storage);
+    const handle = screen.getByTestId("side-panel-resize-handle");
+    const panel = screen.getByTestId("side-panel");
+
+    fireEvent(handle, new MouseEvent("pointerdown", { clientX: 1000, bubbles: true, button: 2 }));
+    expect(panel.className).not.toMatch(/side-panel--resizing/);
+
+    fireEvent(window, new MouseEvent("pointermove", { clientX: 900 }));
+    expect(panel.style.width).toBe(`${SIDE_PANEL_DEFAULT_WIDTH}px`);
+  });
+
   it("resizes via keyboard arrows on the handle", () => {
     const storage = memoryStorage();
     wrap(storage);
