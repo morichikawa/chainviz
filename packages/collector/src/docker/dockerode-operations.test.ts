@@ -389,6 +389,148 @@ describe("createDockerOperations", () => {
     expect(remove).not.toHaveBeenCalled();
   });
 
+  it("still logs (does not silently swallow) when the cleanup remove() fails with a 404 (already removed by another process) (Issue #385)", async () => {
+    // 後始末の remove が「既に無い（404）」で失敗するケース。stopAndRemove と
+    // 異なり createAndStart の後始末は 404 を成功扱いに変換しない設計なので、
+    // 黙って握りつぶさずログへ残しつつ、元の start() エラーを伝播すること。
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const startError = new Error("network xyz not found");
+      const start = vi.fn().mockRejectedValue(startError);
+      const notFound = Object.assign(new Error("no such container"), {
+        statusCode: 404,
+      });
+      const remove = vi.fn().mockRejectedValue(notFound);
+      const createContainer = vi
+        .fn()
+        .mockResolvedValue({ id: "cid-1", start, remove });
+      const docker = { createContainer } as unknown as Docker;
+
+      const ops = createDockerOperations(docker);
+      await expect(ops.createAndStart(baseSpec)).rejects.toBe(startError);
+
+      expect(remove).toHaveBeenCalledWith({ force: true });
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("includes the container id and name in the cleanup-failure log so an orphan is traceable (Issue #385)", async () => {
+    // orphan が残った場合に追跡できるよう、後始末失敗ログにコンテナ id と
+    // spec.name の両方が含まれていること。
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const start = vi.fn().mockRejectedValue(new Error("boom"));
+      const remove = vi.fn().mockRejectedValue(new Error("cleanup failed"));
+      const createContainer = vi
+        .fn()
+        .mockResolvedValue({ id: "cid-42", start, remove });
+      const docker = { createContainer } as unknown as Docker;
+
+      const ops = createDockerOperations(docker);
+      await ops.createAndStart(baseSpec).catch(() => {});
+
+      const logged = errorSpy.mock.calls[0]?.[0] as string;
+      expect(logged).toContain("cid-42");
+      expect(logged).toContain(baseSpec.name);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("force-removes and propagates the original error regardless of the start() failure cause (Issue #385)", async () => {
+    // start() 失敗の原因（プレーン Error / リソース不足 / ポート競合 /
+    // statusCode 付きサーバエラー）が何であっても、後始末は同一フロー
+    // （force remove して元エラーを再 throw）で処理されること。原因ごとに
+    // 分岐して一部だけ後始末を怠ることがないよう固定する。
+    const causes: unknown[] = [
+      new Error("driver failed programming external connectivity"),
+      Object.assign(new Error("port is already allocated"), {
+        statusCode: 500,
+      }),
+      Object.assign(new Error("insufficient memory to start container"), {
+        statusCode: 500,
+      }),
+    ];
+    for (const cause of causes) {
+      const remove = vi.fn().mockResolvedValue(undefined);
+      const start = vi.fn().mockRejectedValue(cause);
+      const createContainer = vi
+        .fn()
+        .mockResolvedValue({ id: "cid-1", start, remove });
+      const docker = { createContainer } as unknown as Docker;
+
+      const ops = createDockerOperations(docker);
+      await expect(ops.createAndStart(baseSpec)).rejects.toBe(cause);
+      expect(remove).toHaveBeenCalledTimes(1);
+      expect(remove).toHaveBeenCalledWith({ force: true });
+    }
+  });
+
+  it("does not misclassify a start() failure as a name conflict even when its message/statusCode look like one (Issue #385/#366)", async () => {
+    // 名前衝突（ContainerNameConflictError）への変換は createContainer 失敗
+    // 経路にのみ適用される。start() が 409 + "already in use" で失敗しても、
+    // それは別物なので変換せず生のエラーをそのまま伝播し、かつ作成済み
+    // コンテナは force remove する（start 失敗の後始末を name-conflict 変換に
+    // 奪われない）。
+    const remove = vi.fn().mockResolvedValue(undefined);
+    const startConflict = Object.assign(
+      new Error(
+        '(HTTP code 409) Conflict. The container name "/x" is already in use',
+      ),
+      { statusCode: 409 },
+    );
+    const start = vi.fn().mockRejectedValue(startConflict);
+    const createContainer = vi
+      .fn()
+      .mockResolvedValue({ id: "cid-1", start, remove });
+    const docker = { createContainer } as unknown as Docker;
+
+    const ops = createDockerOperations(docker);
+    const error = await ops
+      .createAndStart(baseSpec)
+      .catch((err: unknown) => err);
+    expect(error).not.toBeInstanceOf(ContainerNameConflictError);
+    expect(error).toBe(startConflict);
+    expect(remove).toHaveBeenCalledWith({ force: true });
+  });
+
+  it("force-removes and propagates a non-Error start() rejection (e.g. a thrown string) (Issue #385)", async () => {
+    // start() が Error でない値（文字列等）を投げても、後始末（force remove）は
+    // 走り、その値をそのまま伝播すること（型で分岐して後始末を飛ばさない）。
+    const remove = vi.fn().mockResolvedValue(undefined);
+    const start = vi.fn().mockRejectedValue("start blew up");
+    const createContainer = vi
+      .fn()
+      .mockResolvedValue({ id: "cid-1", start, remove });
+    const docker = { createContainer } as unknown as Docker;
+
+    const ops = createDockerOperations(docker);
+    await expect(ops.createAndStart(baseSpec)).rejects.toBe("start blew up");
+    expect(remove).toHaveBeenCalledWith({ force: true });
+  });
+
+  it("attempts the cleanup remove() exactly once and returns no value on start failure (Issue #385)", async () => {
+    // 後始末はリトライせず1回だけ。start 失敗時は CreatedContainer を返さず
+    // 必ず throw する（中間状態を戻り値として漏らさない）。
+    const remove = vi.fn().mockResolvedValue(undefined);
+    const start = vi.fn().mockRejectedValue(new Error("nope"));
+    const createContainer = vi
+      .fn()
+      .mockResolvedValue({ id: "cid-1", start, remove });
+    const docker = { createContainer } as unknown as Docker;
+
+    const ops = createDockerOperations(docker);
+    const outcome = await ops
+      .createAndStart(baseSpec)
+      .then(() => "resolved" as const)
+      .catch(() => "rejected" as const);
+    expect(outcome).toBe("rejected");
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
+
   it("stops then force-removes a container", async () => {
     const stop = vi.fn().mockResolvedValue(undefined);
     const remove = vi.fn().mockResolvedValue(undefined);
