@@ -323,3 +323,65 @@
 - 静的レビューとしては完了。QA には前回同様、実 Docker 環境での
   `pnpm test:e2e:ui -g UI-C-06` の実行(dev collector 無しでの再現・
   有りでの回帰の両確認)を申し送る
+
+### 2026-07-18 Issue #381 最終QA検証
+
+- 担当: qa
+- ブランチ: issue-381-workbench-rpc-url
+- 判定: **合格**
+- 検証環境の状況:
+  - 検証開始時、別セッションの dev 環境が稼働していた（`/home/zoe/workspace/chainviz`
+    から起動した dev collector が 4000/4001、dev frontend が 5173 で待受）。
+    さらに 4000・5173 に対してブラウザからのアクティブな WebSocket 接続
+    （ESTAB）が確立しており、ユーザーがライブで閲覧中の状態だった。この
+    dev collector は停止すると閲覧中の表示を壊すため、検証中は停止していない。
+  - 共有 Docker スタック（`chainviz-ethereum` プロジェクト）を再利用した。
+    アクティブな Playwright/vitest/e2e の実行プロセスは無いことを確認済み。
+- 実施内容と結果:
+  1. Playwright 経由の UI-C-06 フル実行（dev collector 4001 稼働中＝回帰
+     シナリオ）:
+     - `LD_LIBRARY_PATH=/home/zoe/chrome-deps/root/usr/lib/x86_64-linux-gnu`
+       を設定して chromium を起動可能にしたうえで
+       `pnpm test:e2e:ui -g UI-C-06` を実行。
+     - 結果: **1 passed（11.0s、exit code 0）**。UI-C-06 のセットアップ
+       （`deployUncatalogedContractInWorkbench(UI_E2E_PROXY_PORT=4126)` による
+       forge create）が成功し、その後 UI 上に「未知のコントラクト」カードが
+       出現することのポーリング検証まで通過した。forge create が失敗すれば
+       セットアップステップで throw してテストが落ちるため、これは 4126
+       （UI E2E collector のロギングプロキシ）経由でデプロイが成功し collector
+       が検知するところまでの end-to-end の確証である。
+  2. クリーン環境（dev collector 停止時）での挙動の立証:
+     - ユーザーのライブ表示を壊さないため dev collector を実際に停止しての
+       クリーン実行は行わず、fix の因果関係（forge create の向き先が 4001 の
+       有無と独立していること）を稼働中ワークベンチへの直接 exec で立証した。
+     - `docker compose -f profiles/ethereum/docker-compose.yml exec` で以下を実測:
+       - コンテナ本体の `ETH_RPC_URL` は `http://host.docker.internal:4001`
+         固定（compose 定義どおり）。
+       - `-e ETH_RPC_URL=http://host.docker.internal:9099`（待受の無い死んだ
+         ポート）で上書きすると、コンテナ本体の 4001 が生きていても RPC 接続が
+         失敗する（connect error）。→ `-e` 上書きが権威的であり、コンテナ本体の
+         `ETH_RPC_URL` を上書きすることの証明。
+       - 上書きなしでは container の 4001 に到達しブロック番号が返る（482）。
+         → 現状 pre-fix 相当の経路が通るのは dev collector が 4001 で生きて
+         いるからに過ぎず、クリーン環境（4001 停止）では Connection refused に
+         なる（Issue #381 が報告した不具合の再現条件と一致）。
+     - 以上より、fix の `-e ETH_RPC_URL=http://host.docker.internal:4126` は
+       4001 の有無に関わらず 4126 を指すため、上記 1 のフル実行での forge
+       create は 4001 ではなく 4126 に到達して成功している。したがって dev
+       collector を停止したクリーン環境でも同一のコード経路（4126 を指す）で
+       同一の結果（成功）になる。pre-fix コードはクリーン環境で 4001 の
+       Connection refused により失敗するため、本 fix で問題が解消されている。
+- 完了条件との照合:
+  - 「dev collector 未起動のクリーン環境で UI-C-06 が Connection refused で
+    失敗する問題が解消され成功する」: fix の因果的独立性の立証と、実際の
+    フル実行（4126 経由の forge create 成功）により満たしている。
+  - 「dev collector 起動状態でも UI-C-06 が引き続き成功する（回帰確認）」:
+    dev collector 4001 稼働中でのフル実行が PASS し、満たしている。
+- 副作用: 検証後、dev collector（4000/4001）・dev frontend（5173）は稼働
+  継続でユーザーのライブ表示は無傷。UI E2E の collector/vite（4125/4126/5275）
+  の残留プロセス無し。新規 managed コンテナの増加無し。worktree は clean。
+- 申し送り: dev collector を物理的に停止しての literal なクリーン実行のみ
+  未実施（アクティブなユーザー閲覧を壊さないための判断）。将来 dev 環境が
+  誰にも使われていないタイミングであれば、`pnpm dev:down` 相当で 4001 を
+  落としてから `pnpm test:e2e:ui -g UI-C-06` を実行することで literal な
+  クリーン実行も可能。今回は因果関係の立証で完了条件を満たしたと判断した。
