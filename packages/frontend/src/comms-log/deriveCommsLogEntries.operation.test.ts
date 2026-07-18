@@ -50,6 +50,50 @@ describe("deriveCommsLogEntries: operation category (operationObserved)", () => 
     ]);
   });
 
+  it("carries outcome/durationMs through from OperationEdge when observed (Issue #352)", () => {
+    const entries = deriveCommsLogEntries(
+      { entities: {}, edges: [] },
+      [
+        {
+          type: "operationObserved",
+          edge: {
+            kind: "operation",
+            fromWorkbenchId: "wb-1",
+            toNodeId: "reth-1",
+            operation: "eth_call",
+            observedAt: 1_000,
+            outcome: "ok",
+            durationMs: 7,
+          },
+        },
+      ],
+      1_000,
+    );
+
+    expect(entries[0]).toMatchObject({ outcome: "ok", durationMs: 7 });
+  });
+
+  it("leaves outcome/durationMs undefined when the edge does not carry them (judgement-impossible case)", () => {
+    const entries = deriveCommsLogEntries(
+      { entities: {}, edges: [] },
+      [
+        {
+          type: "operationObserved",
+          edge: {
+            kind: "operation",
+            fromWorkbenchId: "wb-1",
+            toNodeId: "reth-1",
+            operation: "eth_call",
+            observedAt: 1_000,
+          },
+        },
+      ],
+      1_000,
+    );
+
+    expect(entries[0]).toMatchObject({ outcome: undefined, durationMs: undefined });
+  });
+
   it("falls back to raw ids when the workbench/node are unknown", () => {
     const entries = deriveCommsLogEntries(
       { entities: {}, edges: [] },

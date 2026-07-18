@@ -58,7 +58,8 @@ export function deriveCommsLogEntries(
   for (const event of events) {
     switch (event.type) {
       case "operationObserved": {
-        const { fromWorkbenchId, toNodeId, operation, observedAt } = event.edge;
+        const { fromWorkbenchId, toNodeId, operation, observedAt, outcome, durationMs } =
+          event.edge;
         out.push({
           id: nextId("operation"),
           category: "operation",
@@ -69,6 +70,8 @@ export function deriveCommsLogEntries(
           nodeId: toNodeId,
           nodeLabel: resolveActorLabel(entities, toNodeId),
           method: operation,
+          outcome,
+          durationMs,
         });
         break;
       }

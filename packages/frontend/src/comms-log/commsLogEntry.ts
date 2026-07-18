@@ -45,6 +45,14 @@ export interface CommsLogOperationEntry extends CommsLogEntryBase {
   nodeLabel: string;
   /** JSON-RPC メソッド名等、プロトコル依存の生の文字列。 */
   method: string;
+  /**
+   * 呼び出しの成否（レスポンス観測。Issue #352）。`OperationEdge.outcome` を
+   * そのまま写す。省略 = ロギングプロキシが判定できなかった（バッチ応答の
+   * 対応欠落・非JSONボディ等）。`durationMs` とは独立に欠落しうる。
+   */
+  outcome?: "ok" | "error";
+  /** 呼び出しの所要時間（ms）。`OperationEdge.durationMs` をそのまま写す。省略 = 観測できなかった。 */
+  durationMs?: number;
 }
 
 /** 内部API呼び出し1種類ぶん（D層。InternalCallStats のフロント表現）。 */
