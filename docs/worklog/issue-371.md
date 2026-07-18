@@ -115,3 +115,35 @@
   - ブランチの分岐点(f3569cb)は main の先端よりやや古いが、ブランチの
     コミットが触るファイルは i18n 関連と worklog のみで、main 側の先行
     変更と競合しない。マージ時に特段の対応は不要の見込み
+
+### 2026-07-18 QA検証
+
+- 担当: qa
+- ブランチ: issue-371-i18n-prototype-guard
+- 検証結果: 合格
+- 実施内容:
+  - `pnpm test` を全パッケージで実行し、すべて通過することを再確認した
+    (shared 75 / collector 1660 / e2e 179 / frontend 2770)。worklog に
+    記録された件数と一致。
+  - `pnpm --filter @chainviz/frontend build`(tsc -b)および
+    `build:web`(vite 本番ビルド、347 modules)がエラーなく完了することを
+    確認した。
+  - フロントを `vite preview` で起動し、HTTP 200 で配信されること、
+    生成された JS バンドルに言語切り替え文言(English / 日本語)と用語集
+    文言(用語集 / Glossary)が含まれることを確認した。今回の translate()
+    ガード追加で既存の i18n 機能(言語切り替え・用語集パネル表示)が壊れて
+    いないことを確認。
+  - 言語切り替え・用語集パネル関連のコンポーネントテスト
+    (LanguageToggle.test.tsx / App.glossaryPanel.test.tsx /
+    GlossaryPanelView.test.tsx / SidePanelHost.glossary.test.tsx 等)が
+    全体スイート内で全通過していることを確認。
+  - 変更は `translate()` に `Object.prototype.hasOwnProperty.call` ガードを
+    追加する軽微な堅牢性向上で、型 `MessageKey` により通常経路からは到達
+    不能なため、実 Docker 環境での挙動確認価値は限定的と判断。上記の
+    起動・配信・テスト確認をもって完了条件を満たすと判断した。
+- 統括向け注意点:
+  - コミット 601074d で `docs/PLAN.md` の Issue #371 チェックボックスが
+    実装担当(frontend)により既に `[x]` に更新されている。本来 QA 合格後に
+    統括が付ける項目であり、今回の QA 依頼でも「PLAN.md のチェックボックス
+    更新は行わないでください」と指示があったため QA 側では触っていない。
+    このチェック済みの状態が意図通りか、統括で確認されたい。
