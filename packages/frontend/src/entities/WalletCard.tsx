@@ -47,6 +47,12 @@ function TxChip({ tx, isSettling }: { tx: TransactionEntity; isSettling: boolean
       data-testid={`wallet-tx-chip-${tx.hash}`}
       data-status={tx.status}
       data-label-kind={label.kind}
+      // Issue #388: tx がどのブロックに含まれたかを e2e から直接特定できる
+      // よう、完全な blockHash を露出する（pending 中は undefined なので
+      // React は属性自体を出さない）。`data-parent-hash`（Issue #351）・
+      // `data-connected-to-previous`（Issue #298）と同じ「表示テキストからは
+      // 逆引きできない完全な hash をテスト専用に露出する」既存の流儀。
+      data-block-hash={tx.blockHash}
       onMouseEnter={() => {
         onMouseEnter();
         setHoveredTxHash(tx.hash);
