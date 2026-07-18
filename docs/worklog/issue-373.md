@@ -623,3 +623,152 @@ worktreeを再作成し、`pnpm install` で依存関係を復元したうえで
     (偽 collector + 実フロント + 実 Playwright spec)で「修正前に失敗・
     修正後に合格」の両方を確認すること。UI-MULTI-01 と cleanup 安全網の
     実ブラウザ動作確認もあわせて行うこと
+
+### 2026-07-18 差し戻し対応(frontend)
+
+- 担当: frontend
+- ブランチ: issue-373-fitview-timing-fix
+
+**背景**
+
+chainviz-qa による実 Docker + 実ブラウザでの検証で、上記レビュー通過分に
+回帰が見つかった。コア修正(初期フィットの遅延化)自体は QA が「修正前に
+実際に失敗し、修正後に合格する」ことを確認済みで無罪。回帰は e2e 側の
+追随実装(`multi-client.spec.ts` の UI-MULTI-01 に追加した
+`fitCanvasView(pageB)` 呼び出し)にあった: 実 Docker + 実ブラウザで
+4 回実行して 4 回とも失敗し、該当行を削除すると 2 回とも合格した。
+
+原因: `pageB` は当該ワークベンチが追加される**前**にロードされている。
+`pageA` の追加操作の結果は diff として `pageB` に届き、DOM 上には
+出現する(`toBeVisible()` は通過する)が、React Flow の内部計測
+(`useNodesInitialized()` が使う ResizeObserver ベースの計測)がその
+瞬間までに完了しているとは限らない。この状態でフィットボタンを 1 回だけ
+押すと、フィットが対象カードを含めずに他のノードだけへ確定してしまい、
+以後は再フィットが行われないため対象がビューポート外に固定される
+(コア修正が解消した「初期フィットがチェーンリボン 1 枚だけに対して
+発火する」のと同種の窓が、ページロード後の diff 追加カードに対しても
+存在する、という整理)。
+
+**選んだ方針**
+
+統括から (a) `fitCanvasView(pageB)` を単純に削除する案と (b) `fitCanvasView`
+自体を堅牢化する案の 2 択が提示され、(b) を優先的に検討するよう依頼された
+(designer が本来意図した「diff 追加カードの構造的脆さの解消」を活かす
+ため)。(b) で実装できたため、(b) を採用した。
+
+**実装**
+
+`packages/e2e/src/ui/support/viewport.ts` の `fitCanvasView` を、
+「対象(次にクリックしたい要素)を引数に取り、フィットボタンを押した後に
+対象が実際にビューポート内へ完全に収まったことを確認する。収まって
+いなければ、内部計測が追いつくまで小休止してフィットボタンを再試行する」
+方式に変更した。
+
+- シグネチャを `fitCanvasView(page, target, options?)` に変更(`target`
+  は必須。呼び出し側の2箇所(`multi-client.spec.ts` の削除ボタン、
+  `cleanup.ts` の削除ボタン)はいずれも「次にクリックする要素」を渡す)。
+- 視野内判定は `target.boundingBox()` と `page.viewportSize()` の比較
+  (`box.x >= 0 && box.y >= 0 && box.x+width <= viewport.width &&
+  box.y+height <= viewport.height`)。Playwright の組み込み matcher
+  `toBeInViewport()` は本物の `Page`/`Locator` に依存し、既存のユニット
+  テストが使うフェイクオブジェクトでは動かせないため、`boundingBox()`/
+  `viewportSize()` という単純なメソッド呼び出しの比較に留め、フェイクで
+  差し替え可能にした。
+- 既定タイムアウト 5000ms・ポーリング間隔 100ms。この値は「React Flow が
+  新規ノードの内部計測(ResizeObserver コールバック)を完了するまでの
+  ブラウザ描画パイプライン由来の遅延」を待つためのものであり、ブロック
+  生成間隔のような環境の稼働状況に依存する値ではない(実測では計測完了は
+  通常1フレーム=十数msで完了する)。CLAUDE.md の「今この瞬間に観測できる
+  状態に依存した固定値をロジックに埋め込まない」の対象外であることをコード
+  コメントに明記した。
+- タイムアウトまでに一度も視野内へ入らなかった場合は、握りつぶさず
+  具体的な理由(何ms待って諦めたか)付きで例外を投げる。
+- 呼び出し側2箇所(`multi-client.spec.ts` の UI-MULTI-01、`cleanup.ts` の
+  `removeInfraCardIfPresent`)を新シグネチャに追随させた。
+
+**テスト**
+
+- `packages/e2e/src/ui/support/viewport.unit.test.ts`: 新シグネチャに
+  合わせて全面的に書き直した。「最初から視野内なら1回のクリックで即成功」
+  「最初は視野外でも再試行の末に視野内へ入れば成功(本回帰の再現に対応する
+  ケース)」「タイムアウトまで視野内に入らなければ理由付きで例外」
+  「対象が非表示(boundingBox が null)の間は再試行」「viewportSize が
+  null(型上ありうる異常系)の間は安全側に倒す」「フィットボタンの
+  クリック自体が失敗したら握りつぶさず伝播」の6ケース。
+- `packages/e2e/src/ui/support/cleanup-orchestration.unit.test.ts`:
+  `fitCanvasView` が新たに `target.boundingBox()` と `page.viewportSize()`
+  を参照するようになったため、フェイクの削除ボタン Locator に
+  `boundingBox`(常に視野内を返す)、フェイク Page に `viewportSize` を
+  追加した。既存のテスト意図(削除ボタンクリック前に fitCanvasView が
+  呼ばれる順序)は変更していない。
+
+**確認したこと**
+
+- `pnpm --filter @chainviz/e2e build`(tsc --noEmit)通過。
+- `pnpm --filter @chainviz/e2e test`(vitest.unit.config.ts、15ファイル・
+  179テスト)通過。
+- `pnpm --filter @chainviz/frontend build` / `test`(202ファイル・2625
+  テスト)通過(frontend パッケージ自体には変更なし。既存挙動が壊れて
+  いないことの確認)。
+- `pnpm exec eslint`(変更した5ファイル)エラー無し。
+
+**実ブラウザでの回帰確認について(正直な限定)**
+
+CLAUDE.md の「直したはずで済ませず、実際に再現して確認する」に従い、
+detective の手法(偽collector + 実フロント(vite dev)+ 実Chromium)を
+再構築して UI-MULTI-01 相当の操作(pageB ロード後に pageA が追加した
+ワークベンチを pageB で削除する)を実際に検証したが、**QA が実 Docker 環境
+で観測した「クリックが視野外へ永久リトライして失敗する」という具体的な
+症状そのものを、この合成環境で確定的に再現することはできなかった**。
+以下、試したことと分かったことを正直に記録する。
+
+- 偽collector(scratchpad配置、リポジトリ非汚染)で snapshot/diff/
+  commandResult の実プロトコルを話し、6ノード+可変数のワークベンチを
+  含むベースラインを配信、`addWorkbench`/`removeWorkbench` コマンドに
+  対応する構成を作った。
+- ベースラインのカード数を 0〜300 件まで変化させて再現を試みたところ、
+  カード数が多い(グリッドが縦に伸びる)ほど、diff で追加された直後の
+  対象カードが一時的にビューポート外(実測で最大 y=2424、ビューポート高
+  720 に対して 1700px超過)に位置する状態を作ることはできた。
+- ただし、Playwright の `Locator.click()` は、この検証環境では対象が
+  ビューポートから大きく外れていても実際にクリックに成功した
+  (`DEBUG=pw:api` で内部トレースを確認し、"element is outside of the
+  viewport" のリトライメッセージが一度も出ないまま "click action done" に
+  到達することを複数の条件で確認した)。CDPの`Emulation.
+  setCPUThrottlingRate`によるホスト負荷の模擬・ResizeObserverコールバック
+  への人為的遅延注入(`addInitScript`によるオーバーライド。リポジトリの
+  コードは変更していない)も試したが、いずれも click 失敗という結果には
+  至らなかった。
+- この挙動差の具体的な原因(このサンドボックス環境の Chromium/Playwright
+  の組み合わせ固有の実装差か、フルの `@playwright/test` ランナー経由と
+  本スクリプトのような直接 `playwright` API 経由との差か等)は特定できて
+  いない。
+- 一方で、`fitCanvasView` 自体の新しい判定ロジック(`isFullyInViewport`)は、
+  この合成環境で「対象が実際にビューポート外にある状態」を継続的に検出し
+  続け(境界チェック自体は正しく機能している)、対象がビューポート内に
+  収まるまでフィットボタンを再試行する、という設計どおりの挙動を示した
+  ことは確認できた(ユニットテストでも同じロジックを検証済み)。
+
+以上より、本差し戻し修正の正しさの根拠は以下の3点に置く: (1) QA が実
+Docker + 実ブラウザで確立した「single-click 版の `fitCanvasView` は
+UI-MULTI-01 で 4/4 失敗する」という事実、(2) 新しい実装は「対象が視野内に
+入ったことを確認してから進む」という、失敗しうる余地のない一般的に健全な
+条件を課しており、対象が最初から視野内にある(従来から合格していた)
+ケースでは実質的に旧実装と同じ1回のクリックで即座に完了するため、既存の
+合格ケースを壊す方向には働かない、(3) ロジック自体はユニットテストで
+再試行・タイムアウト・異常系のすべての分岐を検証済み。ただし、**実際に
+QA環境(実Docker + フルスイート相当の負荷)で UI-MULTI-01 が安定して合格
+することの最終確認は、chainviz-qa に改めて依頼することを推奨する**
+(detective が確立した合成環境の手法は同じだが、今回のセッションでは
+実 Docker を使わず Docker 非依存の合成環境で試したため、QA が観測した
+条件を完全には再現できていない可能性がある)。
+
+**次の担当への申し送り**
+
+- QA: 本差し戻し修正後の UI-MULTI-01 を、回帰が見つかった際と同じ実
+  Docker 環境(共有スタックまたは新規)で再実行し、安定して合格することを
+  確認すること。あわせて `cleanup.ts` の安全網(`removeInfraCardIfPresent`)
+  経由の削除も同じ理由で頑健化されているため、他スペックの `afterAll` 
+  安全網が問題なく動作することも確認すると良い。
+- 将来 `fitCanvasView` を新しい呼び出し箇所に適用する場合は、対象
+  (`target`)を必ず渡すこと(省略できないシグネチャにしてある)。
