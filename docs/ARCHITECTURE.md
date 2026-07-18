@@ -2562,8 +2562,27 @@ tx を集約し、mempool 全体を俯瞰する常設ミニパネルをキャン
   `open(view)` / `close()` を提供する。`open` は表示中のパネルを置き換える
 - シェルコンポーネント `SidePanel` が共通の枠を提供する: ヘッダ
   （タイトル・閉じるボタン）、Esc で閉じる、本文の縦スクロール、
-  既存パネル（infra-popover 系）と揃えたガラス質感。幅は 400px 目安
-  （実装時に実測で確定してよい）、ヘッダ下〜画面下端の右ドック固定
+  既存パネル（infra-popover 系）と揃えたガラス質感。ヘッダ下〜画面下端の
+  右ドック固定
+- **幅はユーザーがリサイズできる**（Issue #362）。パネル左端の縦の
+  リサイズハンドルをポインタでドラッグして変更する。ハンドルは
+  `role="separator"`（`aria-orientation="vertical"`・`aria-valuenow/min/max`）
+  でキーボード（←→キー）でも操作できる。幅の規定値:
+  - 既定 420px（従来の CSS 固定幅と同値。幅の唯一の出どころは
+    `sidePanelWidth.ts` の定数とし、CSS 側は `max-width: 90vw` の
+    ガードのみ残す）
+  - 最小 300px（ヘッダのタイトル・閉じるボタンと commsLog のフィルタ
+    バーが操作可能なまま保てる下限として設定した設計定数）
+  - 最大はビューポート幅の 90%（既存 CSS の `max-width: 90vw` と同じ
+    比率。クランプ時のビューポート幅は実行時に測る）
+- リサイズした幅は kind（contractSource / glossary / commsLog）に
+  よらず共通の 1 値で、localStorage キー `chainviz.sidePanel.width.v1`
+  に永続化する（`side-panel/sidePanelWidth.ts`）。カード位置の
+  `layout/layoutStore.ts` には載せない（あちらは「安定 ID → 座標」の
+  マップでスキーマが異なる。スカラー 1 値の UI 設定は言語設定
+  `chainviz.lang` と同系のパターン）。読み込み時は壊れた値・範囲外の
+  値を既定値へフォールバックし、保存失敗は握りつぶしてログのみ残す
+  （`layoutStore` と同じ防御的パターン）
 - 中身（`view.kind` ごとのコンポーネント）はシェルから分離する（1 ファイル
   1 責務。#313/#317 は kind とコンポーネントを足すだけで載る）
 - キャンバス外のオーバーレイなのでレイヤーレンズ（Issue #299）の dim
