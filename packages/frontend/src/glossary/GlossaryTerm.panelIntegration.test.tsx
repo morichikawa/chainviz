@@ -91,11 +91,88 @@ describe("GlossaryTerm click integration with the glossary panel (Issue #313)", 
     );
   });
 
+  it(
+    "calls preventDefault on Space so the browser does not also scroll the " +
+      "page (Issue #353: role=button span, unlike a native <button>, does not " +
+      "suppress the default Space scroll on its own)",
+    () => {
+      wrapWithSidePanel(<GlossaryTerm termKey="container">コンテナ</GlossaryTerm>);
+      const notCancelled = fireEvent.keyDown(
+        screen.getByTestId("glossary-term-container"),
+        { key: " " },
+      );
+      // fireEvent の戻り値は dispatchEvent の戻り値そのもの。cancelable な
+      // イベントで preventDefault が呼ばれていれば false になる。
+      expect(notCancelled).toBe(false);
+    },
+  );
+
+  it("calls preventDefault on Enter as well, for consistency", () => {
+    wrapWithSidePanel(<GlossaryTerm termKey="container">コンテナ</GlossaryTerm>);
+    const notCancelled = fireEvent.keyDown(
+      screen.getByTestId("glossary-term-container"),
+      { key: "Enter" },
+    );
+    expect(notCancelled).toBe(false);
+  });
+
   it("ignores unrelated keys", () => {
     wrapWithSidePanel(<GlossaryTerm termKey="container">コンテナ</GlossaryTerm>);
     fireEvent.keyDown(screen.getByTestId("glossary-term-container"), { key: "Tab" });
     expect(screen.getByTestId("view-probe").textContent).toBe("null");
   });
+
+  it(
+    "does not call preventDefault for unrelated keys, so the early return " +
+      "keeps the preventDefault side effect scoped to Enter/Space only " +
+      "(Issue #353)",
+    () => {
+      // Tab はフォーカス移動、矢印キーはページスクロールなど、それぞれ
+      // ブラウザのデフォルト動作を持つ。Space の対策の巻き添えでこれらまで
+      // 抑止してしまうと操作を壊すため、preventDefault が呼ばれない
+      // （= cancel されない = 戻り値が true）ことを固定する。
+      wrapWithSidePanel(<GlossaryTerm termKey="container">コンテナ</GlossaryTerm>);
+      const anchor = screen.getByTestId("glossary-term-container");
+      for (const key of ["Tab", "ArrowDown", "ArrowUp", "a"]) {
+        const notCancelled = fireEvent.keyDown(anchor, { key });
+        expect(notCancelled).toBe(true);
+      }
+    },
+  );
+
+  it(
+    "does not prevent default on click, because preventDefault is added to the " +
+      "onKeyDown handler only and not to the shared openPanel body (Issue #353)",
+    () => {
+      // クリックにはページスクロール等の抑止すべきデフォルト動作が無い。
+      // preventDefault がクリック経路（openPanel 本体）に漏れていないことを
+      // 回帰テストとして固定する（戻り値 true = キャンセルされていない）。
+      wrapWithSidePanel(<GlossaryTerm termKey="container">コンテナ</GlossaryTerm>);
+      const notCancelled = fireEvent.click(screen.getByTestId("glossary-term-container"));
+      expect(notCancelled).toBe(true);
+    },
+  );
+
+  it(
+    "keeps calling preventDefault on repeated Space presses even after the panel " +
+      "is already open (no toggle path that skips it) (Issue #353)",
+    () => {
+      // 本コンポーネントにトグル動作は無く、押下ごとに同じ用語で開き直す。
+      // 2回目以降の Space でもスクロール抑止が効き続けることを固定する。
+      wrapWithSidePanel(<GlossaryTerm termKey="container">コンテナ</GlossaryTerm>);
+      const anchor = screen.getByTestId("glossary-term-container");
+      const first = fireEvent.keyDown(anchor, { key: " " });
+      expect(first).toBe(false);
+      expect(screen.getByTestId("view-probe").textContent).toBe(
+        JSON.stringify({ kind: "glossary", termKey: "container" }),
+      );
+      const second = fireEvent.keyDown(anchor, { key: " " });
+      expect(second).toBe(false);
+      expect(screen.getByTestId("view-probe").textContent).toBe(
+        JSON.stringify({ kind: "glossary", termKey: "container" }),
+      );
+    },
+  );
 
   it("closes its own open hover popover on click (does not double-show with the panel)", () => {
     wrapWithSidePanel(<GlossaryTerm termKey="container">コンテナ</GlossaryTerm>);

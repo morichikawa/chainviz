@@ -79,7 +79,13 @@ export function GlossaryTerm({ termKey, children }: GlossaryTermProps) {
       onBlur={onBlur}
       onClick={openPanel}
       onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") openPanel(event);
+        if (event.key !== "Enter" && event.key !== " ") return;
+        // Issue #353: role="button" の <span> はネイティブ <button> と違い、
+        // Space キー押下時のページスクロールをブラウザが自動では抑止しない。
+        // クリックにはデフォルト動作が無いため openPanel 本体ではなく
+        // ここで明示的に preventDefault する。
+        event.preventDefault();
+        openPanel(event);
       }}
       data-testid={`glossary-term-${termKey}`}
     >
