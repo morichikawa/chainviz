@@ -302,3 +302,39 @@
     (collector 8ファイル・shared 2ファイル・e2eのコメント2箇所)と
     `docs/ARCHITECTURE.md`の該当2箇所を統括が実施(機械的な文字列置換の
     ため実装担当への差し戻しは行わず直接対応。2コミットに分割)
+
+### 2026-07-18 Issue #364 テスト強化メモ(tester)
+
+- 担当: tester
+- ブランチ: issue-364-cvz-token-symbol
+- 事前確認(独立検証):
+  - `build-catalog.sh`を実際に再実行し(forge/jqをdocker foundryイメージ内で
+    実行)、再生成した`catalog.json`がコミット済みのものと1バイトも違わない
+    (`git diff --quiet`が一致)ことを確認済み。symbol変更後も決定的に
+    再生成できることの裏取り
+  - `grep -rnwP 'CVZ|CVN'`(単語境界・大文字小文字区別)で`packages/`・
+    `profiles/`配下に裸の`CVZ`/`CVN`が1件も残っていないことを統括の確認とは
+    独立に再確認済み(`CVZDEMO`/`CVNDEMO`は70ファイルにあり検索は機能)
+  - UI表示幅について: frontend側にsymbol長を切り詰める/幅に依存するロジックは
+    存在せず、symbolはラベルへそのまま埋め込まれるだけ(例:
+    `${symbol} #${tokenId}`)。既存UIテスト(WalletCard等)がフルsymbol文字列の
+    描画を検証済みで、7文字化による表示崩れはJS側のロジックでは起こり得ない
+    (幅の崩れは純粋なCSSの範疇でユニットテストの対象外)。よって新規テストは
+    追加しない
+- 追加するテストの観点(既存実装のロジックは変更しない):
+  1. `operationCatalog.test.ts`: 既存の「matches the real catalog.json ABI」は
+     symbol/decimalsを比較対象にしていない(symbolはABIに現れない`constant`の
+     ため、ABI照合の対象外であること自体は妥当)。ただし
+     `operationCatalog.ts`の`token`メタ情報(symbol/decimals)と`catalog.json`の
+     `token`フィールドが乖離しても検出されない隙間があるため、両者の突き合わせ
+     テストを追加する(Issue #364の主題である「symbolの単一の真実の情報源との
+     整合」を回帰ガードする)。ABI照合用のカタログ読み込みを`describe`内から
+     モジュールスコープへ持ち上げ、新設のメタ情報照合`describe`と共用する
+     (既存テストの挙動は不変)
+  2. `catalog.symbolConsistency.test.ts`(collector・新規): 実際に出荷する
+     `catalog.json`の埋め込みソース(`source.code`)内の`symbol = "..."`定数と、
+     メタ情報の`token.symbol`/`nft.symbol`が一致することを検証する。
+     `build-catalog.sh`はsymbolをSolソースと`add_entry`のJSONリテラルの2箇所に
+     重複して持ち、スクリプトのコメントも「手動で合わせて直す」と明記している
+     ため、片方だけ更新して再生成すると静かに乖離しうる。この手動同期の破綻を
+     捕まえる回帰テスト
