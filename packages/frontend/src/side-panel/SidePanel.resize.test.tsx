@@ -101,6 +101,35 @@ describe("SidePanel resize handle", () => {
     expect(panel.style.width).toBe(`${SIDE_PANEL_DEFAULT_WIDTH}px`);
   });
 
+  it("does not start a drag (and does not add the no-select class) on a middle-button pointerdown (Issue #391)", () => {
+    // 右ボタン(2)だけでなく中ボタン(1)でもドラッグは始まらない。
+    const storage = memoryStorage();
+    wrap(storage);
+    const handle = screen.getByTestId("side-panel-resize-handle");
+    const panel = screen.getByTestId("side-panel");
+
+    fireEvent(handle, new MouseEvent("pointerdown", { clientX: 1000, bubbles: true, button: 1 }));
+    expect(panel.className).not.toMatch(/side-panel--resizing/);
+
+    fireEvent(window, new MouseEvent("pointermove", { clientX: 900 }));
+    expect(panel.style.width).toBe(`${SIDE_PANEL_DEFAULT_WIDTH}px`);
+  });
+
+  it("does not add the no-select class during keyboard resize (Issue #391)", () => {
+    // `side-panel--resizing`（テキスト選択抑止）はポインタドラッグ中だけの
+    // 過渡状態。←→キーによるリサイズは幅を変えるが `resizing` にはならない
+    // ため、このクラスは付かない（キーボード操作中にパネル内テキストの
+    // 選択が不要に禁止されない）。
+    const storage = memoryStorage();
+    wrap(storage);
+    const handle = screen.getByTestId("side-panel-resize-handle");
+    const panel = screen.getByTestId("side-panel");
+
+    fireEvent.keyDown(handle, { key: "ArrowLeft" });
+    expect(panel.style.width).toBe(`${SIDE_PANEL_DEFAULT_WIDTH + 24}px`);
+    expect(panel.className).not.toMatch(/side-panel--resizing/);
+  });
+
   it("resizes via keyboard arrows on the handle", () => {
     const storage = memoryStorage();
     wrap(storage);
