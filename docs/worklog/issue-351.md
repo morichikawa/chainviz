@@ -348,3 +348,39 @@ issue-298.md §8 と同じ手順）の一時スクリプトで、実ブラウザ
   推奨する
 - `CHAIN_RIBBON_TILE_SELECTOR` のバグ修正は本Issueのスコープ外で発見した
   実バグの副次修正のため、レビュー時にコミット分割の妥当性を確認してほしい
+
+### 2026-07-18 Issue #351 テスト強化メモ
+
+- 担当: tester
+- ブランチ: issue-351-parent-block-hover-highlight
+
+#### 方針
+
+実装担当が書いた基本テスト（`ChainRibbonCard.test.tsx` の基本表示・凍結・
+cadence、`ChainRibbonPopoverHoverBridge.test.tsx` のホバー領域化・凍結拡張・
+固着回帰・「⋯」強調のハッピーパス）を土台に、異常系・境界値を追加する。
+新機能の実装はしない。既存テストは変更しない（追加のみ）。1ファイル1責務を
+テストファイルにも適用する。
+
+観点ごとの追加内容:
+
+1. 固着バグ修正（`parentRowHoveredRef`）を、統合テストではなく
+   `ChainRibbonPopover` 単体の「`onParentHover` ライフサイクル契約」として
+   独立ファイルで検証する。通常のホバー解除以外の unmount 経路
+   （コンポーネント削除そのもの）でも確実に強調解除されること、逆に
+   ホバーしていない/既に解除済みのときに余分な `onParentHover(null)` を
+   呼ばないことを直接確認する（新規 `ChainRibbonPopover.test.tsx`）。
+2. ホバー領域の境界: 複数タイルを連続してホバーしたとき、直前タイルの
+   強調が新しいタイルの親へ正しく移り、古い強調が残らないこと。カード
+   全体が unmount される経路（ワールドステート更新でチェーンリボンが
+   消える等）で例外が飛ばないこと（`ChainRibbonPopoverHoverBridge.test.tsx`
+   に追加）。
+3. 「⋯」強調の境界値: タイルが1件だけ（親が必然的に表示窓外）のとき点灯、
+   親が表示窓内のタイルを指すときは点灯しないこと、ポップオーバーが行の
+   mouseleave 未発火のまま閉じても「⋯」強調が固着しないこと
+   （`ChainRibbonPopoverHoverBridge.test.tsx` に追加）。
+4. e2e セレクタ修正（`CHAIN_RIBBON_TILE_SELECTOR`）の副作用確認は静的調査で
+   実施。`chain-ribbon-tile` 系セレクタは `chain-ribbon.spec.ts` 内のみで
+   使われ、UI-B-06 の強調タイル特定は `.chain-ribbon-tile--highlight`
+   クラス経由（バッジには付かない）で曖昧一致の影響を受けないことを確認。
+   他 spec への影響なし。
