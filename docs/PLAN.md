@@ -1001,6 +1001,25 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       完了条件は損なわないため差し戻し対象外とし別Issueへ分離。
       event.button!==0ガードとresizing中のuser-select:none抑止で解消)
       [#391](https://github.com/morichikawa/chainviz/issues/391)
+- [ ] ブロックハッシュの計算・親子連結・改ざん時の影響をインタラクティブに
+      可視化する
+      (ユーザーからの要望。親ハッシュによる連結自体は既にチェーンリボン
+      (#298)で可視化済みだが、「なぜそのハッシュになるのか(内容から計算
+      される暗号学的理由)」「どこで・誰が計算するか」の説明・体験が無い。
+      ブロックの主要フィールド→ハッシュ計算→出力の図解、親ハッシュを
+      改ざんすると後続ブロックが無効になる体験を新規実装する方向で合意。
+      着手時はまずchainviz-uxによるUX設計を先行させる。Issue #402と
+      一括して検討)
+      [#401](https://github.com/morichikawa/chainviz/issues/401)
+- [ ] トランザクション署名・PoS検証(attestation)の操作・処理をわかり
+      やすく可視化する
+      (ユーザーからの要望。Issue #401と同じ「暗号学的な仕組みが静的な
+      説明はあるが動的に理解できない」というテーマ。EOA署名は用語集・
+      TxLifecyclePopoverで説明済みだが「検証」プロセス自体(誰が・どう
+      検証するか)はUIに無く、collectorもecrecoverでの署名者復元は
+      していない。PoSのattestation(投票・証明)も可視化対象外。着手時は
+      まずchainviz-uxによるUX設計を先行させ、Issue #401と一括して検討)
+      [#402](https://github.com/morichikawa/chainviz/issues/402)
 
 ## 運用ルール（全ステップ共通）
 
