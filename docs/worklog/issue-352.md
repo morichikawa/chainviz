@@ -221,6 +221,68 @@ shared の型変更は本設計で完了済み。**collector と frontend は互
 - 1000ms 超の所要時間の表記(`1200ms` のままか `1.2s` に切り替えるか。
   内部APIの latency 表記との一貫性を優先して決めること)
 
+### 2026-07-18 Issue #352 実装(frontend)設計メモ
+
+- 担当: frontend
+- ブランチ: issue-352-comms-log-rpc-response-frontend（cherry-pick合流用の
+  一時ブランチ。設計ブランチ `issue-352-comms-log-rpc-response` から分岐）
+- 内容: §4.2 の作業分担に従い着手する前の実装方針メモ。設計メモ §5「未決の
+  まま実装担当へ委ねる点」への回答を中心に記録する。
+
+#### 表示テキストの構造化方針
+
+`describeCommsLogEntry`（`commsLogText.ts`）が返す `CommsLogEntryText` に
+`body`（従来どおりメソッド名のみ）とは別に、任意の `operationSuffix`
+フィールドを追加する方針にした。理由:
+
+- 成否アイコン部分だけに色（`tone`）とスクリーンリーダー向けの言語化
+  （`ariaLabel`）を付けたい。`body` を1本の文字列にまとめてしまうと、
+  `CommsLogEntryRow` 側でアイコン部分だけを抜き出して別要素に包むのが
+  困難になる（文字列パースに頼ることになり脆い）
+- `outcome`/`durationMs` は独立に欠落しうる（設計メモ §3.3）ため、
+  `operationSuffix` は次の4パターンを組み立てる純関数
+  （`describeOperationSuffix`）に切り出した:
+  - 両方無し → `undefined`（`body` はメソッド名のみ、従来と完全互換）
+  - `durationMs` のみ → `commsLog.internal.latency` と同じ表記
+    （" · 12ms"）を新設の `commsLog.operation.duration` キーで再現。
+    色分け・aria-label は付けない（可視テキストの数値がそのまま読み
+    上げられるため不要）
+  - `outcome` のみ → アイコン（✓/✕）を追加。`tone` + `ariaLabel`
+    （"成功"/"失敗"）を付ける
+  - 両方 → アイコン+所要時間をまとめて1つの色付き要素にし、`ariaLabel`
+    にも両方の情報を含める（例: "成功（12ms）"）。aria-label を持つ要素の
+    子テキストはスクリーンリーダーに読まれない一般的な挙動があるため、
+    アイコンの後ろに所要時間を裸で置かず、まとめて言語化する必要がある
+
+#### i18n キー
+
+`commsLog.internal.latency` をそのまま流用せず、`commsLog.operation.*` に
+専用キーを新設した（既存の各カテゴリが専用キーを持つ流儀に揃えるため。
+文言の内容自体は latency と同一）。成否アイコン文字（✓/✕）自体は UI 文言
+ではなく記号なので i18n に置かず `commsLogText.ts` にハードコードする
+（"ms" 単位表記が既存キーで ja/en 共通なのと同じ扱い）。
+
+#### 色
+
+`.comms-log-entry__outcome--ok` は `var(--synced)`、`--error` は
+`.comms-log-entry__chip--tx-failed` と同じ `#ffb4b4` を再利用する（新色を
+作らない）。成否の色はアイコン+所要時間の suffix 部分のみに適用し、
+メソッド名自体（`body`）は着色しない。
+
+#### モック
+
+`mockOperationObserved` は呼び出し順の通し番号（モジュールレベルの
+`operationObservedSeq`）から `outcome`/`durationMs` を決定的に生成する
+（`Math.random` ではなく、既存の `txSeq % 3 === 0` と同じ「周期的な決定値」
+の流儀）。7回に1回 `error`、`durationMs` は3ms〜45msの範囲で周期変化させる。
+
+#### E2E
+
+実環境の送金RPCは成功する前提のため、UI-LOG-02 に「操作エントリに所要時間
+(ms) と成功アイコン(`comms-log-entry-outcome` testid)が含まれる」ことの
+確認を追加する。失敗ケースの決定的な実環境E2Eは作りにくいためユニット
+テスト側で担保し、E2Eには含めない（設計メモ §4.2の指示どおり）。
+
 ## 6. 反映済みドキュメント
 
 - `docs/ARCHITECTURE.md`: `OperationEdge` スキーマ記述、§12.5(通信ログ
