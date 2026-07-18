@@ -142,10 +142,12 @@ export async function tearDownChain(): Promise<void> {
  * ホスト名 `host.docker.internal`（compose 側の `extra_hosts` と対）は
  * このファイル内に閉じ、呼び出し元にはポート番号だけを渡させる。
  *
- * この関数は docker compose exec への薄い委譲（分岐なし）のため、
- * `countProjectContainers`/`tearDownChain` と同様に専用のユニットテストは
- * 書かない（実 Docker が必須でユニットテスト化できないという、このファイル
- * 内の既存関数群と同じ事情）。
+ * この関数自体は docker compose exec への薄い委譲だが、Issue #381 の修正の
+ * 核心（`-e ETH_RPC_URL=...` による exec 時上書き）は組み立てる引数の並びに
+ * 凝縮されている。実 Docker を起動せずに `node:child_process` の execFile を
+ * モックして引数配列だけを検証できるため、`docker.unit.test.ts` で回帰対象と
+ * して固定している（`countProjectContainers`/`tearDownChain` と異なり、実
+ * Docker 必須という理由でユニットテスト対象外にはしていない）。
  */
 export async function deployUncatalogedContractInWorkbench(
   proxyPort: number,
@@ -153,6 +155,10 @@ export async function deployUncatalogedContractInWorkbench(
   await compose([
     "exec",
     "-T",
+    // `-e ETH_RPC_URL=...` はサービス名 `workbench` より前に置く必要がある
+    // （docker compose exec のオプション位置のセマンティクス）。後ろに置くと
+    // コンテナ内コマンドへの引数として解釈され、環境変数の上書きが効かない
+    // （`docker.unit.test.ts` の順序検証ケースが退行を検出する）。
     "-e",
     `ETH_RPC_URL=http://host.docker.internal:${proxyPort}`,
     "workbench",
