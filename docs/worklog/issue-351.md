@@ -161,3 +161,95 @@ Playwright（`packages/e2e` 同梱の chromium を
 
 - 「⋯」強調（§3 の推奨項目）の採否のみ。必須要件（§3 の 1〜6）だけで
   Issue の完了条件は満たせるため、実装担当がスコープ判断してよい
+
+### 2026-07-18 Issue #351 実装設計メモ
+
+- 担当: frontend
+- ブランチ: issue-351-parent-block-hover-highlight
+
+#### 事前調査（jsdom での挙動確認）
+
+着手前に、jsdom + React Testing Library でのホバー合成イベントの挙動を
+小さなスパイクコードで確認した（コミットには含めない一時コード）。
+
+- `fireEvent.mouseOver(el, { relatedTarget })` /
+  `fireEvent.mouseOut(el, { relatedTarget })`（bubbles: true）は、React の
+  enter/leave 合成ロジック（target と relatedTarget の React ツリー上の
+  共通祖先を計算し、その間の要素にだけ enter/leave を発火させる）を正しく
+  再現する。portal で body 直下に描画された子要素でも、JSX 上で親要素の
+  子として書かれていれば、その子要素へ「入る」ときに親要素の
+  `onMouseEnter` が再発火することを確認した（スパイクテストで実証済み）
+- 一方 `fireEvent.mouseEnter(el)` / `fireEvent.mouseLeave(el)`
+  （`@testing-library/dom` の既定で bubbles: false）は、dispatch した
+  その要素自身にしか作用せず、祖先方向への合成計算をしない。既存の
+  `ChainRibbonCard.test.tsx` がこれまで通りに使ってきたのは、対象要素
+  自身に対して直接 enter/leave するだけの単純な検証だったため問題なく
+  動いていた（=祖先へのバブリングが要らないテストだった）
+- 結論: 「ポップオーバーへ移動しても親要素の onMouseEnter が再発火し
+  開いたままになる」ことを検証する回帰テストは `mouseOver`/`mouseOut` +
+  `relatedTarget` を使う。逆に「行の mouseleave が発火しないまま
+  ポップオーバーが閉じて強調が固着する」ことを再現する回帰テストは、
+  むしろ祖先へ伝播「させない」直接 dispatch（既存パターン通りの
+  `mouseEnter`/`mouseLeave`）で組める（行の leave を意図的に一度も
+  発火させないことが再現の要のため）
+- 上記の想定通り、修正前のコードに対して「固着」再現テストを実際に書いて
+  失敗すること（`chain-ribbon-tile--highlight` が消えずに残ること）を
+  確認してから実装に着手した
+
+#### 実装方針
+
+1. **描画構造の修正（本丸）**: `ChainRibbonCard.tsx` の
+   `ChainRibbonTileView` で、外側の `Fragment` を廃止し、
+   `{hovered && <ChainRibbonPopover ... />}` をタイル `div` の
+   **内側の子**として描画する（`WalletCard`/`ContractCard`/`InfraNodeCard`
+   と同じ配置）。`ChainRibbonPopover.tsx` 自体（`PopoverPortal` の
+   呼び出し方）は変更不要（`PopoverPortal` は呼び出し側の JSX 上の位置に
+   依存する設計だと docstring に明記されている）
+2. **表示窓凍結条件の拡張**: `ChainRibbonCard` に
+   `openPopoverHashes: ReadonlySet<string>` を state として持たせ、各
+   `ChainRibbonTileView` が自分の `hovered`（`useHoverPopover` の
+   `isOpen`）の変化を `useEffect` で親へ通知する
+   （`onPopoverOpenChange(hash, isOpen)`、アンマウント時のクリーンアップで
+   `false` も送る）。凍結条件を
+   `hoveredBlockHash !== null || openPopoverHashes.size > 0` に拡張する。
+   タイル→隙間→ポップオーバーの移動中、`hoveredBlockHash` は
+   `onMouseLeave` で即座に null に戻る（ポップオーバー側の 200ms 猶予とは
+   独立)ため、この拡張がないと隙間通過中に表示窓の凍結が一瞬外れる
+   （issue-298 の既知の残課題）
+3. **強調の固着対策**: `ChainRibbonPopover.tsx` に「親ブロック」行が
+   現在ホバー中かどうかを追う `ref`（`parentHoveredRef`）を持たせ、行の
+   `onMouseEnter`/`onMouseLeave` でこの ref を更新する。コンポーネントの
+   unmount 時（`useEffect` のクリーンアップ）に `parentHoveredRef.current`
+   が true のままなら `onParentHover(null)` を呼ぶ。これにより「行の
+   mouseleave が発火しないまま popover が unmount される」経路でも
+   確実に強調を解除する。`onParentHover`（`ChainRibbonCard` の
+   `setParentHighlightHash`）は `useState` のセッター（同一性が安定）
+   なので、`useEffect` の依存配列に含めても余分な再実行は起きない
+4. **「⋯」強調（任意項目）**: 採用する。`parentHighlightHash` が
+   現在の表示窓のどのタイルの hash とも一致しない（＝親が画面外）とき、
+   `chain-ribbon-card__older` に強調クラスを付ける。追加ロジックは
+   `ChainRibbonCard` 内の1つの真偽値導出のみで、既存の強調 CSS
+   （`--accent` 系）を流用するだけなので実装コストが小さく、UX設計の
+   推奨事項でもあるため採用する
+5. テストは関心事ごとにファイルを分ける（1ファイル1責務。既存の
+   `ChainRibbonCard.test.tsx` にこれ以上積み増さない）:
+   - `ChainRibbonCard.test.tsx`: 既存の基本表示テストはそのまま
+     （変更なし）
+   - 新規 `ChainRibbonPopoverHoverBridge.test.tsx`:
+     ポップオーバーへ移動しても開き続けること（`mouseOver`/`mouseOut` +
+     `relatedTarget`）、表示窓凍結の隙間問題の解消、固着バグの回帰
+     （新規）を担当
+   - 「⋯」強調は既存 `ChainRibbonCard.test.tsx` に1ケース追加する程度で
+     収まる規模のため、そちらに置く
+6. e2e: 既存 `chain-ribbon.spec.ts`（Issue #298/#346）に「タイル →
+   ポップオーバー → 親ブロック行 → 強調が持続する」ことを実マウス
+   軌跡（`page.mouse.move` のステップ移動）で確認するケースを1つ追加する。
+   対象タイルは表示窓内にあるため、Issue #346 の分類では「ビューポート内
+   要素への実マウス hover」に該当し、実マウス経路を使う（画面外要素の
+   `dispatchHover` 相当のフォールバックは不要）
+
+#### 変更しないもの
+
+- `useHoverPopover` の 200ms（worklog UX設計メモの通り）
+- `packages/shared` の型定義
+- 他カードのポップオーバー実装
