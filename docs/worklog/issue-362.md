@@ -299,3 +299,73 @@
   e2e: 15ファイル179テスト、shared: 6ファイル75テスト）
 - 未実施: `docs/PLAN.md` のチェックボックス更新は依頼により保留。
   push・PR作成・マージ・Issueクローズも未実施（統括の指示待ち）
+
+### 2026-07-18 Issue #362 テスト強化メモ（tester、着手前）
+
+- 担当: tester
+- ブランチ: issue-362-sidepanel-resize
+- 方針: frontend が書いた基本テストを土台に、異常系・境界値の観点で
+  ケースを追加する。実装ロジックには手を入れない。既存の3テストファイル
+  （`sidePanelWidth.test.ts` / `useSidePanelResize.test.ts` /
+  `SidePanel.resize.test.tsx`）はまだ肥大化しておらず関心事も一致して
+  いるため、新規ファイルを作らず該当ファイルにケースを追記する。
+- 追加する観点:
+  1. `sidePanelWidth.ts` のクランプ/読み込みの境界・異常値:
+     負数・`"NaN"`/`"Infinity"`/`"-Infinity"` の文字列・空文字/空白・
+     小数・16進表記・ちょうど最大値/最大値超過・ビューポート最狭時の
+     レンジ潰れ（min==max）
+  2. `useSidePanelResize.ts`: ドラッグ中のビューポート縮小で最大幅が
+     変化するケース、ドラッグ中の再 pointerdown（割り込み）による
+     アンカー再設定、連続ドラッグでの開始幅の引き継ぎ、左方向ドラッグの
+     最大クランプ、`aria-valuemax` のビューポート反映
+  3. キーボード操作（←→ 24px 刻み）の最小/最大境界クランプと、狭い
+     ビューポートでの最大クランプ
+  4. PointerEvent 代用ヘルパー（type だけ差し替えた MouseEvent）が
+     実装の読む `clientX` のみに依存している点の妥当性確認（実装は
+     `event.clientX` しか参照しないため代用が成立する）
+- `SidePanelHost.tsx` / `SidePanelContext.tsx` は `git diff main` で
+  無変更を確認済み。
+
+### 2026-07-18 Issue #362 テスト強化完了（tester）
+
+- 担当: tester
+- ブランチ: issue-362-sidepanel-resize
+- 内容: 実装ロジックは変更せず、既存3テストファイルにエッジケースを
+  追記した（新規ファイルは作らず、関心事の一致する既存ファイルに追加）。
+- 追加ケース:
+  - `sidePanelWidth.test.ts`: 最大幅の分岐点（0.9*vw が最小幅を跨ぐ
+    ビューポート）、負数のクランプ（有限なので最小へ）、最大境界
+    ちょうど/超過/直下、小数の保持、最狭ビューポートでの min==max 潰れ、
+    保存値 `"NaN"`/`"Infinity"`/`"-Infinity"` のフォールバック、
+    空文字・空白（Number で 0 になり最小へクランプ）、16進表記、小数、
+    最小ちょうどの保存値
+  - `useSidePanelResize.test.ts`: 左方向ドラッグの最大クランプ、ドラッグ
+    中のビューポート縮小で最大幅が変化するケース、ドラッグ中の再
+    pointerdown による割り込み・アンカー再設定、連続ドラッグでの終端幅の
+    引き継ぎ、移動なし pointerup での保存、キーボードの最大/最小境界
+    クランプ（狭いビューポート含む）、`aria-valuemax` のビューポート
+    反映と最狭時の floor、小数幅の `aria-valuenow` 丸め、window リスナー
+    がポインタイベント名で登録されることの確認
+  - `SidePanel.resize.test.tsx`: `handleProps` の aria 属性がハンドル DOM
+    に届いていること（スプレッド漏れ回帰防止）、キーボードでの最小
+    クランプと永続化の DOM 経由での検証
+- PointerEvent 代用ヘルパーの妥当性確認: 実装は window リスナーを
+  `"pointermove"`/`"pointerup"` で登録し、ハンドラは `event.clientX`
+  のみを参照する。テストは type だけ差し替えた MouseEvent（clientX を
+  持つ）を同じイベント名で dispatch しており代用が成立する。実装が
+  `"mousemove"` 等に変わると代用前提が崩れるため、リスナー登録名を
+  明示的に検証するテストを追加して契約として固定した。
+- 発見した軽微な挙動（バグではないが記録）:
+  - 保存値が空文字/空白の場合、`Number("")===0` のため「壊れた値 →
+    既定 420」ではなく「範囲外 → 最小 300」に落ちる。`saveSidePanelWidth`
+    は数値文字列しか書かないため空文字は外部改変でしか発生せず、実害は
+    ない。挙動をテストで固定した。
+  - `clampSidePanelWidth(NaN, ...)` は NaN をそのまま返す（内部で
+    サニタイズしない）。読み込み経路は `loadSidePanelWidth` が事前に
+    非有限を弾くため実際には NaN が渡らず、ドラッグ/キーボード経路の
+    入力も常に有限値。現状バグではないが、将来この純関数を別経路から
+    呼ぶ場合は呼び出し側でのガードが必要。
+- 確認: `pnpm --filter @chainviz/frontend build` と `test` 全通過
+  （208ファイル2706テスト）。追加分の対象3ファイルは56テスト。eslint も
+  クリーン。実装ファイル・`SidePanelHost.tsx`・`SidePanelContext.tsx`・
+  `docs/ARCHITECTURE.md` などには変更なし。
