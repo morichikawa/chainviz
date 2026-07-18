@@ -53,7 +53,7 @@ function Harness({
   onParentHover,
   blockTile,
 }: {
-  onParentHover: (parentHash: string | null) => void;
+  onParentHover: (parentHash: string | null, sourceHash: string) => void;
   blockTile: ChainRibbonTile;
 }) {
   const anchorRef = useRef<HTMLDivElement>(null);
@@ -75,7 +75,7 @@ function Harness({
 }
 
 function renderPopover(
-  onParentHover: (parentHash: string | null) => void,
+  onParentHover: (parentHash: string | null, sourceHash: string) => void,
   blockTile: ChainRibbonTile = tile("0xchild", { parentHash: "0xparent-hash" }),
 ) {
   return render(
@@ -94,23 +94,24 @@ describe("ChainRibbonPopover parent-row hover contract (Issue #351)", () => {
     expect(onParentHover).not.toHaveBeenCalled();
   });
 
-  it("reports the parent hash on row enter and null on row leave", () => {
+  it("reports the parent hash and source (own) hash on row enter, and null + source hash on row leave", () => {
     const onParentHover = vi.fn();
     renderPopover(onParentHover);
     const row = screen.getByTestId("chain-ribbon-popover-parent-0xchild");
 
     fireEvent.mouseEnter(row);
-    expect(onParentHover).toHaveBeenLastCalledWith("0xparent-hash");
+    expect(onParentHover).toHaveBeenLastCalledWith("0xparent-hash", "0xchild");
 
     fireEvent.mouseLeave(row);
-    expect(onParentHover).toHaveBeenLastCalledWith(null);
+    expect(onParentHover).toHaveBeenLastCalledWith(null, "0xchild");
   });
 
   it("clears the highlight on unmount when the row was still hovered (row's own mouseleave never fired)", () => {
     // 固着バグの核心: 行の mouseleave が一度も発火しないまま、ポップオーバー
     // コンポーネント自体が削除される経路（通常の遅延クローズだけでなく、
     // ワールドステート更新でチェーンリボンが作り直される等の unmount でも
-    // 同じ）。この場合でも onParentHover(null) が呼ばれ強調が残らないこと。
+    // 同じ）。この場合でも onParentHover(null, sourceHash) が呼ばれ強調が
+    // 残らないこと。
     const onParentHover = vi.fn();
     const { unmount } = renderPopover(onParentHover);
 
@@ -119,7 +120,7 @@ describe("ChainRibbonPopover parent-row hover contract (Issue #351)", () => {
 
     unmount();
     expect(onParentHover).toHaveBeenCalledTimes(1);
-    expect(onParentHover).toHaveBeenCalledWith(null);
+    expect(onParentHover).toHaveBeenCalledWith(null, "0xchild");
   });
 
   it("does not call onParentHover again on unmount when the row was already left", () => {
@@ -160,6 +161,6 @@ describe("ChainRibbonPopover parent-row hover contract (Issue #351)", () => {
 
     unmount();
     expect(onParentHover).toHaveBeenCalledTimes(1);
-    expect(onParentHover).toHaveBeenCalledWith(null);
+    expect(onParentHover).toHaveBeenCalledWith(null, "0xchild");
   });
 });

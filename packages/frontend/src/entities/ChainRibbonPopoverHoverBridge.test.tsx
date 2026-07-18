@@ -322,6 +322,57 @@ describe("ChainRibbonCard popover hover bridge (Issue #351)", () => {
       expect(screen.getByTestId("chain-ribbon-older").className).not.toContain(
         "chain-ribbon-card__older--highlight",
       );
+      // QA差し戻し対応（Issue #351）: ホバー中タイル自身（0xc）は、自分の
+      // 親ブロック行を見ている間は自己強調が抑制される。強調されるのは
+      // 常に親タイル1つだけ(0xp)。
+      expect(screen.getByTestId("chain-ribbon-tile-0xc").className).not.toContain(
+        "chain-ribbon-tile--highlight",
+      );
+    });
+
+    it("suppresses the hovered tile's own self-highlight only while its own parent row is hovered, restoring it once the row is left", () => {
+      // QA差し戻し対応（Issue #351）: isReverseHighlighted はタイル自身の
+      // 直接ホバーでも立つため、「親ブロック」行ホバー中は「ホバー中タイル
+      // (self) + 親タイル」の2つが同時に光っていた。行を離れれば
+      // isDrivingParentHighlight は false に戻り、タイル自身の直接ホバーに
+      // よる自己強調（他機能。chainRibbonCrossHighlight.test.tsx参照）は
+      // 復活する。
+      renderCard(
+        data({
+          tiles: [
+            tile("0xp", { number: 1 }),
+            tile("0xc", { number: 2, parentHash: "0xp" }, true),
+          ],
+        }),
+      );
+      const tileC = screen.getByTestId("chain-ribbon-tile-0xc");
+
+      fireEvent.mouseEnter(tileC);
+      // 親行を見る前は、直接ホバー中のタイル自身が通常どおり光る。
+      expect(tileC.className).toContain("chain-ribbon-tile--highlight");
+
+      const rowC = screen.getByTestId("chain-ribbon-popover-parent-0xc");
+      fireEvent.mouseEnter(rowC);
+      // 親行を見ている間は自己強調が抑制され、親タイルだけが光る。
+      expect(tileC.className).not.toContain("chain-ribbon-tile--highlight");
+      expect(screen.getByTestId("chain-ribbon-tile-0xp").className).toContain(
+        "chain-ribbon-tile--highlight",
+      );
+
+      // 行を離れて、まだタイル(0xc)自身の領域には留まっている体
+      // （タイル自体はまだ直接ホバー中のまま）。`fireEvent.mouseLeave`は
+      // relatedTarget未指定だとReactツリーの祖先(=このポップオーバーの
+      // 呼び出し元であるタイルdiv)まで一緒にleaveしてしまうため
+      // （jsdomでのhover合成イベントの注意点。docs/worklog/issue-351.md
+      // 参照）、`mouseOut` + `relatedTarget`でタイル自身は共有祖先として
+      // 除外されるようにする。
+      fireEvent.mouseOut(rowC, { relatedTarget: tileC });
+      // タイル自身への直接ホバーは継続しているため自己強調が復活し、
+      // 親タイルの強調は消える。
+      expect(tileC.className).toContain("chain-ribbon-tile--highlight");
+      expect(screen.getByTestId("chain-ribbon-tile-0xp").className).not.toContain(
+        "chain-ribbon-tile--highlight",
+      );
     });
 
     it("does not leave the older indicator stuck when the popover closes without the parent row's own mouseleave", () => {

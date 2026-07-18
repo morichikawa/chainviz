@@ -27,6 +27,13 @@ function Field({ label, value }: { label: ReactNode; value: string }) {
  * `onParentHover` 経由で `ChainRibbonCard` 側の state を動かすだけで、この
  * コンポーネント自体はどのタイルが強調されているかを持たない。
  *
+ * `onParentHover` の第2引数（`sourceHash`）は「このポップオーバー自身の
+ * タイルの hash」を渡す。`ChainRibbonCard` 側はこれを使って、このタイル
+ * 自身が同時に逆方向ハイライト（`isReverseHighlighted`）で光るのを
+ * 一時的に抑え、強調対象が「親タイルのみ」になるようにする（QA差し戻し
+ * 対応。docs/worklog/issue-351.md 参照。行をホバーしていない間・他タイル
+ * が逆方向ハイライトされる場合には影響しない）。
+ *
  * `anchorRef` はこのポップオーバーを開いたタイルへの ref（Issue #245 の
  * 既存ポップオーバー群と同じ、body 直下への portal 描画のための基準位置）。
  */
@@ -41,7 +48,7 @@ export function ChainRibbonPopover({
   tile: ChainRibbonTile;
   txCount: number | undefined;
   receivedOrder: ReceivedOrderEntry[];
-  onParentHover: (parentHash: string | null) => void;
+  onParentHover: (parentHash: string | null, sourceHash: string) => void;
 }) {
   const { t } = useLanguage();
   const { block } = tile;
@@ -57,10 +64,10 @@ export function ChainRibbonPopover({
     return () => {
       if (parentRowHoveredRef.current) {
         parentRowHoveredRef.current = false;
-        onParentHover(null);
+        onParentHover(null, block.hash);
       }
     };
-  }, [onParentHover]);
+  }, [onParentHover, block.hash]);
 
   return (
     <PopoverPortal
@@ -79,13 +86,17 @@ export function ChainRibbonPopover({
         className="infra-field chain-ribbon-popover__parent"
         onMouseEnter={() => {
           parentRowHoveredRef.current = true;
-          onParentHover(block.parentHash);
+          onParentHover(block.parentHash, block.hash);
         }}
         onMouseLeave={() => {
           parentRowHoveredRef.current = false;
-          onParentHover(null);
+          onParentHover(null, block.hash);
         }}
         data-testid={`chain-ribbon-popover-parent-${block.hash}`}
+        // e2e/テスト専用の完全な親hash露出（`data-connected-to-previous`等と
+        // 同じ用途）。表示テキストは shortHex で切り詰めており、実チェーンの
+        // 本物のhashでは逆引きできないため（Issue #351 QA差し戻し対応）。
+        data-parent-hash={block.parentHash}
       >
         <span className="infra-field__label">{t("chainRibbon.popover.parent")}</span>
         <span className="infra-field__value">{shortHex(block.parentHash)}</span>

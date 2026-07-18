@@ -15,8 +15,10 @@ import { useFrozenRibbonTiles } from "./useFrozenRibbonTiles.js";
 /**
  * タイル1件。着地アニメーション（`chain-ribbon-tile--landing`）・親ブロック
  * ホバー強調（`isParentHighlighted`）・tx チップ等からの逆方向ホバー強調
- * （`RibbonHoverContext` の `hoveredBlockHash`）の3種類の見た目状態を持つ
- * （docs/worklog/issue-298.md §4.3/§4.4、ARCHITECTURE.md §9.1）。
+ * （`RibbonHoverContext` の `hoveredBlockHash`。ただし自分自身の親ブロック行を
+ * 見ている間は `isDrivingParentHighlight` で抑制。Issue #351）の3種類の
+ * 見た目状態を持つ（docs/worklog/issue-298.md §4.3/§4.4、
+ * ARCHITECTURE.md §9.1）。
  *
  * ポップオーバー（`ChainRibbonPopover`）はタイル div の**内側の子**として
  * 描画する（`WalletCard`/`ContractCard`/`InfraNodeCard` 等の既存パターンと
@@ -33,6 +35,7 @@ function ChainRibbonTileView({
   nodeLabelById,
   isLanding,
   isParentHighlighted,
+  isDrivingParentHighlight,
   onParentHover,
   onPopoverOpenChange,
 }: {
@@ -41,7 +44,8 @@ function ChainRibbonTileView({
   nodeLabelById: ReadonlyMap<string, string>;
   isLanding: boolean;
   isParentHighlighted: boolean;
-  onParentHover: (parentHash: string | null) => void;
+  isDrivingParentHighlight: boolean;
+  onParentHover: (parentHash: string | null, sourceHash: string) => void;
   onPopoverOpenChange: (blockHash: string, isOpen: boolean) => void;
 }) {
   const { t } = useLanguage();
@@ -52,8 +56,15 @@ function ChainRibbonTileView({
   const { block, connectedToPrevious } = tile;
 
   // 順方向（このタイルを直接ホバー）・逆方向（tx/活動チップのホバーから
-  // このブロックの hash が立った）のどちらでも同じ強調を出す。
-  const isReverseHighlighted = hoveredBlockHash === block.hash;
+  // このブロックの hash が立った）のどちらでも同じ強調を出す。ただし
+  // 「自分自身の親ブロック行を今まさにホバーしている」間（
+  // `isDrivingParentHighlight`）は自己強調を抑制する。QA差し戻し対応
+  // （docs/worklog/issue-351.md）: 抑制しないと「ホバー中タイル自身」と
+  // 「親タイル」の2つが同時に光り、どちらが見比べるべき親タイルか曖昧に
+  // なる。他タイルの逆方向ハイライトや、親行を見ていない単純な直接ホバー
+  // には影響しない。
+  const isReverseHighlighted =
+    hoveredBlockHash === block.hash && !isDrivingParentHighlight;
 
   // Issue #351: 表示窓の凍結条件（下記 ChainRibbonCard）に、
   // `hoveredBlockHash` だけでなくこのタイルのポップオーバー開閉状態も
@@ -118,10 +129,14 @@ function ChainRibbonTileView({
  * つなぐ Handle は持たない（このカードへ/から張られるエッジは無い設計。
  * ARCHITECTURE.md §9.1）。
  *
- * 「親ブロック」行ホバーでの直前タイル強調（`parentHighlightHash`）は、この
+ * 「親ブロック」行ホバーでの直前タイル強調（`parentHighlight`）は、この
  * カード内で完結する局所的な state（複数タイルにまたがる相互作用のため）。
- * ウォレット/コントラクトカードとの相互ハイライト（第2段階。tx/活動チップ
- * ⇔ タイル）は `RibbonHoverContext` 経由の `hoveredBlockHash` を使う。
+ * `targetHash`（強調すべき親タイル）と `sourceHash`（今どのタイルの
+ * 親ブロック行がホバー中か）の組を持ち、後者は「ホバー中タイル自身の
+ * 自己強調を一時的に抑制する」ためだけに使う（QA差し戻し対応。
+ * docs/worklog/issue-351.md）。ウォレット/コントラクトカードとの相互
+ * ハイライト（第2段階。tx/活動チップ ⇔ タイル）は `RibbonHoverContext`
+ * 経由の `hoveredBlockHash` を使う。
  *
  * QA差し戻し対応（docs/worklog/issue-298.md）: ホバー中
  * （`hoveredBlockHash !== null`）は `useFrozenRibbonTiles` で表示窓の前進を
@@ -158,15 +173,24 @@ export function ChainRibbonCard({ data }: NodeProps<ChainRibbonFlowNode>) {
   }, []);
   const isHoverActive = hoveredBlockHash !== null || openPopoverHashes.size > 0;
   const tiles = useFrozenRibbonTiles(data.tiles, isHoverActive);
-  const [parentHighlightHash, setParentHighlightHash] = useState<string | null>(
-    null,
+  // `targetHash`: 強調すべき親タイルの hash。`sourceHash`: 今どのタイルの
+  // 「親ブロック」行がホバー中か（そのタイル自身の逆方向ハイライトを
+  // 抑制するために使う。QA差し戻し対応。docs/worklog/issue-351.md）。
+  const [parentHighlight, setParentHighlight] = useState<
+    { sourceHash: string; targetHash: string } | null
+  >(null);
+  const handleParentHover = useCallback(
+    (targetHash: string | null, sourceHash: string) => {
+      setParentHighlight(targetHash === null ? null : { sourceHash, targetHash });
+    },
+    [],
   );
   // 任意項目（UX設計 §3 末尾）: ホバー中の「親ブロック」行が指す親が現在の
   // 表示窓の外（最古タイルより前）にあるとき、左端の「⋯」を同系統の強調で
   // 光らせる。「親は存在するが表示範囲より前にある」ことが伝わる。
   const isOldestParentHighlighted =
-    parentHighlightHash !== null &&
-    !tiles.some((tile) => tile.block.hash === parentHighlightHash);
+    parentHighlight !== null &&
+    !tiles.some((tile) => tile.block.hash === parentHighlight.targetHash);
   const latest = tiles.length > 0 ? tiles[tiles.length - 1] : undefined;
   // ブロック生成タイミングのインジケータ（Issue #343。ARCHITECTURE.md §10.5）。
   // チェーン全体で1つ、ヘッダに表示する（ノードカードごとには出さない）。
@@ -254,8 +278,9 @@ export function ChainRibbonCard({ data }: NodeProps<ChainRibbonFlowNode>) {
                 txCount={txCountByHash.get(tile.block.hash)}
                 nodeLabelById={nodeLabelById}
                 isLanding={landingHashes.has(tile.block.hash)}
-                isParentHighlighted={parentHighlightHash === tile.block.hash}
-                onParentHover={setParentHighlightHash}
+                isParentHighlighted={parentHighlight?.targetHash === tile.block.hash}
+                isDrivingParentHighlight={parentHighlight?.sourceHash === tile.block.hash}
+                onParentHover={handleParentHover}
                 onPopoverOpenChange={handlePopoverOpenChange}
               />
             </Fragment>
