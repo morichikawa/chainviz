@@ -31,6 +31,16 @@ import {
  */
 export const UI_E2E_COLLECTOR_PORT = 4125;
 
+/**
+ * UI 層 E2E 専用のロギングプロキシポート。
+ * 「WebSocket ポート + 1」という規約（docs/ARCHITECTURE.md §8.3、Issue #254）
+ * の知識をこの定数定義 1 箇所に集約する。`startCollector` の暗黙の既定値
+ * （`port + 1`）に頼らず、ここで明示的に計算した値をそのまま渡すことで、
+ * 静的ワークベンチの RPC 向き先を exec 時に上書きする側（helpers/docker.ts）
+ * からも同じ値を参照できるようにする（Issue #381）。
+ */
+export const UI_E2E_PROXY_PORT = UI_E2E_COLLECTOR_PORT + 1;
+
 export default async function globalSetup(): Promise<() => Promise<void>> {
   let lock: E2eLock;
   try {
@@ -46,7 +56,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
 
   try {
     await ensureChainRunning();
-    const collector = await startCollector(UI_E2E_COLLECTOR_PORT);
+    const collector = await startCollector(UI_E2E_COLLECTOR_PORT, UI_E2E_PROXY_PORT);
     registerCollector(collector);
   } catch (err) {
     lock.release();

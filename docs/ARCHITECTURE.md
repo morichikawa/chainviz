@@ -2037,7 +2037,7 @@ UI 層（collector の契約が壊れているときに UI 層の失敗原因を
 playwright globalSetup:
   acquireE2eLock()            # vitest e2e と同一のホスト単位ロックを共用
   → ensureChainRunning()      # 既存スタックを再利用（helpers/docker.ts）
-  → startCollector(4125)      # UI 層専用ポート（helpers/collector.ts）
+  → startCollector(4125, 4126) # UI 層専用ポート（helpers/collector.ts）
 playwright webServer:
   vite dev --port 5275        # VITE_COLLECTOR_URL=ws://127.0.0.1:4125
 テスト実行（chromium が http://127.0.0.1:5275 を操作）
@@ -2058,7 +2058,24 @@ globalTeardown:
   4123/4124（vitest e2e 既定）・4125/4126（UI 層）・
   4199/4200（ポート衝突テスト）・4210/4211（ロギングプロキシポート衝突
   テスト）。新しく固定 WebSocket ポートを追加する際は、その値の +1 が
-  既存のいずれの WebSocket ポートとも重複しないか確認すること
+  既存のいずれの WebSocket ポートとも重複しないか確認すること。
+  UI 層の 4125/4126 の組は `helpers/playwright-global-setup.ts` の定数
+  `UI_E2E_COLLECTOR_PORT` / `UI_E2E_PROXY_PORT` が正で、暗黙の +1
+  既定に頼らず `startCollector(UI_E2E_COLLECTOR_PORT, UI_E2E_PROXY_PORT)`
+  と明示的に渡す（Issue #381）
+- **静的ワークベンチの RPC 向き先と E2E での上書き**（Issue #381）:
+  compose 定義（`profiles/ethereum/docker-compose.yml`）の `workbench`
+  サービスの `ETH_RPC_URL` は dev collector のロギングプロキシ
+  （`http://host.docker.internal:4001`）固定であり、これは dev 運用
+  （dev-up.sh / README の手動操作手順）の既定として維持する。UI 層 E2E の
+  collector はプロキシを 4126 で待ち受けるため、E2E が静的ワークベンチ
+  コンテナ内で RPC を伴うコマンドを実行する場合（現状 UI-C-06 の
+  `forge create` のみ）は、compose 定義を変えるのではなく
+  `docker compose exec -e ETH_RPC_URL=http://host.docker.internal:4126 ...`
+  で **exec するプロセスにだけ** 向き先を上書きする。compose の環境変数は
+  コンテナ作成時に固定されるため compose 側の変数化では稼働中スタックの
+  再利用（`ensureChainRunning`）と両立せず、またノード環境テンプレートが
+  E2E 側の事情を知る形になり依存の方向が崩れるため採らない
 - `VITE_COLLECTOR_URL` は vite dev サーバー起動時に確定する（ビルド時
   埋め込み）ため、webServer の起動コマンドの環境変数で渡す。vite dev の
   起動は 1 秒未満（実測 0.6 秒）で、ビルド済み配布物との差異が問題に

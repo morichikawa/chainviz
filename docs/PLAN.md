@@ -965,13 +965,14 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       ステッパー(5段階0.85〜1.5)で実装。3パネル(contractSource/glossary/
       commsLog)共通、localStorage永続化(`chainviz.sidePanel.fontScale.v1`)
       [#377](https://github.com/morichikawa/chainviz/issues/377)
-- [ ] UI-C-06: workbenchのETH_RPC_URLがdev collectorプロキシ(4001)に固定で
+- [x] UI-C-06: workbenchのETH_RPC_URLがdev collectorプロキシ(4001)に固定で
       UI E2E単独実行時に到達できない
       (Issue #346の最終QA検証中に偶発的に観測。dev collectorを別途起動
       していないクリーン環境ではUI-C-06のセットアップ(forge create)が
       host.docker.internal:4001へConnection refusedで失敗する。E2E
       collector(4125/4126)とworkbenchのRPC向き先が一致しない環境結合。
-      着手時はまずchainviz-designerによる設計を先行させる)
+      compose定義は変更せず、E2E側でexec時に`-e ETH_RPC_URL`を上書きする
+      方式(方針B)で解消)
       [#381](https://github.com/morichikawa/chainviz/issues/381)
 - [x] addWorkbench(createAndStart)でcontainer.start()失敗時に作成済み
       コンテナがorphanとして残留する
