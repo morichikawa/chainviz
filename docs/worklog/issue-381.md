@@ -147,3 +147,28 @@
 - 回帰確認: dev collector を 4000/4001 で起動した環境でも UI-C-06 が
   引き続き通過すること（exec -e の上書きは 4126 を指すため、dev collector
   の有無に依存しなくなるのが期待動作）。
+
+### 2026-07-18 Issue #381 実装設計メモ
+
+- 担当: frontend
+- ブランチ: issue-381-workbench-rpc-url
+- `docs/ARCHITECTURE.md` §8.3 が設計フェーズで既に更新済み（`UI_E2E_PROXY_PORT`
+  定数の追加と exec -e 上書き方針が明記されている）ため、実装はこの記述と
+  引き継ぎ内容（本ファイル上の設計メモ）どおりに進める。追加の設計判断は無い。
+- 変更順序（依存関係に沿って1コミットずつ）:
+  1. `playwright-global-setup.ts` に `UI_E2E_PROXY_PORT` を追加し、
+     `startCollector` へ明示的に渡す + 対応するユニットテスト更新
+     （`playwright-global-setup.unit.test.ts` の「UI 層専用ポートで起動する」
+     ケースを両ポート検証に更新）。
+  2. `docker.ts` の `deployUncatalogedContractInWorkbench` に `proxyPort`
+     必須引数を追加し、`exec -T -e ETH_RPC_URL=...` で上書きする。
+  3. 呼び出し元 `contract-lifecycle.spec.ts` を新シグネチャに合わせて更新
+     （`UI_E2E_PROXY_PORT` を import）。
+- `docker.ts` 側は設計メモの整理（薄い委譲でユニットテスト対象外）を踏襲し、
+  実 Docker 依存のため新規ユニットテストは追加しない。呼び出し引数が
+  1 つ増えるだけで分岐は増えないため、既存の整理を維持する判断とする。
+- `connection-errors.spec.ts` の `restartCollector()` は
+  `startCollector(UI_E2E_COLLECTOR_PORT)`（暗黙の +1）のままでも動作上は
+  壊れないが、設計メモの「実装時に判断してよい点」に従い、一貫性のため
+  `UI_E2E_PROXY_PORT` を明示的に渡す形に揃える（ARCHITECTURE.md §8.3 の
+  「暗黙の +1 既定に頼らない」方針と整合させる）。
