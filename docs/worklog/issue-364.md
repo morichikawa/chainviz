@@ -251,3 +251,39 @@
     constructorArgs/functions/payableのみ突き合わせているため、catalog.json
     が旧シンボルのままでもこのテスト自体は落ちない見込み。ただし
     `pnpm test`実行結果は本項下部に事実として記録する）
+
+### 2026-07-18 Issue #364 frontend実装完了
+
+- 担当: frontend
+- ブランチ: issue-364-cvz-token-symbol-frontend
+- 内容: 上記「実装設計メモ(frontend)」の方針どおり、以下4コミットに
+  分けて実装した。
+  1. `operationCatalog.ts`の`token.symbol`を`"CVZ"` → `"CVZDEMO"`に更新し、
+     `operationCatalog.test.ts`の実値アサートも合わせて更新（fix:）
+  2. `mockData.ts`のトークン/NFTシンボル表示値・定数名
+     （`ALICE_CVZ_BALANCE_WEI`等 → `ALICE_CVZDEMO_BALANCE_WEI`等）・
+     埋め込みソース文字列・コメントを更新（fix:）
+  3. `OperationArgInput.tsx`・`walletNftHoldings.ts`のコメント内の表示例
+     （「CVZ単位」「CVN #1」）を更新（docs:、ロジック変更なし）
+  4. worklog記載の frontend テスト15ファイル（自己完結フィクスチャ）の
+     symbol表記を機械的に置換（test:）。`deployedContracts.test.ts`の
+     `"CVZ2"`（catalog静的値と異なることを検証する意図的な別値）は
+     `"CVZDEMO2"`に置き換え、意図（catalog値と異なる）は保持
+- 確認結果:
+  - `pnpm lint`（リポジトリルート、frontend含む全パッケージ）: 通過
+  - `pnpm --filter @chainviz/frontend build`: 通過
+  - `pnpm --filter @chainviz/frontend test`: 205ファイル2650テスト全て
+    通過。`catalog.json`はnode-env側が並行作業中でまだ旧シンボル
+    （"CVZ"/"CVN"）のままだったが、`operationCatalog.test.ts`の
+    catalog.json突き合わせテストはsymbolを比較対象にしていないため
+    影響を受けず、想定どおり失敗は発生しなかった
+  - `packages/frontend/src`配下に裸の`CVZ`/`CVN`（`CVZDEMO`/`CVNDEMO`の
+    一部でない）が残っていないことを`grep`で確認済み
+- 注意点（次の担当向け）:
+  - `catalog.json`はこのブランチで変更していない。node-env側の再生成が
+    合流した後、統括が`operationCatalog.test.ts`の
+    「matches the real catalog.json ABI」テストを含め`pnpm test`で
+    最終的な整合性を再確認すること
+  - `docs/ARCHITECTURE.md`の該当2箇所（2690行目・2735行目）・
+    collector/shared/e2eの表記統一はこのブランチの対象外（node-env担当・
+    別コミットで対応予定）
