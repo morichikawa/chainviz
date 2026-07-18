@@ -23,6 +23,31 @@ export const COMPOSE_SERVICE_LABEL = "com.docker.compose.service";
 export const MANAGED_LABEL = "com.chainviz.managed";
 
 /**
+ * Docker Compose が「このコンテナはプロジェクトのメンバーである」と認識
+ * するために必須のラベル（Issue #359）。
+ *
+ * 実機検証で判明した事実: `com.docker.compose.project` /
+ * `com.docker.compose.service` が正しく付いていても、このラベルが無い
+ * コンテナは `docker compose ps -a` にすら現れず、`docker compose down
+ * --remove-orphans` の孤児（orphan）検出の対象にもならない
+ * （`oneoff` / `container-number` / `project.config_files` /
+ * `project.working_dir` / `version` / `depends_on` を追加しても改善
+ * しないことを個別に確認済み。Compose v2.40.3 / Engine 29.1.3で実機
+ * 確認。詳細は docs/worklog/issue-359.md）。これが無いために addNode/
+ * addWorkbench が作るコンテナが `docker compose down -v
+ * --remove-orphans` でも削除されず、ネットワーク削除も「still in use」
+ * で失敗していた。
+ *
+ * 値そのものは動的追加コンテナの動作に影響しない。Compose は本来この
+ * ラベル値をサービス定義から計算したハッシュと比較して「設定が変わった
+ * ので再作成が必要か」を判定するが、動的追加コンテナは docker-compose.yml
+ * に対応するサービス定義を持たない（常に「孤児」）ため、この比較が
+ * 行われることはない。ラベルキーが存在することだけが Docker Compose に
+ * コンテナを認識させるために必要。
+ */
+export const CONFIG_HASH_LABEL = "com.docker.compose.config-hash";
+
+/**
  * 全ノードコンテナが持つ役割宣言。静的コンテナ（compose テンプレート）・
  * 動的コンテナ（addNode/addWorkbench 時に node-lifecycle.ts が付与）の
  * 両方に付く。値は execution / consensus / validator / workbench。

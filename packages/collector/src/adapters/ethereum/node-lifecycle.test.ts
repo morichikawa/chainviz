@@ -3,13 +3,15 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { WorkbenchOperation } from "@chainviz/shared";
 import { describe, expect, it, vi } from "vitest";
-import type {
-  ContainerSpec,
-  CreatedContainer,
-  DockerOperations,
-  ExecResult,
-  LabeledContainer,
+import {
+  ContainerNameConflictError,
+  type ContainerSpec,
+  type CreatedContainer,
+  type DockerOperations,
+  type ExecResult,
+  type LabeledContainer,
 } from "../../docker/operations.js";
+import { CONFIG_HASH_LABEL } from "./labels.js";
 import { walletTrackingDisabledWarning } from "./mnemonic.js";
 import {
   allocateNodeIndex,
@@ -27,6 +29,14 @@ function fakeOps(
   opts: {
     usedIps?: string[];
     createFails?: (spec: ContainerSpec) => boolean;
+    /**
+     * これらの名前でコンテナを作成しようとすると、あたかも Docker 上に
+     * 既に同名のコンテナが存在するかのように ContainerNameConflictError を
+     * 投げる（Issue #366 の409衝突再現用）。一度衝突を報告した名前は集合から
+     * 取り除かれる（呼び出し側が別名で再試行したとき、その別名は空いている
+     * ものとして扱う）。
+     */
+    conflictingNames?: Set<string>;
     stopAndRemoveFails?: (id: string) => boolean;
     managedContainers?: LabeledContainer[];
     exec?: (containerId: string, cmd: string[]) => Promise<ExecResult>;
@@ -43,6 +53,10 @@ function fakeOps(
     removed,
     createAndStart: vi.fn(
       async (spec: ContainerSpec): Promise<CreatedContainer> => {
+        if (opts.conflictingNames?.has(spec.name)) {
+          opts.conflictingNames.delete(spec.name);
+          throw new ContainerNameConflictError(spec.name);
+        }
         if (opts.createFails?.(spec)) throw new Error("create failed");
         created.push(spec);
         return { id: `cid-${++seq}` };
@@ -644,6 +658,22 @@ describe("EthereumNodeLifecycle.addNode", () => {
     expect(beacon.binds).toContain("chainviz-ethereum_clpeer:/clpeer:ro");
   });
 
+  it("labels reth and beacon containers with CONFIG_HASH_LABEL so docker compose down --remove-orphans can recognize and remove them (Issue #359)", async () => {
+    // 実機検証（docs/worklog/issue-359.md）: com.docker.compose.project /
+    // com.docker.compose.service が正しくても、この CONFIG_HASH_LABEL が
+    // 無いと Docker Compose がコンテナを一切認識せず、`docker compose ps -a`
+    // にも `down -v --remove-orphans` の孤児検出にも現れなかった。
+    const ops = fakeOps({
+      usedIps: ["172.28.1.1", "172.28.1.2", "172.28.2.1", "172.28.2.2"],
+    });
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+    await lifecycle.addNode("ethereum");
+
+    const [reth, beacon] = ops.created;
+    expect(reth.labels?.[CONFIG_HASH_LABEL]).toBeTruthy();
+    expect(beacon.labels?.[CONFIG_HASH_LABEL]).toBeTruthy();
+  });
+
   it("allocates the next free index on a second addNode", async () => {
     const ops = fakeOps({
       usedIps: ["172.28.1.1", "172.28.1.2", "172.28.2.1", "172.28.2.2"],
@@ -900,6 +930,15 @@ describe("EthereumNodeLifecycle workbench commands", () => {
     expect(wb.labels?.["com.docker.compose.service"]).toBe("Alice");
     // reth へ直結させず、必ずロギングプロキシ経由の URL を渡す（Issue #129）。
     expect(wb.env?.ETH_RPC_URL).toBe(config.ethRpcUrl);
+  });
+
+  it("labels the workbench container with CONFIG_HASH_LABEL so docker compose down --remove-orphans can recognize and remove it (Issue #359)", async () => {
+    const ops = fakeOps();
+    const lifecycle = new EthereumNodeLifecycle(ops, config);
+    await lifecycle.addWorkbench("Alice");
+
+    const wb = ops.created[0];
+    expect(wb.labels?.[CONFIG_HASH_LABEL]).toBeTruthy();
   });
 
   it("mounts the sample contracts project so deployContract (forge create) can find it (Issue #293)", async () => {

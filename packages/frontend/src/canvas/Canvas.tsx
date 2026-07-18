@@ -77,6 +77,7 @@ import {
 } from "../entities/canvasNode.js";
 import type { Position } from "../layout/layoutStore.js";
 import { SidePanelHost, type SidePanelHostProps } from "../side-panel/SidePanelHost.js";
+import { useInitialFit } from "./useInitialFit.js";
 
 // nodeTypes / edgeTypes は再レンダーごとに作り直すと React Flow が警告するため外に出す。
 const nodeTypes: NodeTypes = {
@@ -135,6 +136,15 @@ export interface CanvasProps {
    * （`transactions` と同じ「rfNodes から導出できない値は親から渡す」理由）。
    */
   commsLog: SidePanelHostProps["commsLog"];
+  /**
+   * 最初のワールドステートスナップショットを受信済みか（Issue #373、
+   * ARCHITECTURE.md §14）。キャンバスの初期フィット（起動時に一度だけ
+   * 全ノードが視野に収まるようカメラを合わせる操作）の契機に使う。
+   * 省略時は `true`（Canvas を単体で使う既存テスト・ハーネスで「ノードが
+   * 揃い次第フィット」という従来相当の挙動を保つため。jsdom はノードの
+   * 実計測が走らないため実質影響しない）。
+   */
+  hasReceivedSnapshot?: boolean;
 }
 
 // props 省略時（`onLayerFilterChange` を渡さないテスト等）の既定値。
@@ -150,6 +160,7 @@ function CanvasInner({
   onLayerFilterChange = noopLayerFilterChange,
   transactions = [],
   commsLog,
+  hasReceivedSnapshot = true,
 }: CanvasProps) {
   const [rfNodes, setRfNodes] = useState<CanvasFlowNode[]>(nodes);
   const [rfEdges, setRfEdges] = useState<CanvasFlowEdge[]>(edges);
@@ -510,6 +521,11 @@ function CanvasInner({
     [rfNodes, jumpHighlightNodeId, layerVisibility],
   );
 
+  // キャンバスの初期フィット（Issue #373、ARCHITECTURE.md §14）。
+  // displayNodes は rfNodes にハイライト/dim を注入するだけで id 集合は
+  // 変えないため、判定には rfNodes をそのまま渡してよい。
+  useInitialFit(hasReceivedSnapshot, rfNodes);
+
   return (
     <ReactFlow
       nodes={displayNodes}
@@ -521,7 +537,6 @@ function CanvasInner({
       onNodeDragStop={onNodeDragStop}
       onEdgeMouseEnter={onEdgeMouseEnter}
       onEdgeMouseLeave={onEdgeMouseLeave}
-      fitView
       minZoom={0.2}
       maxZoom={2}
       proOptions={{ hideAttribution: true }}

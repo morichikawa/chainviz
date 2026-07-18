@@ -663,6 +663,7 @@ function AppShell({
                     nodes={nodes}
                     edges={edges}
                     onPersistPosition={persist}
+                    hasReceivedSnapshot={hasReceivedSnapshot}
                     layerFilter={layerFilter}
                     onLayerFilterChange={setLayerFilter}
                     transactions={transactions}

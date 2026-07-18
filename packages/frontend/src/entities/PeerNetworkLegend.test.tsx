@@ -133,5 +133,25 @@ describe("PeerNetworkLegend", () => {
     const legend = screen.getByTestId("p2p-legend");
     expect(legend.textContent).toContain("Peer connections grow over time via");
     expect(legend.textContent).toContain("node discovery");
+    // Issue #341: legend.hint.suffix の en は意図的な空文字。ja へフォール
+    // バックして日本語断片が混入してはならない。
+    expect(legend.textContent).not.toContain("により時間とともに自動で増えます");
+  });
+
+  it("does not leak any Japanese characters into the English hint (Issue #341)", () => {
+    // 特定の語句ではなく文字種（ひらがな・カタカナ・漢字）で検出する広い
+    // 回帰ガード。suffix の空文字が ja へフォールバックする不具合を、
+    // 文言が将来変わっても捕まえられるようにする。networkId 名は ASCII の
+    // ため、日本語が現れるとすれば ja へのフォールバックが原因。
+    const { container } = wrap(
+      [edge("e1", "chainviz-ethereum-execution")],
+      "en",
+    );
+    const hint = container.querySelector(".p2p-legend__hint");
+    expect(hint).not.toBeNull();
+    // ひらがな(3040-309f)・カタカナ(30a0-30ff)・CJK統合漢字(4e00-9fff)。
+    expect(hint?.textContent ?? "").not.toMatch(
+      /[぀-ヿ一-鿿]/,
+    );
   });
 });

@@ -5,7 +5,11 @@
 # ネットワークに立ち上げる。
 #
 # 起動:   docker compose up
-# 片付け: docker compose down -v   (-v で genesis / chain データも破棄)
+# 片付け: docker compose down -v --remove-orphans
+#         (-v で genesis / chain データも破棄。--remove-orphans は必須。
+#         collector の addNode/addWorkbench が作る動的コンテナは
+#         docker-compose.yml のサービス定義を持たないため、これが無いと
+#         削除されずネットワーク削除も失敗する。Issue #359)
 #
 # genesis は初回起動時に genesis サービスが現在時刻で生成し、共有ボリュームに
 # 残す(詳細は README.md「genesis の扱い」)。以降の起動では既存の genesis を
@@ -13,7 +17,7 @@
 # (genesis 年齢)が一定(既定 10 分)を超えた状態で全ノード停止が確定・実測
 # された場合は、genesis を現在時刻で自動再生成する(README.md「長時間停止後
 # の再起動と自動リセット」、Issue #148 / #286)。まっさらな chain で始めたい
-# ときは `docker compose down -v` でボリュームごと破棄する。
+# ときは `docker compose down -v --remove-orphans` でボリュームごと破棄する。
 
 name: chainviz-ethereum
 

@@ -573,6 +573,9 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
 - [ ] collectorのcomposeProjectが"chainviz-ethereum"にハードコードされ
       環境変数での上書き口が無く、QA検証時に独立した合成環境で
       ワークベンチ経由の操作(runWorkbenchOperation等)を検証できない
+      (以前から本ファイルに記載されていたがGitHub Issue化されずに残って
+      いた項目。統括が2026-07-17にIssue化)
+      [#369](https://github.com/morichikawa/chainviz/issues/369)
 - [x] デプロイのコンストラクタ引数にABI型と不一致な値を入力するとforgeの
       生エラーがそのままトーストに表示される
       [#209](https://github.com/morichikawa/chainviz/issues/209)
@@ -830,27 +833,44 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       アドレス表記の大文字小文字差異照合バグをレビューで1回差し戻し・
       修正済み)
       [#330](https://github.com/morichikawa/chainviz/issues/330)
-- [ ] removeWorkbenchがaddWorkbenchで追加したワークベンチに対しても
+- [x] removeWorkbenchがaddWorkbenchで追加したワークベンチに対しても
       「追加されていない」エラーを返すことがある
-      (Issue #319のQA検証中に偶発的に観測。再現手順未調査。着手時はまず
-      chainviz-detectiveに原因調査を依頼)
+      (Issue #319のQA検証中に偶発的に観測。chainviz-detectiveの調査により
+      Issue #366と同一原因(stableId重複による操作の誤配送)の派生症状と
+      判明。#366の修正で解消)
       [#334](https://github.com/morichikawa/chainviz/issues/334)
-- [ ] 英語モードでp2p-legendの凡例文が日英混在になっている
+- [x] 英語モードでp2p-legendの凡例文が日英混在になっている
       (Issue #327のQA検証中に偶発的に観測。原因はglossary/ではなく、
       legend.hint.suffixの意図的な空文字en訳とpickLocale()の空文字
-      フォールバック仕様の衝突。#327のCSS変更とは無関係の既存不具合)
+      フォールバック仕様の衝突。#327のCSS変更とは無関係の既存不具合。
+      translate()をpickLocale()経由からentry[lang]直接参照に変更して
+      修正し、pickLocale()自体はglossaryデータ向けの防御として現行維持)
       [#341](https://github.com/morichikawa/chainviz/issues/341)
 - [ ] UI層E2Eテストの一部が実.hover()依存・描画安定性不足でflakyになりうる
       (Issue #322のQA検証中に偶発的に観測。UI-C-04/UI-CMD-07/UI-ERR-02/
       UI-D-03で個別再現。slot time変更とは無関係の既存のテスト脆さ。
-      2026-07-17実装: UI-C-04/UI-D-03はdispatchHover化+ポップオーバーの
-      portal化(Issue #245)によるlocatorスコープ崩れの修正で解消、
-      UI-ERR-02はIssue #235修正後にテストが追随していなかった問題と
-      判明し修正、いずれも実Docker環境で再現→解消を確認済み。
-      UI-CMD-07(削除ボタンのstable判定)のみクリーンな環境で6回連続
-      再現を試みたが再現できず未解決。chainviz-detectiveへの追加調査を
-      提案中のため未完了のまま)
+      UI-C-04/UI-D-03はIssue #245のportal化でlocatorスコープが壊れて
+      いたことが判明し修正、UI-ERR-02はIssue #235の修正にテストが
+      追随していなかったことが判明し修正。UI-CMD-07(削除ボタンが
+      stableにならない)は原因不明のまま再現できず、Issue #373として分割)
       [#346](https://github.com/morichikawa/chainviz/issues/346)
+- [x] UI-CMD-07: ワークベンチ削除ボタンがE2E上でstableにならないことがある
+      (Issue #346から分割。chainviz-detectiveが独立した合成環境で原因を
+      特定: 実際は削除ボタンがビューポート外にありPlaywrightのクリックが
+      永久リトライしていた。根本原因はReact Flowの`fitView` propが
+      ワールドステート到着前から存在するチェーンリボン1枚だけに対して
+      発火し、zoomが最大値に張り付いたまま再フィットされないタイミング
+      競合。`fitView` propをやめ、最初のスナップショット反映・全ノード
+      計測完了後に`fitView({ maxZoom: 1 })`を1回だけ呼ぶ方式に変更して
+      解消。この本質修正自体はQAが実Docker+実ブラウザで修正前後の挙動を
+      確認済み。e2e側は`support/viewport.ts`の`fitCanvasView`ヘルパーを
+      UI-MULTI-01・cleanup.tsの安全網に適用したが、QA検証でUI-MULTI-01への
+      適用箇所(pageBロード後にdiffで追加されたカードが対象)に回帰が見つかり
+      (フィット直後、対象カードがReact Flowの内部計測ストアへ未反映のまま
+      フィットすると対象が視野外になる窓がある)、`fitCanvasView`を
+      「対象が実際に視野内へ入るまでフィットボタンを再試行する」方式に
+      差し戻し修正した)
+      [#373](https://github.com/morichikawa/chainviz/issues/373)
 - [ ] チェーンリボンの「親ブロック」行ホバー強調が実質使えない
       (ホバーが約200msで閉じる。Issue #313のUX設計中にchainviz-uxが実測で
       発見。Issue #298の「既知の残課題」で既に言及されていた問題が今回
@@ -871,12 +891,16 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       キャッシュとワールドステートのwallet/contract/block/transactionを
       パージする)
       [#357](https://github.com/morichikawa/chainviz/issues/357)
-- [ ] addNode/addWorkbenchで作成したmanagedコンテナがdocker compose
+- [x] addNode/addWorkbenchで作成したmanagedコンテナがdocker compose
       down -vでも削除されない
-      (Issue #357の原因調査中にchainviz-detectiveが副次的に発見。
-      隔離した最小composeプロジェクトで実証済み(Compose v2.40.3 /
-      Engine 29.1.3)。--remove-orphans付きでも削除されない。README注記+
-      ラベルベースの掃除スクリプト等が候補(chainviz-node-env + docs))
+      (根本原因を特定: `com.docker.compose.config-hash`ラベルが無い
+      コンテナはproject/serviceラベルが正しくてもDocker Compose自体から
+      一切認識されず、`--remove-orphans`を付けても孤児として検出されない。
+      node-lifecycle.tsのaddNode/addWorkbenchが作るコンテナにこのラベルを
+      追加し、`docker compose down -v --remove-orphans`で完全に片付く
+      ことを実機確認(修正前後の差分を実際のコード・実Dockerで再現・
+      解消確認)。READMEとdocker-compose.ymlの片付け手順も
+      `--remove-orphans`必須に更新。詳細はdocs/worklog/issue-359.md)
       [#359](https://github.com/morichikawa/chainviz/issues/359)
 - [ ] サイドパネル(コントラクトソース表示・用語集表示)の幅をリサイズ
       できるようにする
@@ -893,14 +917,33 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       または表記変更が論点。catalog.json・operationCatalog.ts・
       mockData.ts等CVZに依存する既存コードへの影響範囲の洗い出しが必要)
       [#364](https://github.com/morichikawa/chainviz/issues/364)
-- [ ] 追加ワークベンチの命名が静的ワークベンチと衝突する
+- [x] 追加ワークベンチの命名が静的ワークベンチと衝突する
       (コンテナ名409・stableId重複による操作の誤配送)
       (ユーザーが実際のワークベンチ追加・送金操作で遭遇。chainviz-detective
       が原因調査済み(docs/worklog/meta.md)。静的ワークベンチがlifecycle
       レジストリから不可視なのに、コンテナ名・service名を占有している
-      ことが根本原因。フレッシュ起動後の初回addWorkbenchで確実に発生。
-      応急対処は追加時に既定以外のラベルを付けること)
+      ことが根本原因。コンテナ名はDocker自身の名前衝突検出(409)を利用した
+      リトライへ、service名(stableId)は静的ワークベンチを含むDocker上の
+      実在コンテナとの照合へ変更して解消。実機の隔離環境で修正前の再現・
+      修正後の解消(409にならない・stableId重複なし・removeWorkbenchが
+      1回で完了)を確認済み。詳細はdocs/worklog/issue-366.md)
       [#366](https://github.com/morichikawa/chainviz/issues/366)
+- [ ] GlossaryTermのキーボード操作(Space)でpreventDefaultが呼ばれず
+      ページスクロールし得る
+      (Issue #313のテスト強化中にchainviz-testerが発見した軽微なa11y
+      問題。`role="button"`を持つ`<span>`でSpaceを押すとブラウザ既定の
+      ページスクロールが起きうる。`GlossaryTerm.tsx`のSpace/Enter
+      ハンドラにpreventDefault()を追加する)
+      [#353](https://github.com/morichikawa/chainviz/issues/353)
+- [ ] i18n translate()にObject.prototype由来キー(toString等)への防御が無い
+      (Issue #341のレビュー中に発見。型`MessageKey`により通常のコードから
+      到達不能で#341以前からの既存挙動だが、既存の`format()`と同じく
+      `hasOwnProperty`ガードを追加する軽微な堅牢性向上)
+      [#371](https://github.com/morichikawa/chainviz/issues/371)
+- [ ] 用語集パネルのフォントサイズを変更できるようにする
+      (ユーザーからの要望。フォントサイズ変更UIの要否・設定の永続化要否・
+      他のサイドパネルへの適用範囲が論点)
+      [#377](https://github.com/morichikawa/chainviz/issues/377)
 
 ## 運用ルール（全ステップ共通）
 

@@ -71,6 +71,13 @@ describe("translate", () => {
   it("returns the key itself for an unknown message key", () => {
     expect(translate("does.not.exist" as never, "ja")).toBe("does.not.exist");
   });
+
+  it("respects an intentionally empty en translation instead of falling back to ja (Issue #341)", () => {
+    // messages.ts の legend.hint.suffix.en は意図的な空文字（コメント参照）。
+    // pickLocale() の空文字フォールバックに巻き込まれて ja の文言
+    // 「により時間とともに自動で増えます」が混入してはならない。
+    expect(translate("legend.hint.suffix", "en")).toBe("");
+  });
 });
 
 describe("loadLanguage / saveLanguage", () => {

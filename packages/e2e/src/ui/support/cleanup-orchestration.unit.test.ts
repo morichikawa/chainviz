@@ -34,6 +34,12 @@ interface FakePage {
   waitForTimeouts: Map<string, number>;
   /** click された remove ボタンの testid 列。 */
   clickedTestIds: string[];
+  /**
+   * `fitCanvasView`(Issue #373)が呼ばれた順序を記録する列。
+   * `clickedTestIds` と突き合わせて「削除ボタンのクリックより前に
+   * フィットボタンを押しているか」を確認する。
+   */
+  callOrder: string[];
 }
 
 /**
@@ -44,6 +50,7 @@ interface FakePage {
 function makeFakePage(behaviors: Record<string, ButtonBehavior>): FakePage {
   const waitForTimeouts = new Map<string, number>();
   const clickedTestIds: string[] = [];
+  const callOrder: string[] = [];
 
   const getByTestId = vi.fn((testId: string): Locator => {
     const removePrefix = "infra-card-remove-";
@@ -61,10 +68,18 @@ function makeFakePage(behaviors: Record<string, ButtonBehavior>): FakePage {
         }),
         click: vi.fn(() => {
           clickedTestIds.push(testId);
+          callOrder.push(`click:${testId}`);
           return behavior.click === "reject"
             ? Promise.reject(new Error(`click failed: ${entityId}`))
             : Promise.resolve();
         }),
+        // fitCanvasView(Issue #373)がクリック前に対象として渡す削除ボタン
+        // 自身の boundingBox。このテストの主眼は削除フローとの呼び出し順序
+        // であり、視野判定そのものの分岐は viewport.unit.test.ts で確認済み
+        // なので、常に視野内(x=0)を返し1回目のフィットで即座に通過させる。
+        boundingBox: vi
+          .fn()
+          .mockResolvedValue({ x: 0, y: 0, width: 100, height: 40 }),
       };
       return locator as unknown as Locator;
     }
@@ -72,11 +87,44 @@ function makeFakePage(behaviors: Record<string, ButtonBehavior>): FakePage {
     return {} as unknown as Locator;
   });
 
+  // `fitCanvasView`(Issue #373。support/viewport.ts)が使う
+  // `.react-flow__controls-fitview` 用のフェイク Locator。常にクリック
+  // 成功として扱う(このテストの主眼は削除フローとの呼び出し順序であり、
+  // フィットボタン自体の成否分岐は viewport.unit.test.ts で確認済み)。
+  const locator = vi.fn((selector: string): Locator => {
+    if (selector === ".react-flow__controls-fitview") {
+      return {
+        click: vi.fn(() => {
+          callOrder.push("fitCanvasView");
+          return Promise.resolve();
+        }),
+      } as unknown as Locator;
+    }
+    throw new Error(`unexpected locator selector in fake page: ${selector}`);
+  });
+
   const goto = vi.fn().mockResolvedValue(undefined);
   const close = vi.fn().mockResolvedValue(undefined);
-  const page = { goto, close, getByTestId } as unknown as Page;
+  // fitCanvasView(Issue #373)が視野内判定に使う viewportSize。削除ボタンの
+  // boundingBox(常に x=0,y=0)を包含する固定サイズを返す。
+  const viewportSize = vi.fn(() => ({ width: 1280, height: 720 }));
+  const page = {
+    goto,
+    close,
+    getByTestId,
+    locator,
+    viewportSize,
+  } as unknown as Page;
 
-  return { page, goto, close, getByTestId, waitForTimeouts, clickedTestIds };
+  return {
+    page,
+    goto,
+    close,
+    getByTestId,
+    waitForTimeouts,
+    clickedTestIds,
+    callOrder,
+  };
 }
 
 function makeFakeBrowser(fakePage: FakePage): {
@@ -113,6 +161,41 @@ describe("removeInfraCardIfPresent(Playwright 配線)", () => {
     // 正しい削除ボタンをクリックしていることを testid で確認。
     expect(fake.clickedTestIds).toEqual(["infra-card-remove-node1"]);
   });
+
+  it(
+    "ボタン出現後、削除ボタンをクリックする前に fitCanvasView でビューポートを" +
+      "確保する（Issue #373。安全網のクリックがビューポート外へ永久リトライ" +
+      "しないようにする対策）",
+    async () => {
+      // waitForRemoved 到達後(=カード本体 Locator が絡む)は他テストと同じく
+      // 実 expect マッチャに依存しないよう、click 自体を失敗させて打ち切る
+      // (呼び出し順序の確認が目的で、削除完了までは追わない)。
+      const fake = makeFakePage({
+        node1: { waitFor: "resolve", click: "reject" },
+      });
+
+      await expect(
+        removeInfraCardIfPresent(fake.page, "node1", 1000),
+      ).rejects.toThrow("click failed: node1");
+
+      expect(fake.callOrder).toEqual([
+        "fitCanvasView",
+        "click:infra-card-remove-node1",
+      ]);
+    },
+  );
+
+  it(
+    "ボタンが不在(waitFor reject)の場合は fitCanvasView も呼ばない" +
+      "（既に削除済みの通常ケースで余計な操作を増やさない）",
+    async () => {
+      const fake = makeFakePage({ node1: { waitFor: "reject" } });
+
+      await removeInfraCardIfPresent(fake.page, "node1", 1000);
+
+      expect(fake.callOrder).toEqual([]);
+    },
+  );
 });
 
 describe("cleanupRemovableCards(afterAll 定型処理)", () => {
