@@ -941,12 +941,14 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       修正後の解消(409にならない・stableId重複なし・removeWorkbenchが
       1回で完了)を確認済み。詳細はdocs/worklog/issue-366.md)
       [#366](https://github.com/morichikawa/chainviz/issues/366)
-- [ ] GlossaryTermのキーボード操作(Space)でpreventDefaultが呼ばれず
+- [x] GlossaryTermのキーボード操作(Space)でpreventDefaultが呼ばれず
       ページスクロールし得る
       (Issue #313のテスト強化中にchainviz-testerが発見した軽微なa11y
       問題。`role="button"`を持つ`<span>`でSpaceを押すとブラウザ既定の
       ページスクロールが起きうる。`GlossaryTerm.tsx`のSpace/Enter
-      ハンドラにpreventDefault()を追加する)
+      ハンドラにpreventDefault()を追加して解消。テスト強化・レビュー・
+      QA(実ブラウザでpreventDefault呼び出しとスクロール抑止を実証)を
+      経て完了)
       [#353](https://github.com/morichikawa/chainviz/issues/353)
 - [ ] i18n translate()にObject.prototype由来キー(toString等)への防御が無い
       (Issue #341のレビュー中に発見。型`MessageKey`により通常のコードから
