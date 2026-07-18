@@ -329,4 +329,40 @@ CSS カスタムプロパティ方式にする。JS はスケール値を1つ管
   プロパティが変わる・端で disabled・注入した storage に保存される・
   リセットボタンの挙動(新規ファイル。既存 `SidePanel.test.tsx` /
   `SidePanel.resize.test.tsx` には追加しない)
+
+### 2026-07-18 Issue #377 実装完了(frontend)
+
+- 担当: frontend
+- ブランチ: issue-377-glossary-font-size
+- 上記の実装設計メモどおりに実装した。追加・変更したファイル:
+  - 新規: `side-panel/sidePanelFontScale.ts`(純ロジック)、
+    `side-panel/sidePanelFontScale.test.ts`、
+    `side-panel/useSidePanelFontScale.ts`(フック)、
+    `side-panel/useSidePanelFontScale.test.ts`、
+    `side-panel/SidePanel.fontScale.test.tsx`
+  - 変更: `side-panel/SidePanel.tsx`(ヘッダーにステッパー追加、ルート
+    div に `--side-panel-font-scale` カスタムプロパティを付与)、
+    `styles.css`(`.side-panel__body` の基準 `font-size` 追加 +
+    設計メモ §6-4 の21セレクタを `calc()` に変換)、
+    `i18n/messages.ts`(3キー追加)、`docs/ARCHITECTURE.md` §12.2
+- `pnpm lint && pnpm build && pnpm test` を全パッケージに対して実行し、
+  通過を確認した(frontend: 213ファイル2764テスト成功。新規追加分は
+  設計メモ記載の3ファイルで計34テスト)
+- E2E は追加しなかった(設計メモの判断どおり、jsdom の unit test で
+  操作・永続化・disabled 境界をカバーできる範囲のため)
+- 実装中に見つけた点:
+  - `comms-log-view__note` と `comms-log-entry__code` は実装設計メモの
+    とおり、親要素の `calc()` 変換への継承だけで対応し、個別の
+    `calc()` ルールは追加しなかった(既定 1.0 倍時の見た目は変えて
+    いない)
+  - `stepSidePanelFontScale`/`loadSidePanelFontScale` の最近傍スナップは
+    距離が同点(例: 1.4 は 1.3 からも 1.5 からも 0.1 差)の場合、配列の
+    先頭側(より小さい刻み)を採用する実装になっている。この挙動は
+    `sidePanelFontScale.test.ts` に固定テストとして記録した(仕様として
+    意図した挙動ではなく実装の帰結だが、実害は無い値なので許容した)
+  - `--side-panel-font-scale` は `React.CSSProperties` の型に無いカスタム
+    プロパティのため、`SidePanel.tsx` のルート `style` は
+    `as React.CSSProperties` で型を最小限だけ逃がしている
+- `docs/PLAN.md` のIssue #377チェックボックス更新は行っていない(運用
+  ルールどおりレビュー・QA完了後に統括が行う)
 - E2E: 設計メモの判断(jsdom の unit test で十分)を踏襲し追加しない
