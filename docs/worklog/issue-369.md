@@ -28,3 +28,151 @@
     未着手。着手時に設計判断が必要(Issue 本文にも明記あり)
   - docs 配下のみの変更のため、CLAUDE.md の例外規定に基づき
     chainviz-qa は省略(reviewer 合格のみ)
+
+### 2026-07-18 設計メモ(designer)
+
+- 担当: designer
+- ブランチ: issue-369-compose-project-env
+- 内容: composeProject を環境変数で上書きできるようにするための設計。
+  ハードコード箇所の洗い出し・環境変数の命名・derived な名前
+  (ネットワーク/ボリューム)の扱い・後方互換の方針を決定した。
+  実装コードはまだ書いていない(collector 担当へ引き継ぐ)。
+
+#### 現状調査の結果(ハードコード箇所の洗い出し)
+
+`packages/collector/src` の非テストコードで `"chainviz-ethereum"` を
+ハードコードしているのは **`adapters/ethereum/node-lifecycle.ts` の
+`DEFAULTS` オブジェクト(1箇所に集約済み)のみ**:
+
+- `composeProject: "chainviz-ethereum"`
+- `networkName: "chainviz-ethereum_chain"`
+- `genesisVolume: "chainviz-ethereum_genesis"`
+- `clpeerVolume: "chainviz-ethereum_clpeer"`
+- `elpeerVolume: "chainviz-ethereum_elpeer"`
+
+上記以外は動的で、修正不要:
+
+- `docker/observe.ts` の `computeStableId` はコンテナのラベル
+  (`com.docker.compose.project`)を実測で読むため、別プロジェクト名でも
+  そのまま追従する(A 層の観測はプロジェクト名でフィルタしていない)
+- `recoverManagedContainers()` / `findWorkbenchContainer()` /
+  `existingWorkbenchServiceNames()` のラベルフィルタは
+  `this.cfg.composeProject` を参照しており、config 経由で切り替わる
+- `node-lifecycle.ts` の 17 行目・379 行目のコメント内
+  `"chainviz-ethereum/<service>"` は例示(実装時に「既定の compose project
+  の場合」と分かる表現へ直すとよいが必須ではない)
+
+スコープ外(今回は変更しない):
+
+- `packages/e2e/src/helpers/docker.ts`・
+  `packages/e2e/src/ui/support/serviceIds.ts` の `"chainviz-ethereum"` は
+  「実プロファイル環境を対象にした E2E テスト」の前提値であり、Issue #369
+  の対象(`packages/collector`)外。E2E を合成環境で回す必要が出たら別 Issue
+  とする
+- `packages/frontend` に該当なし(コメント内の言及のみ)
+
+#### 設計
+
+**環境変数: `CHAINVIZ_COMPOSE_PROJECT`**
+
+- 既存の collector 実行時設定(`CHAINVIZ_COLLECTOR_PORT` /
+  `CHAINVIZ_PROXY_PORT` / `CHAINVIZ_PROXY_TARGET` /
+  `CHAINVIZ_WORKBENCH_RPC_HOST` / `CHAINVIZ_ETHEREUM_PROFILE_DIR`)と同じ
+  `CHAINVIZ_` プレフィックスの命名に合わせる
+- `COMPOSE_PROJECT_NAME` そのものは使わない。Docker Compose CLI 自身が
+  解釈する変数のため、collector と同じシェルで `docker compose` を操作
+  したときに双方へ効いてしまう。collector 専用の上書き口として分離する
+- `CHAINVIZ_ETHEREUM_COMPOSE_PROJECT` も検討したが不採用。collector
+  プロセスは現状 1 環境のみを観測・管理し、`resolve*` 系はプロセスレベル
+  設定として `CHAINVIZ_<対象>` の命名で統一されている。マルチプロファイル
+  対応時は設定体系ごと見直す(CLAUDE.md「先回り実装をしない」)
+
+**解決関数: `resolveComposeProject()`(`packages/collector/src/index.ts`)**
+
+既存の `resolvePort()` / `resolveProxyTarget()` と同じパターン:
+
+```ts
+export function resolveComposeProject(
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const raw = env.CHAINVIZ_COMPOSE_PROJECT;
+  if (raw === undefined || raw.trim() === "") return DEFAULT_COMPOSE_PROJECT;
+  return raw.trim();
+}
+```
+
+- 既定値 `DEFAULT_COMPOSE_PROJECT = "chainviz-ethereum"` は Ethereum
+  プロファイルの語彙なので `adapters/ethereum/node-lifecycle.ts` 側で
+  export し、`index.ts` はそれを import して使う(ChainAdapter 境界)
+- `main()` で lifecycle config に `composeProject: resolveComposeProject()`
+  を渡す
+
+**derived な名前の導出(`node-lifecycle.ts`)**
+
+`networkName` / `genesisVolume` / `clpeerVolume` / `elpeerVolume` は
+Compose の命名慣習 `<project>_<リソースキー>` に従い composeProject から
+導出する。固定オブジェクト `DEFAULTS` を、composeProject を受け取って
+既定 config を返す関数(例 `defaultConfigFor(composeProject)`)に変える:
+
+- ``networkName: `${project}_chain` ``、``genesisVolume:
+  `${project}_genesis` ``、``clpeerVolume: `${project}_clpeer` ``、
+  ``elpeerVolume: `${project}_elpeer` ``
+- イメージ名(rethImage 等)は project に依存しないので従来どおり固定
+- config で `networkName` 等を明示指定した場合は導出値より優先する
+  (既存の個別上書き口を維持。テストで使われている)
+- **前提条件**(固定値ではなく導出にした理由と成立条件):
+  `profiles/ethereum/docker-compose.yml` が network `chain`・volume
+  `genesis`/`clpeer`/`elpeer` に固定の `name:` を付けていないこと。
+  現状はトップレベルの `name: chainviz-ethereum` のみで、これは
+  `docker compose -p <別名>` / `COMPOSE_PROJECT_NAME` で上書きされ、
+  network/volume は `<project>_<キー>` に展開される。この前提は実装時に
+  コード内コメントにも明記すること(CLAUDE.md「固定値の前提条件を明記」)
+
+**コンストラクタの注意点**
+
+現状の `this.cfg = { ...DEFAULTS, ...rest }` は、`composeProject:
+undefined` という**キーだけ存在して値が undefined** の config を渡されると
+既定値を undefined で潰す。実装時は
+`const project = config.composeProject ?? DEFAULT_COMPOSE_PROJECT;` の
+ように先に project を確定させてから `defaultConfigFor(project)` を
+スプレッドの土台にし、undefined 値のキーが既定を潰さない形にする
+(`resolveComposeProject()` は常に string を返すので `main()` 経路では
+起きないが、テスト・将来の呼び出し元への安全のため)。
+
+**後方互換**
+
+- 環境変数未設定・空文字なら従来どおり `chainviz-ethereum` とその派生名
+  (`chainviz-ethereum_chain` 等)になり、挙動は一切変わらない
+- `packages/shared` の型変更は**不要**(`EthereumNodeLifecycleConfig` は
+  collector 内部の型。ワールドステートのスキーマ・WS プロトコルに変化なし。
+  stableId の形式 `<project>/<service>` も従来から project 可変の設計)
+
+**テスト観点(実装担当が基本テストを書く。tester が強化)**
+
+- `resolveComposeProject()`: 未設定→既定 / 空白のみ→既定 / 設定→trim 値
+  (既存の `index.test.ts` の resolve 系テストと同じ流儀)
+- lifecycle: `composeProject` を上書きした config で
+  - `addNode` の ContainerSpec(コンテナ名・ラベル・binds のボリューム名・
+    networkName)と登録される stableId が上書き値に追従する
+  - `recoverManagedContainers()` / `findWorkbenchContainer()` のラベル
+    フィルタが上書き値で走査する
+  - `composeProject` 未指定なら従来値のまま(後方互換の回帰確認)
+
+**影響範囲(変更するファイル一覧)**
+
+- `packages/collector/src/index.ts` — `resolveComposeProject()` 追加、
+  `main()` で lifecycle config へ渡す
+- `packages/collector/src/adapters/ethereum/node-lifecycle.ts` —
+  `DEFAULT_COMPOSE_PROJECT` の export、`DEFAULTS` の関数化
+  (project からの導出)、コンストラクタの組み立て変更
+- `packages/collector/src/index.test.ts` /
+  `packages/collector/src/adapters/ethereum/node-lifecycle.test.ts`
+  (または 1 ファイル 1 責務に沿った新設テストファイル) — 上記テスト観点
+- `docs/ARCHITECTURE.md` — 「未確定のまま残す項目」の状態ストアの項に
+  確定(Issue #369)として記載済み(本設計フェーズで反映済み)
+
+- 決定事項・注意点:
+  - 環境変数名は `CHAINVIZ_COMPOSE_PROJECT`(理由は上記)
+  - network/volume 名は project 名から Compose 慣習で導出(個別上書きは維持)
+  - `packages/shared` の変更なし。frontend への影響なし
+  - e2e パッケージのハードコードは今回のスコープ外
