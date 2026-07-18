@@ -130,18 +130,31 @@ export async function tearDownChain(): Promise<void> {
  *
  * mnemonic は `docker-compose.yml` の workbench サービスが `env_file` で
  * 読み込み済みの `$EL_AND_CL_MNEMONIC` をコンテナ内のシェル展開で参照し、
- * このファイル側で値を二重管理しない。RPC 接続先も同様にコンテナの
- * `ETH_RPC_URL` 環境変数（ロギングプロキシ経由）へ委ねる。
+ * このファイル側で値を二重管理しない。
+ *
+ * RPC 接続先はコンテナの `ETH_RPC_URL` 環境変数（dev collector のロギング
+ * プロキシ `http://host.docker.internal:4001` 固定）ではなく、呼び出し側
+ * （UI E2E）の collector のプロキシポートへ `docker compose exec -e` で
+ * 上書きする。dev collector を起動していないクリーン環境では 4001 に待受が
+ * 無く Connection refused になるため（Issue #381）。`exec -e` はこのコマンド
+ * 実行にだけ効き、コンテナ本体の環境・compose 定義・dev 運用には影響しない
+ * （docs/ARCHITECTURE.md §8.3、docs/worklog/issue-381.md 設計メモ参照）。
+ * ホスト名 `host.docker.internal`（compose 側の `extra_hosts` と対）は
+ * このファイル内に閉じ、呼び出し元にはポート番号だけを渡させる。
  *
  * この関数は docker compose exec への薄い委譲（分岐なし）のため、
  * `countProjectContainers`/`tearDownChain` と同様に専用のユニットテストは
  * 書かない（実 Docker が必須でユニットテスト化できないという、このファイル
  * 内の既存関数群と同じ事情）。
  */
-export async function deployUncatalogedContractInWorkbench(): Promise<void> {
+export async function deployUncatalogedContractInWorkbench(
+  proxyPort: number,
+): Promise<void> {
   await compose([
     "exec",
     "-T",
+    "-e",
+    `ETH_RPC_URL=http://host.docker.internal:${proxyPort}`,
     "workbench",
     "sh",
     "-c",
