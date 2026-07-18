@@ -169,4 +169,34 @@ describe("ChainRibbonCard popover hover bridge (Issue #351)", () => {
     expect(screen.getByTestId("chain-ribbon-tile-0x1")).toBeTruthy();
     expect(screen.queryByTestId("chain-ribbon-tile-0x3")).toBeNull();
   });
+
+  it("does not leave the highlight stuck when the popover closes while the mouse never fired the parent row's own mouseleave (Issue #351 stuck-highlight regression)", () => {
+    renderCard(
+      data({
+        tiles: [
+          tile("0xparent-tile", { number: 1 }),
+          tile("0xchild-tile", { number: 2, parentHash: "0xparent-tile" }, true),
+        ],
+      }),
+    );
+
+    fireEvent.mouseEnter(screen.getByTestId("chain-ribbon-tile-0xchild-tile"));
+    fireEvent.mouseEnter(screen.getByTestId("chain-ribbon-popover-parent-0xchild-tile"));
+    expect(screen.getByTestId("chain-ribbon-tile-0xparent-tile").className).toContain(
+      "chain-ribbon-tile--highlight",
+    );
+
+    // ポップオーバーが閉じる瞬間もマウスは行の上にあり続けた体（行自身の
+    // mouseleave は一度も発火しない）。タイル自体は離れたことにして
+    // クローズタイマーを起動し、そのまま満了させる。
+    fireEvent.mouseLeave(screen.getByTestId("chain-ribbon-tile-0xchild-tile"));
+    act(() => {
+      vi.advanceTimersByTime(HOVER_POPOVER_CLOSE_DELAY_MS);
+    });
+
+    expect(screen.queryByTestId("chain-ribbon-popover-0xchild-tile")).toBeNull();
+    expect(screen.getByTestId("chain-ribbon-tile-0xparent-tile").className).not.toContain(
+      "chain-ribbon-tile--highlight",
+    );
+  });
 });

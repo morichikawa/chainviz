@@ -1,4 +1,5 @@
 import type { ReactNode, RefObject } from "react";
+import { useEffect, useRef } from "react";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { format } from "../i18n/i18n.js";
@@ -44,6 +45,22 @@ export function ChainRibbonPopover({
 }) {
   const { t } = useLanguage();
   const { block } = tile;
+  // Issue #351: 「親ブロック」行がホバーされたまま、行自身の mouseleave が
+  // 一度も発火せずにこのポップオーバーが unmount されると
+  // （`ChainRibbonCard` 側の `parentHighlightHash`）が解除されず、直前
+  // タイルの強調枠が固着したまま残る。行のホバー中かどうかをここで追跡し、
+  // unmount 時にホバー中のままなら確実に解除する（強調の寿命はこの
+  // ポップオーバーの寿命を超えない、という不変条件を保証する）。
+  const parentRowHoveredRef = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      if (parentRowHoveredRef.current) {
+        parentRowHoveredRef.current = false;
+        onParentHover(null);
+      }
+    };
+  }, [onParentHover]);
 
   return (
     <PopoverPortal
@@ -60,8 +77,14 @@ export function ChainRibbonPopover({
       <Field label={t("chainRibbon.popover.hash")} value={block.hash} />
       <div
         className="infra-field chain-ribbon-popover__parent"
-        onMouseEnter={() => onParentHover(block.parentHash)}
-        onMouseLeave={() => onParentHover(null)}
+        onMouseEnter={() => {
+          parentRowHoveredRef.current = true;
+          onParentHover(block.parentHash);
+        }}
+        onMouseLeave={() => {
+          parentRowHoveredRef.current = false;
+          onParentHover(null);
+        }}
         data-testid={`chain-ribbon-popover-parent-${block.hash}`}
       >
         <span className="infra-field__label">{t("chainRibbon.popover.parent")}</span>
