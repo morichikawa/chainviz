@@ -161,6 +161,12 @@ export function ChainRibbonCard({ data }: NodeProps<ChainRibbonFlowNode>) {
   const [parentHighlightHash, setParentHighlightHash] = useState<string | null>(
     null,
   );
+  // 任意項目（UX設計 §3 末尾）: ホバー中の「親ブロック」行が指す親が現在の
+  // 表示窓の外（最古タイルより前）にあるとき、左端の「⋯」を同系統の強調で
+  // 光らせる。「親は存在するが表示範囲より前にある」ことが伝わる。
+  const isOldestParentHighlighted =
+    parentHighlightHash !== null &&
+    !tiles.some((tile) => tile.block.hash === parentHighlightHash);
   const latest = tiles.length > 0 ? tiles[tiles.length - 1] : undefined;
   // ブロック生成タイミングのインジケータ（Issue #343。ARCHITECTURE.md §10.5）。
   // チェーン全体で1つ、ヘッダに表示する（ノードカードごとには出さない）。
@@ -221,7 +227,11 @@ export function ChainRibbonCard({ data }: NodeProps<ChainRibbonFlowNode>) {
       ) : (
         <div className="chain-ribbon-card__row">
           <span
-            className="chain-ribbon-card__older"
+            className={
+              isOldestParentHighlighted
+                ? "chain-ribbon-card__older chain-ribbon-card__older--highlight"
+                : "chain-ribbon-card__older"
+            }
             title={t("chainRibbon.older.tooltip")}
             data-testid="chain-ribbon-older"
           >

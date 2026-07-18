@@ -199,4 +199,32 @@ describe("ChainRibbonCard popover hover bridge (Issue #351)", () => {
       "chain-ribbon-tile--highlight",
     );
   });
+
+  it("highlights the older-blocks indicator when the highlighted parent hash is off-screen (recommended enhancement)", () => {
+    // 表示窓は 0x1(最古)〜0x2 のみを含み、0x1 の親（0xoffscreen-parent）は
+    // 窓の外にある体。
+    renderCard(
+      data({
+        tiles: [
+          tile("0x1", { number: 10, parentHash: "0xoffscreen-parent" }),
+          tile("0x2", { number: 11, parentHash: "0x1" }, true),
+        ],
+      }),
+    );
+
+    expect(screen.getByTestId("chain-ribbon-older").className).not.toContain(
+      "chain-ribbon-card__older--highlight",
+    );
+
+    fireEvent.mouseEnter(screen.getByTestId("chain-ribbon-tile-0x1"));
+    fireEvent.mouseEnter(screen.getByTestId("chain-ribbon-popover-parent-0x1"));
+    expect(screen.getByTestId("chain-ribbon-older").className).toContain(
+      "chain-ribbon-card__older--highlight",
+    );
+
+    fireEvent.mouseLeave(screen.getByTestId("chain-ribbon-popover-parent-0x1"));
+    expect(screen.getByTestId("chain-ribbon-older").className).not.toContain(
+      "chain-ribbon-card__older--highlight",
+    );
+  });
 });

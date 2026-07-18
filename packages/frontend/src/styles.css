@@ -2871,6 +2871,13 @@ button.mempool-panel__row:hover {
   flex: none;
 }
 
+/* Issue #351: 表示窓外の親ブロックを「親ブロック」行ホバーで指したときの
+   強調。`.chain-ribbon-tile--highlight` と同系統（--accent）で揃える。 */
+.chain-ribbon-card__older--highlight {
+  color: var(--accent);
+  text-shadow: 0 0 6px rgba(79, 157, 255, 0.6);
+}
+
 .chain-ribbon-card__link {
   width: 14px;
   height: 0;
