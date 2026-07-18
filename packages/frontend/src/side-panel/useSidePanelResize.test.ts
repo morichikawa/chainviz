@@ -25,8 +25,9 @@ function dispatchPointer(type: "pointermove" | "pointerup", clientX: number) {
   window.dispatchEvent(new MouseEvent(type, { clientX }));
 }
 
-function pointerDownEvent(clientX: number): ReactPointerEvent {
-  return { clientX } as unknown as ReactPointerEvent;
+/** `button` 省略時は左ボタン(0)扱いにする(既存テストへの影響を避けるため)。 */
+function pointerDownEvent(clientX: number, button = 0): ReactPointerEvent {
+  return { clientX, button } as unknown as ReactPointerEvent;
 }
 
 function keyDownEvent(key: string): { event: ReactKeyboardEvent; preventDefault: ReturnType<typeof vi.fn> } {
@@ -76,6 +77,22 @@ describe("useSidePanelResize", () => {
       dispatchPointer("pointermove", 900); // 100px left => width grows by 100
     });
     expect(result.current.width).toBe(startWidth + 100);
+  });
+
+  it("ignores a pointerdown from a non-primary button (e.g. right-click)", () => {
+    // Issue #391: 右ボタンドラッグでもリサイズが開始してしまっていた回帰。
+    const { result } = renderHook(() => useSidePanelResize(memoryStorage()));
+    const startWidth = result.current.width;
+
+    act(() => {
+      result.current.handleProps.onPointerDown(pointerDownEvent(1000, 2)); // 右ボタン
+    });
+    expect(result.current.resizing).toBe(false);
+
+    act(() => {
+      dispatchPointer("pointermove", 900);
+    });
+    expect(result.current.width).toBe(startWidth);
   });
 
   it("shrinks the width while dragging the handle to the right", () => {

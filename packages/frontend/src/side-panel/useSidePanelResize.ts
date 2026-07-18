@@ -102,6 +102,10 @@ export function useSidePanelResize(storage: KeyValueStorage): UseSidePanelResize
 
   const handlePointerDown = useCallback(
     (event: ReactPointerEvent) => {
+      // Issue #391: 右ボタン(button === 2)や中ボタンでドラッグしても
+      // リサイズが開始してしまっていた回帰。左ボタン(button === 0)のみ
+      // 受け付ける。
+      if (event.button !== 0) return;
       dragRef.current = { startX: event.clientX, startWidth: width };
       setResizing(true);
     },
