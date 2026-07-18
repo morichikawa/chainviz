@@ -627,18 +627,35 @@ function validatorNode(n: number): NodeEntity {
 export const MOCK_NETWORK_ID = "1337";
 
 /**
+ * `mockOperationObserved` の呼び出し順を数える通し番号。呼び出しごとの
+ * outcome/durationMs のパターンを決定的に変化させるために使う（Issue #352。
+ * `Math.random` ではなく `txSeq` 等と同じ「周期的な決定値」の流儀に揃える）。
+ */
+let operationObservedSeq = 0;
+
+/**
  * ワークベンチ → ノードの操作観測イベント（operationObserved）のモックを作る。
  * 実環境ではロギングプロキシが観測した RPC 呼び出しから collector が生成するが、
  * オフライン確認用に、workbench-alice が reth-node-1 へ RPC を送った瞬間を模す。
  * 揮発性イベントなのでスナップショットには含めず、live 差分としてのみ流す。
+ *
+ * `outcome`/`durationMs`（Issue #352: レスポンス観測）はオフラインで成否
+ * 両方の表示を確認できるよう、呼び出し順の通し番号から決定的に生成する
+ * （実測値ではない演出値）。7回に1回ほど `error` にし、`durationMs` は
+ * 3ms〜45ms の範囲で周期的に変化させる。
  */
 export function mockOperationObserved(operation: string): DiffEvent {
+  const seq = operationObservedSeq++;
+  const outcome: OperationEdge["outcome"] = seq % 7 === 6 ? "error" : "ok";
+  const durationMs = 3 + (seq % 15) * 3;
   const edge: OperationEdge = {
     kind: "operation",
     fromWorkbenchId: "workbench-alice",
     toNodeId: "reth-node-1",
     operation,
     observedAt: Date.now(),
+    outcome,
+    durationMs,
   };
   return { type: "operationObserved", edge };
 }
