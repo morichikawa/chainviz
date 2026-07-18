@@ -14,7 +14,9 @@
 //
 // 追加コンテナには compose 互換のラベル（project/service）を付ける。これにより
 // 観測側（docker/observe.ts の computeStableId）が既存ノードと同じ
-// "chainviz-ethereum/<service>" 形式の安定 ID を割り当て、ネットワークの
+// "<project>/<service>" 形式の安定 ID を割り当て（既定の project は
+// DEFAULT_COMPOSE_PROJECT = "chainviz-ethereum" だが、collector 側で
+// composeProject を上書きすればその値になる。Issue #369）、ネットワークの
 // グルーピングやピアエッジ・ブロック伝播の対応付け（adapters/ethereum/
 // targets.ts）が既存ノードと同様に機能する。service 名は reth1/reth2 の慣習に
 // 合わせて reth<n> / beacon<n>（n>=3）とし、reth と beacon で同じ n を共有する
@@ -135,16 +137,41 @@ export interface EthereumNodeLifecycleConfig {
   onContractDeployed?: (address: string, contractKey: string) => void;
 }
 
-const DEFAULTS = {
-  networkName: "chainviz-ethereum_chain",
-  genesisVolume: "chainviz-ethereum_genesis",
-  clpeerVolume: "chainviz-ethereum_clpeer",
-  elpeerVolume: "chainviz-ethereum_elpeer",
-  composeProject: "chainviz-ethereum",
-  rethImage: "ghcr.io/paradigmxyz/reth:latest",
-  lighthouseImage: "sigp/lighthouse:latest",
-  foundryImage: "ghcr.io/foundry-rs/foundry:latest",
-} as const;
+/**
+ * compose project の既定値（Issue #369）。Ethereum プロファイル固有の語彙
+ * なので、collector 共通層（index.ts）はこの値を直接持たず、ここから
+ * import して resolveComposeProject() の既定に使う（CLAUDE.md「ChainAdapter
+ * 境界」）。
+ */
+export const DEFAULT_COMPOSE_PROJECT = "chainviz-ethereum";
+
+/**
+ * composeProject から既定 config を導出する（Issue #369）。networkName /
+ * genesisVolume / clpeerVolume / elpeerVolume は Docker Compose の命名慣習
+ * `<project>_<リソースキー>` に従う。この導出が成立する前提は
+ * `profiles/ethereum/docker-compose.yml` が network `chain` ・volume
+ * `genesis`/`clpeer`/`elpeer` に固定の `name:` を付けていないこと
+ * （トップレベルの `name: chainviz-ethereum` のみを持ち、`docker compose -p
+ * <別名>` / `COMPOSE_PROJECT_NAME` で上書きすると network/volume も
+ * `<project>_<キー>` に追従して展開される）。イメージ名は project に
+ * 依存しないため固定値のまま。
+ *
+ * 呼び出し側（コンストラクタ）は、この関数の返り値をスプレッドの土台にし、
+ * その後にユーザー指定の config をスプレッドすることで、networkName 等の
+ * 個別上書きキーが導出値より優先されるようにする。
+ */
+function defaultConfigFor(composeProject: string) {
+  return {
+    networkName: `${composeProject}_chain`,
+    genesisVolume: `${composeProject}_genesis`,
+    clpeerVolume: `${composeProject}_clpeer`,
+    elpeerVolume: `${composeProject}_elpeer`,
+    composeProject,
+    rethImage: "ghcr.io/paradigmxyz/reth:latest",
+    lighthouseImage: "sigp/lighthouse:latest",
+    foundryImage: "ghcr.io/foundry-rs/foundry:latest",
+  } as const;
+}
 
 // onContractDeployed は DEFAULTS に既定値を持たない任意のコールバックなので
 // Required<> の対象から除外する（未指定時は undefined のまま保持する）。
@@ -274,7 +301,12 @@ export class EthereumNodeLifecycle implements NodeLifecycle {
     config: EthereumNodeLifecycleConfig,
   ) {
     const { onContractDeployed, ...rest } = config;
-    this.cfg = { ...DEFAULTS, ...rest };
+    // composeProject を先に確定させてから既定 config を組み立てる。
+    // rest に "composeProject: undefined" というキーだけが存在する場合
+    // （値が undefined）でも、後段で composeProject: project を明示的に
+    // 上書きするため、既定値が undefined で潰されない（Issue #369）。
+    const project = config.composeProject ?? DEFAULT_COMPOSE_PROJECT;
+    this.cfg = { ...defaultConfigFor(project), ...rest, composeProject: project };
     this.onContractDeployed = onContractDeployed;
   }
 
@@ -375,9 +407,9 @@ export class EthereumNodeLifecycle implements NodeLifecycle {
     // computeStableId と一致させるため）。project ラベルは addNode/addWorkbench
     // が必ず付与しており、listContainersByLabels のフィルタでも必須にしている
     // ので、正規のコンテナでは欠落しない。ここに来て欠落しているのは想定外の
-    // 外来コンテナであり、composeProject で補完すると別プロジェクトのコンテナに
-    // "chainviz-ethereum/<service>" という誤った安定 ID を付けてしまうため、
-    // 補完はせず warn してスキップする。
+    // 外来コンテナであり、composeProject（既定は DEFAULT_COMPOSE_PROJECT だが
+    // 上書き可。Issue #369）で補完すると別プロジェクトのコンテナに誤った
+    // 安定 ID を付けてしまうため、補完はせず warn してスキップする。
     const project = container.labels[COMPOSE_PROJECT_LABEL];
     if (!project) {
       console.warn(
