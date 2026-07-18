@@ -118,7 +118,14 @@ describe("playwright-global-setup", () => {
     // 「WebSocket + 1」の知識は UI_E2E_PROXY_PORT の定義 1 箇所に集約されて
     // おり、startCollector の暗黙の既定値には頼らない（Issue #381）。
     expect(UI_E2E_PROXY_PORT).toBe(4126);
-    expect(mockedStartCollector).toHaveBeenCalledWith(4125, 4126);
+    // リテラル 4126 だけでなく「プロキシ = WS + 1」という不変条件そのものを
+    // 固定する。WS ポートを変えたとき proxy 定数の追従漏れ（両者の乖離）を
+    // 検出できるようにする（docs/ARCHITECTURE.md §8.3、Issue #254）。
+    expect(UI_E2E_PROXY_PORT).toBe(UI_E2E_COLLECTOR_PORT + 1);
+    expect(mockedStartCollector).toHaveBeenCalledWith(
+      UI_E2E_COLLECTOR_PORT,
+      UI_E2E_PROXY_PORT,
+    );
   });
 
   it("起動した collector をレジストリへ登録する", async () => {
