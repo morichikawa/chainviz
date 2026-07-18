@@ -589,3 +589,62 @@ shared の型変更は本設計で完了済み。**collector と frontend は互
 - 結論: `packages/frontend/src/i18n/messages.ts` への修正は行っていない
   (レビューのみで変更なしのため、`pnpm lint && pnpm build && pnpm test` の
   再実行・コミットも不要)
+
+### 2026-07-18 QA検証(chainviz-qa)
+
+- 担当: qa
+- ブランチ: issue-352-comms-log-rpc-response
+- 判定: **合格**
+- 検証環境: `/tmp/chainviz-issue-352` 上で `pnpm build` 後に `pnpm dev:up`
+  （profiles/ethereum の Docker スタック + collector(4000/proxy4001) +
+  frontend(5173)）。着手時、別ワークツリー(issue-346-qa)由来のスタックが
+  残っていたが、ワークベンチコンテナの `/contracts` バインドマウントが
+  stale で `docker exec`(既定 WorkingDir=/contracts)が
+  「current working directory is outside of container mount namespace root」
+  で失敗したため、自ワークツリーからスタックを作り直して再検証した
+  （このexec失敗は環境起因であり Issue #352 の実装とは無関係。collector は
+  失敗を握りつぶさず commandResult の error として正しく報告していた）。
+- 実施した検証と結果:
+  1. **実環境の送金(transfer)成功ケース(バックエンド)**: WebSocket
+     クライアントで collector(ws://127.0.0.1:4000)へ接続し、workbench
+     `chainviz-ethereum/workbench` に `runWorkbenchOperation`(transfer 1 ETH)
+     を送信。commandResult ok:true を確認。その際流れた `operationObserved`
+     差分 25 件すべてに `outcome: "ok"` と `durationMs`(1〜7ms の整数)が
+     載っていることを確認。`eth_sendRawTransaction` も
+     `outcome:"ok", durationMs:3` を確認。
+  2. **実環境の失敗ケース(バックエンド)**: 残高を超える金額の transfer を
+     送信し、`eth_estimateGas` の `operationObserved` が
+     `outcome:"error", durationMs:2` になることを確認(JSON-RPC の
+     insufficient funds エラーを collector が応答本体の error フィールドから
+     正しく検知)。commandResult は insufficient balance の error を返した。
+  3. **UI 層 E2E(Playwright)**: `packages/e2e` の `comms-log.spec.ts` を
+     `pnpm exec playwright test comms-log.spec.ts` で実行し、UI-LOG-01〜04 の
+     4件すべて合格。UI-LOG-02 は実ブラウザ・実チェーンに対して操作(RPC)
+     エントリに所要時間(`\d+ms`)と `comms-log-entry-outcome`(aria-label 付き)が
+     表示されることをアサートしており、これが通過。
+     - 補足: この環境では Playwright のブラウザ実行に必要な共有ライブラリ
+       (libnspr4.so 等)が未導入で最初は起動失敗した。
+       `/home/zoe/chrome-deps/root/usr/lib/x86_64-linux-gnu` にプリステージ
+       されたライブラリを `LD_LIBRARY_PATH` に指定して実行した(環境固有の
+       手当てであり実装とは無関係)。
+  4. **モックデータモード(frontend のみ、collector 未起動)**:
+     `VITE_COLLECTOR_URL` 未設定で vite を起動しモックモードで表示確認。
+     通信ログの操作(RPC)エントリに `eth_sendRawTransaction · ✓ 6ms`
+     (aria-label「成功（6ms）」)が表示され、7回に1回の error 周期どおり
+     7番目に `eth_sendRawTransaction · ✕ 21ms`(aria-label「失敗（21ms）」)が
+     赤色で表示されることを、実ブラウザのスクリーンショットで目視確認。
+     成功=緑(✓)・失敗=赤(✕)の色分けと所要時間表示が設計どおり。
+- 完了条件との照合: 実装は設計メモ §3.3/§3.4 の仕様(成否判定を
+  collector プロキシに閉じる・成功系/tx失敗系の既存色を再利用・キャンバスの
+  操作パルスには表示を追加しない・所要時間は ms 整数表記)どおりに動作。
+  成否アイコン(✓/✕)+所要時間の表示、失敗ケースの ✕ 表示、モックモードでの
+  オフライン表示のいずれも確認でき、reviewer から QA に委ねられた
+  UI-LOG-02 の実環境検証も含めて満たしている。
+- 申し送り:
+  - `docs/PLAN.md` の Issue #352 チェックボックスは統括が更新する(本記録では
+    更新しない)。
+  - E2E 実行後、動的追加ワークベンチ `chainviz-ethereum-comms-log-sender-1`
+    がスタックに残存している(E2E の addWorkbench 由来。Issue #126 の既知の
+    後始末対象で、Issue #352 とは無関係)。次に `pnpm dev:down --docker` を
+    実行すれば cleanup_dynamic_containers で除去される。
+  - 検証後、Docker スタックは慣例どおり起動したまま残している。
