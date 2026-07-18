@@ -953,10 +953,11 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       QA(実ブラウザでpreventDefault呼び出しとスクロール抑止を実証)を
       経て完了)
       [#353](https://github.com/morichikawa/chainviz/issues/353)
-- [ ] i18n translate()にObject.prototype由来キー(toString等)への防御が無い
+- [x] i18n translate()にObject.prototype由来キー(toString等)への防御が無い
       (Issue #341のレビュー中に発見。型`MessageKey`により通常のコードから
       到達不能で#341以前からの既存挙動だが、既存の`format()`と同じく
-      `hasOwnProperty`ガードを追加する軽微な堅牢性向上)
+      `hasOwnProperty`ガードを追加して解消。プロトタイプ由来11キーの
+      網羅テストで確認)
       [#371](https://github.com/morichikawa/chainviz/issues/371)
 - [ ] 用語集パネルのフォントサイズを変更できるようにする
       (ユーザーからの要望。フォントサイズ変更UIの要否・設定の永続化要否・
@@ -970,13 +971,14 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       collector(4125/4126)とworkbenchのRPC向き先が一致しない環境結合。
       着手時はまずchainviz-designerによる設計を先行させる)
       [#381](https://github.com/morichikawa/chainviz/issues/381)
-- [ ] addWorkbench(createAndStart)でcontainer.start()失敗時に作成済み
+- [x] addWorkbench(createAndStart)でcontainer.start()失敗時に作成済み
       コンテナがorphanとして残留する
       (Issue #369の最終QA検証中に偶発的に観測。存在しないネットワークを
       指定した場合等にstartが失敗しても、作成済みのCreated状態コンテナが
       削除されない。addNodeは事前にネットワーク存在確認をするためこの
       経路では発生しない。通常運用では発生しないが、Issue #369で
-      「未用意のprojectを指させる」使い方が可能になったため顕在化しうる)
+      「未用意のprojectを指させる」使い方が可能になったため顕在化しうる。
+      createAndStartの共通経路でstart失敗時にforce removeする方式で解消)
       [#385](https://github.com/morichikawa/chainviz/issues/385)
 - [ ] UI-B-06(chain-ribbon.spec.ts)がUI-B-05との併走時に間欠的にflakyになる
       (Issue #351の最終QA検証中に偶発的に観測。単独実行では安定合格。
