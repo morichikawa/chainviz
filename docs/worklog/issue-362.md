@@ -238,3 +238,64 @@
    E2E は「ハンドルが表示され、キーボードで幅が変わる」程度の
    最小限に留めるか、既存のE2E範囲と重複するなら追加しない判断も
    あり得る）
+
+### 2026-07-18 Issue #362 実装完了（frontend）
+
+- 担当: frontend
+- ブランチ: issue-362-sidepanel-resize
+- 内容: 上記の実装設計メモに従い実装した。
+
+1. **`side-panel/sidePanelWidth.ts`（新規）**: 定数
+   （`SIDE_PANEL_WIDTH_STORAGE_KEY` / `SIDE_PANEL_DEFAULT_WIDTH` /
+   `SIDE_PANEL_MIN_WIDTH`）、`sidePanelMaxWidth` / `clampSidePanelWidth` /
+   `loadSidePanelWidth` / `saveSidePanelWidth` を実装。保存形式は
+   `i18n.ts` の `saveLanguage` と同じ生文字列（`String(width)` /
+   `Number(raw)`）。保存失敗は `layoutStore.saveLayout` と同じ
+   try/catch + `console.warn`
+2. **`side-panel/useSidePanelResize.ts`（新規）**: ドラッグ
+   （pointerdown/pointermove/pointerup）とキーボード（←→、24px 刻み）
+   による幅変更の状態管理。ドラッグ中の window リスナー登録は
+   `resizing` が true の間だけ張り、依存配列に幅の state を含めない
+   （pointermove のたびに listener を張り替えない）。ドラッグ終了時・
+   キー操作時にのみ保存する
+3. **`SidePanel.tsx`**: `storage?: KeyValueStorage` を追加（既定
+   `getBrowserStorage()`、`LanguageProvider` と同じ注入パターン）。
+   ルート要素に `style={{ width }}` を付与し、左端に
+   `role="separator"` のリサイズハンドルを追加。`SidePanelHost.tsx` /
+   `SidePanelContext.tsx` は設計どおり無変更
+4. **`styles.css`**: `.side-panel` から固定 `width: 420px` を削除
+   （`max-width: 90vw` は残す）。`.side-panel__resize-handle` を新設
+   （左端に重ねる縦帯、hover/active/focus-visible のフィードバック）
+5. **`i18n/messages.ts`**: `sidePanel.resizeHandle`
+   （ja: 「パネルの幅を変更」/ en: "Resize panel width"）を追加
+6. **テスト**: `sidePanelWidth.test.ts`（クランプ境界・壊れた値・
+   保存失敗）、`useSidePanelResize.test.ts`（ドラッグ・キーボード・
+   保存タイミング・アンマウント時のリスナー掃除）、
+   `SidePanel.resize.test.tsx`（シェル統合。既存 `SidePanel.test.tsx`
+   は変更せず新規ファイルに分離）
+7. **E2E**: `packages/e2e/src/ui/side-panel-resize.spec.ts`
+   （`UI-PANEL-01`）を追加し `SCENARIOS.md` にも記載。実ブラウザでの
+   ドラッグ挙動とリロード後の localStorage 永続化は jsdom の unit test
+   では代用しきれない部分のため、そこだけを検証範囲にした（キーボード
+   操作・クランプ境界は unit test で既にカバー済みのため E2E では
+   重複させない）
+- 実装中に見つかった注意点:
+  - **jsdom は `PointerEvent` を実装していない**。unit test では
+    `fireEvent.pointerDown` は内部で `PointerEvent` の構築を試みて
+    無反応になる（イベント自体が発火しない）。代わりに `"pointerdown"`
+    などの型名を持つ `MouseEvent` を dispatch する（`clientX` だけを
+    見る実装なので代用できる）。加えて、DOM への直接
+    `element.dispatchEvent(...)` は React の act() 境界外になり
+    レンダー結果の反映が assertion より後になる（未然にDOM状態を
+    読んでしまい失敗する）ことを実機確認した。`@testing-library`
+    の `fireEvent(...)` （act() で自動的に包む）経由にすることで解消した
+  - `clampSidePanelWidth` の最小/最大が矛盾しないよう、
+    `sidePanelMaxWidth` 内で `Math.max(SIDE_PANEL_MIN_WIDTH, viewportWidth
+    * 0.9)` により下限を保証している。極端に狭いビューポート
+    （幅 300px 未満相当）でもレンジが破綻しないことをテストで確認済み
+- 確認: `pnpm lint && pnpm build && pnpm test` を全パッケージ
+  （shared / collector / frontend / e2e）に対して実行し通過を確認
+  （frontend: 208ファイル2682テスト、collector: 80ファイル1636テスト、
+  e2e: 15ファイル179テスト、shared: 6ファイル75テスト）
+- 未実施: `docs/PLAN.md` のチェックボックス更新は依頼により保留。
+  push・PR作成・マージ・Issueクローズも未実施（統括の指示待ち）
