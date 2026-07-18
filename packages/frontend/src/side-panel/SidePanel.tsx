@@ -46,6 +46,10 @@ export interface SidePanelProps {
  * `--side-panel-font-scale` として渡し、実際の拡大は `styles.css` の
  * `calc()` に寄せる（ヘッダー自体は拡大対象外。`side-panel__body` 配下
  * のみが対象）。
+ *
+ * ドラッグ中（`resizing`）はルート要素に `side-panel--resizing` 修飾
+ * クラスを足し、`styles.css` 側でパネル配下のテキスト選択を止める
+ * （Issue #391。左ボタン以外でのドラッグ開始も同 Issue で防ぐ）。
  */
 export function SidePanel({
   title,
@@ -80,7 +84,11 @@ export function SidePanel({
 
   return (
     <div
-      className="side-panel nodrag nowheel nopan"
+      className={
+        resizing
+          ? "side-panel nodrag nowheel nopan side-panel--resizing"
+          : "side-panel nodrag nowheel nopan"
+      }
       role="dialog"
       aria-label={ariaLabel}
       data-testid="side-panel"

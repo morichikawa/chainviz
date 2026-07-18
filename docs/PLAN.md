@@ -596,7 +596,9 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       [#214](https://github.com/morichikawa/chainviz/issues/214)
 - [x] rethとbeaconそれぞれの役割・関連性がUIから見えてこない
       [#215](https://github.com/morichikawa/chainviz/issues/215)
-- [ ] beacon/rethを1個ずつペアでしか追加できない制約についての疑問
+- [x] beacon/rethを1個ずつペアでしか追加できない制約についての疑問
+      (検討の結果、制約を崩さず現状維持が妥当と判断。詳細は
+      docs/worklog/issue-216.md参照)
       [#216](https://github.com/morichikawa/chainviz/issues/216)
 - [x] ノード追加ボタン付近に「reth+beaconのペアで追加される」ことの説明を
       添える（実装完了。詳細は docs/worklog/issue-251.md 参照）
@@ -922,13 +924,14 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       キーボード操作・クランプ・永続化を確認。QA中に発見した軽微なUX上の
       粗さ(右ボタンドラッグに反応・テキスト選択抑止なし)はIssue #391へ分離
       [#362](https://github.com/morichikawa/chainviz/issues/362)
-- [ ] サンプルコントラクトのトークンシンボル(CVZ等)がSolidityの定数で
+- [x] サンプルコントラクトのトークンシンボル(CVZ等)がSolidityの定数で
       ハードコードされておりデプロイ時に変更できない
       (ユーザーからの指摘。ChainvizToken.solの`symbol = "CVZ"`が定数で、
       コンストラクタ引数はinitialSupplyのみ。「CVZ」が一般的なブロック
-      チェーン用語に見えてしまう。name/symbolのコンストラクタ引数化、
-      または表記変更が論点。catalog.json・operationCatalog.ts・
-      mockData.ts等CVZに依存する既存コードへの影響範囲の洗い出しが必要)
+      チェーン用語に見えてしまう。コンストラクタ引数化は範囲が広がり
+      すぎるため不採用とし、`CVZ`→`CVZDEMO`・`CVN`→`CVNDEMO`への命名
+      変更のみで解消(ユーザー確認済み)。catalog.json・operationCatalog.ts・
+      mockData.ts等の依存箇所とテストフィクスチャ全般を表記統一)
       [#364](https://github.com/morichikawa/chainviz/issues/364)
 - [x] 追加ワークベンチの命名が静的ワークベンチと衝突する
       (コンテナ名409・stableId重複による操作の誤配送)
@@ -950,10 +953,11 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       QA(実ブラウザでpreventDefault呼び出しとスクロール抑止を実証)を
       経て完了)
       [#353](https://github.com/morichikawa/chainviz/issues/353)
-- [ ] i18n translate()にObject.prototype由来キー(toString等)への防御が無い
+- [x] i18n translate()にObject.prototype由来キー(toString等)への防御が無い
       (Issue #341のレビュー中に発見。型`MessageKey`により通常のコードから
       到達不能で#341以前からの既存挙動だが、既存の`format()`と同じく
-      `hasOwnProperty`ガードを追加する軽微な堅牢性向上)
+      `hasOwnProperty`ガードを追加して解消。プロトタイプ由来11キーの
+      網羅テストで確認)
       [#371](https://github.com/morichikawa/chainviz/issues/371)
 - [ ] 用語集パネルのフォントサイズを変更できるようにする
       (ユーザーからの要望。フォントサイズ変更UIの要否・設定の永続化要否・
@@ -967,13 +971,14 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       collector(4125/4126)とworkbenchのRPC向き先が一致しない環境結合。
       着手時はまずchainviz-designerによる設計を先行させる)
       [#381](https://github.com/morichikawa/chainviz/issues/381)
-- [ ] addWorkbench(createAndStart)でcontainer.start()失敗時に作成済み
+- [x] addWorkbench(createAndStart)でcontainer.start()失敗時に作成済み
       コンテナがorphanとして残留する
       (Issue #369の最終QA検証中に偶発的に観測。存在しないネットワークを
       指定した場合等にstartが失敗しても、作成済みのCreated状態コンテナが
       削除されない。addNodeは事前にネットワーク存在確認をするためこの
       経路では発生しない。通常運用では発生しないが、Issue #369で
-      「未用意のprojectを指させる」使い方が可能になったため顕在化しうる)
+      「未用意のprojectを指させる」使い方が可能になったため顕在化しうる。
+      createAndStartの共通経路でstart失敗時にforce removeする方式で解消)
       [#385](https://github.com/morichikawa/chainviz/issues/385)
 - [ ] UI-B-06(chain-ribbon.spec.ts)がUI-B-05との併走時に間欠的にflakyになる
       (Issue #351の最終QA検証中に偶発的に観測。単独実行では安定合格。
@@ -982,12 +987,13 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       負荷で顕在化しやすくなると考えられる。Issue #346と同種の問題であり
       対応方針を踏襲できないか検討する)
       [#388](https://github.com/morichikawa/chainviz/issues/388)
-- [ ] サイドパネルのリサイズハンドルが右ボタンドラッグに反応し
+- [x] サイドパネルのリサイズハンドルが右ボタンドラッグに反応し
       テキスト選択も抑止されない
       (Issue #362の最終QA検証中に偶発的に観測。`handlePointerDown`が
       event.buttonを未チェックのため右ボタンドラッグでもリサイズが
       開始する。resizing中にuser-select抑止も無くテキスト選択が起きる。
-      完了条件は損なわないため差し戻し対象外とし別Issueへ分離)
+      完了条件は損なわないため差し戻し対象外とし別Issueへ分離。
+      event.button!==0ガードとresizing中のuser-select:none抑止で解消)
       [#391](https://github.com/morichikawa/chainviz/issues/391)
 
 ## 運用ルール（全ステップ共通）
