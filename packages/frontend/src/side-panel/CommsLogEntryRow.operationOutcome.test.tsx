@@ -75,4 +75,36 @@ describe("CommsLogEntryRow: operation outcome/duration display", () => {
     expect(outcome.getAttribute("aria-label")).toBe("成功");
     expect(outcome.textContent).toBe(" · ✓");
   });
+
+  it("renders a durationMs of 0 with the outcome icon and a matching aria-label", () => {
+    renderEntry(operationEntry({ outcome: "error", durationMs: 0 }));
+    const outcome = screen.getByTestId("comms-log-entry-outcome");
+    expect(outcome.textContent).toBe(" · ✕ 0ms");
+    expect(outcome.getAttribute("aria-label")).toBe("失敗（0ms）");
+  });
+
+  it("renders a duration-only 0ms as plain uncolored text (no outcome span)", () => {
+    renderEntry(operationEntry({ durationMs: 0 }));
+    expect(screen.queryByTestId("comms-log-entry-outcome")).toBeNull();
+    expect(document.querySelector(".comms-log-entry__code")?.textContent).toBe("eth_call · 0ms");
+  });
+
+  it("always attaches a non-empty aria-label whenever an outcome span is rendered", () => {
+    // aria-label のモレ検出: tone を持つ suffix（=outcome span）は必ず
+    // 言語化テキストを伴うこと。子テキストは aria-label があると読まれない
+    // ため、ラベル欠落は成否情報の欠落に直結する。
+    for (const entry of [
+      operationEntry({ outcome: "ok" }),
+      operationEntry({ outcome: "error" }),
+      operationEntry({ outcome: "ok", durationMs: 0 }),
+      operationEntry({ outcome: "error", durationMs: 42 }),
+    ]) {
+      renderEntry(entry);
+      const outcome = screen.getByTestId("comms-log-entry-outcome");
+      const label = outcome.getAttribute("aria-label");
+      expect(label).toBeTruthy();
+      expect(label?.length).toBeGreaterThan(0);
+      cleanup();
+    }
+  });
 });

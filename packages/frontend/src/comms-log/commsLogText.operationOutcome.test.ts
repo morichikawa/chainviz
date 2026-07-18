@@ -102,3 +102,38 @@ describe("describeCommsLogEntry: operation outcome/duration suffix", () => {
     });
   });
 });
+
+describe("describeCommsLogEntry: operation suffix boundary durations", () => {
+  const en = (key: MessageKey) => translate(key, "en");
+
+  it("shows a durationMs of 0 rather than omitting it (0 is distinct from undefined)", () => {
+    // durationMs === 0 は「所要時間 0ms」であって欠落ではない。undefined と
+    // 取り違えて suffix を落とさないことを固定する。
+    const text = describeCommsLogEntry(operationEntry({ durationMs: 0 }), en);
+    expect(text.operationSuffix).toEqual({ text: " · 0ms" });
+  });
+
+  it("shows a durationMs of 0 alongside an outcome icon and in the ariaLabel", () => {
+    const text = describeCommsLogEntry(operationEntry({ outcome: "ok", durationMs: 0 }), en);
+    expect(text.operationSuffix).toEqual({
+      text: " · ✓ 0ms",
+      tone: "ok",
+      ariaLabel: "Succeeded (0ms)",
+    });
+  });
+
+  it("keeps a plain ms unit for very large durations (no switch to seconds)", () => {
+    // 設計メモ §5 で単位切替は実装判断に委ねられ、実装は ms 表記のまま。
+    const text = describeCommsLogEntry(operationEntry({ outcome: "error", durationMs: 123456 }), en);
+    expect(text.operationSuffix).toEqual({
+      text: " · ✕ 123456ms",
+      tone: "error",
+      ariaLabel: "Failed (123456ms)",
+    });
+  });
+
+  it("keeps a plain ms unit for a very large duration-only suffix", () => {
+    const text = describeCommsLogEntry(operationEntry({ durationMs: 987654 }), en);
+    expect(text.operationSuffix).toEqual({ text: " · 987654ms" });
+  });
+});
