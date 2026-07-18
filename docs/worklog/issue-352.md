@@ -227,3 +227,63 @@ shared の型変更は本設計で完了済み。**collector と frontend は互
   パネル)の第2弾記述、「未確定のまま残す項目」内ロギングプロキシ項の
   確定(Issue #352)
 - `packages/shared/src/world-state/entities.ts` / `entities.test.ts`
+
+### 2026-07-18 実装(collector)設計メモ
+
+- 担当: collector
+- ブランチ: issue-352-comms-log-rpc-response-collector（designer の
+  `issue-352-comms-log-rpc-response` から分岐した一時ブランチ。後で統括が
+  cherry-pick して本流ブランチへ合流させる）
+- 設計メモ §4.1 を踏まえた実装方針:
+  1. **成否判定純関数を新ファイル `proxy/response-outcome.ts` に切り出す**。
+     エントリポイントは `resolveResponseOutcomes(observations, forwardOutcome)`。
+     `forwardOutcome` は `{ kind: "success"; status; body } | { kind: "failure" }`
+     の判別union にし、§3.3 の3ケース(forward throw / 非2xx / 2xx本体解析)を
+     1つの関数の中で完結させる(forward throw・非2xx は「全観測 error」という
+     自明な分岐だが、判定ロジックを1箇所に集約して`handleRpcRequest`側を
+     薄く保つため、ここに含める)。戻り値は `observations` と同じ長さ・順序の
+     `(("ok" | "error") | undefined)[]`。
+     - 単発/バッチの判定は「レスポンスボディの形」で行う(配列なら id 突き合わせ、
+       オブジェクトかつ observations.length === 1 ならその1件を判定)。
+       JSON-RPC 仕様上、バッチ(要素数1でも)は配列で応答し単発はオブジェクトで
+       応答するため、リクエスト側の元の形(単発/バッチ)を別途保持しなくても
+       レスポンス形状だけで一意に判定できる。バッチの id 突き合わせは
+       `id === null`(通知)・対応欠落・id 重複のいずれも「判定不能
+       (undefined)」に倒す
+  2. **所要時間の起点は新たに `now()` を呼ばず、既存の `timestamp`
+     (リクエスト受領完了時点の値)をそのまま起点として使う**(設計メモ §3.2
+     「既存の `timestamp` 取得と同じタイミング」)。終点は forward の
+     resolve/reject 直後の `now()`。バッチは 1 回の HTTP 往復を全観測で
+     共有するため `durationMs` は observations 全体で1つの値
+  3. `handleRpcRequest`:
+     - 観測ログ出力(`log("[proxy] rpc call ...")`)ループは従来どおり転送前に残す
+       (onObserve 呼び出しだけをここから外す)
+     - forward 成功時: `resolveResponseOutcomes(observations, { kind: "success", ... })`
+       で outcomes を得てから、observations と outcomes を zip して
+       `onObserve` を発行する(小さなプライベートヘルパー
+       `emitObservations(observations, outcomes, durationMs, onObserve)` に
+       まとめ、成功/失敗パスの両方から呼ぶ)
+     - forward 失敗(catch)時: `resolveResponseOutcomes(observations, { kind: "failure" })`
+       (= 全観測 "error")で outcomes を得て同様に発行してから、従来どおり
+       502 を返す
+     - `durationMs` は `Math.max(0, Math.round(now() - timestamp))` で
+       0以上の整数に丸める(§3.2)
+  4. `RpcObservation`(collector 内部型)に `outcome?: "ok" | "error"` /
+     `durationMs?: number` を追加。`emitObservations` は `outcome` が
+     `undefined` のときフィールド自体を省略したオブジェクトを組み立てる
+     (spread + 条件付きプロパティ)
+  5. `operation-observer.ts` の `resolveOperationEdge`: `observation.outcome` /
+     `observation.durationMs` を、`undefined` ならフィールドごと省略する形で
+     `edge` に写す(既存の `nodeRole` 等 optional フィールドの流儀と同じ
+     条件付きスプレッドパターンを使う)
+  6. 既存 `logging-proxy.test.ts` の「転送前に onObserve が呼ばれる」前提の
+     アサーション(`forward` が呼ばれる前に observed 配列を検査する等)は
+     無いことを確認済み(現状のテストは `await handleRpcRequest` 完了後に
+     まとめて検査しているため、発行タイミングの変更で壊れるのは主に
+     期待値の中身(`outcome`/`durationMs` フィールド追加)であり、
+     テスト構造自体は温存できる見込み)
+- ファイル分割方針: `response-outcome.ts` を判定ロジック専用にし、
+  `response-outcome.test.ts` も同ファイルのテストのみに絞る
+  (1ファイル1責務をテストにも適用)。`logging-proxy.test.ts` は既存の
+  `describe("handleRpcRequest")` 内に outcome/durationMs 関連のケースを
+  追加する形にとどめ、新規ファイルには分けない(既存の関心事の延長のため)
