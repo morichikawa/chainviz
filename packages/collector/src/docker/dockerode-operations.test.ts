@@ -333,6 +333,62 @@ describe("createDockerOperations", () => {
     expect(start).not.toHaveBeenCalled();
   });
 
+  it("force-removes the created container when start() fails (Issue #385)", async () => {
+    // start() 失敗時、直前に作った「Created」状態のコンテナを orphan として
+    // 残さず force remove すること。元の start() エラーはそのまま伝播する。
+    const remove = vi.fn().mockResolvedValue(undefined);
+    const startError = new Error("network xyz not found");
+    const start = vi.fn().mockRejectedValue(startError);
+    const createContainer = vi
+      .fn()
+      .mockResolvedValue({ id: "cid-1", start, remove });
+    const docker = { createContainer } as unknown as Docker;
+
+    const ops = createDockerOperations(docker);
+    await expect(ops.createAndStart(baseSpec)).rejects.toBe(startError);
+
+    expect(remove).toHaveBeenCalledWith({ force: true });
+  });
+
+  it("still propagates the original start() error when the cleanup remove() also fails", async () => {
+    // 後始末（remove）自体が失敗しても、根本原因である元の start() エラーを
+    // 差し替えずに伝播すること（後始末エラーで隠さない）。
+    const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const startError = new Error("network xyz not found");
+      const start = vi.fn().mockRejectedValue(startError);
+      const remove = vi.fn().mockRejectedValue(new Error("remove also failed"));
+      const createContainer = vi
+        .fn()
+        .mockResolvedValue({ id: "cid-1", start, remove });
+      const docker = { createContainer } as unknown as Docker;
+
+      const ops = createDockerOperations(docker);
+      await expect(ops.createAndStart(baseSpec)).rejects.toBe(startError);
+
+      expect(remove).toHaveBeenCalledWith({ force: true });
+      // 握りつぶさず、後始末の失敗をログへ残していること。
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("does not call remove() when createAndStart succeeds", async () => {
+    const remove = vi.fn();
+    const start = vi.fn().mockResolvedValue(undefined);
+    const createContainer = vi
+      .fn()
+      .mockResolvedValue({ id: "cid-1", start, remove });
+    const docker = { createContainer } as unknown as Docker;
+
+    const ops = createDockerOperations(docker);
+    await expect(ops.createAndStart(baseSpec)).resolves.toEqual({
+      id: "cid-1",
+    });
+    expect(remove).not.toHaveBeenCalled();
+  });
+
   it("stops then force-removes a container", async () => {
     const stop = vi.fn().mockResolvedValue(undefined);
     const remove = vi.fn().mockResolvedValue(undefined);
