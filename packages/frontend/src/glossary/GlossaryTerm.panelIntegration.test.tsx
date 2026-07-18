@@ -91,6 +91,31 @@ describe("GlossaryTerm click integration with the glossary panel (Issue #313)", 
     );
   });
 
+  it(
+    "calls preventDefault on Space so the browser does not also scroll the " +
+      "page (Issue #353: role=button span, unlike a native <button>, does not " +
+      "suppress the default Space scroll on its own)",
+    () => {
+      wrapWithSidePanel(<GlossaryTerm termKey="container">コンテナ</GlossaryTerm>);
+      const notCancelled = fireEvent.keyDown(
+        screen.getByTestId("glossary-term-container"),
+        { key: " " },
+      );
+      // fireEvent の戻り値は dispatchEvent の戻り値そのもの。cancelable な
+      // イベントで preventDefault が呼ばれていれば false になる。
+      expect(notCancelled).toBe(false);
+    },
+  );
+
+  it("calls preventDefault on Enter as well, for consistency", () => {
+    wrapWithSidePanel(<GlossaryTerm termKey="container">コンテナ</GlossaryTerm>);
+    const notCancelled = fireEvent.keyDown(
+      screen.getByTestId("glossary-term-container"),
+      { key: "Enter" },
+    );
+    expect(notCancelled).toBe(false);
+  });
+
   it("ignores unrelated keys", () => {
     wrapWithSidePanel(<GlossaryTerm termKey="container">コンテナ</GlossaryTerm>);
     fireEvent.keyDown(screen.getByTestId("glossary-term-container"), { key: "Tab" });
