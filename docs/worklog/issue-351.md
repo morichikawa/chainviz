@@ -643,3 +643,115 @@ QA提案は「e2eのアサーションを実装の契約に合わせる」だっ
   他カードからの逆方向強調）は無変更で通る想定（後で実行して確認する）
 - `packages/shared`の型定義
 
+### 2026-07-18 Issue #351 QA差し戻し対応の実装完了
+
+- 担当: frontend
+- ブランチ: issue-351-parent-block-hover-highlight
+
+#### 実施内容
+
+設計メモ通りに実装した:
+
+1. `ChainRibbonPopover.tsx`: `onParentHover`のシグネチャを
+   `(parentHash: string | null, sourceHash: string) => void`に拡張し、
+   行のenter/leave・unmountクリーンアップいずれも自分自身の hash
+   （`block.hash`）を第2引数で渡すようにした。加えて、行に
+   `data-parent-hash={block.parentHash}`（e2e専用の完全な親hash露出）を
+   追加した
+2. `ChainRibbonCard.tsx`: `parentHighlightHash: string | null`を
+   `parentHighlight: { sourceHash; targetHash } | null`に変更し、
+   `ChainRibbonTileView`に新しいprop`isDrivingParentHighlight`
+   （このタイル自身の親ブロック行が今ホバー中か）を追加。
+   `isReverseHighlighted`を
+   `hoveredBlockHash === block.hash && !isDrivingParentHighlight`に変更し、
+   「自分の親ブロック行を自分でホバーしている間」だけ自己強調を抑制する
+   ようにした
+3. `ChainRibbonPopover.test.tsx`（tester作成）の`onParentHover`アサーション
+   3件を新シグネチャに合わせて更新した
+4. `ChainRibbonPopoverHoverBridge.test.tsx`に「自分の親ブロック行をホバー
+   している間は自己強調が抑制され、行を離れると復活する」契約を検証する
+   新規テストを追加し、既存の「does not highlight the older indicator
+   when the hovered parent is an in-window tile」にも
+   「ホバー中タイル自身は強調されないこと」のアサーションを追加した
+5. `packages/e2e/src/ui/chain-ribbon.spec.ts`のUI-B-05新ステップを、
+   `data-parent-hash`から読み取った完全な親hashを使い、
+   「親タイルが表示窓内ならそのタイルだけに、窓外なら「⋯」だけに
+   `--highlight`が付き、強調タイルの総数は常に窓内なら1・窓外なら0」を
+   検証する識別ベースの検証に置き換えた。加えて、生の`page.mouse.move`
+   多段階移動を`tile.hover()`→`parentRow.hover()`（連続する2回の
+   `Locator.hover()`）に置き換えた
+
+#### 発見: jsdomでの`fireEvent.mouseLeave`のReactツリー祖先伝播
+
+新しいユニットテストを書く過程で、実装設計メモに記載していた前提
+（「`fireEvent.mouseEnter`/`mouseLeave`は祖先へ伝播しない」）が、
+Issue #351の本丸修正（ポップオーバーをタイルdivのReactツリー上の子に
+した）後の構造では**成立しない**ことを発見した。具体的には、
+`fireEvent.mouseLeave(row)`（`relatedTarget`未指定）を、タイルdivの
+Reactツリー上の子であるポップオーバー内の行に対して発火すると、
+Reactはこれを「relatedTargetがnull=どこにも属さない場所へ離脱した」と
+解釈し、行だけでなくその祖先（ポップオーバーの呼び出し元である
+タイルdiv自身）の`onMouseLeave`まで連鎖して発火してしまう
+（`hoveredBlockHash`が意図せず`null`にリセットされることで実際に
+検出した。デバッグ用の一時`console.log`+スタックトレースで
+`dispatchEvent`の呼び出し元が`HTMLBodyElement`であることまで確認済み。
+一時コードは検証後に削除）。
+
+これは「タイル自身への直接ホバーは継続しているのに、ネストされた行だけを
+離れたい」という状況を`fireEvent.mouseLeave`で単純に再現できないことを
+意味する。回避策として、行を離れる操作は`fireEvent.mouseOut(row,
+{ relatedTarget: tileElement })`を使う（`relatedTarget`をタイル自身に
+指定することで、タイルが行とタイルの共通祖先として扱われ、タイル自身の
+leaveは発火せず、行だけのleaveが発火する）。新規追加した
+「suppresses the hovered tile's own self-highlight...」テストはこの
+手法で組んだ。既存テスト（行離脱時に`fireEvent.mouseLeave(row)`を素朴に
+使っているもの）は、たまたまこの余分な副作用がアサーション対象に
+影響しなかったため検出されず残っている（実害はないため今回は変更しない）。
+この知見は今後同様のテストを書く担当のために本セクションに残す。
+
+#### 固着バグ再現確認の追加実施（CLAUDE.md運用ルール対応）
+
+新規追加した2件の回帰テスト（「suppresses the hovered tile's own
+self-highlight...」、既存テストへの追加アサーション）について、QA差し戻し
+前のコード（`ChainRibbonCard.tsx`/`ChainRibbonPopover.tsx`を
+`git stash`で一時的に元に戻した状態）に対して実際に失敗することを
+確認してから、修正を復元して成功することを確認した。
+
+#### 実Docker環境での確認
+
+既存の稼働中スタック（`profiles/ethereum`、QAが検証したものと同一）を
+再利用し、他エージェントのe2e実行がないこと（ロックファイル・
+playwrightプロセス不在）を確認してから、`pnpm --filter @chainviz/e2e exec
+playwright test --grep "UI-B-05"`をQAと同じ3回連続実行し、3回とも合格
+することを確認した（各回24〜26秒、既存スタックの安定稼働を確認）。
+念のためUI-B-06（tx チップ⇔タイルの逆方向連動）も1回実行し合格を確認した
+（本修正が`isDrivingParentHighlight`をtx チップ由来の`hoveredBlockHash`
+とは無関係にした設計であることの裏取り）。
+
+#### ビルド・テスト確認
+
+`pnpm lint` / `pnpm build` / `pnpm test`をリポジトリ全体で実行し、
+全パッケージ（shared 74・collector 1597・e2e 179・frontend 2642）が
+通ることを確認した。
+
+#### UX観点の判断（chainviz-uxへの再調整は不要と判断した）
+
+QAから「ホバー中タイルと親タイルの二重強調がUX目的を損なわないか」の
+再検討を求められたが、上記の通り抑制ロジックを実装したことで二重強調
+自体が解消され、常に「親タイル1つだけ」（または表示窓外なら「⋯」）が
+光る、当初のUX設計メモ（§3、単数形の記述）どおりの挙動になった。これは
+新しい見た目・操作概念を導入するUX設計判断ではなく、既存デザインの
+意図しない漏れ（`hoveredBlockHash`の使い回しによる副作用）を塞ぐ
+エンジニアリング修正の範囲と判断し、chainviz-uxへの再調整は依頼しない。
+この判断の妥当性そのものは統括の確認を仰ぐ。
+
+#### 次の担当への申し送り
+
+- レビュー・QA未実施（今回の差し戻し対応分）。`docs/PLAN.md`のチェック
+  ボックス更新はまだ
+- `onParentHover`のシグネチャ変更（2引数化）と`parentHighlight`の型変更
+  （string→オブジェクト）は今回のQA対応に伴う設計変更のため、reviewerに
+  再確認してほしい
+- 「jsdomでの`fireEvent.mouseLeave`祖先伝播」の発見は、今後
+  Issue #351類似のポップオーバー系テストを書く担当への申し送り事項として
+  重要（上記セクション参照）
