@@ -499,3 +499,62 @@ shared の型変更は本設計で完了済み。**collector と frontend は互
     `error: null` を返すと成功が error 表示になる。設計メモ §3.3 の割り切り
     どおりの挙動であり現時点では妥当と判断。将来 error 詳細を載せる別Issueで
     再検討の余地あり（テストで現挙動を固定済み）。
+
+### 2026-07-18 レビュー(reviewer)
+
+- 担当: reviewer
+- ブランチ: issue-352-comms-log-rpc-response
+- 判定: **合格**
+- 確認内容:
+  - `packages/shared` の型変更(`OperationEdge.outcome?/durationMs?`)の
+    設計原則との整合: `"ok" | "error"` はプロトコル非依存の語彙で、
+    JSON-RPC 固有の判定規則は collector のプロキシ側
+    (`response-outcome.ts`)に閉じている。型コメント内の「JSON-RPC の
+    error フィールド等」への言及は「判定は collector の責務」という境界の
+    説明であり語彙の漏れではない(既存 `operation` フィールドと同じ扱い)。
+    optional 化による後方互換も `entities.test.ts` で固定済み
+  - エラー握りつぶしの明示的チェック(collector):
+    - `handleRpcRequest` の転送失敗 catch はログ出力(`log("[proxy]
+      forward to upstream failed:", err)`)+ outcome=error の観測発行 +
+      502 応答で、握りつぶしなし
+    - `response-outcome.ts` の JSON.parse catch は「判定不能 =
+      undefined」への意図的な倒し込みで、理由コメントあり(判定不能を
+      error に倒さない設計判断も §3.3 とファイル冒頭コメントに明記)
+    - 非2xx 上流応答を 502 に潰さず素通ししつつ観測だけ error にする
+      透過性もテストで固定されている
+  - `onObserve` 発行の転送後移動の影響: リクエスト時の観測ログ出力は
+    転送前に残り、成功・失敗の両パスで `emitObservations` が呼ばれるため
+    観測が失われるパスはない。既存のボディ読み取りエラー(400/413)パスは
+    `handleRpcRequest` 到達前で従来どおり
+  - frontend: `commsLog.operation.*` の新規キーは `{ja, en}` 形式・
+    `format()` プレースホルダの既存パターン(`commsLog.internal.latency`)と
+    整合。CSS は `--synced` と既存の `#ffb4b4`(tx失敗系で4箇所使用済みの
+    リテラル)の再利用のみで新色なし。`describeOperationSuffix` の4パターン
+    (両方欠落/duration のみ/outcome のみ/両方)が実装・テストとも網羅
+  - tester の申し送り(「error キーの存在だけで error に倒す。値が
+    null/false でも error」): 設計メモ §3.3 の「存在すれば error」の
+    割り切りどおりで妥当。`response-outcome.boundary.test.ts` に理由
+    コメント付きテスト(§3.3 参照)で現挙動を固定済み。実装側も冒頭
+    コメントで存在ベースの規則を明記しており十分
+  - 決め打ち定数の混入なし: `durationMs` は `now()` 注入時計からの実測。
+    モックの周期値(7回に1回 error 等)は「演出値」とコメント明記済み
+  - テストの質: 発行タイミング(転送後)・時計逆行時の0クランプ・
+    HTTP ステータス境界(199/299/300)・id 突き合わせの各種判定不能・
+    aria-label の付与保証・durationMs=0 と欠落の区別など、異常系・境界値
+    まで実質的に検証している。壊れたコードでも通る形骸テストは見当たらない
+  - コミット粒度: shared型 → ARCHITECTURE → 設計メモ → collector 3コミット
+    (純関数/プロキシ/observer) → frontend 4コミット(導出/文言/描画/モック)
+    → e2e → テスト強化2コミット → docs と、1変更1コミットが守られている。
+    全コミット Conventional Commits 形式
+  - `pnpm lint` / `pnpm build` / `pnpm test`(shared/collector/frontend/e2e
+    全パッケージ)通過を確認(collector 1636 / frontend 2650)
+- 注意点(統括への申し送り。差し戻し理由ではない):
+  - 本ブランチの分岐点は main の e6bf05d(#381 docs マージ)より前のため、
+    `git diff main..HEAD` 上は `docs/worklog/issue-381.md` 削除・
+    `docs/PLAN.md`/`docs/WORKLOG.md` の #381/#346 行の巻き戻りに見えるが、
+    ブランチ自体は何も削除していない(見かけ上の差分)。PR 作成前に main を
+    取り込む際、`docs/WORKLOG.md` の #346 行と `docs/PLAN.md` バックログで
+    軽微なコンフリクト解消が必要になる見込み
+  - i18n の英語文言("Succeeded"/"Failed" 系)は chainviz-i18n のレビュー
+    対象として残っている(frontend 実装メモに記載のとおり)
+  - E2E(UI-LOG-02)の追加検証は実環境依存のため chainviz-qa の確認対象
