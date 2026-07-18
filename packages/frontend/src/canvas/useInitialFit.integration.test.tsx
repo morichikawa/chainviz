@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { App } from "../app/App.js";
+import type { ChainvizClient } from "../websocket/client.js";
 import { createMockClient } from "../websocket/mockData.js";
 import type { ClientFactory } from "../world-state/useWorldState.js";
 
@@ -63,6 +64,26 @@ afterEach(cleanup);
 
 function mockClientFactory(): ClientFactory {
   return (handlers) => createMockClient(handlers, { intervalMs: 0 });
+}
+
+/**
+ * collector に接続はできるが、スナップショットを一度も配信しないクライアント
+ * (collector 未応答・未接続相当)。`hasReceivedSnapshot` が false のままに
+ * なる状況を再現し、初期フィットが発火しないことを確認するために使う。
+ */
+function neverSnapshotClientFactory(): ClientFactory {
+  return (handlers): ChainvizClient => ({
+    connect() {
+      handlers.onStatusChange?.("connecting");
+      handlers.onStatusChange?.("connected");
+      // onSnapshot は決して呼ばない。
+    },
+    disconnect() {
+      handlers.onStatusChange?.("disconnected");
+    },
+    sendCommand: vi.fn(() => undefined),
+    getStatus: () => "connected",
+  });
 }
 
 /** React Flow のビューポート要素の transform 文字列。 */
@@ -140,6 +161,77 @@ describe("useInitialFit wiring (App 統合)", () => {
       await screen.findByTestId("infra-card-workbench-1");
 
       expect(viewportTransform(container)).toBe(fittedTransform);
+    },
+  );
+
+  it(
+    "初期フィット後、複数回のワールドステート更新(ワークベンチ追加を2回)を経ても" +
+      "再フィットは一度も起きない（1回きり ref ガードの確認。点検観点2）",
+    async () => {
+      const { container } = render(<App clientFactory={mockClientFactory()} />);
+
+      await screen.findByTestId("infra-card-lighthouse-1");
+
+      let fittedTransform: string | null = null;
+      await waitFor(() => {
+        fittedTransform = viewportTransform(container);
+        const scale = viewportScale(fittedTransform);
+        expect(scale).not.toBeNull();
+        expect(scale as number).toBeLessThan(RIBBON_ONLY_FIT_SCALE_THRESHOLD);
+      });
+
+      const label = screen.getByTestId("canvas-toolbar-workbench-label");
+      const addButton = screen.getByTestId("canvas-toolbar-add-workbench");
+
+      // 1回目の追加。id は決定的に "workbench-1"。
+      fireEvent.change(label, { target: { value: "wb-guard-1" } });
+      fireEvent.click(addButton);
+      await screen.findByTestId("infra-card-workbench-1");
+      expect(viewportTransform(container)).toBe(fittedTransform);
+
+      // 2回目の追加。id は "workbench-2"。新ノードの計測が再度回っても、
+      // ref ガードにより二重フィットは起きずカメラは動かない。
+      fireEvent.change(label, { target: { value: "wb-guard-2" } });
+      fireEvent.click(addButton);
+      await screen.findByTestId("infra-card-workbench-2");
+      expect(viewportTransform(container)).toBe(fittedTransform);
+    },
+  );
+
+  it(
+    "collector 未接続（スナップショット未受信）の間はキャンバスをフィット" +
+      "しない（hasReceivedSnapshot が false のまま。既定ビューポートで" +
+      "チェーンリボンが見える。点検観点3）",
+    async () => {
+      const { container } = render(
+        <App clientFactory={neverSnapshotClientFactory()} />,
+      );
+
+      // スナップショット到着前からチェーンリボンだけは常設（Issue #298）。
+      // これが描画されればキャンバス自体はマウントされている。
+      await screen.findByTestId("chain-ribbon-card");
+
+      // スナップショットが来ないのでワールドステートのカードは現れない。
+      expect(screen.queryByTestId("infra-card-lighthouse-1")).toBeNull();
+
+      // リボン1枚が計測完了しても、hasReceivedSnapshot が false のため
+      // 初期フィットは発火せず、既定ビューポート（等倍・原点）のまま。
+      // 「リボンだけに誤ってフィットして zoom が張り付く」旧不具合が
+      // 再発しないことの裏返しでもある（Issue #373）。
+      //
+      // 初期フィットはノード計測完了後の useEffect で走るため、リボンの
+      // DOM 出現直後に測ると「まだ発火していないだけ」の等倍を誤って
+      // 合格と読む恐れがある。gate を意図的に外すと本スタブ環境では
+      // 100ms 以内にリボン1枚へのフィット（scale≒0.91）が走ることを実測
+      // したうえで、それを確実に上回る待機を挟んでからビューポートを測る。
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const scale = viewportScale(viewportTransform(container));
+      // 未フィット時の既定 zoom は等倍（React Flow の defaultViewport=
+      // {x:0,y:0,zoom:1}）。仮に gate が壊れてリボン1枚にフィットして
+      // しまうとこのスタブ環境では scale≒0.91 になる（本ファイル冒頭の
+      // RIBBON_ONLY_FIT_SCALE_THRESHOLD の実測コメント参照）ため、等倍で
+      // あることを厳密に確認すればフィット未発火を判別できる。
+      expect(scale).toBe(1);
     },
   );
 });
