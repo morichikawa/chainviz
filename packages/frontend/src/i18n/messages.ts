@@ -562,6 +562,21 @@ export const messages = {
   "commsLog.category.environment": { ja: "環境", en: "Environment" },
   "commsLog.internal.call": { ja: "{method} ×{count}", en: "{method} ×{count}" },
   "commsLog.internal.latency": { ja: " · {ms}ms", en: " · {ms}ms" },
+  // 操作（RPC）エントリのレスポンス観測（Issue #352）。所要時間の表記は
+  // commsLog.internal.latency と揃える（" · {ms}ms"）。
+  "commsLog.operation.duration": { ja: " · {ms}ms", en: " · {ms}ms" },
+  // 成否アイコン（✓/✕）に付けるスクリーンリーダー向けの言語化テキスト
+  // （aria-label）。アイコン自体はUI文言ではないため i18n では扱わない。
+  "commsLog.operation.outcomeOk": { ja: "成功", en: "Succeeded" },
+  "commsLog.operation.outcomeError": { ja: "失敗", en: "Failed" },
+  "commsLog.operation.outcomeOkDuration": {
+    ja: "成功（{ms}ms）",
+    en: "Succeeded ({ms}ms)",
+  },
+  "commsLog.operation.outcomeErrorDuration": {
+    ja: "失敗（{ms}ms）",
+    en: "Failed ({ms}ms)",
+  },
   "commsLog.block.received": { ja: "ブロック #{number} を受信", en: "Received block #{number}" },
   "commsLog.block.receivedFirst": {
     ja: "ブロック #{number} を最初に受信",

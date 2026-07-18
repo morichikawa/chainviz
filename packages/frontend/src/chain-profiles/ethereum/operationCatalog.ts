@@ -90,7 +90,7 @@ export const ETHEREUM_OPERATION_CATALOG: ContractCatalogEntry[] = [
     },
     // ソース `profiles/ethereum/contracts/src/ChainvizToken.sol` の
     // symbol/decimals 定数と一致させる（Issue #219）。
-    token: { symbol: "CVZ", decimals: 18 },
+    token: { symbol: "CVZDEMO", decimals: 18 },
     constructorArgs: [{ name: "initialSupply", type: "uint", unit: "token" }],
     functions: [
       {

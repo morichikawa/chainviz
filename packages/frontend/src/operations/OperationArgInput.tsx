@@ -41,7 +41,7 @@ const ERROR_MESSAGE_KEY: Partial<Record<OperationArgField["type"], MessageKey>> 
  * 表示する（送信ボタンの無効化は呼び出し側の `canSubmit` が担う）。
  *
  * `field.unit === "token"` かつ `tokenInfo` がある引数は、トークン単位の
- * 10進入力として扱い、ラベルに単位（例:「（CVZ単位）」）を添えて表示する
+ * 10進入力として扱い、ラベルに単位（例:「（CVZDEMO単位）」）を添えて表示する
  * （Issue #219: 単位換算方式。実際の最小単位への変換は送信直前に
  * `convertOperationArgsToChainValues` が行うため、ここでは検証のみ）。
  */

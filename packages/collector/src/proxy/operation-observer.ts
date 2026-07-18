@@ -86,6 +86,15 @@ export function resolveOperationEdge(
       toNodeId: node.id,
       operation: observation.method,
       observedAt: observation.timestamp,
+      // outcome/durationMs は判定できた場合のみ入る（Issue #352）。undefined
+      // のときはフィールドごと省略し、shared 型の optional の意味（省略 =
+      // 判定不能/情報なし）と合わせる。
+      ...(observation.outcome !== undefined
+        ? { outcome: observation.outcome }
+        : {}),
+      ...(observation.durationMs !== undefined
+        ? { durationMs: observation.durationMs }
+        : {}),
     },
   };
 }

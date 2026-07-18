@@ -189,16 +189,16 @@ const ALICE_TX1 = txHash("a11ce01");
 const BOB_TX1 = txHash("b0b01");
 
 // C層拡張: ウォレットのトークン残高（Issue #168）のモック用サンプル。
-// TOKEN_CONTRACT（ChainvizToken/CVZ、decimals 18）は下の
+// TOKEN_CONTRACT（ChainvizToken/CVZDEMO、decimals 18）は下の
 // chainvizTokenContract() と同じアドレス定数を後方で宣言して共有する
 // （モジュール評価順の都合上、値そのものは下方の TOKEN_CONTRACT 定義を参照。
 // 参照するのは aliceWallet()/bobWallet() 呼び出し時＝モジュール初期化後の
 // ため問題ない）。
-/** Alice の CVZ 残高（1000.5 CVZ 相当。ETH 残高と異なる小数部にして
+/** Alice の CVZDEMO 残高（1000.5 CVZDEMO 相当。ETH 残高と異なる小数部にして
  * decimals 変換の桁を目視確認できるようにする）。 */
-const ALICE_CVZ_BALANCE_WEI = (10005n * 10n ** 17n).toString();
-/** Bob の CVZ 残高（250.25 CVZ 相当）。 */
-const BOB_CVZ_BALANCE_WEI = (25025n * 10n ** 16n).toString();
+const ALICE_CVZDEMO_BALANCE_WEI = (10005n * 10n ** 17n).toString();
+/** Bob の CVZDEMO 残高（250.25 CVZDEMO 相当）。 */
+const BOB_CVZDEMO_BALANCE_WEI = (25025n * 10n ** 16n).toString();
 /**
  * まだ観測されていない（またはカタログに無い）コントラクトのアドレス。
  * Bob の tokenBalances に混ぜ、ダングリングガード（対応する ContractEntity
@@ -246,10 +246,10 @@ function aliceWallet(): WalletEntity {
     // 新しい順: mempool 待機中の素の送金、復号済みのトークン呼び出し、
     // デプロイ（Issue #166: 「意味」優先の tx チップ表示を確認できる組み合わせ）。
     recentTxHashes: [ALICE_TX1, TOKEN_CALL_TX, TOKEN_DEPLOY_TX],
-    // Issue #168: CVZ トークン残高（ウォレットカードのトークン残高チップ・
+    // Issue #168: CVZDEMO トークン残高（ウォレットカードのトークン残高チップ・
     // ポップオーバー表示の確認用）。
     tokenBalances: [
-      { contractAddress: TOKEN_CONTRACT, amount: ALICE_CVZ_BALANCE_WEI },
+      { contractAddress: TOKEN_CONTRACT, amount: ALICE_CVZDEMO_BALANCE_WEI },
     ],
   };
 }
@@ -271,11 +271,11 @@ function bobWallet(): WalletEntity {
     // カタログ外コントラクトへの復号不能な呼び出しと、Counter のデプロイを
     // 含める（Issue #166: 未復号チップ・デプロイチップの確認用）。
     recentTxHashes: [BOB_TX1, UNKNOWN_CALL_TX, COUNTER_DEPLOY_TX],
-    // Issue #168: 正常に突き合わせられる CVZ 残高と、対応する ContractEntity
+    // Issue #168: 正常に突き合わせられる CVZDEMO 残高と、対応する ContractEntity
     // が存在しない（未観測/カタログ外）tokenBalance を両方含める。後者は
     // ダングリングガードで非表示になることの確認用（表示されてはいけない）。
     tokenBalances: [
-      { contractAddress: TOKEN_CONTRACT, amount: BOB_CVZ_BALANCE_WEI },
+      { contractAddress: TOKEN_CONTRACT, amount: BOB_CVZDEMO_BALANCE_WEI },
       {
         contractAddress: UNTRACKED_TOKEN_CONTRACT,
         amount: BOB_UNTRACKED_TOKEN_BALANCE_WEI,
@@ -463,7 +463,7 @@ const CHAINVIZ_TOKEN_SOURCE = [
   "///         実装している。",
   "contract ChainvizToken {",
   '    string public constant name = "Chainviz Token";',
-  '    string public constant symbol = "CVZ";',
+  '    string public constant symbol = "CVZDEMO";',
   "    uint8 public constant decimals = 18;",
   "",
   "    uint256 public totalSupply;",
@@ -493,7 +493,7 @@ const CHAINVIZ_TOKEN_SOURCE = [
 /** カタログ既知・トークンを持つコントラクト。Alice がデプロイした体で、
  * デプロイエッジ（Alice ウォレット → このカード）を確認できる。
  * `catalogKey`/`token.symbol` は実カタログ（profiles/ethereum/contracts/
- * catalog.json）の "ChainvizToken" / "CVZ" と完全に一致させる（Issue #167 で
+ * catalog.json）の "ChainvizToken" / "CVZDEMO" と完全に一致させる（Issue #167 で
  * 修正: 以前は "chainviz-token" / "CVT" という実環境と異なる値だった。値が
  * ずれると操作パネルの呼び出しタブの照合 §6.5 が実環境と噛み合わなくなる）。 */
 function chainvizTokenContract(): ContractEntity {
@@ -505,7 +505,7 @@ function chainvizTokenContract(): ContractEntity {
     catalogKey: "ChainvizToken",
     deployerAddress: ALICE_WALLET,
     createdByTxHash: TOKEN_DEPLOY_TX,
-    token: { symbol: "CVZ", decimals: 18 },
+    token: { symbol: "CVZDEMO", decimals: 18 },
     sourceCode: {
       fileName: "ChainvizToken.sol",
       language: "solidity",
@@ -548,7 +548,7 @@ function counterContract(): ContractEntity {
  *   ことを確認できる）
  *
  * `catalogKey`/`nft.symbol` は実カタログ（profiles/ethereum/contracts/
- * catalog.json）の "ChainvizNFT" / "CVN" と完全に一致させる
+ * catalog.json）の "ChainvizNFT" / "CVNDEMO" と完全に一致させる
  * （chainvizTokenContract の docstring と同じ理由）。
  */
 function chainvizNftContract(): ContractEntity {
@@ -560,7 +560,7 @@ function chainvizNftContract(): ContractEntity {
     catalogKey: "ChainvizNFT",
     deployerAddress: ALICE_WALLET,
     createdByTxHash: NFT_DEPLOY_TX,
-    nft: { symbol: "CVN" },
+    nft: { symbol: "CVNDEMO" },
     nftTokens: [
       { tokenId: "1", ownerAddress: ALICE_WALLET },
       { tokenId: "2", ownerAddress: BOB_WALLET },
@@ -627,18 +627,35 @@ function validatorNode(n: number): NodeEntity {
 export const MOCK_NETWORK_ID = "1337";
 
 /**
+ * `mockOperationObserved` の呼び出し順を数える通し番号。呼び出しごとの
+ * outcome/durationMs のパターンを決定的に変化させるために使う（Issue #352。
+ * `Math.random` ではなく `txSeq` 等と同じ「周期的な決定値」の流儀に揃える）。
+ */
+let operationObservedSeq = 0;
+
+/**
  * ワークベンチ → ノードの操作観測イベント（operationObserved）のモックを作る。
  * 実環境ではロギングプロキシが観測した RPC 呼び出しから collector が生成するが、
  * オフライン確認用に、workbench-alice が reth-node-1 へ RPC を送った瞬間を模す。
  * 揮発性イベントなのでスナップショットには含めず、live 差分としてのみ流す。
+ *
+ * `outcome`/`durationMs`（Issue #352: レスポンス観測）はオフラインで成否
+ * 両方の表示を確認できるよう、呼び出し順の通し番号から決定的に生成する
+ * （実測値ではない演出値）。7回に1回ほど `error` にし、`durationMs` は
+ * 3ms〜45ms の範囲で周期的に変化させる。
  */
 export function mockOperationObserved(operation: string): DiffEvent {
+  const seq = operationObservedSeq++;
+  const outcome: OperationEdge["outcome"] = seq % 7 === 6 ? "error" : "ok";
+  const durationMs = 3 + (seq % 15) * 3;
   const edge: OperationEdge = {
     kind: "operation",
     fromWorkbenchId: "workbench-alice",
     toNodeId: "reth-node-1",
     operation,
     observedAt: Date.now(),
+    outcome,
+    durationMs,
   };
   return { type: "operationObserved", edge };
 }
@@ -1050,8 +1067,8 @@ const MOCK_DEPLOYABLE_CATALOG: Record<
     nft?: { symbol: string };
   }
 > = {
-  ChainvizToken: { name: "ChainvizToken", token: { symbol: "CVZ", decimals: 18 } },
-  ChainvizNFT: { name: "ChainvizNFT", nft: { symbol: "CVN" } },
+  ChainvizToken: { name: "ChainvizToken", token: { symbol: "CVZDEMO", decimals: 18 } },
+  ChainvizNFT: { name: "ChainvizNFT", nft: { symbol: "CVNDEMO" } },
   Counter: { name: "Counter" },
 };
 

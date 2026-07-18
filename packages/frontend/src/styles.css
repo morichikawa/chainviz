@@ -1939,6 +1939,16 @@ button.mempool-panel__row:hover {
   color: var(--muted);
 }
 
+/* 操作（RPC）エントリの成否表示（Issue #352）。新色は作らず、tx の
+   included/failed 表示（上の .comms-log-entry__chip--tx-*）と同じ色を再利用する。 */
+.comms-log-entry__outcome--ok {
+  color: var(--synced);
+}
+
+.comms-log-entry__outcome--error {
+  color: #ffb4b4;
+}
+
 /* networkId 1件分の「色チップ + 名前」。凡例・ピアポップオーバー共通。 */
 .network-label {
   display: inline-flex;

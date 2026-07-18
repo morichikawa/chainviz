@@ -12,7 +12,7 @@ function contract(overrides: Partial<ContractEntity> = {}): ContractEntity {
     kind: "contract",
     address: `0x${"a".repeat(40)}`,
     chainType: "ethereum",
-    nft: { symbol: "CVN" },
+    nft: { symbol: "CVNDEMO" },
     ...overrides,
   };
 }

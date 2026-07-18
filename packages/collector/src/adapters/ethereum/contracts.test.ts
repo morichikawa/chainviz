@@ -6,7 +6,7 @@ const catalog: ContractCatalog = {
   ChainvizToken: {
     name: "ChainvizToken",
     abi: [],
-    token: { symbol: "CVZ", decimals: 18 },
+    token: { symbol: "CVZDEMO", decimals: 18 },
   },
   Counter: { name: "Counter", abi: [] },
 };
@@ -61,7 +61,7 @@ describe("ContractTracker.recordDeployment", () => {
       createdByTxHash: "0xtx1",
       name: "ChainvizToken",
       catalogKey: "ChainvizToken",
-      token: { symbol: "CVZ", decimals: 18 },
+      token: { symbol: "CVZDEMO", decimals: 18 },
     });
   });
 
@@ -153,7 +153,7 @@ describe("ContractTracker.registerDeployment (after detection)", () => {
       createdByTxHash: "0xtx1",
       name: "ChainvizToken",
       catalogKey: "ChainvizToken",
-      token: { symbol: "CVZ", decimals: 18 },
+      token: { symbol: "CVZDEMO", decimals: 18 },
     });
     expect(tracker.get("0xnew")).toEqual(updated);
   });
@@ -220,7 +220,7 @@ describe("ContractTracker.registerDeployment (after detection)", () => {
     // （Counter）へ切り替えても、前回の token フィールドが残留する。トークン
     // 付きコントラクトを別のトークン無しコントラクトのキーで再登録するのは
     // 通常運用では発生しない経路のため、現状の挙動をそのまま固定する。
-    expect(updated?.token).toEqual({ symbol: "CVZ", decimals: 18 });
+    expect(updated?.token).toEqual({ symbol: "CVZDEMO", decimals: 18 });
   });
 
   it("ignores and logs an empty-string catalog key", () => {
@@ -389,7 +389,7 @@ describe("ContractTracker address casing normalization (Issue #161 review follow
       createdByTxHash: "0xtx1",
       name: "ChainvizToken",
       catalogKey: "ChainvizToken",
-      token: { symbol: "CVZ", decimals: 18 },
+      token: { symbol: "CVZDEMO", decimals: 18 },
     });
     // 同一コントラクトとして 1 件だけ追跡されている（casing 違いで別アドレス
     // として二重登録されていない）。

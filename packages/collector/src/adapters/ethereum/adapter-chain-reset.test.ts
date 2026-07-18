@@ -24,7 +24,7 @@ const testCatalog: ContractCatalog = {
   ChainvizToken: {
     name: "ChainvizToken",
     abi: [],
-    token: { symbol: "CVZ", decimals: 18 },
+    token: { symbol: "CVZDEMO", decimals: 18 },
   },
 };
 

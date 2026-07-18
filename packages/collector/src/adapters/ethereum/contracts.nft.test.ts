@@ -16,12 +16,12 @@ const catalog: ContractCatalog = {
   ChainvizNFT: {
     name: "ChainvizNFT",
     abi: [],
-    nft: { symbol: "CVN" },
+    nft: { symbol: "CVNDEMO" },
   },
   ChainvizToken: {
     name: "ChainvizToken",
     abi: [],
-    token: { symbol: "CVZ", decimals: 18 },
+    token: { symbol: "CVZDEMO", decimals: 18 },
   },
   Counter: { name: "Counter", abi: [] },
 };
@@ -35,7 +35,7 @@ describe("ContractTracker nft metadata transcription (Issue #315)", () => {
       deployerAddress: "0xdeployer",
       createdByTxHash: "0xtx1",
     });
-    expect(entity?.nft).toEqual({ symbol: "CVN" });
+    expect(entity?.nft).toEqual({ symbol: "CVNDEMO" });
     expect(entity?.token).toBeUndefined();
   });
 
@@ -58,7 +58,7 @@ describe("ContractTracker nft metadata transcription (Issue #315)", () => {
       createdByTxHash: "0xtx1",
     });
     const updated = tracker.registerDeployment("0xnft", "ChainvizNFT");
-    expect(updated?.nft).toEqual({ symbol: "CVN" });
+    expect(updated?.nft).toEqual({ symbol: "CVNDEMO" });
   });
 });
 
