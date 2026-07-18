@@ -85,6 +85,23 @@ test("UI-LOG-02: 送金操作の実行後に「操作（RPC）」エントリが
     });
     await expect(sendRawTxEntries.first()).toBeVisible();
   });
+
+  await test.step("そのエントリに所要時間(ms)と成功表示が含まれる（レスポンス観測。Issue #352）", async () => {
+    const sendRawTxEntry = commsLogEntriesOf(page, "operation")
+      .filter({ hasText: "eth_sendRawTransaction" })
+      .first();
+
+    // 所要時間: "12ms" のような数値+ms表記が本文に含まれる。
+    await expect(sendRawTxEntry).toContainText(/\d+ms/);
+
+    // 成功表示: 実環境の送金RPCは成功する前提（失敗ケースはユニット
+    // テストで担保し、ここでは検証しない）。成否アイコンは
+    // `comms-log-entry-outcome` に付く aria-label で言語化されている。
+    const outcome = sendRawTxEntry.getByTestId("comms-log-entry-outcome");
+    await expect(outcome).toBeVisible();
+    const ariaLabel = await outcome.getAttribute("aria-label");
+    expect(ariaLabel).toContain("成功");
+  });
 });
 
 test("UI-LOG-03: ブロック進行で「ブロック受信」エントリが増える", async ({ page }) => {
