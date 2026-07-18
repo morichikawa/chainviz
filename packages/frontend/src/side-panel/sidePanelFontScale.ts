@@ -16,7 +16,13 @@ export const SIDE_PANEL_FONT_SCALE_STEPS = [0.85, 1, 1.15, 1.3, 1.5] as const;
 
 export const SIDE_PANEL_DEFAULT_FONT_SCALE = 1;
 
-/** 与えられた値に最も近い刻みのインデックスを返す。 */
+/**
+ * 与えられた値に最も近い刻みのインデックスを返す。厳密な同距離（タイ）の
+ * 場合は strict `<` 比較のため、先に見つかった（配列の若い= より小さい）
+ * 刻みを採用する。ただし十進の中点が IEEE754 で厳密なタイになるかは値に
+ * よる（例: 1.075 は |1-1.075| === |1.15-1.075| で真のタイ、1.4 はタイに
+ * ならず 1.3 が僅かに近い）。詳細は sidePanelFontScale.test.ts を参照。
+ */
 function nearestFontScaleStepIndex(value: number): number {
   let bestIndex = 0;
   let bestDiff = Number.POSITIVE_INFINITY;

@@ -99,23 +99,30 @@ describe("loadSidePanelFontScale", () => {
     expect(loadSidePanelFontScale(storage)).toBe(1.5);
   });
 
-  it("snaps to the earlier (smaller) step on an exact tie between two steps", () => {
-    // 1.4 は 1.3 からも 1.5 からも同じ距離(0.1)。実装は先に見つかった
-    // （配列の若い= より小さい）刻みを採用する。この挙動を固定して記録する。
+  it("snaps 1.4 to 1.3 because 1.3 is the floating-point-nearest step (not a tie)", () => {
+    // 1.4 は十進では 1.3 と 1.5 の中点に見えるが、IEEE754 上は
+    // |1.3 - 1.4| = 0.09999999999999987 < |1.5 - 1.4| = 0.10000000000000009 で
+    // 1.3 が厳密に近い。これはタイではなく、先発優先ルールは関与しない。
     const storage = memoryStorage({ [SIDE_PANEL_FONT_SCALE_STORAGE_KEY]: "1.4" });
     expect(loadSidePanelFontScale(storage)).toBe(1.3);
   });
 
-  it("snaps values near each internal boundary to the floating-point-nearest step", () => {
-    // 刻みの中点付近の値は、十進では両隣と等距離に見えても IEEE754 では
-    // 厳密な同距離(タイ)にならない。どちらへ丸まるかは浮動小数点の丸め
-    // 次第で「必ず小さい側」ではない(例: 0.925 は 1.0 側へ丸まる)。
-    // 実装の実挙動を各境界で固定する(nearestFontScaleStepIndex の帰結)。
+  it("snaps a true floating-point tie (1.075) to the earlier (smaller) step", () => {
+    // 1.075 は IEEE754 上 |1 - 1.075| === |1.15 - 1.075|
+    // (両者とも 0.07499999999999996)で厳密なタイになる。この場合のみ
+    // nearestFontScaleStepIndex の strict `<` 比較による先発優先が効き、
+    // 先に見つかった(配列の若い= より小さい)刻み 1.0 が選ばれる。
+    const storage = memoryStorage({ [SIDE_PANEL_FONT_SCALE_STORAGE_KEY]: "1.075" });
+    expect(loadSidePanelFontScale(storage)).toBe(1);
+  });
+
+  it("snaps other near-boundary values to the floating-point-nearest step", () => {
+    // 中点付近でも大半は厳密なタイにならず(1.075 のみがタイ)、どちらへ
+    // 丸まるかは IEEE754 の実距離で決まる。「必ず小さい側」ではない
+    // (例: 0.925 は 1.0 側が僅かに近い)。実挙動を各境界で固定する。
     const nearestStep: [string, number][] = [
-      ["0.925", 1], // 0.85 と 1.0 の中点付近 → 1.0 が僅かに近い
-      ["1.075", 1], // 1.0 と 1.15 の中点付近 → 1.0 が僅かに近い
-      ["1.225", 1.3], // 1.15 と 1.3 の中点付近 → 1.3 が僅かに近い
-      ["1.4", 1.3], // 1.3 と 1.5 の中点付近 → 1.3 が僅かに近い
+      ["0.925", 1], // |1 - 0.925| < |0.85 - 0.925| で 1.0 が僅かに近い
+      ["1.225", 1.3], // |1.3 - 1.225| < |1.15 - 1.225| で 1.3 が僅かに近い
     ];
     for (const [raw, expected] of nearestStep) {
       const storage = memoryStorage({ [SIDE_PANEL_FONT_SCALE_STORAGE_KEY]: raw });

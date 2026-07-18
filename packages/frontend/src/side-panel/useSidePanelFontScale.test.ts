@@ -125,7 +125,8 @@ describe("useSidePanelFontScale", () => {
   });
 
   it("snaps a stored non-step value to the nearest step on mount", () => {
-    // 1.4 は同点タイで若い刻み 1.3 に丸められる(loadSidePanelFontScale の帰結)。
+    // 1.4 は IEEE754 上 1.3 が僅かに近いため 1.3 へスナップされる
+    // (タイではない。loadSidePanelFontScale の帰結)。
     const storage = memoryStorage({ [SIDE_PANEL_FONT_SCALE_STORAGE_KEY]: "1.4" });
     const { result } = renderHook(() => useSidePanelFontScale(storage));
     expect(result.current.scale).toBe(1.3);
