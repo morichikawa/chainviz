@@ -969,6 +969,13 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       経路では発生しない。通常運用では発生しないが、Issue #369で
       「未用意のprojectを指させる」使い方が可能になったため顕在化しうる)
       [#385](https://github.com/morichikawa/chainviz/issues/385)
+- [ ] UI-B-06(chain-ribbon.spec.ts)がUI-B-05との併走時に間欠的にflakyになる
+      (Issue #351の最終QA検証中に偶発的に観測。単独実行では安定合格。
+      #351のコード変更には起因せず、対象ブロックが表示窓から流れ出るまで
+      の時間との既存由来のタイミング競合(issue-298.mdに既出)が、併走時の
+      負荷で顕在化しやすくなると考えられる。Issue #346と同種の問題であり
+      対応方針を踏襲できないか検討する)
+      [#388](https://github.com/morichikawa/chainviz/issues/388)
 
 ## 運用ルール（全ステップ共通）
 
