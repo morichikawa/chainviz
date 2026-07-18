@@ -73,6 +73,13 @@ function makeFakePage(behaviors: Record<string, ButtonBehavior>): FakePage {
             ? Promise.reject(new Error(`click failed: ${entityId}`))
             : Promise.resolve();
         }),
+        // fitCanvasView(Issue #373)がクリック前に対象として渡す削除ボタン
+        // 自身の boundingBox。このテストの主眼は削除フローとの呼び出し順序
+        // であり、視野判定そのものの分岐は viewport.unit.test.ts で確認済み
+        // なので、常に視野内(x=0)を返し1回目のフィットで即座に通過させる。
+        boundingBox: vi
+          .fn()
+          .mockResolvedValue({ x: 0, y: 0, width: 100, height: 40 }),
       };
       return locator as unknown as Locator;
     }
@@ -98,7 +105,16 @@ function makeFakePage(behaviors: Record<string, ButtonBehavior>): FakePage {
 
   const goto = vi.fn().mockResolvedValue(undefined);
   const close = vi.fn().mockResolvedValue(undefined);
-  const page = { goto, close, getByTestId, locator } as unknown as Page;
+  // fitCanvasView(Issue #373)が視野内判定に使う viewportSize。削除ボタンの
+  // boundingBox(常に x=0,y=0)を包含する固定サイズを返す。
+  const viewportSize = vi.fn(() => ({ width: 1280, height: 720 }));
+  const page = {
+    goto,
+    close,
+    getByTestId,
+    locator,
+    viewportSize,
+  } as unknown as Page;
 
   return {
     page,

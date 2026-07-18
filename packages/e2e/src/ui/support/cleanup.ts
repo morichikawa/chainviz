@@ -70,7 +70,9 @@ export async function removeCardIfPresent(
  * し、対応する `infra-card-<entityId>` が実際に消える(`count === 0`)まで
  * `timeoutMs` を上限に待つ。クリック前に `fitCanvasView` で視野を確保する
  * (Issue #373。安全網はコンテナ残留に直結するため、ビューポート外クリックの
- * 永久リトライへの頑健化の価値が高い。docs/worklog/issue-373.md 参照)。
+ * 永久リトライへの頑健化の価値が高い。削除ボタン自体を対象として渡し、
+ * 実際に視野内へ入ったことを確認してからクリックする。
+ * docs/worklog/issue-373.md 参照)。
  */
 export async function removeInfraCardIfPresent(
   page: Page,
@@ -81,7 +83,7 @@ export async function removeInfraCardIfPresent(
   await removeCardIfPresent({
     waitForButton: () => removeButton.waitFor({ timeout: timeoutMs }),
     click: async () => {
-      await fitCanvasView(page);
+      await fitCanvasView(page, removeButton);
       await removeButton.click();
     },
     waitForRemoved: () =>
