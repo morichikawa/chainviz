@@ -957,6 +957,14 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       collector(4125/4126)とworkbenchのRPC向き先が一致しない環境結合。
       着手時はまずchainviz-designerによる設計を先行させる)
       [#381](https://github.com/morichikawa/chainviz/issues/381)
+- [ ] addWorkbench(createAndStart)でcontainer.start()失敗時に作成済み
+      コンテナがorphanとして残留する
+      (Issue #369の最終QA検証中に偶発的に観測。存在しないネットワークを
+      指定した場合等にstartが失敗しても、作成済みのCreated状態コンテナが
+      削除されない。addNodeは事前にネットワーク存在確認をするためこの
+      経路では発生しない。通常運用では発生しないが、Issue #369で
+      「未用意のprojectを指させる」使い方が可能になったため顕在化しうる)
+      [#385](https://github.com/morichikawa/chainviz/issues/385)
 
 ## 運用ルール（全ステップ共通）
 
