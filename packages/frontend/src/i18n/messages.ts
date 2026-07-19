@@ -631,6 +631,13 @@ export const messages = {
   "hashDemo.field.parentHash": { ja: "親ブロックのハッシュ", en: "Parent block's hash" },
   "hashDemo.field.data": { ja: "データ", en: "Data" },
   "hashDemo.compute": { ja: "keccak256 でハッシュ化", en: "Hashed with keccak256" },
+  // Issue #406: f(x) の x に何が入るかを明示する行。「x = 」自体は数式記号
+  // として JSX 側でハードコードするため、ここには本文（項目名の連結）だけを
+  // 持たせる。項目名はすぐ上の hashDemo.field.* の文言と完全一致させる。
+  "hashDemo.computeInput": {
+    ja: "ブロック番号 | 親ブロックのハッシュ | データ（上の3項目をこの順につなげた文字列です）",
+    en: "block number | parent block's hash | data (the three fields above, joined in this order)",
+  },
   "hashDemo.blockHash": { ja: "このブロックのハッシュ", en: "This block's hash" },
   "hashDemo.badge.valid": { ja: "有効", en: "Valid" },
   "hashDemo.badge.invalid": {
@@ -680,6 +687,16 @@ export const messages = {
   "sigDemo.compute.verify": {
     ja: "署名からアドレスを復元（ecrecover）",
     en: "Recover the address from the signature (ecrecover)",
+  },
+  // Issue #406: f(x) / f⁻¹(x) の x に何が入るかを明示する行。「x = 」自体は
+  // 数式記号として JSX 側でハードコードするため、ここには本文だけを持たせる。
+  "sigDemo.computeInput.sign": {
+    ja: "keccak256(送信者 | 宛先 | 金額)。内容をまず keccak256 でハッシュ化し、そのハッシュに署名します。",
+    en: "keccak256(sender | to | amount). The content is hashed with keccak256 first, and that hash is what gets signed.",
+  },
+  "sigDemo.computeInput.verify": {
+    ja: "届いた署名 と keccak256(送信者 | 宛先 | 金額)。ハッシュは届いた内容から計算し直します。",
+    en: "the received signature and keccak256(sender | to | amount), recomputed from the content that arrived.",
   },
   "sigDemo.verifyNote": {
     ja: "復元に秘密鍵は不要です。誰でも検証できます。",
