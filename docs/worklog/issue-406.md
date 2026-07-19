@@ -181,3 +181,106 @@ a11y(aria-hidden の扱い):
   単体の aria-hidden 残置は実装時にスクリーンリーダーの実挙動で判断)
 - 文言初稿の言い回し調整(意味を変えない範囲で裁量。英語は
   chainviz-i18n レビューで確定)
+
+### 2026-07-19 Issue #406 実装設計メモ（frontend）
+
+- 担当: frontend
+- ブランチ: issue-406-hash-input-clarity
+
+#### データフロー・関数構成
+
+- `HashChainBlockRow.tsx` / `SignatureDemoView.tsx` はいずれもロジック
+  自体は変更しない（`hashChainDemo.ts` / `signatureDemo.ts` の計算は
+  そのまま）。変更は表示（JSX + i18n キー + glossary アンカー）のみ。
+- 処理帯 (`.hash-chain-demo__compute` / `.signature-demo__compute`) を
+  「アルゴリズム名の行」+「x = ... の行」の2行に分ける。各行を
+  `*-compute-row` という新設の子要素でラップし、親要素は
+  `flex-direction: column` にする（各行内は既存どおり横並び）。
+- `f(x)` / `f⁻¹(x)` の丸括弧トークンは既存どおり i18n を経由しない
+  ハードコードのリテラルとして扱う。x 行側の「x =」も同じ流儀に揃える
+  （数式記号であり ja/en で変わらないため、`hashDemo.computeInput` 等の
+  文言側には「x = 」を含めず、本文（項目名の連結)のみを持たせる）。
+  「x =」トークンと `f(x)` トークンはどちらも装飾記号として
+  `aria-hidden="true"` を個別に付ける一方、処理帯コンテナ自体の
+  `aria-hidden` は外す（UX設計 §3 a11y 節のとおり、アルゴリズム名・x行の
+  説明文言は実コンテンツとして読み上げ対象に残す）。
+- keccak256 へのアンカーは既存の `withTermAnchor(text, "keccak256",
+  "keccak256")` をそのまま使う。対象は次の4箇所（UX設計 §4 のとおり）:
+  `hashDemo.compute` の表示文言、`sigDemo.computeInput.sign` の表示文言、
+  `sigDemo.computeInput.verify` の表示文言、`sigDemo.addressNote` の
+  表示文言。
+- glossary は `glossary/ethereum/terms/c-transaction.yaml` に `keccak256`
+  エントリを新設し、`hash` / `signature` の `relatedTerms` に
+  `keccak256` を追加する（相互リンク）。`packages/frontend/src/glossary/
+  data.ts` は既存ファイルを `?raw` import するだけなので変更不要。
+
+#### 影響を受ける既存テストの扱い
+
+- `HashChainBlockRow.tsx` に `GlossaryTerm` を経由するアンカーが増える
+  ため、`useGlossary()` は `GlossaryProvider` 無しでは例外を投げる。
+  これまで `GlossaryProvider` 無しでレンダーしていた
+  `HashChainDemoView.test.tsx` / `.a11y.test.tsx` / `.i18n.test.tsx` の
+  `renderView()` を、`SignatureDemoView` 側の既存テストと同じ
+  `<GlossaryProvider glossary={{}}>` でラップする形に揃える
+  （空 glossary でも `GlossaryTerm` は「用語未登録」表示にフォール
+  バックするため、アンカー自体の描画は壊れない）。
+- `SignatureDemoView.a11y.test.tsx` の「処理帯コンテナが aria-hidden」
+  という既存アサーションは、今回の a11y 修正（コンテナの aria-hidden を
+  外す）の意図的な破壊的変更にあたるため、「コンテナは aria-hidden
+  ではない」「装飾トークン（`*-compute-fn`）は aria-hidden」という
+  アサーションに更新する。
+
+#### 新規テスト
+
+- x 行の ja/en 表示（`HashChainDemoView.i18n.test.tsx` /
+  `SignatureDemoView.i18n.test.tsx` に追記）
+- keccak256 アンカー4箇所の存在（`HashChainDemoView` 用に新規
+  `HashChainDemoView.glossaryAnchor.test.tsx` を追加。`SignatureDemoView`
+  は既存の `.glossaryAnchor.test.tsx` に追記して署名側・検証側・
+  addressNote の3箇所を確認）
+- aria-hidden 回帰（コンテナが読み上げ対象に戻ったこと。既存の
+  `.a11y.test.tsx` に追記）
+
+### 2026-07-19 Issue #406 実装完了（frontend）
+
+- 担当: frontend
+- ブランチ: issue-406-hash-input-clarity
+- 内容: UX設計・実装設計メモのとおり実装した。
+  - `hashDemo.computeInput` / `sigDemo.computeInput.sign` /
+    `sigDemo.computeInput.verify` を `messages.ts` に追加。
+  - `HashChainBlockRow.tsx` の処理帯を2行構成にし、2行目に x の中身を
+    表示。1行目のアルゴリズム名（`keccak256 でハッシュ化`）に
+    `withTermAnchor` で keccak256 の用語集アンカーを追加。
+  - `SignatureDemoView.tsx` の署名側・検証側それぞれの処理帯にも同様に
+    x 行を追加し、`sigDemo.addressNote` にも keccak256 アンカーを追加
+    （既存文中の「keccak256」をアンカー化）。
+  - `.hash-chain-demo__compute` / `.signature-demo__compute` を
+    `aria-hidden` 無しの2行 flex-column レイアウトへ変更
+    （`styles.css`）。装飾記号の `f(x)` / `f⁻¹(x)` / `x =` トークンのみ
+    `aria-hidden="true"` を個別に付けた。
+  - `glossary/ethereum/terms/c-transaction.yaml` に `keccak256` エントリを
+    新設し、`hash` / `signature` の `relatedTerms` に相互リンクを追加。
+  - `docs/ARCHITECTURE.md` §15.3・§15.4・§16.4 を実装内容に合わせて更新。
+- 決定事項・注意点:
+  - 「x =」というトークンは `f(x)` と同じくハードコードのリテラル扱いに
+    した（数式記号であり ja/en で変わらないため）。`messages.ts` の
+    `computeInput` 系キーには「x = 」を含めず本文だけを持たせている。
+  - `HashChainBlockRow.tsx` に `GlossaryTerm` 経由のアンカーが増えた
+    ことで `useGlossary()` が `GlossaryProvider` 無しでは例外を投げる
+    ようになったため、既存の `HashChainDemoView.test.tsx` /
+    `.a11y.test.tsx` / `.i18n.test.tsx` の `renderView()` を
+    `GlossaryProvider` でラップするよう更新した（`SignatureDemoView`
+    側は元々ラップ済みだったため変更不要）。
+  - `withTermAnchor` で文中の語をアンカー化すると、その文言はDOM上
+    複数要素に分割される。既存の `screen.getByText("keccak256 でハッシュ
+    化")` のような完全一致の文字列マッチャーはこの分割で見つからなく
+    なる（testing-library はデフォルトで要素をまたいだテキスト連結を
+    照合しない）。`element.textContent === "..."` を使うカスタム
+    マッチャー関数（`ContractPopover.test.tsx` に既存の前例あり）へ
+    書き換えて対処した。同種の変更を他画面に入れる際も同じ罠に注意。
+  - `docs/PLAN.md` には Issue #406 に対応するチェックボックス行が
+    見当たらなかった（#401/#402/#391 は着手前に統括が追記していた前例が
+    あるが、#406 には無い）。実装担当の判断で新規追加するのは越権と
+    考え、今回は追加していない。統括側で要否を判断してほしい。
+  - `pnpm --filter @chainviz/frontend build` / `test`（239 files / 3001
+    tests）、`pnpm build`（全パッケージ）を実行しすべて通過を確認済み。
