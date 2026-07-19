@@ -652,6 +652,82 @@ export const messages = {
     ja: "実際のブロックはここに出した項目のほかにも多くの情報（state root など）を含み、決められた形式（RLP）で並べてからハッシュ化します。この砂場では「中身が変わればハッシュが変わる」ことに絞って簡略化しています。",
     en: "A real block header contains many more fields than shown here (such as the state root) and is encoded in a fixed format (RLP) before hashing. This sandbox is simplified down to the single idea that changing the contents changes the hash.",
   },
+  // --- 「署名と検証のしくみ」デモ（kind: "signatureDemo"。Issue #402。
+  // docs/worklog/issue-402.md UX設計 §5。英語版は初稿で、
+  // chainviz-i18n のレビュー対象） ---
+  "sigDemo.open": { ja: "署名と検証のしくみを試す", en: "Try how signing and verification work" },
+  "sigDemo.title": { ja: "署名と検証のしくみ", en: "How signing and verification work" },
+  "sigDemo.intro": {
+    ja: "ここは学習用の砂場です。実際のチェーンには影響しません。ワークベンチから送金するとき、裏側ではこれが起きています。",
+    en: "This is a learning sandbox. It does not affect the real chain. This is what happens behind the scenes when you send a transfer from the workbench.",
+  },
+  "sigDemo.zone.workbench": { ja: "ワークベンチ（署名する側）", en: "Workbench (the signer)" },
+  "sigDemo.zone.node": { ja: "ノード（検証する側）", en: "Node (the verifier)" },
+  "sigDemo.privateKey": { ja: "秘密鍵（砂場専用）", en: "Private key (sandbox only)" },
+  "sigDemo.privateKeyNote": {
+    ja: "実際の秘密鍵は画面に出しません。これは砂場専用の使い捨ての鍵です。",
+    en: "Real private keys are never shown on screen. This is a disposable key used only in this sandbox.",
+  },
+  "sigDemo.addressNote": {
+    ja: "アドレスは秘密鍵から導出されます（秘密鍵→公開鍵→その keccak256 ハッシュの末尾20バイト）。",
+    en: "The address is derived from the private key (private key → public key → the last 20 bytes of its keccak256 hash).",
+  },
+  "sigDemo.field.from": { ja: "送信者（from）", en: "Sender (from)" },
+  "sigDemo.field.to": { ja: "宛先", en: "To" },
+  "sigDemo.field.amount": { ja: "金額", en: "Amount" },
+  "sigDemo.field.receivedSignature": { ja: "届いた署名", en: "Signature received" },
+  "sigDemo.compute.sign": { ja: "secp256k1 で署名", en: "Signed with secp256k1" },
+  "sigDemo.compute.verify": {
+    ja: "署名からアドレスを復元（ecrecover）",
+    en: "Recover the address from the signature (ecrecover)",
+  },
+  "sigDemo.verifyNote": {
+    ja: "復元に秘密鍵は不要です。誰でも検証できます。",
+    en: "Recovery needs no private key. Anyone can verify it.",
+  },
+  "sigDemo.signature": { ja: "署名データ", en: "Signature" },
+  "sigDemo.recovered": { ja: "復元されたアドレス", en: "Recovered address" },
+  "sigDemo.transport": {
+    ja: "内容と署名がセットでノードへ届きます。",
+    en: "The content and the signature travel to the node together.",
+  },
+  "sigDemo.tamperHint": {
+    ja: "届いた内容を書き換えてみてください（通信の途中で改ざんされた想定です）。",
+    en: "Try editing the content that arrived (imagine it was tampered with in transit).",
+  },
+  "sigDemo.badge.valid": {
+    ja: "有効: 復元されたアドレスが送信者と一致",
+    en: "Valid: the recovered address matches the sender",
+  },
+  "sigDemo.badge.invalid": {
+    ja: "無効: 復元されたアドレスが送信者と一致しません",
+    en: "Invalid: the recovered address does not match the sender",
+  },
+  "sigDemo.resignAttacker": { ja: "攻撃者の鍵で署名し直す", en: "Re-sign with the attacker's key" },
+  "sigDemo.resignAttackerResult": {
+    ja: "署名そのものは正しくなりましたが、復元されるのは攻撃者のアドレスです。送信者（Alice）にはなりすませません。",
+    en: "The signature itself is now mathematically correct, but the recovered address is the attacker's. It cannot impersonate the sender (Alice).",
+  },
+  "sigDemo.resignAlice": { ja: "Alice が署名し直す（正しく送り直す）", en: "Alice re-signs (resend correctly)" },
+  "sigDemo.resignAliceResult": {
+    ja: "内容を変えて有効な署名を作れるのは、秘密鍵を持つ本人だけです。",
+    en: "Only the person holding the private key can change the content and still produce a valid signature.",
+  },
+  "sigDemo.reset": { ja: "最初に戻す", en: "Reset" },
+  "sigDemo.whoVerifies": {
+    ja: "実際のチェーンでは、この検証は tx を受け取った各ノードが mempool に入れる前に行います。chainviz（collector）はこの検証は行わず、ノードが報告する送信者（from）をそのまま表示しています。",
+    en: "On a real chain, each node that receives a tx performs this verification before admitting it to the mempool. chainviz (the collector) does not perform this verification itself; it simply displays the sender (from) that each node reports.",
+  },
+  "sigDemo.otherVerifications": {
+    ja: "チェーンには署名検証のほかにも検証があります。ブロックの中身の検証（実行クライアントが行い、合意クライアントが Engine API 経由で依頼する）と、バリデーターによるブロックへの投票（attestation）です。chainviz では validator の投票内容までは観測していません。",
+    en: "The chain has other kinds of verification beyond signature checking: validating a block's contents (done by the execution client, requested by the consensus client via the Engine API), and validators voting on blocks (attestation). chainviz does not observe the contents of validator votes.",
+  },
+  "sigDemo.otherVerifications.attestation": { ja: "attestation", en: "attestation" },
+  "sigDemo.otherVerifications.engineApi": { ja: "Engine API", en: "Engine API" },
+  "sigDemo.simplifiedNote": {
+    ja: "実際の tx はここに出した項目のほかにも多くの情報（nonce・gas など）を含み、決められた形式（RLP）で並べてから署名します。この砂場では「内容と署名が結びついている」ことに絞って簡略化しています。",
+    en: "A real tx contains many more fields than shown here (such as nonce and gas) and is encoded in a fixed format (RLP) before signing. This sandbox is simplified down to the single idea that the content and the signature are bound together.",
+  },
 } as const satisfies Record<string, Localized>;
 
 export type MessageKey = keyof typeof messages;

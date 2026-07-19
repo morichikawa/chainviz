@@ -13,7 +13,9 @@ signature:
       パスワードではなく署名の検証で確かめる。署名はチェーンに送る前に
       ウォレット（chainviz ではワークベンチ）の中で完結し、秘密鍵は外に
       出ない。chainviz では tx チップのライフサイクル表示の1段目として
-      見え、この時点ではまだチェーンに一切触れていない。
+      見え、この時点ではまだチェーンに一切触れていない。実際に署名と
+      検証（ecrecover）を計算しながら試せる「署名と検証のしくみ」砂場
+      デモが、tx ライフサイクル表示・送金フォームからそれぞれ開ける。
     en: >-
       Proof, via a private key, that the account owner sent this. The chain
       verifies account ownership by checking a signature rather than a
@@ -21,8 +23,11 @@ signature:
       chainviz) before anything is sent to the chain, and the private key
       never leaves it. chainviz shows this as the first stage of the tx
       lifecycle popover, at a point where nothing has touched the chain yet.
+      A "how signing and verification work" sandbox demo, where you can
+      actually compute a signature and its verification (ecrecover), can be
+      opened from both the tx lifecycle display and the transfer form.
   layer: c-transaction
-  relatedTerms: [transaction, eoa, workbench]
+  relatedTerms: [transaction, eoa, workbench, hash]
 
 block:
   name:

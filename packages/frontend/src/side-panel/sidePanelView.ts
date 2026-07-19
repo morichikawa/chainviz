@@ -38,4 +38,14 @@ export type SidePanelView =
        * 中身（`HashChainDemoView`）は開くたびに初期状態から始まる。
        */
       kind: "hashChainDemo";
+    }
+  | {
+      /**
+       * 「署名と検証のしくみ」デモ（Issue #402。`docs/worklog/issue-402.md`
+       * UX設計・実装設計メモ）。`hashChainDemo` と同じく実チェーンから
+       * 完全に独立した学習用の疑似データ（砂場）を扱うため、対象を指す
+       * データは持たない。中身（`SignatureDemoView`）は開くたびに
+       * 初期状態から始まる。
+       */
+      kind: "signatureDemo";
     };

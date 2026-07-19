@@ -1,5 +1,6 @@
 import { type FormEvent, useState } from "react";
 import { useLanguage } from "../i18n/LanguageProvider.js";
+import { useOptionalSidePanel } from "../side-panel/SidePanelContext.js";
 import { AddressField } from "./AddressField.js";
 import { parseEtherToWei } from "./etherAmount.js";
 import { isValidOperationArgValue } from "./operationArgValidation.js";
@@ -20,9 +21,16 @@ export interface TransferFormProps {
  * と同じ`0x` + 40桁16進の形式チェックを行い、無効な間は送信ボタンを無効化して
  * エラー文言を表示する（Issue #236。金額欄と同じ「未入力はエラー表示せず
  * ボタン無効化のみ、非空の無効値はエラー表示」というパターンに揃える）。
+ *
+ * フォーム下部・送信ボタンの直前の小リンク（Issue #402）は「今からする
+ * 送金の裏側」を開く文脈導線（UX設計 `docs/worklog/issue-402.md` §3導線2。
+ * 最も文脈の強い導線として送信操作そのものに隣接させる）。
+ * `useOptionalSidePanel()` を使う（`GlossaryTerm` と同じパターン。
+ * `SidePanelProvider` の外でレンダーされる既存の単体テストを壊さないため）。
  */
 export function TransferForm({ walletCandidates, onSubmit }: TransferFormProps) {
   const { t } = useLanguage();
+  const sidePanel = useOptionalSidePanel();
   const [to, setTo] = useState("");
   const [amount, setAmount] = useState("");
 
@@ -70,6 +78,14 @@ export function TransferForm({ walletCandidates, onSubmit }: TransferFormProps) 
         </p>
       )}
       <p className="operation-form__note">{t("operation.transfer.note")}</p>
+      <button
+        type="button"
+        className="operation-form__sig-demo-open nodrag"
+        onClick={() => sidePanel?.open({ kind: "signatureDemo" })}
+        data-testid="operation-transfer-sig-demo-open"
+      >
+        {t("sigDemo.open")}
+      </button>
       <button
         type="submit"
         className="operation-form__submit nodrag"

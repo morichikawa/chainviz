@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@chainviz/shared": "workspace:*",
+    "@noble/curves": "^2.2.0",
     "@noble/hashes": "^2.2.0",
     "@xyflow/react": "^12.8.0",
     "js-yaml": "^4.1.0",

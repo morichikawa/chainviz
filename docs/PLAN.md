@@ -1013,14 +1013,20 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       エントリも新設。実Docker+実ブラウザでE2E(UI-HASH-01)・改ざん→
       連鎖修復→reset・用語集表示を確認)
       [#401](https://github.com/morichikawa/chainviz/issues/401)
-- [ ] トランザクション署名・PoS検証(attestation)の操作・処理をわかり
+- [x] トランザクション署名・PoS検証(attestation)の操作・処理をわかり
       やすく可視化する
       (ユーザーからの要望。Issue #401と同じ「暗号学的な仕組みが静的な
       説明はあるが動的に理解できない」というテーマ。EOA署名は用語集・
       TxLifecyclePopoverで説明済みだが「検証」プロセス自体(誰が・どう
       検証するか)はUIに無く、collectorもecrecoverでの署名者復元は
       していない。PoSのattestation(投票・証明)も可視化対象外。着手時は
-      まずchainviz-uxによるUX設計を先行させ、Issue #401と一括して検討)
+      まずchainviz-uxによるUX設計を先行させ、Issue #401と一括して検討。
+      `@noble/curves`によるsecp256k1署名・ecrecoverの実計算を
+      `packages/frontend/src/crypto-demo/`(Issue #401基盤の再利用)に
+      実装し、送金フォーム・TxLifecyclePopover経由でなりすまし体験
+      デモを提供。PoS attestation・CL→EL検証は既存設計判断
+      (ARCHITECTURE.md §7.6.11)を尊重し可視化対象外のまま、説明文と
+      glossary `attestation`エントリ新設のみで対応)
       [#402](https://github.com/morichikawa/chainviz/issues/402)
 
 ## 運用ルール（全ステップ共通）
