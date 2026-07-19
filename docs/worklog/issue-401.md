@@ -508,3 +508,67 @@ interface DemoBlock {
   - チェーンリボンカードの常設入口配置は「subtitle 行末」に決めた
     (UX設計 §9 で決めきれていない点として挙げられていた項目)。cadence
     表示(ヘッダ側)とは競合しないことを確認済み
+
+### 2026-07-19 Issue #401 静的レビュー結果
+
+- 担当: reviewer
+- ブランチ: issue-401-hash-computation-viz
+- 判定: **差し戻し（指摘1件・軽微。テストファイルの表記修正のみ）**
+- 確認した内容:
+  - `deriveBlockHash` の `|` 区切り曖昧性（tester指摘）の再確認:
+    「実際には到達不能」という判断は正しい。根拠: `number` は1〜3固定で
+    UIから編集不可、`storedParentHash` への書き込み経路はコード上
+    `GENESIS_PARENT_HASH`（0x+64桁の0）と `relinkBlock`（`deriveBlockHash`
+    の出力 = 0x+64桁hex）の2つのみで、いずれも `|` を含まない固定長66文字。
+    UI上も read-only の span 表示で入力経路が無い。したがって到達可能な
+    すべての状態で連結文字列 `番号|親ハッシュ|データ` は一意に分解でき、
+    異なる状態同士の衝突は構成できない。JSON.stringify 等の区切り文字に
+    依存しないエンコーディングへの変更は保守的ではあるが、(1) 不変条件が
+    構造的に（書き込み経路の限定で）保証されている、(2) 将来フィールド
+    構成を変える場合の注意点として既にworklogに記録済み、(3) 砂場は
+    永続化を持たずエンコーディング変更のコストが低い（必要になった時点で
+    変えればよい）ため、今回は現状維持で問題ないと判断する
+  - `packages/shared` の変更が無いこと（diff statで確認。設計判断どおり）
+  - `@noble/hashes@^2.2.0` の依存追加: 推移的依存ゼロ（pnpm-lockの増分は
+    本体1パッケージのみ）、engines `>=20.19.0` はリポジトリの `>=22`
+    要件と整合。frontend の dependencies 配置も適切
+  - サイドパネル kind 追加: `sidePanelView.ts` への union 追加 +
+    `SidePanelHost.tsx` への分岐1つで、既存の1 kind 1分岐パターンを維持。
+    ビュー本体は `crypto-demo/` に分離され1ファイル1責務も維持。
+    ダングリングガード対象外とする理由もコメントで明記されている
+  - 導線: カード常設入口・ポップオーバー文脈導線とも
+    `useOptionalSidePanel()` でパネルを開くだけ。フロント内で完結し、
+    Docker/ノードへの直接アクセスは無い。境界原則に反しない
+  - エラー握りつぶし: 変更差分に catch 文自体が無い（非同期処理なし）。
+    `sidePanel?.open` の optional chaining は GlossaryTerm と同じ既存
+    パターンで、採用理由もコメント化されている
+  - 環境状態依存の固定値: 新規の決め打ち定数は無し。フラッシュ時間は
+    既存の `NEW_ARRIVAL_HIGHLIGHT_DURATION_MS` の再利用
+  - テストの質: 純ロジック（基本 + edgeCases）・View（操作フロー / i18n /
+    a11y）・kind振り分け・排他・再オープン時の初期化・導線2種と網羅的。
+    「編集前は全ブロック有効」を先に確認してから無効化を確認する構成で
+    回帰検出力があり、範囲外index・複数同時編集・元データへの往復編集
+    などの境界・異常系もカバーされている。実装の詳細をなぞるだけの
+    無意味なテストは見当たらない
+  - docsとの齟齬: `docs/ARCHITECTURE.md` §15・`docs/CONCEPT.md` 追記・
+    `packages/e2e/SCENARIOS.md`（UI-HASH-01）・用語集 `hash` エントリの
+    いずれも実装と一致
+  - コミット粒度: main..HEAD の15コミットすべて単一関心事で、
+    Conventional Commits 形式に準拠
+  - `pnpm lint && pnpm build && pnpm test` をリポジトリ全体で自分でも
+    実行し通過を確認（frontend 225 test files / 2924 tests）
+  - E2E（UI-HASH-01）が実ブラウザ未実行である旨の申し送り: 実際のエラー
+    （`libnspr4.so` 不足）・原因（sudo権限が無く `playwright install-deps`
+    不可）・QAへの明示的な依頼として正確に記録されている
+- 差し戻し指摘（要修正1件）:
+  1. `packages/frontend/src/crypto-demo/keccak256.boundary.test.ts` の
+     50行目、`keccak256Hex(...)` の文字列リテラル内に生のNUL文字（0x00）
+     がそのまま埋め込まれている。このため git がこのファイル全体を
+     バイナリと判定しており（`git diff --stat` で `Bin 0 -> 2489 bytes`
+     表示）、今後このファイルの差分がレビュー・PR画面で一切表示されなく
+     なる。また49行目（スペース）と50行目（NUL）が人間の目には同一の
+     行に見え、エディタやフォーマッタが制御文字を壊しても気付けない。
+     エスケープシーケンス `"\u0000"` に置き換えること（テストの意図・
+     検証内容は変わらない）。修正後、`git diff` でファイルがテキストと
+     して表示されることと `pnpm --filter @chainviz/frontend test` の
+     通過を確認すること
