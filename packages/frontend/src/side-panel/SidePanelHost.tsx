@@ -5,6 +5,7 @@ import type { CommsLogFilterState } from "../comms-log/commsLogFilter.js";
 import type { LayerFilter } from "../entities/canvasLayers.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { HashChainDemoView } from "../crypto-demo/HashChainDemoView.js";
+import { SignatureDemoView } from "../crypto-demo/SignatureDemoView.js";
 import { CommsLogView } from "./CommsLogView.js";
 import type { CommsLogNodeOption } from "./CommsLogFilterBar.js";
 import { ContractSourceView } from "./ContractSourceView.js";
@@ -68,6 +69,9 @@ export interface SidePanelHostProps {
  * hashChainDemo（Issue #401）: 実チェーンから完全に独立した学習用の疑似
  * データ（砂場）を扱い、world state 由来のエンティティを一切持たないため、
  * commsLog / glossary と同じくダングリングガードの対象外。
+ *
+ * signatureDemo（Issue #402）: hashChainDemo と同じ理由でダングリング
+ * ガードの対象外。
  */
 export function SidePanelHost({
   contractsByAddress,
@@ -136,6 +140,14 @@ export function SidePanelHost({
     return (
       <SidePanel ariaLabel={t("hashDemo.title")} title={t("hashDemo.title")} onClose={close}>
         <HashChainDemoView />
+      </SidePanel>
+    );
+  }
+
+  if (view.kind === "signatureDemo") {
+    return (
+      <SidePanel ariaLabel={t("sigDemo.title")} title={t("sigDemo.title")} onClose={close}>
+        <SignatureDemoView />
       </SidePanel>
     );
   }

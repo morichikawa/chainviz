@@ -3314,6 +3314,232 @@ button.mempool-panel__row:hover {
   margin: 6px 0;
 }
 
+/* Issue #402: txライフサイクルポップオーバー末尾の文脈導線。
+   ChainRibbonPopover の `__hash-demo-open` と同じ見た目。 */
+.tx-lifecycle-popover__sig-demo-open {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--divider);
+  background: none;
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+  color: var(--accent);
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+/* Issue #402: 送金フォーム内の文脈導線。 */
+.operation-form__sig-demo-open {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font-size: 11px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* --- Issue #402: 「署名と検証のしくみ」デモ(kind: signatureDemo) ---
+   縦2ゾーン(上=ワークベンチ/署名する側、下=ノード/検証する側)。
+   hash-chain-demo と同じトーンの見た目に揃える
+   (UX設計 docs/worklog/issue-402.md §3レイアウト)。 */
+.signature-demo__intro {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+
+.signature-demo__zone {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: linear-gradient(180deg, rgba(32, 39, 58, 0.9), rgba(24, 30, 46, 0.95));
+}
+
+.signature-demo__zone--invalid {
+  border-color: #ff6b6b;
+}
+
+.signature-demo__zone-heading {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.signature-demo__field {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 2px 0;
+}
+
+.signature-demo__field--input {
+  align-items: center;
+}
+
+.signature-demo__field-label {
+  color: var(--muted);
+  flex: none;
+}
+
+.signature-demo__field-value {
+  font-variant-numeric: tabular-nums;
+  cursor: help;
+}
+
+.signature-demo__note {
+  font-size: 11px;
+  color: var(--muted);
+  font-style: italic;
+  margin: 2px 0 8px;
+}
+
+.signature-demo__input {
+  flex: 1;
+  min-width: 0;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 3px 6px;
+  font-size: 12px;
+}
+
+.signature-demo__hint {
+  font-size: 11px;
+  color: var(--muted);
+  font-style: italic;
+  margin: 2px 0 8px;
+}
+
+.signature-demo__compute {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.signature-demo__compute-fn {
+  font-family: monospace;
+  color: var(--accent);
+}
+
+.signature-demo__derived {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.signature-demo__derived-label {
+  color: var(--muted);
+}
+
+.signature-demo__derived-value {
+  font-variant-numeric: tabular-nums;
+  cursor: help;
+}
+
+/* Issue #402: 値変化の短いフラッシュ(#401 と同じ流儀`chainviz-new-arrival`を
+   再利用)。 */
+.signature-demo__derived-value--flash {
+  animation: chainviz-new-arrival 1.4s ease-in-out infinite;
+}
+
+.signature-demo__transport {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+  margin: 8px 0;
+}
+
+.signature-demo__badge {
+  margin-top: 8px;
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.signature-demo__badge--valid {
+  color: #a8f0d4;
+  border: 1px solid var(--synced);
+  background: rgba(56, 211, 159, 0.14);
+}
+
+.signature-demo__badge--invalid {
+  color: #ffb4b4;
+  border: 1px solid #ff6b6b;
+  background: rgba(255, 107, 107, 0.14);
+}
+
+.signature-demo__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.signature-demo__resign-attacker,
+.signature-demo__resign-alice {
+  display: block;
+  background: none;
+  border: 1px solid #ff6b6b;
+  border-radius: 6px;
+  color: #ffb4b4;
+  font-size: 12px;
+  padding: 3px 8px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.signature-demo__resign-alice {
+  border-color: var(--synced);
+  color: #a8f0d4;
+}
+
+.signature-demo__result {
+  margin-top: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--syncing);
+  background: rgba(245, 181, 68, 0.1);
+  font-size: 12px;
+}
+
+.signature-demo__reset {
+  display: block;
+  margin: 14px 0;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.signature-demo__footer-note {
+  color: var(--muted);
+  font-size: 11px;
+  margin: 6px 0;
+}
+
+.signature-demo__footer-links {
+  display: flex;
+  gap: 10px;
+  margin: 0 0 6px;
+}
+
 /* --- Issue #327 フォールバック ---
    backdrop-filter 非対応環境では var(--glass-bg)/var(--glass-popover-bg) の
    半透明地だけが残り、ぼかしが効かない分ちらつき・可読性低下につながる
