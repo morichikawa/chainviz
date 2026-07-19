@@ -410,6 +410,36 @@ interface DemoBlock {
   1つずつ連鎖する(実装設計メモの節を参照。UX設計§3冒頭の要約「後続が
   すべて無効に」は高レベルな言い回しで、詳細な操作フロー3の記述と実装は
   一致させた)
+
+### 2026-07-19 Issue #401 テスト強化メモ
+
+- 担当: tester
+- ブランチ: issue-401-hash-computation-viz
+- 目的: 実装担当が書いた基本テスト(ハッピーパス中心)に対し、異常系・
+  境界値・状態遷移の網羅性を補強する。新機能の実装は行わない。
+- 既存テストの棚卸し結果(カバー済み):
+  - `keccak256.test.ts`: 空文字列・"abc"の既知ベクトル、format、雪崩効果、決定性
+  - `hashChainDemo.test.ts`: 初期状態の健全性、先頭ブロック編集→直後1件のみ
+    無効、末尾ブロック編集の無害さ、relink連鎖、reset、不変性
+  - `HashChainDemoView.test.tsx` / `.i18n.test.tsx`: 操作フロー・ja/en文言
+  - `SidePanelHost.hashChainDemo.test.tsx`: kind振り分け・contractSourceとの
+    排他・ダングリングガード対象外
+  - 導線2種(カード常設入口・ポップオーバー文脈導線)のクリックでパネルが開くこと
+- 抜けていた観点と追加方針(1ファイル1責務のため関心事ごとに新規ファイル):
+  1. 状態遷移の全ブロック一貫性: 中間ブロック(index 1)編集のケースが未カバー。
+     3ブロックすべてを対象にした編集の一貫性、tamper→元データに戻すと
+     relinkなしで有効に戻る往復、同値編集の無害性、複数同時編集、
+     already-valid ブロックへのrelinkの冪等性、範囲外indexの防御的挙動を
+     `hashChainDemo.edgeCases.test.ts` に追加
+  2. keccak256境界値: 長大文字列・多バイトUnicode・絵文字(サロゲートペア)・
+     Unicode正規化差(合成/分解)・空白/改行差を `keccak256.boundary.test.ts` に追加
+  3. サイドパネルkind共存: glossary/commsLogとの排他、および閉じて開き直すと
+     デモ状態が初期化されること(kind切替で混線しないこと)を
+     `SidePanelHost.hashChainDemo.test.tsx` に追記
+  4. アクセシビリティ: 導線ボタン・relink・reset・データ入力のアクセシブル名/
+     role(キーボード到達可能性)、無効バッジが色だけでなく文言で状態を伝える
+     ことを検証。パネル内は `HashChainDemoView.a11y.test.tsx`、導線は各
+     エントリテストにrole/name assertionを追記
 - テスト: `pnpm lint && pnpm build && pnpm test` をリポジトリ全体
   （shared/collector/e2e(unit)/frontend）で実行し全て通過
   （frontend: 222 test files / 2894 tests）。新規追加したユニット・
