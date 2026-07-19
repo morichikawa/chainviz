@@ -42,6 +42,20 @@ function OpenButtons() {
       >
         open contractSource
       </button>
+      <button
+        type="button"
+        data-testid="trigger-glossary"
+        onClick={() => open({ kind: "glossary" })}
+      >
+        open glossary
+      </button>
+      <button
+        type="button"
+        data-testid="trigger-comms-log"
+        onClick={() => open({ kind: "commsLog" })}
+      >
+        open commsLog
+      </button>
     </>
   );
 }
@@ -109,5 +123,43 @@ describe("SidePanelHost: hashChainDemo kind (Issue #401)", () => {
     fireEvent.click(screen.getByTestId("trigger-hash-demo"));
     expect(screen.getByTestId("hash-chain-demo")).toBeTruthy();
     expect(screen.getByTestId("side-panel")).toBeTruthy();
+  });
+
+  it("is exclusive with the glossary and commsLog kinds (only one panel at a time)", () => {
+    renderHost();
+    fireEvent.click(screen.getByTestId("trigger-glossary"));
+    fireEvent.click(screen.getByTestId("trigger-hash-demo"));
+    expect(screen.getByTestId("hash-chain-demo")).toBeTruthy();
+
+    // demo → commsLog へ切り替えると demo は消える。
+    fireEvent.click(screen.getByTestId("trigger-comms-log"));
+    expect(screen.queryByTestId("hash-chain-demo")).toBeNull();
+
+    // commsLog → demo へ戻すと demo だけが表示される（混線しない）。
+    fireEvent.click(screen.getByTestId("trigger-hash-demo"));
+    expect(screen.getByTestId("hash-chain-demo")).toBeTruthy();
+    expect(screen.getAllByTestId("hash-chain-demo").length).toBe(1);
+  });
+
+  it("starts fresh each time it is reopened (state does not leak across kind switches)", () => {
+    renderHost();
+    fireEvent.click(screen.getByTestId("trigger-hash-demo"));
+
+    // #1 のデータを改ざん → #2 が無効になる。
+    fireEvent.change(screen.getByTestId("hash-chain-demo-data-1"), {
+      target: { value: "tampered" },
+    });
+    expect(screen.getByTestId("hash-chain-demo-badge-2").textContent).toContain("無効");
+
+    // 別 kind へ切り替えてデモをアンマウントし、開き直す。
+    fireEvent.click(screen.getByTestId("trigger-glossary"));
+    expect(screen.queryByTestId("hash-chain-demo")).toBeNull();
+    fireEvent.click(screen.getByTestId("trigger-hash-demo"));
+
+    // 開き直したら初期状態（全ブロック有効・改ざん内容は残らない）から始まる。
+    expect(screen.getByTestId("hash-chain-demo-badge-2").textContent).toBe("有効");
+    expect((screen.getByTestId("hash-chain-demo-data-1") as HTMLInputElement).value).toBe(
+      "Alice → Bob: 5 ETH",
+    );
   });
 });
