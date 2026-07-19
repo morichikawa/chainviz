@@ -282,3 +282,144 @@ interface SignatureDemoState {
   説明文中のアンカーがあれば Issue #124 の教訓は守れる)
 - 文言(§5)はすべて初稿。日本語の言い回しは実装担当の裁量、英語版は
   chainviz-i18n のレビューで確定
+
+### 2026-07-19 Issue #402 実装設計メモ
+
+- 担当: frontend
+- ブランチ: issue-402-signature-verification-viz
+- 前提確認: Issue #401 は main にマージ済みで、このブランチにも取り込み
+  済み。`crypto-demo/keccak256.ts`・`hashChainDemo.ts`・
+  `HashChainDemoView.tsx`・`side-panel/sidePanelView.ts` の `"hashChainDemo"`
+  kind を実装の型として踏襲する。
+
+#### 依存関係
+
+- `@noble/curves`(secp256k1 の署名・公開鍵復元)を `packages/frontend` の
+  直接依存に追加する(`^2.2.0`。`@noble/hashes` と同じ v2 系列で揃える)。
+  `pnpm-lock.yaml` には collector 側の transitive 依存として既に
+  `@noble/curves@1.9.1` が存在するが、フロントの直接依存としては未導入
+  だったため新規に追加する
+- サブパス import は `@noble/hashes` と同じく拡張子 `.js` が必須
+  (`@noble/curves/secp256k1.js`)。API は v2 系(`secp256k1.sign` /
+  `recoverPublicKey` / `getPublicKey` / `Point` を直接 export する形。
+  v1 系の `Signature.fromCompact` 等とは形が異なる)。ローカルで
+  実際に import して動作を確認済み:
+  - `secp256k1.sign(msgHash, secretKey, { prehash: false, format: "recovered" })`
+    → 65byte(先頭1byteが recovery、残り64byteがr‖s)。`prehash: false` が
+    必須(既定では内部で更に sha256 をかけてしまうため。Ethereum は
+    keccak256 したメッセージにそのまま署名するので二重ハッシュしない)
+  - `secp256k1.recoverPublicKey(signature, msgHash, { prehash: false })`
+    → 圧縮公開鍵(33byte)。既定の圧縮形式のままではアドレス導出に
+    使えないため、`secp256k1.Point.fromBytes(pub).toBytes(false)` で
+    非圧縮(65byte, 先頭 `0x04`)に展開してから先頭1byteを除いた64byteを
+    keccak256 し、末尾20byteを取る(Ethereum のアドレス導出そのもの)
+  - 秘密鍵 `0x1`(32byte)→アドレス `0x7e5f4552091a69125d5dfcb7b8c2659029395bdf`
+    という既知の参照値(複数の公開資料で言及される「秘密鍵=1」の
+    アドレス)で、上記導出の参照ベクトルテストを1本張る
+
+#### ファイル構成
+
+- `crypto-demo/secp256k1.ts`(新規、`keccak256.ts` と対になる薄い
+  ラッパー): `deriveAddress(secretKeyHex)` / `sign(secretKeyHex,
+  messageHashHex)` / `recoverAddress(signatureHex, messageHashHex)` の
+  3関数のみを公開する。すべて `0x` 始まり hex 文字列で入出力する
+  (表示・保存のしやすさのため。`keccak256Hex` と同じ流儀)
+- `crypto-demo/signatureDemo.ts`(新規、`hashChainDemo.ts` に対応する
+  ドメインロジック): `DemoKeyId` / `TxDraft` / `SignatureDemoState` の
+  型、`ALICE_ADDRESS` / `ATTACKER_ADDRESS` の砂場専用固定アドレス
+  (`keccak256Hex("chainviz:sigdemo:alice")` 等のラベル文字列から
+  秘密鍵を導出。乱数ではなく決定的な値にすることで「これは本物の
+  秘密鍵ではない」ことを実装からも明確にする)、
+  `createInitialSignatureDemoState` / `resetSignatureDemoState` /
+  `updateWorkbenchContent` / `updateReceivedContent` /
+  `resignAsAttacker` / `resignAsAlice` / `deriveSignature` /
+  `deriveRecoveredAddress` / `isValid` を公開する
+- `crypto-demo/SignatureDemoView.tsx`(新規、`HashChainDemoView.tsx` に
+  対応するビュー): ローカル `useState` で完結。値変化時のフラッシュは
+  同ファイル内に小さな `useFlash(value)` フックを閉じ込める(#401 の
+  `flash()` はブロック配列の index 別管理が必要だったため Map 管理
+  だったが、#402 は値が2つ(署名・復元アドレス)だけなので index 管理は
+  不要。共通フックへ抽象化するのは早すぎる抽象化になるため見送り、
+  #401 と同様ファイル内に閉じ込める)
+- `side-panel/sidePanelView.ts` に kind `"signatureDemo"` を追加、
+  `SidePanelHost.tsx` に振り分け1ケースを追加(#401 の `"hashChainDemo"`
+  ケースと同じ形。ダングリングガード対象外も同じ理由)
+- 導線: `entities/TxLifecyclePopover.tsx` の `<ul>` 末尾に文脈導線
+  ボタンを1つ追加(`useOptionalSidePanel()` 経由。ChainRibbonPopover の
+  導線と同じパターン)。`operations/TransferForm.tsx` のフォーム下部
+  (送信ボタンの直前)に同じ導線の小リンクを追加
+- `i18n/messages.ts` に `sigDemo.*` 名前空間を追加(UX設計§5の初稿ベース。
+  英語は初稿のまま、chainviz-i18n のレビュー対象)
+- `glossary/ethereum/terms/a-infra.yaml` に `attestation` を新設、
+  `glossary/ethereum/terms/c-transaction.yaml` の `signature` 定義文と
+  `relatedTerms` を更新
+
+#### 状態遷移の実装方針(UX設計§3の状態モデルをそのままコードに落とす)
+
+- `updateWorkbenchContent(state, patch)`: 上ゾーン(ワークベンチ)の編集は
+  常に Alice 自身の操作という前提のため、`signedBy` を明示的に
+  `"alice"` に固定した上で `sent.content` と `received` の両方を同じ
+  内容に更新する(UX設計操作フロー1: 「本人が署名し直して送り直した
+  状態」を体現)
+- `updateReceivedContent(state, patch)`: 下ゾーン(ノード側で見えている
+  内容)だけを更新する。`sent` には触れない(改ざんの想定。UX設計
+  操作フロー2)
+- `resignAsAttacker` / `resignAsAlice`: どちらも `sent = { content:
+  state.received, signedBy: <鍵> }` とし `received` はそのまま
+  (UX設計操作フロー3・4のとおり)
+- 導出値(state に持たない): `messageHash(content) = keccak256Hex(
+  "${ALICE_ADDRESS}|${content.to}|${content.amountEth}")`(`from` は
+  常に Alice のアドレス固定。実際に署名した鍵が誰であっても「Aliceが
+  送った」という主張内容自体は変わらない、という改ざん検知の要点を
+  そのまま体現する)。`deriveSignature(state) = sign(secretKeyFor(
+  sent.signedBy), messageHash(sent.content))`。
+  `deriveRecoveredAddress(state) = recoverAddress(deriveSignature(state),
+  messageHash(received))`。`isValid(state) = deriveRecoveredAddress(state)
+  === ALICE_ADDRESS`
+- 「攻撃者の鍵で署名し直しても無効なまま」「Alice が署名し直すと有効に
+  戻る」は上記の合成だけで自然に導かれる(individual な特殊分岐を
+  追加しない)
+
+#### View 側のローカル UI 状態(ドメインロジックに持たせないもの)
+
+- `lastAction: "attacker" | "alice" | null`: 直前に押した再署名ボタンの
+  種類。`sigDemo.resignAttackerResult` / `sigDemo.resignAliceResult` の
+  結果メッセージの表示条件にのみ使う(#401 の `hasInteracted` と同じ
+  役割・同じ理由: 初期状態でも `isValid` は true になり得るため、
+  「たった今何をしたか」は純粋ロジック側だけでは区別できない)。
+  `updateWorkbenchContent` / `updateReceivedContent` / reset のいずれかを
+  行うと `null` に戻す
+
+#### 用語集アンカーの配置
+
+- デモ末尾の「ほかの『検証』」説明文(`sigDemo.otherVerifications`)は
+  地の文とし、その直後に `attestation` / `engine-api` を指す短い
+  ラベルチップ(`GlossaryTerm` でラップした短い名詞。既存の
+  `InfraPopover` 等が「ラベル全体を GlossaryTerm でラップする」パターンを
+  踏襲。地の文中に GlossaryTerm を埋め込む形は既存コードに前例が無く、
+  今回新設もしない)を並べて置く。これで Issue #124 の「アンカーの無い
+  用語を作らない」を満たす
+- validator→beacon エッジポップオーバーへの追加アンカーは見送る
+  (UX設計§9の裁量どおり、デモ末尾のアンカーで教訓を満たせるため)
+
+#### テスト方針(ファイル分割)
+
+- `secp256k1.test.ts`: 参照ベクトル(秘密鍵=1→既知アドレス)、
+  署名→復元のラウンドトリップ、改ざん(別メッセージ)で復元アドレスが
+  変わること、決定性(同じ入力は同じ署名)
+- `signatureDemo.test.ts`: 初期状態が有効であること、
+  `updateWorkbenchContent` で署名が変わり有効なまま追従すること、
+  `updateReceivedContent`(改ざん)で無効になること、
+  `resignAsAttacker` 後も無効(復元アドレス=攻撃者アドレス)のまま
+  であること、`resignAsAlice` で有効に戻ること、reset
+- `signatureDemo.edgeCases.test.ts`: 空文字列・同一値への改ざん(実質
+  無害)・改ざん後に元の値へ戻すと有効に戻ること等の境界値
+  (#401 の `hashChainDemo.edgeCases.test.ts` に相当する分割)
+- `SignatureDemoView.test.tsx` / `.i18n.test.tsx` / `.a11y.test.tsx`:
+  #401 の `HashChainDemoView.*.test.tsx` 群と同じ3分割
+- `SidePanelHost.signatureDemo.test.tsx`: kind 振り分け・排他制御・
+  ダングリングガード対象外であることの確認(#401 の
+  `SidePanelHost.hashChainDemo.test.tsx` に相当)
+- `TxLifecyclePopover.sigDemoEntry.test.tsx` /
+  `TransferForm.sigDemoEntry.test.tsx`: 各導線ボタンの存在・
+  クリックでパネルが開くこと(#401 の `*.hashDemoEntry.test.tsx` に相当)
