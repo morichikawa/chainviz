@@ -284,3 +284,44 @@ a11y(aria-hidden の扱い):
     考え、今回は追加していない。統括側で要否を判断してほしい。
   - `pnpm --filter @chainviz/frontend build` / `test`（239 files / 3001
     tests）、`pnpm build`（全パッケージ）を実行しすべて通過を確認済み。
+
+### 2026-07-19 Issue #406 テスト強化（tester）
+
+- 担当: tester
+- ブランチ: issue-406-hash-input-clarity
+- 内容: 実装担当が書いた基本テスト（ハッピーパス中心）に対し、表示と
+  ロジックの乖離検出・用語集の参照整合性・a11y回帰・i18nの整合性の
+  観点でエッジケーステストを追加した。実装ロジックは変更していない。
+- 追加・変更したテスト:
+  - `packages/frontend/src/crypto-demo/computeInputConsistency.test.ts`
+    （新規）: 処理帯の「x = ...」表示文言が、実際に計算するロジック
+    （`deriveBlockHash` / 署名対象のメッセージハッシュ）の入力そのものと
+    一致するかを固定する。既存の `.i18n.test.tsx` は文字列が画面に出るか
+    だけを見ており、表示とロジックが別々に書き換わっても検出できない。
+    ここではロジック側の連結順・区切り文字（`number|parentHash|data`、
+    `from|to|amount`）を keccak256 入力を手組みして照合し、表示側の項目の
+    並び順が同じであることを別途固定する。両方が揃って初めて表示が本物で
+    あることを保証する。署名側は非公開の `messageHash` を、公開されている
+    `sign` / `keccak256Hex` 経由で入力形式を固定した。
+  - `packages/frontend/src/glossary/glossaryRelatedTermsIntegrity.test.ts`
+    （新規）: 実 YAML 4ファイルをマージした全用語集（41語）に対し、
+    relatedTerms の dangling 参照ゼロ・自己参照ゼロを固定。keccak256
+    エントリのスキーマ（layer=c-transaction、`{ja,en}` 非空・ja≠en）と、
+    keccak256 ↔ hash / signature の相互リンクが双方向に張られていることを
+    確認する。
+  - `packages/frontend/src/i18n/i18n.test.ts`（追記）: 新規3キー
+    （`hashDemo.computeInput` / `sigDemo.computeInput.sign` /
+    `.verify`）の ja/en 非空・別訳、プレースホルダ集合の一致（かつ直接
+    描画のためプレースホルダを持たないこと）、`|` 区切りの本数が両言語で
+    一致することを固定。加えて `withTermAnchor` の対象4箇所
+    （`hashDemo.compute` / `sigDemo.addressNote` / `computeInput.sign` /
+    `.verify`）で ja/en 双方に部分文字列 "keccak256" が残ることを固定し、
+    文言変更でアンカーが静かに外れる回帰を防ぐ。
+  - `HashChainDemoView.a11y.test.tsx` / `SignatureDemoView.a11y.test.tsx`
+    （追記）: aria-hidden を外した処理帯で、x の中身の説明行・アルゴリズム
+    名の行が装飾用の aria-hidden サブツリーに紛れ込んでいない（祖先に
+    `aria-hidden="true"` が無い）ことを確認。glyph の span だけを隠す
+    つもりが行ごと隠す取り違えを検出する。
+- 確認: `pnpm --filter @chainviz/frontend test`（241 files / 3032 tests）・
+  `pnpm --filter @chainviz/frontend build`・追加/変更ファイルの eslint が
+  すべて通過。実装のバグらしき挙動は見つからなかった。
