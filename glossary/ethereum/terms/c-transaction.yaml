@@ -27,7 +27,7 @@ signature:
       actually compute a signature and its verification (ecrecover), can be
       opened from both the tx lifecycle display and the transfer form.
   layer: c-transaction
-  relatedTerms: [transaction, eoa, workbench, hash]
+  relatedTerms: [transaction, eoa, workbench, hash, keccak256]
 
 block:
   name:
@@ -89,7 +89,36 @@ hash:
       actually compute keccak256 hashes while tampering with and repairing
       a small chain.
   layer: c-transaction
-  relatedTerms: [block, transaction]
+  relatedTerms: [block, transaction, keccak256]
+
+keccak256:
+  name:
+    ja: keccak256（ケチャック256）
+    en: keccak256
+  definition:
+    ja: >-
+      イーサリアム全体で使われているハッシュ関数。どんな長さの入力からも
+      256bit（32バイト）の値を計算する。SHA-3 の標準化のもとになった
+      Keccak を、NIST が標準化する際にパディング方式を変更する前の仕様の
+      まま採用しているため、同じ入力でも標準の SHA-3-256 とは別の値になる。
+      ブロックや tx のハッシュのほか、アドレスの導出（公開鍵のハッシュの
+      末尾20バイト）、状態やストレージを格納する Merkle Patricia Trie の
+      キー、イベントログの topic など、イーサリアムのあらゆる場所でこの
+      関数が使われている。chainviz の「ハッシュのしくみ」「署名と検証の
+      しくみ」砂場デモでは、この keccak256 を実際に計算している。
+    en: >-
+      The hash function used throughout Ethereum. It computes a 256-bit
+      (32-byte) value from an input of any length. It adopts Keccak, the
+      function that became the basis for SHA-3, exactly as it was before
+      NIST standardized it (changing its padding scheme in the process) —
+      so the same input produces a different value than the standard
+      SHA-3-256. It is used everywhere in Ethereum: block and tx hashes,
+      address derivation (the last 20 bytes of a public key's hash), keys
+      in the Merkle Patricia Trie that stores state and storage, and event
+      log topics. chainviz's "How hashes chain blocks" and "How signing and
+      verification work" sandbox demos actually compute this keccak256.
+  layer: c-transaction
+  relatedTerms: [hash, signature, block]
 
 transaction:
   name:

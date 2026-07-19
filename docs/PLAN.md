@@ -1028,6 +1028,16 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       (ARCHITECTURE.md §7.6.11)を尊重し可視化対象外のまま、説明文と
       glossary `attestation`エントリ新設のみで対応)
       [#402](https://github.com/morichikawa/chainviz/issues/402)
+- [x] ハッシュ・署名デモの f(x) の入力(x)が不明瞭/keccak256の規格説明が
+      無い問題を解消する
+      (ユーザーからのフィードバック。Issue #401/#402で実装した処理帯の
+      `f(x)`ラベルに、xが何の連結かを示す文言が無かった。処理帯を2行
+      構成にし、「x = ブロック番号|親ハッシュ|データ」
+      「x = keccak256(送信者|宛先|金額)」を常時表示。keccak256の
+      独立した用語集エントリを新設し、SHA-3との違い・出力長・
+      イーサリアムでの用途を説明。処理帯コンテナのaria-hiddenは実
+      コンテンツになったため解除)
+      [#406](https://github.com/morichikawa/chainviz/issues/406)
 
 ## 運用ルール（全ステップ共通）
 

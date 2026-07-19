@@ -3,14 +3,20 @@
 // HashChainDemoView.i18n.test.tsx に分ける(CLAUDE.md の1ファイル1責務)。
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { GlossaryProvider } from "../glossary/GlossaryProvider.js";
 import { LanguageProvider } from "../i18n/LanguageProvider.js";
 import { NEW_ARRIVAL_HIGHLIGHT_DURATION_MS } from "../entities/useNewArrivalHighlight.js";
 import { HashChainDemoView } from "./HashChainDemoView.js";
 
+// Issue #406: 処理帯に keccak256 の GlossaryTerm アンカーが増えたため、
+// useGlossary() が例外を投げないよう GlossaryProvider でラップする
+// （SignatureDemoView の既存テストと同じ流儀。空 glossary で十分）。
 function renderView() {
   return render(
     <LanguageProvider initialLanguage="ja">
-      <HashChainDemoView />
+      <GlossaryProvider glossary={{}}>
+        <HashChainDemoView />
+      </GlossaryProvider>
     </LanguageProvider>,
   );
 }

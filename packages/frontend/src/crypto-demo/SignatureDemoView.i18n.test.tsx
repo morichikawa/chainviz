@@ -31,6 +31,23 @@ describe("SignatureDemoView: ja", () => {
     ).toBeTruthy();
     expect(screen.getAllByText("secp256k1 で署名").length).toBe(1);
     expect(screen.getByText("署名からアドレスを復元（ecrecover）")).toBeTruthy();
+    // Issue #406: f(x)/f⁻¹(x) の入力 x を明示する行。「keccak256」に用語集
+    // アンカーが付き複数要素に分割されるため、完全一致の textContent で
+    // 判定する(ContractPopover.test.tsx と同じ流儀)。
+    expect(
+      screen.getByText(
+        (_, element) =>
+          element?.textContent ===
+          "keccak256(送信者 | 宛先 | 金額)。内容をまず keccak256 でハッシュ化し、そのハッシュに署名します。",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        (_, element) =>
+          element?.textContent ===
+          "届いた署名 と keccak256(送信者 | 宛先 | 金額)。ハッシュは届いた内容から計算し直します。",
+      ),
+    ).toBeTruthy();
     expect(screen.getByText("最初に戻す")).toBeTruthy();
   });
 });
@@ -54,6 +71,23 @@ describe("SignatureDemoView: en", () => {
     expect(screen.getByText("Private key (sandbox only)")).toBeTruthy();
     expect(screen.getByText("Signed with secp256k1")).toBeTruthy();
     expect(screen.getByText("Recover the address from the signature (ecrecover)")).toBeTruthy();
+    // Issue #406: f(x)/f⁻¹(x) の入力 x を明示する行。「keccak256」に用語集
+    // アンカーが付き複数要素に分割されるため、完全一致の textContent で
+    // 判定する。
+    expect(
+      screen.getByText(
+        (_, element) =>
+          element?.textContent ===
+          "keccak256(sender | to | amount). The content is hashed with keccak256 first, and that hash is what gets signed.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        (_, element) =>
+          element?.textContent ===
+          "the received signature and keccak256(sender | to | amount), recomputed from the content that arrived.",
+      ),
+    ).toBeTruthy();
     expect(screen.getByText("Reset")).toBeTruthy();
   });
 });

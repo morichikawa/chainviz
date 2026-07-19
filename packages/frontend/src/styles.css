@@ -3219,13 +3219,21 @@ button.mempool-panel__row:hover {
   font-size: 12px;
 }
 
+/* Issue #406: アルゴリズム名の行 + f(x) の入力 x を明示する行、の2行構成
+   （UX設計 issue-406.md §3）。 */
 .hash-chain-demo__compute {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  gap: 4px;
   margin: 8px 0;
   color: var(--muted);
   font-size: 11px;
+}
+
+.hash-chain-demo__compute-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
 }
 
 .hash-chain-demo__compute-fn {
@@ -3419,13 +3427,21 @@ button.mempool-panel__row:hover {
   margin: 2px 0 8px;
 }
 
+/* Issue #406: アルゴリズム名の行 + f(x)/f⁻¹(x) の入力 x を明示する行、の
+   2行構成（UX設計 issue-406.md §3）。 */
 .signature-demo__compute {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  gap: 4px;
   margin: 8px 0;
   color: var(--muted);
   font-size: 11px;
+}
+
+.signature-demo__compute-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
 }
 
 .signature-demo__compute-fn {

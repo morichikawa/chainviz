@@ -234,6 +234,71 @@ describe("glossary panel message keys (Issue #313)", () => {
   });
 });
 
+describe("crypto demo x-input message keys (Issue #406)", () => {
+  const computeInputKeys = [
+    "hashDemo.computeInput",
+    "sigDemo.computeInput.sign",
+    "sigDemo.computeInput.verify",
+  ] as const;
+
+  // {...} プレースホルダを抽出して集合で比較するヘルパ。これらのキーは
+  // format() を通さない直接表示のため、そもそもプレースホルダを含まない
+  // （残っていると生の "{...}" が画面に出てしまう）。
+  function placeholders(text: string): string[] {
+    return (text.match(/\{[^}]*\}/g) ?? []).sort();
+  }
+
+  it.each(computeInputKeys)(
+    "has non-empty, distinct ja/en translations for %s",
+    (key) => {
+      const entry = messages[key];
+      expect(entry.ja.length).toBeGreaterThan(0);
+      expect(entry.en.length).toBeGreaterThan(0);
+      expect(entry.ja).not.toBe(entry.en);
+    },
+  );
+
+  it.each(computeInputKeys)(
+    "has matching placeholder sets in ja and en for %s (and carries none)",
+    (key) => {
+      const entry = messages[key];
+      expect(placeholders(entry.ja)).toEqual(placeholders(entry.en));
+      // これらは直接描画されるため、埋め込みプレースホルダは持たない想定。
+      expect(placeholders(entry.ja)).toEqual([]);
+    },
+  );
+
+  it.each(computeInputKeys)(
+    "uses the same number of '|' separators in ja and en for %s", (key) => {
+      const entry = messages[key];
+      const bars = (text: string) => (text.match(/\|/g) ?? []).length;
+      // x の連結を表す区切り記号 '|' の数が両言語で一致すること（片方だけ
+      // 項目を増減させると入力の説明がズレる）。
+      expect(bars(entry.ja)).toBe(bars(entry.en));
+      expect(bars(entry.ja)).toBeGreaterThan(0);
+    },
+  );
+
+  // withTermAnchor は文中の部分文字列 "keccak256" を探してアンカー化する。
+  // 文言から "keccak256" が消えるとアンカーが静かに外れる（防御的フォール
+  // バックで例外にならない）ため、アンカー対象4箇所すべてで ja/en 双方に
+  // "keccak256" が現れることを固定する（UX設計 §7・実装メモの申し送り）。
+  const keccak256AnchorKeys = [
+    "hashDemo.compute",
+    "sigDemo.addressNote",
+    "sigDemo.computeInput.sign",
+    "sigDemo.computeInput.verify",
+  ] as const;
+
+  it.each(keccak256AnchorKeys)(
+    "keeps the literal 'keccak256' substring in both ja and en of %s (anchor guard)",
+    (key) => {
+      expect(messages[key].ja).toContain("keccak256");
+      expect(messages[key].en).toContain("keccak256");
+    },
+  );
+});
+
 describe("format", () => {
   it("replaces a single placeholder", () => {
     expect(format("hello {name}", { name: "world" })).toBe("hello world");

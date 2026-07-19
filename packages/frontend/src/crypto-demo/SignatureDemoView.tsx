@@ -2,6 +2,7 @@ import type { ChangeEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { shortHex } from "../entities/transaction.js";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
+import { withTermAnchor } from "../glossary/withTermAnchor.js";
 import { NEW_ARRIVAL_HIGHLIGHT_DURATION_MS } from "../entities/useNewArrivalHighlight.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import {
@@ -115,7 +116,9 @@ export function SignatureDemoView() {
             {shortHex(ALICE_ADDRESS)}
           </span>
         </div>
-        <p className="signature-demo__note">{t("sigDemo.addressNote")}</p>
+        <p className="signature-demo__note">
+          {withTermAnchor(t("sigDemo.addressNote"), "keccak256", "keccak256")}
+        </p>
 
         <label className="signature-demo__field signature-demo__field--input">
           <span className="signature-demo__field-label">{t("sigDemo.field.to")}</span>
@@ -142,9 +145,24 @@ export function SignatureDemoView() {
           />
         </label>
 
-        <div className="signature-demo__compute" aria-hidden="true">
-          <span className="signature-demo__compute-fn">f(x)</span>
-          <span className="signature-demo__compute-label">{t("sigDemo.compute.sign")}</span>
+        {/* 処理帯（Issue #406: f(x) の x を明示する2行構成。コンテナは
+            実コンテンツのため aria-hidden にせず、装飾記号の f(x) トークン
+            のみ aria-hidden にする）。 */}
+        <div className="signature-demo__compute">
+          <div className="signature-demo__compute-row">
+            <span className="signature-demo__compute-fn" aria-hidden="true">
+              f(x)
+            </span>
+            <span className="signature-demo__compute-label">{t("sigDemo.compute.sign")}</span>
+          </div>
+          <div className="signature-demo__compute-row">
+            <span className="signature-demo__compute-fn" aria-hidden="true">
+              x =
+            </span>
+            <span className="signature-demo__compute-label">
+              {withTermAnchor(t("sigDemo.computeInput.sign"), "keccak256", "keccak256")}
+            </span>
+          </div>
         </div>
         <div className="signature-demo__derived">
           <span className="signature-demo__derived-label">{t("sigDemo.signature")}</span>
@@ -204,9 +222,21 @@ export function SignatureDemoView() {
           </span>
         </div>
 
-        <div className="signature-demo__compute" aria-hidden="true">
-          <span className="signature-demo__compute-fn">f⁻¹(x)</span>
-          <span className="signature-demo__compute-label">{t("sigDemo.compute.verify")}</span>
+        <div className="signature-demo__compute">
+          <div className="signature-demo__compute-row">
+            <span className="signature-demo__compute-fn" aria-hidden="true">
+              f⁻¹(x)
+            </span>
+            <span className="signature-demo__compute-label">{t("sigDemo.compute.verify")}</span>
+          </div>
+          <div className="signature-demo__compute-row">
+            <span className="signature-demo__compute-fn" aria-hidden="true">
+              x =
+            </span>
+            <span className="signature-demo__compute-label">
+              {withTermAnchor(t("sigDemo.computeInput.verify"), "keccak256", "keccak256")}
+            </span>
+          </div>
         </div>
         <p className="signature-demo__note">{t("sigDemo.verifyNote")}</p>
         <div className="signature-demo__derived">

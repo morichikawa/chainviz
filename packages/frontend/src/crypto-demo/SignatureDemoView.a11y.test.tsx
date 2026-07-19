@@ -68,10 +68,37 @@ describe("SignatureDemoView accessibility", () => {
     expect(screen.getByTestId("signature-demo-badge").textContent).toContain("無効");
   });
 
-  it("marks the decorative compute-function glyphs as aria-hidden", () => {
+  // Issue #406: 処理帯コンテナ自体は「装飾」ではなく、アルゴリズム名・x の
+  // 中身を説明する実コンテンツのため aria-hidden を外した(回帰テスト)。
+  // 装飾記号の f(x)/f⁻¹(x)/x= トークン単体は aria-hidden のままでよい。
+  it("keeps the compute band containers readable (not aria-hidden) while hiding only the f(x)/f⁻¹(x)/x= glyphs", () => {
     const { container } = renderView();
     const computeNodes = container.querySelectorAll(".signature-demo__compute");
     expect(computeNodes.length).toBe(2);
-    computeNodes.forEach((node) => expect(node.getAttribute("aria-hidden")).toBe("true"));
+    computeNodes.forEach((node) => expect(node.getAttribute("aria-hidden")).toBeNull());
+
+    const glyphNodes = container.querySelectorAll(".signature-demo__compute-fn");
+    // 署名側(f(x)・x=)・検証側(f⁻¹(x)・x=)で計4つの装飾トークン。
+    expect(glyphNodes.length).toBe(4);
+    glyphNodes.forEach((node) => expect(node.getAttribute("aria-hidden")).toBe("true"));
+  });
+
+  // Issue #406 回帰: 署名側・検証側それぞれの x 行（実データの説明）が
+  // aria-hidden サブツリーに紛れ込んでいないこと。glyph の span だけを
+  // aria-hidden にしたつもりが行ごと隠す取り違えを検出する。
+  it("keeps both x-input explanation lines reachable (no aria-hidden ancestor)", () => {
+    renderView();
+    const signLine = screen.getByText(
+      (_, element) =>
+        element?.textContent ===
+        "keccak256(送信者 | 宛先 | 金額)。内容をまず keccak256 でハッシュ化し、そのハッシュに署名します。",
+    );
+    const verifyLine = screen.getByText(
+      (_, element) =>
+        element?.textContent ===
+        "届いた署名 と keccak256(送信者 | 宛先 | 金額)。ハッシュは届いた内容から計算し直します。",
+    );
+    expect(signLine.closest('[aria-hidden="true"]')).toBeNull();
+    expect(verifyLine.closest('[aria-hidden="true"]')).toBeNull();
   });
 });
