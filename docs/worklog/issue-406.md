@@ -325,3 +325,48 @@ a11y(aria-hidden の扱い):
 - 確認: `pnpm --filter @chainviz/frontend test`（241 files / 3032 tests）・
   `pnpm --filter @chainviz/frontend build`・追加/変更ファイルの eslint が
   すべて通過。実装のバグらしき挙動は見つからなかった。
+
+### 2026-07-19 Issue #406 レビュー結果（reviewer）: 合格
+
+- 担当: reviewer
+- ブランチ: issue-406-hash-input-clarity
+- 判定: **合格**（差し戻しなし）
+- 確認内容:
+  - 設計原則: 変更は frontend と glossary データのみで、境界侵犯なし。
+    `packages/shared` の変更なし。keccak256 エントリはチェーンプロファイル
+    単位のデータ配置（`glossary/ethereum/terms/`）に沿っており、既存の
+    `hash` / `signature` と同じ c-transaction 層で妥当。コード側の
+    keccak256 言及は #401/#402 で確立済みのデモ内に閉じている
+  - エラーの握りつぶし: 変更範囲に catch 節なし。`withTermAnchor` の
+    「部分一致が外れると静かにアンカーが消える」防御的フォールバックに
+    対しては、i18n.test.ts のアンカーガード（4キー × ja/en）で回帰を
+    固定済み
+  - テストの実効性（変異テストで実測）:
+    - `deriveBlockHash` の区切り文字を `|`→`,` に破壊 →
+      computeInputConsistency.test.ts が失敗（検出成功）
+    - ja 表示文言の項目順を入れ替え → 同テストの表示順アサーションのみ
+      失敗（検出成功）
+    - 無関係な補足文言（括弧内）だけ変更 → 同テストは通過
+      （過剰な脆さなし。完全一致を見る i18n/a11y テストが落ちるのは
+      表示回帰テストとして意図どおり）
+    - glossary に dangling 参照を注入 → glossaryRelatedTermsIntegrity
+      .test.ts が失敗（検出成功）。いずれも検証後に復元済み
+  - glossary スキーマ: keccak256 エントリは既存エントリと同じ
+    name/definition（{ja,en}）/layer/relatedTerms 構成。相互リンク
+    （hash / signature ↔ keccak256）・自己参照なし・全41語 dangling なし
+    をテストが固定
+  - docs: ARCHITECTURE.md §15.3（エントリ新設・compute 行アンカー）・
+    §15.4（2行構成・`x =` ハードコード・aria-hidden 方針）・§16.4
+    （署名デモ側アンカー3箇所）の記述が実装と一致。PLAN.md への #406
+    追記・WORKLOG.md 索引も確認
+  - `pnpm lint` / `pnpm build` / `pnpm test`（shared 75 / collector 1673 /
+    frontend 3032）すべて通過
+  - コミット粒度: main..HEAD の12コミットはいずれも単一関心事
+    （UX設計メモ / 実装設計メモ / i18n / 表示実装 / glossary / docs /
+    テスト4本 / worklog）で規約どおり
+- 軽微な所見（差し戻し不要・記録のみ）:
+  - computeInputConsistency.test.ts の en 署名側テストが
+    `msg.indexOf("to")` という短い部分文字列で語順を判定している。現状の
+    文言では正しく動くが、将来 "together" 等 "to" を含む語が文頭側に
+    入ると偽陽性で通る可能性がある。次に触る機会があれば `" to "` の
+    ような語境界付きの照合が望ましい
