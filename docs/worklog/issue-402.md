@@ -485,3 +485,40 @@ interface SignatureDemoState {
   `chainviz-qa`(UI-SIG-01 の実ブラウザ実行含む)の順で見てほしい。
   `docs/PLAN.md` のチェックボックスはレビュー・QA完了後に統括が更新する
   ため、このタスクでは更新していない
+
+### 2026-07-19 Issue #402 テスト強化メモ
+
+- 担当: tester
+- ブランチ: issue-402-signature-verification-viz
+- 既存テストの確認結果: ハッピーパス・改ざん・攻撃者再署名・Alice再署名・
+  リセット・kind共存・導線a11y・i18nはいずれも基本テストで押さえられている。
+  以下の観点に穴があったため補強する。
+- 追加する観点:
+  1. `prehash: false` の指定漏れ検出（依頼観点1）: 既存の
+     `sign + recoverAddress round trip` テストは「sign と recover の
+     両方が prehash 既定(true)」の場合でもラウンドトリップが成立して
+     しまうため（sign が sha256(msgHash) に署名し recover も sha256(msgHash)
+     で復元するので往復は一致する）、両方同時の漏れを検出できない。実測で
+     確認済み（both-default round trip が true になる）。そこで既知の
+     参照ベクトル（秘密鍵=1、既知メッセージハッシュ）に対する署名 hex と
+     復元アドレスの golden 値を固定する `secp256k1.prehash.test.ts` を
+     新設。sign が prehash:true になると署名 hex が別物になり、recover が
+     prehash:true になると復元アドレスが別物になるため、片方だけの漏れも
+     両方の漏れも検出できる。
+  2. 圧縮/非圧縮公開鍵変換・署名長の境界値（依頼観点3）:
+     `secp256k1.boundary.test.ts` を新設。不正な長さの秘密鍵・署名 hex・
+     奇数長 hex を与えたときにラッパーが例外を投げること（黙って壊れた
+     アドレスを返さないこと）を固定する。
+  3. 署名の妥当性と from 一致の2軸分離（依頼観点2）:
+     `signatureDemo.impersonation.test.ts` を新設。攻撃者再署名後の署名は
+     「攻撃者自身のアドレスに対しては暗号学的に妥当な署名」であること
+     （＝署名検証という軸では正しい）を、from 一致（isValid）が false で
+     あることと明示的に対比して固定する。「署名が妥当か」と「from と
+     一致するか」が独立した検証軸であることをテストとして残す。
+  4. サイドパネル kind 共存の網羅（依頼観点4）: 既存の
+     `SidePanelHost.signatureDemo.test.tsx` は contractSource /
+     hashChainDemo との排他は見ているが glossary / commsLog との相互
+     遷移が無かったため追加する。
+- 実装への差し戻しは無し（バグは検出されていない。golden 値は現行実装が
+  正しく prehash:false を渡している前提の固定であり、意図的に prehash を
+  外して golden テストが赤くなることをローカルで確認済み）。
