@@ -535,3 +535,72 @@ interface SignatureDemoState {
 - 検証: `pnpm --filter @chainviz/frontend build` と `test` がパス
   （238ファイル 2998テスト。強化前は 235ファイル 2983テスト = +3ファイル
   +15テスト）。lint も新規ファイルに対してパス。
+
+### 2026-07-19 Issue #402 静的レビュー結果(合格)
+
+- 担当: reviewer
+- ブランチ: issue-402-signature-verification-viz
+- 判定: **合格**。実装担当への差し戻しは無し。
+- 確認内容:
+  1. `prehash: false` の指定: `crypto-demo/secp256k1.ts` の
+     `sign()`(`secp256k1.sign` 呼び出し)と `recoverAddress()`
+     (`secp256k1.recoverPublicKey` 呼び出し)の両方に明示されている
+     ことをコードで直接確認した。それぞれに「なぜ必要か」(Ethereum は
+     keccak256 済みメッセージに二重ハッシュせず署名する)のコメントも
+     付いている。`secp256k1.prehash.test.ts` の golden 値は「秘密鍵=1 の
+     公知アドレス `0x7e5f...bdf` が復元される」ことで外部的にも
+     裏が取れており、実装と同じ誤りを golden 値が共有してしまう
+     心配が無い良い作りになっている
+  2. 圧縮/非圧縮公開鍵の変換: `addressFromPublicKey()` が
+     `secp256k1.Point.fromBytes(publicKey).toBytes(false)` で非圧縮
+     (65byte, 先頭 0x04)へ展開し、先頭1byteを除いた64byteを keccak256
+     して末尾20byte(hex 40文字)を取っている。Ethereum のアドレス導出と
+     して正しい
+  3. 2軸判定のUI反映: バッジは `isValid`(復元アドレス === Alice)のみで
+     判定し、攻撃者再署名後は「無効」バッジ+`resignAttackerResult`
+     メッセージ(「署名そのものは正しくなりましたが、復元されるのは
+     攻撃者のアドレスです」)で「署名の暗号学的妥当性」と「from との
+     一致」が別軸であることを表現している。`SignatureDemoView.test.tsx`
+     と `signatureDemo.impersonation.test.ts`(再署名前は「妥当な署名
+     ですらない」対比ケースを含む)がコンポーネント・ロジック両面で
+     これを固定している
+  4. `packages/shared`: 差分ゼロ(`git diff main..HEAD -- packages/shared`
+     で確認)。設計判断どおり
+  5. #401 との共通骨格: kind 追加・ダングリングガード対象外・閉じたら
+     状態破棄・処理帯(f(x))・hex 中略+title 全文・変化フラッシュ
+     (`NEW_ARRIVAL_HIGHLIGHT_DURATION_MS` 再利用)・検証バッジ・リセット・
+     末尾の「誰がやるか」説明、いずれも `hashChainDemo` と同型。
+     `useFlash` を共通化せずファイル内に閉じた判断(早すぎる抽象化の
+     回避)も設計メモに記録があり妥当
+  6. `TransferForm.tsx` への導線: 追加は `useOptionalSidePanel()` の取得と
+     `type="button"` のボタン1つのみで、バリデーション・`canSubmit`・
+     `handleSubmit` は無変更。`TransferForm.sigDemoEntry.test.tsx` が
+     「クリックしても `onSubmit` が呼ばれない」「`type="button"` である」
+     ことを固定している
+  7. エラー握りつぶし: 新規・変更ファイルに `catch` は1箇所も無い。
+     ラッパーは不正入力に対してライブラリの例外を素通しする方針が
+     コメントで明示され、`secp256k1.boundary.test.ts` が「黙って壊れた
+     値を返さず throw する」ことを固定している。導線の
+     `sidePanel?.open(...)` は Provider 外での no-op が意図であることを
+     テストが明示しており、握りつぶしには当たらない
+  8. コミット粒度: `git log main..HEAD` の15コミットすべて Conventional
+     Commits 形式で、依存追加/ロジック/パネル/導線/用語集/
+     ARCHITECTURE/E2E/テスト強化が関心事ごとに分かれている
+  9. `pnpm lint && pnpm build && pnpm test` を全パッケージで実行し全て
+     パス(shared 75 / collector 1673 / e2e unit 185 / frontend 238ファイル
+     2998テスト)
+  10. E2E(UI-SIG-01)が実ブラウザ未実行である申し送り: 実装完了報告の
+      「検証」項に「未実施。chainviz-qa での実行を想定」と正確に記録
+      されている。SCENARIOS.md の UI-SIG-01 記載とも整合
+  - そのほか: 用語集 `attestation` は §7.6.11 の「投票内容は観測しない」
+    設計と矛盾しない記述で、`GlossaryTerm` アンカーも
+    `SignatureDemoView.glossaryAnchor.test.tsx` で固定(Issue #124 の
+    教訓を遵守)。`docs/ARCHITECTURE.md` §16 は実装と一致。固定値への
+    依存(タイムアウト等の決め打ち)も無し
+- 軽微な指摘(差し戻し不要): コミット e043992(`build(frontend): add
+  @noble/curves ...`)に実装設計メモ(docs/worklog 141行)が同居して
+  いる。依存選定の検証結果を含むメモなので関連はあるが、厳密には
+  docs と build の2関心事。次回以降は分けることが望ましい
+- 次の担当への申し送り: chainviz-qa は UI-SIG-01 の実ブラウザ実行
+  (送金フォーム入口→改ざん→攻撃者再署名→Alice再署名→リセット)と、
+  txライフサイクルポップオーバー側の入口の実機確認を行うこと
