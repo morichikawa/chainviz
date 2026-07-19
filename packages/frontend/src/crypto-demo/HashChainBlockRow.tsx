@@ -1,6 +1,7 @@
 import type { ChangeEvent } from "react";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { shortHex } from "../entities/transaction.js";
+import { withTermAnchor } from "../glossary/withTermAnchor.js";
 import type { HashChainDemoBlock } from "./hashChainDemo.js";
 
 export interface HashChainBlockRowProps {
@@ -77,9 +78,25 @@ export function HashChainBlockRow({
           />
         </label>
       </div>
-      <div className="hash-chain-demo__compute" aria-hidden="true">
-        <span className="hash-chain-demo__compute-fn">f(x)</span>
-        <span className="hash-chain-demo__compute-label">{t("hashDemo.compute")}</span>
+      {/* 処理帯（Issue #406: f(x) の x を明示する2行構成。アルゴリズム名の
+          行と x の中身の行はどちらも実コンテンツのため、コンテナ自体は
+          aria-hidden にしない。装飾記号の f(x) / x = トークンのみ
+          aria-hidden にする）。 */}
+      <div className="hash-chain-demo__compute">
+        <div className="hash-chain-demo__compute-row">
+          <span className="hash-chain-demo__compute-fn" aria-hidden="true">
+            f(x)
+          </span>
+          <span className="hash-chain-demo__compute-label">
+            {withTermAnchor(t("hashDemo.compute"), "keccak256", "keccak256")}
+          </span>
+        </div>
+        <div className="hash-chain-demo__compute-row">
+          <span className="hash-chain-demo__compute-fn" aria-hidden="true">
+            x =
+          </span>
+          <span className="hash-chain-demo__compute-label">{t("hashDemo.computeInput")}</span>
+        </div>
       </div>
       <div className="hash-chain-demo__hash">
         <span className="hash-chain-demo__hash-label">{t("hashDemo.blockHash")}</span>

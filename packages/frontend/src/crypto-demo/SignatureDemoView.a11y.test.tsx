@@ -68,10 +68,18 @@ describe("SignatureDemoView accessibility", () => {
     expect(screen.getByTestId("signature-demo-badge").textContent).toContain("無効");
   });
 
-  it("marks the decorative compute-function glyphs as aria-hidden", () => {
+  // Issue #406: 処理帯コンテナ自体は「装飾」ではなく、アルゴリズム名・x の
+  // 中身を説明する実コンテンツのため aria-hidden を外した(回帰テスト)。
+  // 装飾記号の f(x)/f⁻¹(x)/x= トークン単体は aria-hidden のままでよい。
+  it("keeps the compute band containers readable (not aria-hidden) while hiding only the f(x)/f⁻¹(x)/x= glyphs", () => {
     const { container } = renderView();
     const computeNodes = container.querySelectorAll(".signature-demo__compute");
     expect(computeNodes.length).toBe(2);
-    computeNodes.forEach((node) => expect(node.getAttribute("aria-hidden")).toBe("true"));
+    computeNodes.forEach((node) => expect(node.getAttribute("aria-hidden")).toBeNull());
+
+    const glyphNodes = container.querySelectorAll(".signature-demo__compute-fn");
+    // 署名側(f(x)・x=)・検証側(f⁻¹(x)・x=)で計4つの装飾トークン。
+    expect(glyphNodes.length).toBe(4);
+    glyphNodes.forEach((node) => expect(node.getAttribute("aria-hidden")).toBe("true"));
   });
 });

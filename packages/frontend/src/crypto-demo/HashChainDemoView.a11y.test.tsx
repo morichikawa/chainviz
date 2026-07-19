@@ -6,13 +6,18 @@
 //   - 無効状態が色だけでなくテキスト（バッジ文言）でも伝わるか
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import { GlossaryProvider } from "../glossary/GlossaryProvider.js";
 import { LanguageProvider } from "../i18n/LanguageProvider.js";
 import { HashChainDemoView } from "./HashChainDemoView.js";
 
+// Issue #406: 処理帯に keccak256 の GlossaryTerm アンカーが増えたため、
+// useGlossary() が例外を投げないよう GlossaryProvider でラップする。
 function renderView() {
   return render(
     <LanguageProvider initialLanguage="ja">
-      <HashChainDemoView />
+      <GlossaryProvider glossary={{}}>
+        <HashChainDemoView />
+      </GlossaryProvider>
     </LanguageProvider>,
   );
 }
@@ -70,5 +75,20 @@ describe("HashChainDemoView accessibility", () => {
     expect(screen.getByTestId("hash-chain-demo-connector-2").getAttribute("aria-hidden")).toBe(
       "true",
     );
+  });
+
+  // Issue #406: 処理帯コンテナ自体は「装飾」ではなく、アルゴリズム名・x の
+  // 中身を説明する実コンテンツのため aria-hidden を外した(回帰テスト)。
+  // 装飾記号の f(x) / x = トークン単体は aria-hidden のままでよい。
+  it("keeps the compute band container readable (not aria-hidden) while hiding only the f(x)/x= glyphs", () => {
+    const { container } = renderView();
+    const computeNodes = container.querySelectorAll(".hash-chain-demo__compute");
+    expect(computeNodes.length).toBe(3);
+    computeNodes.forEach((node) => expect(node.getAttribute("aria-hidden")).toBeNull());
+
+    const glyphNodes = container.querySelectorAll(".hash-chain-demo__compute-fn");
+    // 各ブロックにつき f(x) と x = の2つの装飾トークン。
+    expect(glyphNodes.length).toBe(6);
+    glyphNodes.forEach((node) => expect(node.getAttribute("aria-hidden")).toBe("true"));
   });
 });
