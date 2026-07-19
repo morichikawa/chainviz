@@ -129,6 +129,36 @@ validator:
   layer: a-infra
   relatedTerms: [cl-client, bootnode, beacon-api]
 
+attestation:
+  name:
+    ja: Attestation（証明）
+    en: Attestation
+  definition:
+    ja: >-
+      バリデーターが「このブロックがいま正しいチェーンの先端だ」と署名して
+      投票する証明。1人の投票では何も決まらないが、多数のバリデーターの
+      attestation が集まることでチェーンの先端が1本に確定していく——これが
+      PoS の合意そのものの実体。chainviz では validator カードから beacon
+      カードへの接続として見えるが、投票の中身（どのブロックに投票した
+      か・成否）までは観測していない（validator は自身のチェーンコピーを
+      持たず、chainviz はコンセンサスクライアントの内部状態を覗いていない
+      ため）。EOA の tx 署名の検証（ecrecover）を試せる「署名と検証の
+      しくみ」砂場デモの末尾でも、これと対比する形で位置づけを説明する。
+    en: >-
+      A signed vote by a validator asserting "this block is currently the
+      head of the correct chain." A single vote decides nothing, but as
+      attestations from many validators accumulate, the chain's head becomes
+      settled — this is the substance of PoS consensus itself. In chainviz it
+      appears as the connection from a validator card to the beacon card, but
+      the content of the vote (which block it voted for, whether it
+      succeeded) is not observed (a validator keeps no copy of its own chain,
+      and chainviz does not inspect the consensus client's internal state).
+      The "how signing and verification work" sandbox demo (which lets you
+      try EOA tx signature verification via ecrecover) also explains this
+      distinction at the end, for contrast.
+  layer: a-infra
+  relatedTerms: [validator, beacon-api]
+
 visualization-layers:
   name:
     ja: 可視化レイヤー（A層〜D層）
