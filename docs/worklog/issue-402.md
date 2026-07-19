@@ -423,3 +423,65 @@ interface SignatureDemoState {
 - `TxLifecyclePopover.sigDemoEntry.test.tsx` /
   `TransferForm.sigDemoEntry.test.tsx`: 各導線ボタンの存在・
   クリックでパネルが開くこと(#401 の `*.hashDemoEntry.test.tsx` に相当)
+
+### 2026-07-19 Issue #402 実装完了報告
+
+- 担当: frontend
+- ブランチ: issue-402-signature-verification-viz
+- 実装内容: 実装設計メモのとおりに実装した。差分の要点:
+  - `@noble/curves`(secp256k1)を frontend の直接依存に追加
+  - `crypto-demo/secp256k1.ts`(署名・ecrecover・アドレス導出の薄い
+    ラッパー)と `crypto-demo/signatureDemo.ts`(状態・状態遷移の純粋
+    ロジック)を新設
+  - `crypto-demo/SignatureDemoView.tsx`(パネル本体)を新設し、
+    `side-panel/sidePanelView.ts` / `SidePanelHost.tsx` に kind
+    `"signatureDemo"` を追加
+  - 導線2箇所: `TxLifecyclePopover.tsx` 末尾のボタン、
+    `TransferForm.tsx` 送信ボタン直前の小リンク
+  - 用語集: `attestation` を `a-infra.yaml` に新設し `validator` の
+    近くに配置。既存 `signature` の定義文・`relatedTerms`(`hash`追加)を
+    更新。デモ末尾の「ほかの検証」説明に `attestation`/`engine-api` の
+    `GlossaryTerm` チップを設置(Issue #124 の教訓を満たす最小構成)
+  - `docs/ARCHITECTURE.md` に §16 を新設(§15 ハッシュデモの次)
+  - `packages/e2e` に UI-SIG-01 を追加(送金フォームの入口→改ざん→
+    攻撃者再署名(なりすまし不成立)→Alice再署名→リセットの一気通貫)。
+    `packages/e2e/SCENARIOS.md` にも対応節を追加
+- 決めた点(worklogで「未決」としていた2点):
+  - 送金フォームの入口リンクはフォーム下部・送信ボタンの直前に配置
+    (「あなたが今からする送金の裏側」という文脈が最も強い位置。
+    送信ボタンとの視覚的な競合は無し。`type="button"` を明示し誤って
+    フォーム送信を起こさないことをテストで確認済み)
+  - `attestation` 用語のアンカーは validator→beacon エッジポップオーバー
+    には追加しなかった(デモ末尾のアンカーのみで Issue #124 の教訓を
+    満たすため。UX設計の裁量どおり)
+- 実装中に気づいた注意点:
+  - `@noble/curves` は v2 系で API 形状が v1 系と異なる(`secp256k1`
+    オブジェクトが `sign`/`recoverPublicKey`/`getPublicKey`/`Point` を
+    直接 export する)。`recoverPublicKey`/`getPublicKey` の既定の戻り値は
+    圧縮公開鍵(33byte)であり、Ethereum アドレス導出には
+    `secp256k1.Point.fromBytes(pub).toBytes(false)` で非圧縮
+    (65byte, 先頭 `0x04`)へ展開してから先頭1byteを除く必要がある
+    (実装設計メモに詳細を記録済み)
+  - `secp256k1.sign(...)` は既定で内部的にメッセージへ sha256 を
+    かけてしまう(`prehash` 既定 `true`)。Ethereum は keccak256 済みの
+    メッセージにそのまま署名するため、`sign`/`recoverPublicKey` の
+    両方に必ず `{ prehash: false }` を渡す必要がある(渡し忘れると
+    署名検証のラウンドトリップが静かに壊れる。secp256k1.test.ts の
+    ラウンドトリップテストで担保)
+  - `GlossaryTerm` は `GlossaryProvider` が無いとレンダー時に例外を
+    投げる(`useOptionalSidePanel` のように任意化されていない)。
+    `SignatureDemoView` は末尾で `GlossaryTerm` を使うため、単体テストは
+    すべて `GlossaryProvider` でラップする必要がある(既存の
+    `TxLifecyclePopover.test.tsx` 等と同じ制約)
+- 検証: `pnpm lint && pnpm build && pnpm test` をリポジトリ全体
+  （shared/collector/frontend/e2e の4パッケージ）に対して実行し、
+  全てパス（frontend 235ファイル 2983テスト、shared 6ファイル75テスト、
+  collector・e2e(unit)も既存分がすべてパス）。E2E の実ブラウザ実行
+  （UI-SIG-01。docker-compose を伴う）はフロント担当の作業範囲外
+  （CLAUDE.md: フロントは Docker に直接触れない）のため未実施。
+  `chainviz-qa` での実行を想定
+- 次の担当への申し送り: `chainviz-tester` によるテスト強化 →
+  `chainviz-reviewer`(静的レビュー・テストコードの質) →
+  `chainviz-qa`(UI-SIG-01 の実ブラウザ実行含む)の順で見てほしい。
+  `docs/PLAN.md` のチェックボックスはレビュー・QA完了後に統括が更新する
+  ため、このタスクでは更新していない
