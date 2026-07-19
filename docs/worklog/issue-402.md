@@ -522,3 +522,16 @@ interface SignatureDemoState {
 - 実装への差し戻しは無し（バグは検出されていない。golden 値は現行実装が
   正しく prehash:false を渡している前提の固定であり、意図的に prehash を
   外して golden テストが赤くなることをローカルで確認済み）。
+- 追加ファイル（いずれも新規）:
+  - `packages/frontend/src/crypto-demo/secp256k1.prehash.test.ts`
+  - `packages/frontend/src/crypto-demo/secp256k1.boundary.test.ts`
+  - `packages/frontend/src/crypto-demo/signatureDemo.impersonation.test.ts`
+  - `packages/frontend/src/side-panel/SidePanelHost.signatureDemo.test.tsx`
+    はケース追記（新規ではない）
+- 回帰検出の確認: `secp256k1.ts` から `sign` の `prehash: false` を外すと
+  署名 golden テストが赤くなること、`recoverAddress` の `prehash: false` を
+  外すと復元アドレス golden テストが赤くなることを、実装を一時的に壊して
+  確認したうえで元に戻した。
+- 検証: `pnpm --filter @chainviz/frontend build` と `test` がパス
+  （238ファイル 2998テスト。強化前は 235ファイル 2983テスト = +3ファイル
+  +15テスト）。lint も新規ファイルに対してパス。
