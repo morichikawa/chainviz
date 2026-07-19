@@ -51,6 +51,25 @@ describe("ChainRibbonCard: hash chain demo entry point (Issue #401)", () => {
     expect(() => fireEvent.click(button)).not.toThrow();
   });
 
+  it("exposes the entry as a real <button> with an accessible name (keyboard reachable)", () => {
+    render(
+      <ReactFlowProvider>
+        <LanguageProvider initialLanguage="ja">
+          <GlossaryProvider glossary={{}}>
+            <RibbonHoverProvider transactions={[]}>
+              <ChainRibbonCard {...props()} />
+            </RibbonHoverProvider>
+          </GlossaryProvider>
+        </LanguageProvider>
+      </ReactFlowProvider>,
+    );
+    // アクセシブル名（見出しテキスト）を持つ <button> = Tab で到達し
+    // Enter/Space で起動できる。専用の aria-label は不要（テキストが名になる）。
+    const button = screen.getByRole("button", { name: "ハッシュのしくみを試す" });
+    expect(button.tagName).toBe("BUTTON");
+    expect((button as HTMLButtonElement).type).toBe("button");
+  });
+
   it("opens the hashChainDemo side panel view when clicked", () => {
     render(
       <ReactFlowProvider>

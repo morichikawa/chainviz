@@ -68,6 +68,19 @@ describe("ChainRibbonPopover: hash chain demo entry point (Issue #401)", () => {
     expect(() => fireEvent.click(button)).not.toThrow();
   });
 
+  it("exposes the contextual entry as a real <button> with an accessible name (keyboard reachable)", () => {
+    render(
+      <LanguageProvider initialLanguage="ja">
+        <GlossaryProvider glossary={{}}>
+          <Harness blockTile={tile("0xchild")} />
+        </GlossaryProvider>
+      </LanguageProvider>,
+    );
+    const button = screen.getByRole("button", { name: "ハッシュのしくみを試す" });
+    expect(button.tagName).toBe("BUTTON");
+    expect((button as HTMLButtonElement).type).toBe("button");
+  });
+
   it("opens the hashChainDemo side panel view when clicked, without bubbling to ancestors", () => {
     const parentClick = vi.fn();
     render(
