@@ -50,6 +50,20 @@ function OpenButtons() {
       >
         open contractSource
       </button>
+      <button
+        type="button"
+        data-testid="trigger-glossary"
+        onClick={() => open({ kind: "glossary" })}
+      >
+        open glossary
+      </button>
+      <button
+        type="button"
+        data-testid="trigger-comms-log"
+        onClick={() => open({ kind: "commsLog" })}
+      >
+        open commsLog
+      </button>
     </>
   );
 }
@@ -106,6 +120,30 @@ describe("SidePanelHost: signatureDemo kind (Issue #402)", () => {
     fireEvent.click(screen.getByTestId("trigger-sig-demo"));
     expect(screen.queryByTestId("hash-chain-demo")).toBeNull();
     expect(screen.getByTestId("signature-demo")).toBeTruthy();
+  });
+
+  it("is exclusive with the glossary kind (opening the demo replaces an open glossary panel and vice versa)", () => {
+    renderHost();
+    fireEvent.click(screen.getByTestId("trigger-glossary"));
+    expect(screen.queryByTestId("signature-demo")).toBeNull();
+    fireEvent.click(screen.getByTestId("trigger-sig-demo"));
+    expect(screen.getByTestId("signature-demo")).toBeTruthy();
+
+    // 逆向き: signatureDemo を開いた状態から glossary を開くとデモは消える。
+    fireEvent.click(screen.getByTestId("trigger-glossary"));
+    expect(screen.queryByTestId("signature-demo")).toBeNull();
+    expect(screen.getAllByTestId("side-panel")).toHaveLength(1);
+  });
+
+  it("is exclusive with the commsLog kind (only one panel at a time)", () => {
+    renderHost();
+    fireEvent.click(screen.getByTestId("trigger-comms-log"));
+    expect(screen.getByTestId("comms-log-view")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("trigger-sig-demo"));
+    expect(screen.queryByTestId("comms-log-view")).toBeNull();
+    expect(screen.getByTestId("signature-demo")).toBeTruthy();
+    expect(screen.getAllByTestId("side-panel")).toHaveLength(1);
   });
 
   it("is not affected by the contractSource dangling guard (no target entity of its own)", () => {
