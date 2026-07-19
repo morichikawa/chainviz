@@ -91,4 +91,28 @@ describe("HashChainDemoView accessibility", () => {
     expect(glyphNodes.length).toBe(6);
     glyphNodes.forEach((node) => expect(node.getAttribute("aria-hidden")).toBe("true"));
   });
+
+  // Issue #406 回帰: x の中身（実データの説明行）が、装飾用の aria-hidden
+  // サブツリーに紛れ込んで支援技術から隠れていないこと。glyph の span だけを
+  // aria-hidden にしたつもりが行ごと隠す、という取り違えを検出する。
+  it("keeps the x-input explanation line reachable (no aria-hidden ancestor)", () => {
+    renderView();
+    const lines = screen.getAllByText(
+      "ブロック番号 | 親ブロックのハッシュ | データ（上の3項目をこの順につなげた文字列です）",
+    );
+    expect(lines.length).toBe(3);
+    lines.forEach((line) => {
+      // 自身にも祖先にも aria-hidden="true" が無いこと。
+      expect(line.closest('[aria-hidden="true"]')).toBeNull();
+    });
+  });
+
+  it("keeps the algorithm-name text (keccak256 line) reachable (no aria-hidden ancestor)", () => {
+    renderView();
+    const labels = screen.getAllByText(
+      (_, element) => element?.textContent === "keccak256 でハッシュ化",
+    );
+    expect(labels.length).toBeGreaterThanOrEqual(3);
+    labels.forEach((label) => expect(label.closest('[aria-hidden="true"]')).toBeNull());
+  });
 });

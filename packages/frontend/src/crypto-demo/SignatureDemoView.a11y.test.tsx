@@ -82,4 +82,23 @@ describe("SignatureDemoView accessibility", () => {
     expect(glyphNodes.length).toBe(4);
     glyphNodes.forEach((node) => expect(node.getAttribute("aria-hidden")).toBe("true"));
   });
+
+  // Issue #406 回帰: 署名側・検証側それぞれの x 行（実データの説明）が
+  // aria-hidden サブツリーに紛れ込んでいないこと。glyph の span だけを
+  // aria-hidden にしたつもりが行ごと隠す取り違えを検出する。
+  it("keeps both x-input explanation lines reachable (no aria-hidden ancestor)", () => {
+    renderView();
+    const signLine = screen.getByText(
+      (_, element) =>
+        element?.textContent ===
+        "keccak256(送信者 | 宛先 | 金額)。内容をまず keccak256 でハッシュ化し、そのハッシュに署名します。",
+    );
+    const verifyLine = screen.getByText(
+      (_, element) =>
+        element?.textContent ===
+        "届いた署名 と keccak256(送信者 | 宛先 | 金額)。ハッシュは届いた内容から計算し直します。",
+    );
+    expect(signLine.closest('[aria-hidden="true"]')).toBeNull();
+    expect(verifyLine.closest('[aria-hidden="true"]')).toBeNull();
+  });
 });
