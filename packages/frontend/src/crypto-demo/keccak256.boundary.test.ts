@@ -1,0 +1,52 @@
+// keccak256Hex の境界値・異常入力の補強テスト（Issue #401 テスト強化）。
+// 既知ベクトル・雪崩効果・決定性の基本ケースは keccak256.test.ts が扱う。
+// ここは「学習者が実際に入力しうる想定外の文字列」（長大・多バイト
+// Unicode・絵文字・正規化差・空白/改行）でも UTF-8 → 0x+64桁hex という
+// 契約が崩れないことを確認する（CLAUDE.md の1ファイル1責務）。
+import { describe, expect, it } from "vitest";
+import { keccak256Hex } from "./keccak256.js";
+
+const HEX32 = /^0x[0-9a-f]{64}$/;
+
+describe("keccak256Hex boundary and unusual inputs", () => {
+  it("keeps the 0x+64hex shape for a very long (100k-char) input and stays deterministic", () => {
+    const long = "a".repeat(100_000);
+    const hash = keccak256Hex(long);
+    expect(hash).toMatch(HEX32);
+    expect(keccak256Hex(long)).toBe(hash); // 決定性
+    expect(hash).not.toBe(keccak256Hex("a")); // 長さが違えば別物
+  });
+
+  it("handles multibyte Unicode (Japanese) as UTF-8", () => {
+    const hash = keccak256Hex("こんにちは、ブロックチェーン");
+    expect(hash).toMatch(HEX32);
+    expect(hash).not.toBe(keccak256Hex("こんにちわ、ブロックチェーン")); // 1文字違い
+  });
+
+  it("handles emoji (surrogate pairs) without producing a malformed hash", () => {
+    const hash = keccak256Hex("gm 👍🚀");
+    expect(hash).toMatch(HEX32);
+    // サロゲートペアを1文字変えても別のハッシュになる。
+    expect(hash).not.toBe(keccak256Hex("gm 👍🌙"));
+  });
+
+  it("is byte-sensitive: composed vs decomposed Unicode differ (avalanche via UTF-8 bytes)", () => {
+    const composed = "\u00e9"; // U+00E9 (precomposed "e-acute")
+    const decomposed = "e\u0301"; // "e" + U+0301 (combining acute accent)
+    expect(composed).not.toBe(decomposed);
+    expect(keccak256Hex(composed)).not.toBe(keccak256Hex(decomposed));
+  });
+
+  it("distinguishes inputs that differ only in whitespace or newlines", () => {
+    expect(keccak256Hex("a b")).not.toBe(keccak256Hex("a  b"));
+    expect(keccak256Hex("a\nb")).not.toBe(keccak256Hex("a\r\nb"));
+    expect(keccak256Hex("trailing ")).not.toBe(keccak256Hex("trailing"));
+  });
+
+  it("distinguishes the empty string from a single space or NUL character", () => {
+    const empty = keccak256Hex("");
+    expect(empty).toMatch(HEX32);
+    expect(empty).not.toBe(keccak256Hex(" "));
+    expect(empty).not.toBe(keccak256Hex("\u0000"));
+  });
+});
