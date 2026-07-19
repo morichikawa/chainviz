@@ -148,6 +148,10 @@ describe("reset after a middle-block tamper restores the pristine state", () => 
     let state = createInitialHashChainDemoState();
     state = updateBlockData(state, 1, "TAMPERED");
     state = relinkBlock(state, 2);
+    // 前提: reset 前は改ざん内容が残り、pristine とは異なる状態になっている。
+    expect(state.blocks[1]!.data).toBe("TAMPERED");
+    expect(state).not.toEqual(createInitialHashChainDemoState());
+
     const reset = resetHashChainDemoState();
     expect(reset).toEqual(createInitialHashChainDemoState());
     expect(reset.blocks.map((b) => b.data)).toEqual(SEED);
