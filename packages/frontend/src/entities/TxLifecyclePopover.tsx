@@ -4,6 +4,7 @@ import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import type { MessageKey } from "../i18n/messages.js";
 import { PopoverPortal } from "../interaction/PopoverPortal.js";
+import { useOptionalSidePanel } from "../side-panel/SidePanelContext.js";
 import { TX_STATUS_MESSAGE_KEY, shortHex } from "./transaction.js";
 import {
   deriveTxLifecycleFromTx,
@@ -74,6 +75,13 @@ function stageDescriptionKey(stage: TxLifecycleStage): MessageKey {
  * React Flow のノードはそれぞれ独立したスタッキングコンテキストを持つため、
  * `PopoverPortal` でそのアンカーを基準位置に body 直下へ描画し、隣接カードの
  * 下に隠れないようにする。
+ *
+ * 末尾の「署名と検証のしくみを試す」ボタン（Issue #402）は、1段目の
+ * 「署名」がまさに何をしているのかをその場で開ける文脈導線（UX設計
+ * `docs/worklog/issue-402.md` §3導線1）。ポップオーバーはチップの子として
+ * 描画済み（Issue #351 のパターン）なのでホバー中のクリックが成立する。
+ * `useOptionalSidePanel()` を使う（`GlossaryTerm` と同じパターン。
+ * `SidePanelProvider` の外でレンダーされる既存の単体テストを壊さないため）。
  */
 export function TxLifecyclePopover({
   anchorRef,
@@ -83,6 +91,7 @@ export function TxLifecyclePopover({
   tx: TransactionEntity;
 }) {
   const { t } = useLanguage();
+  const sidePanel = useOptionalSidePanel();
   const stages = deriveTxLifecycleFromTx(tx);
 
   return (
@@ -126,6 +135,17 @@ export function TxLifecyclePopover({
           </li>
         ))}
       </ul>
+      <button
+        type="button"
+        className="tx-lifecycle-popover__sig-demo-open nodrag"
+        onClick={(event) => {
+          event.stopPropagation();
+          sidePanel?.open({ kind: "signatureDemo" });
+        }}
+        data-testid={`tx-lifecycle-sig-demo-open-${tx.hash}`}
+      >
+        {t("sigDemo.open")}
+      </button>
     </PopoverPortal>
   );
 }
