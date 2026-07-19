@@ -440,6 +440,43 @@ interface DemoBlock {
      role(キーボード到達可能性)、無効バッジが色だけでなく文言で状態を伝える
      ことを検証。パネル内は `HashChainDemoView.a11y.test.tsx`、導線は各
      エントリテストにrole/name assertionを追記
+
+### 2026-07-19 Issue #401 テスト強化 実施記録
+
+- 担当: tester
+- ブランチ: issue-401-hash-computation-viz
+- 追加したテスト(既存実装への追加のみ。新機能の実装なし):
+  - `crypto-demo/hashChainDemo.edgeCases.test.ts`(新規, 15ケース): 先頭・
+    中間・末尾の全ブロック編集の一貫性(`it.each`)、中間ブロック編集で
+    先頭が無関係なこと、改ざん→元データに戻すとrelinkなしで有効に戻る往復、
+    同値編集の無害性、複数同時編集で2件同時に無効、deriveBlockHashが
+    number/parentHash/data 各フィールドに依存すること、relinkの冪等性、
+    範囲外index(負・末尾超・空配列)の防御的挙動、reset
+  - `crypto-demo/keccak256.boundary.test.ts`(新規, 6ケース): 100k文字の
+    長大入力、多バイトUnicode、絵文字(サロゲートペア)、Unicode正規化差
+    (合成U+00E9 vs 分解e+U+0301)、空白/改行差、空文字列 vs 空白/NUL
+  - `crypto-demo/HashChainDemoView.a11y.test.tsx`(新規, 5ケース): データ
+    入力のlabelled textbox、reset/relinkのアクセシブル名付き<button>、
+    無効バッジが色だけでなく文言で状態を伝えること、装飾要素のaria-hidden
+  - `entities/ChainRibbonCard.hashDemoEntry.test.tsx` /
+    `ChainRibbonPopover.hashDemoEntry.test.tsx`: 導線ボタンがアクセシブル名
+    付きの実<button>(キーボード到達可能)であることのrole/name assertionを追記
+  - `side-panel/SidePanelHost.hashChainDemo.test.tsx`: glossary/commsLogとの
+    排他、および別kindへ切り替えて開き直すとデモ状態が初期化される
+    (改ざん内容がkind切替で残らない)ことを追記
+- 検証: `pnpm --filter @chainviz/frontend build` 通過、`pnpm lint`(リポジトリ
+  全体)通過、`pnpm --filter @chainviz/frontend test` 通過
+  (225 test files / 2924 tests。強化前は222 files / 2894 tests、+3 files / +30 tests)。
+- 発見した懸念点(低severity・今回は修正せず記録のみ):
+  - `deriveBlockHash` はフィールドを `|` 区切りで連結してハッシュ化する
+    (`${number}|${storedParentHash}|${data}`)。`data` はユーザーが自由に
+    編集でき `|` を含められるため、原理的には区切りの曖昧性による衝突が
+    考えられる(例: parentHash="a", data="b|c" と parentHash="a|b", data="c"
+    は同じ連結文字列になる)。ただし `storedParentHash` は常に `0x`+64hex
+    (導出ハッシュか GENESIS_PARENT_HASH)で `|` を含まず、ユーザーは
+    直接編集できない(relinkでのみ書き換わる)ため、実際に到達可能な衝突は
+    無い。学習用の砂場であり実害はないため実装変更は不要と判断。将来
+    フィールド構成を変える場合の注意点として記録する。
 - テスト: `pnpm lint && pnpm build && pnpm test` をリポジトリ全体
   （shared/collector/e2e(unit)/frontend）で実行し全て通過
   （frontend: 222 test files / 2894 tests）。新規追加したユニット・
