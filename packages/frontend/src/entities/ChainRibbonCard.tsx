@@ -4,6 +4,7 @@ import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { format } from "../i18n/i18n.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { useHoverPopover } from "../interaction/useHoverPopover.js";
+import { useOptionalSidePanel } from "../side-panel/SidePanelContext.js";
 import { ChainRibbonPopover } from "./ChainRibbonPopover.js";
 import { type ChainRibbonTile, deriveReceivedOrder } from "./chainRibbon.js";
 import type { ChainRibbonFlowNode } from "./chainRibbonNode.js";
@@ -156,6 +157,10 @@ export function ChainRibbonCard({ data }: NodeProps<ChainRibbonFlowNode>) {
   const { txCountByHash, nodeLabelById, landingHashes, blocks } = data;
   const { t } = useLanguage();
   const { hoveredBlockHash } = useRibbonHover();
+  // Issue #401:「ハッシュのしくみ」デモへの常設入口。単体テストでは
+  // SidePanelProvider 無しでこのカードをレンダーしているため、throw する
+  // useSidePanel() ではなく optional 版を使う（GlossaryTerm と同じパターン）。
+  const sidePanel = useOptionalSidePanel();
   const [openPopoverHashes, setOpenPopoverHashes] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -243,7 +248,19 @@ export function ChainRibbonCard({ data }: NodeProps<ChainRibbonFlowNode>) {
           </span>
         )}
       </div>
-      <div className="chain-ribbon-card__subtitle">{t("chainRibbon.subtitle")}</div>
+      <div className="chain-ribbon-card__subtitle-row">
+        <span className="chain-ribbon-card__subtitle">{t("chainRibbon.subtitle")}</span>
+        {/* Issue #401: 常設入口(発見性のため)。ポップオーバー側にも文脈導線
+            (ChainRibbonPopover)を別途持つ。 */}
+        <button
+          type="button"
+          className="chain-ribbon-card__hash-demo-open nodrag"
+          onClick={() => sidePanel?.open({ kind: "hashChainDemo" })}
+          data-testid="chain-ribbon-hash-demo-open"
+        >
+          {t("hashDemo.open")}
+        </button>
+      </div>
       {tiles.length === 0 ? (
         <div className="chain-ribbon-card__empty" data-testid="chain-ribbon-empty">
           {t("chainRibbon.empty")}

@@ -29,4 +29,13 @@ export type SidePanelView =
     }
   | {
       kind: "commsLog";
+    }
+  | {
+      /**
+       * 「ハッシュのしくみ」デモ（Issue #401。`docs/worklog/issue-401.md`
+       * UX設計）。実チェーンから完全に独立した学習用の疑似データ（砂場）を
+       * 扱うため、対象を指すデータは持たない（`commsLog` と同じ扱い）。
+       * 中身（`HashChainDemoView`）は開くたびに初期状態から始まる。
+       */
+      kind: "hashChainDemo";
     };

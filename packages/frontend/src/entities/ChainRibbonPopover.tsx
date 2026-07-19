@@ -4,6 +4,7 @@ import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { format } from "../i18n/i18n.js";
 import { PopoverPortal } from "../interaction/PopoverPortal.js";
+import { useOptionalSidePanel } from "../side-panel/SidePanelContext.js";
 import type { ChainRibbonTile, ReceivedOrderEntry } from "./chainRibbon.js";
 import { formatBlockTimestamp } from "./chainRibbon.js";
 import { shortHex } from "./transaction.js";
@@ -51,6 +52,7 @@ export function ChainRibbonPopover({
   onParentHover: (parentHash: string | null, sourceHash: string) => void;
 }) {
   const { t } = useLanguage();
+  const sidePanel = useOptionalSidePanel();
   const { block } = tile;
   // Issue #351: 「親ブロック」行がホバーされたまま、行自身の mouseleave が
   // 一度も発火せずにこのポップオーバーが unmount されると
@@ -81,7 +83,10 @@ export function ChainRibbonPopover({
         label={<GlossaryTerm termKey="block">{t("chainRibbon.popover.number")}</GlossaryTerm>}
         value={`#${block.number}`}
       />
-      <Field label={t("chainRibbon.popover.hash")} value={block.hash} />
+      <Field
+        label={<GlossaryTerm termKey="hash">{t("chainRibbon.popover.hash")}</GlossaryTerm>}
+        value={block.hash}
+      />
       <div
         className="infra-field chain-ribbon-popover__parent"
         onMouseEnter={() => {
@@ -98,7 +103,9 @@ export function ChainRibbonPopover({
         // 本物のhashでは逆引きできないため（Issue #351 QA差し戻し対応）。
         data-parent-hash={block.parentHash}
       >
-        <span className="infra-field__label">{t("chainRibbon.popover.parent")}</span>
+        <span className="infra-field__label">
+          <GlossaryTerm termKey="hash">{t("chainRibbon.popover.parent")}</GlossaryTerm>
+        </span>
         <span className="infra-field__value">{shortHex(block.parentHash)}</span>
       </div>
       <Field
@@ -138,6 +145,20 @@ export function ChainRibbonPopover({
           </ul>
         )}
       </div>
+      {/* Issue #401: ポップオーバー内の文脈導線(常設入口はカード側の
+          subtitle 行に別途ある)。ホバー中クリック可能なため、ここから直接
+          砂場デモへ飛べる。 */}
+      <button
+        type="button"
+        className="chain-ribbon-popover__hash-demo-open nodrag"
+        onClick={(event) => {
+          event.stopPropagation();
+          sidePanel?.open({ kind: "hashChainDemo" });
+        }}
+        data-testid={`chain-ribbon-popover-hash-demo-open-${block.hash}`}
+      >
+        {t("hashDemo.open")}
+      </button>
     </PopoverPortal>
   );
 }

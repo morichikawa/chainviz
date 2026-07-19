@@ -47,7 +47,44 @@ block:
       the canvas — a "Chain" card (the chain ribbon) where this chain of
       links visibly stacks up as tiles.
   layer: c-transaction
-  relatedTerms: [transaction, mempool, gossip]
+  relatedTerms: [transaction, mempool, gossip, hash]
+
+hash:
+  name:
+    ja: ハッシュ
+    en: Hash
+  definition:
+    ja: >-
+      データの中身から計算される、決まった長さの「指紋」。1文字でも
+      中身が変わるとまったく別の値になり、ハッシュから元の中身を逆算
+      することもできない。ブロックのハッシュはブロック自身の中身
+      （親ハッシュ・番号・時刻・tx など）から計算されるため、過去の
+      ブロックを書き換えると、そのハッシュも変わり次のブロックが記録
+      している親ハッシュと食い違って露見する——これが「ブロックが連なる」
+      ことでチェーンが改ざんに強くなる理由そのもの。この計算はブロックを
+      作った実行クライアントが行い、受け取った各ノードも自分で再計算して
+      検証する。chainviz（collector）はノードが報告した値を転記するだけで
+      計算はしない。キャンバスの「チェーン」カードから、実際に keccak256
+      でハッシュを計算しながら改ざん・修復を試せる砂場（「ハッシュの
+      しくみ」デモ）を開ける。
+    en: >-
+      A fixed-length "fingerprint" computed from data's contents. Changing
+      even one character of the contents produces a completely different
+      value, and there is no way to work backward from the hash to recover
+      the original contents. A block's hash is computed from the block's
+      own contents (its parent hash, number, timestamp, transactions, and
+      more), so rewriting a past block changes its hash and makes it no
+      longer match the parent hash recorded by the next block — this
+      mismatch is exactly why chaining blocks together makes tampering
+      detectable. This computation is done by the execution client that
+      built the block, and every node that receives it recomputes and
+      verifies the hash itself; chainviz (the collector) only relays the
+      value nodes report and never computes it. The "Chain" card on the
+      canvas links to a sandbox ("How hashes chain blocks") where you can
+      actually compute keccak256 hashes while tampering with and repairing
+      a small chain.
+  layer: c-transaction
+  relatedTerms: [block, transaction]
 
 transaction:
   name:
