@@ -143,8 +143,15 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
           />
         )}
         <span className="infra-card__kind">
+          {/* Issue #410: ヘッダーの「ワークベンチ」ラベルの用語解説
+              ポップオーバーは、幅260pxでラベル直下からカード幅を超えて
+              右へ張り出すため、カード右側に開く操作パネルと構造的に
+              重なる（QAで実機確認済み。操作パネル自体を覆い、入力欄への
+              クリックが物理的にブロックされていた）。entity.kind===
+              "node" のカードには操作パネルが存在しないため抑制不要。 */}
           <GlossaryTerm
             termKey={entity.kind === "workbench" ? "workbench" : "container"}
+            suppressed={entity.kind === "workbench" && operationPanelOpen}
           >
             {kindLabel}
           </GlossaryTerm>
