@@ -110,3 +110,137 @@
   可能化（対象カードへのパン）、の3点を実装範囲とする。
 - 参考にする既存パターン: `Canvas.tsx` の `handleJumpToContract`
   （パン＋一時強調）、`handleJumpToMempoolTx`（パンのみ）。
+
+### 2026-07-23 実装（chainviz-frontend）
+
+- 担当: frontend
+- ブランチ: `issue-408-mempool-node-locality`（実装時、同名ブランチが別
+  worktree で既にチェックアウト済みだったため、作業用worktreeでは
+  `issue-408-mempool-node-locality-frontend` というローカルブランチ名で
+  `origin/issue-408-mempool-node-locality` を追跡して作業し、最終的に
+  `origin/issue-408-mempool-node-locality` へ push した。リモートの
+  ブランチ名自体は変えていない）
+
+#### 設計メモ（着手前）
+
+UX設計（上記）で決まった3点をそのまま実装範囲とする。
+
+1. `InfraNodeCard`: `entity.internals?.mempool` があるノードに、サブタイトル
+   直下へ txpool バッジを追加する。
+2. `InfraPopover`: 既存の txpool 行を bootnode 行の直後・同期ステージより
+   前へ移動する。
+3. `MempoolPanel`: ノード別行を `<button>` 化し、`onSelectNode` コールバック
+   を新設。`Canvas.tsx` 側は `handleJumpToContract` と同型の
+   `handleJumpToMempoolNode` を新設し、`jumpHighlightNodeId` の対象型に
+   `"infra"`（`InfraNodeCard` の React Flow ノード type）を追加する。
+
+`packages/shared` の型変更・collector 変更は不要という設計判断のとおり、
+既存の `NodeEntity.internals.mempool`（pending/queued）を表示・配線するだけ。
+
+#### 決めきれない点への回答
+
+- **バッジの0件時表示**: 常時表示（0件でも出す）を採用。UX設計の推奨
+  どおり、`MempoolPanel` 本体が既に採っている「0件も意味のある情報」の
+  方針と揃えた。
+- **バッジの配置**: UX設計は「ブートノードバッジと同格」＝ヘッダー行への
+  配置を推奨していたが、実装では**ヘッダー行ではなくサブタイトル直下の
+  専用行**に置いた。理由: `.infra-card` の `min-width: 190px` に対し、
+  ヘッダー行には既にステータスドット・kindラベル・（条件付きで）
+  ブートノードバッジ・削除ボタンが並んでおり、ここへさらに
+  「txpool pending N · queued M」相当の pill を追加すると、
+  `infra-card__header` に `flex-wrap` が無いため横幅超過時にカードの
+  角丸から要素がはみ出す/重なるリスクがあった（実機で目視確認する手段が
+  無い状況で、レイアウト崩壊のリスクを取るより安全側に倒した）。視覚的な
+  「pill バッジ」の見た目（配色・サイズ）は `infra-card__badge--bootnode`
+  と完全に同じクラス値を再利用した新設クラス `infra-card__badge--txpool`
+  で保っており、「同格のバッジ」という意図は達成している。この判断は
+  `docs/worklog/issue-408.md`（本ファイル）に記録済みなので、QA で実際の
+  カード密度を見て問題があれば再検討してよい。
+- **強調演出（`jumpHighlightNodeId`）のノードカードへの拡張**: 拡張した。
+  `Canvas.tsx` の `displayNodes` 計算で、ジャンプ強調対象の型判定を
+  `node.type === CONTRACT_NODE_TYPE` 単独から
+  `node.type === CONTRACT_NODE_TYPE || node.type === "infra"` 相当（実装は
+  下記の型エラー対応により2つの独立した `if`/`else if` に分割）へ拡張した。
+  コストは小さく、`ContractListPanel` と同じ発見容易性が得られるため。
+
+#### 実装内容
+
+- `packages/frontend/src/entities/InfraNodeCard.tsx`: `mempool` 変数
+  （`entity.kind === "node" ? entity.internals?.mempool : undefined`）を
+  導出し、サブタイトル直下に `infra-card__txpool-row` /
+  `infra-card__badge--txpool` を追加。`data-testid` は
+  `infra-card-txpool-${entity.id}`。ラベルは `field.txpool`
+  （`GlossaryTerm termKey="txpool"` 付き）、値は既存の `txpool.value`
+  フォーマット（`pending {n} · queued {m}`）をそのまま再利用。
+- `packages/frontend/src/entities/InfraPopover.tsx`: txpool 行を
+  `entity.p2pRole === "bootnode"` 行の直後・`showsSyncState` ブロックの
+  直前へ移動（元は同期ステージセクションの直後、ポップオーバー最下部）。
+  JSDoc の記述も更新。
+- `packages/frontend/src/entities/MempoolPanel.tsx`: ノード別行を
+  `<li><button className="mempool-panel__node-row" onClick={() =>
+  onSelectNode(node.nodeId)}>...` へ変更。新規 prop `onSelectNode:
+  (nodeId: string) => void` を追加（`MempoolNodeEntry.nodeId` は
+  `buildMempoolNodeEntries` が `rfNodes` から直接作るため、tx 行の
+  `walletCardId === undefined` のような「解決できない」ケースは無く、
+  常にクリック可能）。
+- `packages/frontend/src/canvas/Canvas.tsx`: `handleJumpToMempoolNode` を
+  新設し `MempoolPanel` の `onSelectNode` に接続。`displayNodes` の
+  ジャンプ強調判定に `"infra"` 型を追加。
+- `packages/frontend/src/i18n/messages.ts`: `mempoolPanel.nodeJumpHint`
+  （ノード別行の title 属性用ヒント文言）を新設。
+- `packages/frontend/src/styles.css`: `infra-card__txpool-row` /
+  `infra-card__badge--txpool`（新設）、`.mempool-panel__node-row` を
+  非インタラクティブな `<li>` の中身用スタイルからボタン用スタイル
+  （`cursor: pointer`、`:hover` 背景）へ変更。
+
+#### 実装時に踏んだ型エラーと対応
+
+`displayNodes` の `useMemo` 内で、ジャンプ強調対象の型判定を
+`node.type === CONTRACT_NODE_TYPE || node.type === "infra"` という1つの
+条件式にまとめたところ、`tsc -b` で
+`Type 'ContractEntity' is not assignable to type 'NodeEntity'` という
+型エラーになった。`CanvasFlowNode` は判別可能ユニオン型だが、
+`node.type === A || node.type === B` で2メンバーへ narrow された状態の
+まま `{ ...node, data: { ...node.data, isNew: true } }` を評価すると、
+TypeScript が union の各メンバーに分配して spread してくれず、
+`data.entity` の型（`ContractEntity` と `InfraEntity`）が単一の型として
+マージされようとして矛盾する。回避策として、1つの `if` にまとめず
+`if (isJumpHighlightTarget && node.type === CONTRACT_NODE_TYPE) {...}
+else if (isJumpHighlightTarget && node.type === "infra") {...}` と
+型ごとに分岐を分けた（各分岐内では単一メンバーへ narrow された状態で
+spread するため型エラーが出ない）。同種のパターンに当たった場合の
+参考にしてほしい。
+
+#### テスト
+
+- `InfraNodeCard.test.tsx`: txpool バッジの表示条件（mempool 有無・
+  pending/queued 0件でも表示・workbench では出さない・bootnode バッジと
+  共存）を追加。
+- `InfraPopover.test.tsx`: `compareDocumentPosition` を使い、txpool 行が
+  同期ステージ見出しより DOM 上で先に来ることを検証するテストを追加
+  （このテストは実装前の状態（旧順序）に対して意図的に revert して
+  実行し、実際に fail することを確認した上で実装後に戻して pass する
+  ことも確認済み）。
+- `MempoolPanel.test.tsx`: ノード別行が `<button>` になること、
+  `onSelectNode` に `nodeId` が渡ること、複数行でそれぞれ独立して呼ばれる
+  こと、`onSelectTx` と混同しないことを追加。
+
+`Canvas.tsx` の `handleJumpToMempoolNode`／`handleJumpToContract` 自体は
+既存コードでも Canvas.tsx 単体のユニットテストが無く（React Flow の
+`getNode`/`setCenter` を伴う配線ロジックで、既存の `handleJumpToContract`
+にも単体テストが無い）、本Issueでも同じ方針を踏襲し新規のテストは
+追加していない。パン・強調の実際の見た目は QA（Playwright での実機確認）
+での検証を想定。
+
+#### 次の担当への申し送り
+
+- `chainviz-tester`: 境界値として、`internals.mempool` が pending/queued
+  ともに巨大な値（表示崩れの有無）、`mempool-panel__node-row` の
+  `onSelectNode` を高速連打した場合の挙動などを検討してほしい。
+- `chainviz-qa`: 実機で (1) ノードカードに常時 txpool バッジが出ること、
+  (2) `InfraPopover` で txpool 行が基本情報の並びに来ていること、
+  (3) `MempoolPanel` のノード別行クリックで対応ノードカードへパン＋
+  一時強調されること、の3点を確認してほしい。あわせて、ヘッダー行では
+  なくサブタイトル直下に txpool バッジを置いた実装判断（上記
+  「決めきれない点への回答」参照）が実際のカード密度で問題ないか
+  目視確認してほしい。

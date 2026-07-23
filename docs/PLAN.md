@@ -1038,7 +1038,7 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       イーサリアムでの用途を説明。処理帯コンテナのaria-hiddenは実
       コンテンツになったため解除)
       [#406](https://github.com/morichikawa/chainviz/issues/406)
-- [ ] メモリプールがどこに格納されているか分かりにくい
+- [x] メモリプールがどこに格納されているか分かりにくい
       (ユーザーからの指摘。mempool自体の可視化(#330のMempoolPanel・
       ステップ9のInfraPopover txpool行)は既にあるが、「各ノードが個別に
       mempoolを持つ」ことがキャンバスの見た目からは伝わらない。ノード
