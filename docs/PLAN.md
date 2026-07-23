@@ -1046,7 +1046,16 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       エクスプローラー)・セッションリプレイは対象外とした(既存の
       #317/#298/#320と同じ「保持している範囲内で表示側の制限を緩める」
       方針の踏襲。ARCHITECTURE.md §17)。packages/shared・collectorの
-      変更は無くfrontendのみで完結する設計。実装着手は後日)
+      変更は無くfrontendのみで完結する設計。実装は、チェーンリボンの
+      ホバーポップオーバーに「ブロック詳細を見る」ボタン(Issue #401と
+      同型のパターン)を追加し、開いたサイドパネル(新kind
+      "blockDetail")で対象ブロックのフルhash・親hash・タイムスタンプ・
+      受信ノード全件・取り込み済みtx全件を表示、「前のブロック」
+      「次のブロック」ボタンでparentHash/その逆引きを辿って保持窓内を
+      前後に移動できるようにした。対象ブロックが保持窓から外れた場合は
+      contractSourceと同じダングリングガードでパネルを自動的に閉じる。
+      packages/e2e/SCENARIOS.mdにUI-B-07として追記しPlaywrightテストを
+      実装)
       [#409](https://github.com/morichikawa/chainviz/issues/409)
 
 ## 運用ルール（全ステップ共通）
