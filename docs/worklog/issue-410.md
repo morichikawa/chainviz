@@ -233,3 +233,50 @@ actionability チェックが "element intercepts pointer events" として
   ・2（他カードとの重なり）・ヘッダーラベルの独立ホバーは、いずれも今回
   未対応のまま。実際に問題が報告された場合の対応方針は上記のとおり
   `suppressed` prop の流用で対応できる見込み。
+
+### 2026-07-23 Issue #410 テスト強化メモ
+
+- 担当: tester
+- 実装担当が書いた基本テスト（`ActionHint.suppressed.test.tsx`、
+  `InfraNodeCardOperationPanelPopoverSuppression.test.tsx`）はハッピーパス
+  （抑制で隠す・抑制解除で戻す・省略時は従来どおり）を押さえていたため、
+  それらと関心事を分けて異常系・境界値・スコープの観点を追加した。
+- 追加した観点:
+  - **表示と内部状態の整合（抑制中に起きたホバー/フォーカス遷移）**:
+    新規ファイル `packages/frontend/src/canvas/ActionHint.suppressedHoverSync.test.tsx`。
+    `suppressed` は `useHoverPopover` の内部状態（`open`）を変えず表示だけを
+    隠す設計のため、抑制中もホバー/フォーカスのハンドラは生きている。この
+    ため次の食い違いが起きないことを固定した:
+    - 抑制中にマウスが実際に離れた（遅延クローズ満了）場合、抑制解除後に
+      ツールチップが復活しない（`fireEvent.mouseLeave` +
+      `HOVER_POPOVER_CLOSE_DELAY_MS` 経過で fake timers を使用）。
+    - 抑制中に blur した（フォーカスがパネル内などへ移った）場合、抑制
+      解除後に復活しない。
+    - 逆に、抑制中に新しく始まったホバー/フォーカスは内部状態として記憶
+      され、抑制解除の瞬間に表示される（既存テストの「抑制前に開いていた
+      ものを戻す」とは順序が逆のケース）。
+  - **操作パネル開閉との同期（統合）**:
+    `InfraNodeCardOperationPanelPopoverSuppression.test.tsx` に追加。
+    - 操作パネルを開いた後にボタンが blur（フォーカスがパネル内へ移動）
+      した場合、パネルを閉じても ActionHint の予告ツールチップが復活
+      しない（既存の「カーソルがボタン上に残ったまま戻る」ケースの対）。
+    - パネルを素早く open/close 繰り返しても `InfraPopover` の表示が
+      毎回 open/close に同期する（トグル state と表示条件が食い違って
+      固まらない）。
+  - **スコープ（他カード種別への波及がないこと）**: `suppressed` prop の
+    利用箇所を grep で確認した結果、`InfraNodeCard.tsx` のワークベンチ
+    カード1箇所のみで、`WalletCard`/`ContractCard` は `ActionHint` 自体を
+    使っておらず、他の `ActionHint` 呼び出し側（`CanvasToolbar` 等）は
+    `suppressed` を渡さず既定 false で従来どおり（既存の「省略時は従来
+    どおり」テストが担保）。加えて統合テストに、通常ノードカード
+    （`entity.kind === "node"`。操作パネル・ActionHint を持たず
+    `operationPanelOpen` は常に false）でホバー時に `InfraPopover` が正常に
+    出て抑制条件 `!operationPanelOpen` に巻き込まれないことを固定した。
+- 回帰検出の確認: `ActionHint.tsx` の `visible = open && !suppressed` を
+  一時的に `visible = open`（抑制無効）へ改変し、新規の
+  `ActionHint.suppressedHoverSync.test.tsx` 4件が実際に失敗することを確認
+  してから元に戻した。
+- 実装のバグは見つからなかった。実装の抑制ロジック（表示だけを隠し内部
+  状態を保持する設計）は上記の境界すべてで一貫して正しく振る舞う。
+- `pnpm lint && pnpm build && pnpm test`（リポジトリ全体、frontend 3048
+  件を含む全パッケージ）が通ることを確認済み。
