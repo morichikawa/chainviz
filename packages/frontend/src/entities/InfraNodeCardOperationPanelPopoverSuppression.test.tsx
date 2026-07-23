@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CommandActionsProvider } from "../commands/CommandActionsContext.js";
 import type { CommandActions } from "../commands/useCommands.js";
 import { GlossaryProvider } from "../glossary/GlossaryProvider.js";
+import type { Glossary } from "../glossary/types.js";
 import { LanguageProvider } from "../i18n/LanguageProvider.js";
 import { OperationDataProvider } from "../operations/OperationDataContext.js";
 import { InfraNodeCard } from "./InfraNodeCard.js";
@@ -16,6 +17,10 @@ import type { InfraEntity } from "./infraNode.js";
  * ActionHint（予告ツールチップ）を表示しないことの確認。
  * InfraNodeCardOperationButton.test.tsx（ボタン・パネルの開閉自体）を
  * 肥大化させないよう別ファイルに分ける。
+ *
+ * QA差し戻し（条件4未達）を受けて、カードヘッダーの「ワークベンチ」ラベル
+ * （GlossaryTerm）の抑制確認もこのファイルに追加する。操作パネルの開閉
+ * (`operationPanelOpen`) に連動する表示抑制という同じ関心事のため。
  */
 
 afterEach(cleanup);
@@ -52,7 +57,7 @@ const node: InfraEntity = {
   removable: true,
 };
 
-function renderCard(entity: InfraEntity = workbench) {
+function renderCard(entity: InfraEntity = workbench, glossary: Glossary = {}) {
   const actions: CommandActions = {
     addNode: vi.fn(),
     addWorkbench: vi.fn(),
@@ -63,7 +68,7 @@ function renderCard(entity: InfraEntity = workbench) {
   render(
     <ReactFlowProvider>
       <LanguageProvider initialLanguage="ja">
-        <GlossaryProvider glossary={{}}>
+        <GlossaryProvider glossary={glossary}>
           <CommandActionsProvider actions={actions}>
             <OperationDataProvider
               value={{ walletCandidates: [], deployedContracts: [] }}
@@ -214,5 +219,74 @@ describe("InfraNodeCard popover suppression while the operation panel is open (I
     expect(screen.queryByTestId(`infra-card-operate-${node.id}`)).toBeNull();
     fireEvent.mouseEnter(screen.getByTestId(`infra-card-${node.id}`));
     expect(screen.getByTestId(`infra-popover-${node.id}`)).toBeTruthy();
+  });
+});
+
+// QA差し戻し（Issue #410 条件4未達）: カードヘッダーの「ワークベンチ」ラベル
+// （GlossaryTerm）の用語解説ポップオーバーが、操作パネルより前面に出て
+// パネル本体を覆っていた問題への対応確認。glossary に "workbench" を実際に
+// 登録した状態でないと GlossaryTerm は unknown 扱い（ポップオーバー自体を
+// 持たない）になるため、この描画確認だけ専用の glossary を使う。
+describe("InfraNodeCard header label (GlossaryTerm) suppression while the operation panel is open (Issue #410 follow-up)", () => {
+  const glossaryWithWorkbenchTerm: Glossary = {
+    workbench: {
+      key: "workbench",
+      name: { ja: "ワークベンチ", en: "Workbench" },
+      definition: { ja: "操作を実行できる作業台", en: "A workbench for running operations" },
+      layer: "a-infra",
+      relatedTerms: [],
+    },
+  };
+
+  function headerLabel(): HTMLElement {
+    return screen.getByTestId(`infra-card-${workbench.id}`).querySelector(
+      ".infra-card__kind [role='button']",
+    ) as HTMLElement;
+  }
+
+  it("shows the header label's popover on hover when the operation panel is closed (baseline)", () => {
+    renderCard(workbench, glossaryWithWorkbenchTerm);
+    fireEvent.mouseEnter(headerLabel());
+    expect(document.querySelector(`[data-testid="glossary-popover-workbench"]`)).toBeTruthy();
+  });
+
+  it("hides the header label's popover once the operation panel opens, even while still hovered", () => {
+    renderCard(workbench, glossaryWithWorkbenchTerm);
+    const label = headerLabel();
+    fireEvent.mouseEnter(label);
+    expect(document.querySelector(`[data-testid="glossary-popover-workbench"]`)).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId(operateButtonTestId));
+
+    expect(document.querySelector(`[data-testid="glossary-popover-workbench"]`)).toBeNull();
+  });
+
+  it("restores the header label's popover after the panel closes, without needing to re-hover", () => {
+    renderCard(workbench, glossaryWithWorkbenchTerm);
+    const label = headerLabel();
+    fireEvent.mouseEnter(label);
+    fireEvent.click(screen.getByTestId(operateButtonTestId)); // open panel
+    expect(document.querySelector(`[data-testid="glossary-popover-workbench"]`)).toBeNull();
+
+    fireEvent.click(screen.getByTestId(operateButtonTestId)); // close panel
+    expect(document.querySelector(`[data-testid="glossary-popover-workbench"]`)).toBeTruthy();
+  });
+
+  // スコープ確認: 通常ノードカードには操作パネルが無く operationPanelOpen は
+  // 常に false のため、ヘッダーラベル（termKey="container"）のポップオーバー
+  // は通常どおりホバーで表示される。
+  it("does not affect a plain node card's header label popover", () => {
+    renderCard(node, { ...glossaryWithWorkbenchTerm, container: {
+      key: "container",
+      name: { ja: "コンテナ", en: "Container" },
+      definition: { ja: "隔離された実行単位", en: "An isolated runtime unit" },
+      layer: "a-infra",
+      relatedTerms: [],
+    } });
+    const label = screen.getByTestId(`infra-card-${node.id}`).querySelector(
+      ".infra-card__kind [role='button']",
+    ) as HTMLElement;
+    fireEvent.mouseEnter(label);
+    expect(document.querySelector(`[data-testid="glossary-popover-container"]`)).toBeTruthy();
   });
 });
