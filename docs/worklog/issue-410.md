@@ -398,3 +398,105 @@ QAで「ワークベンチ」ラベルをホバー→操作パネルを開く→
 - なお、この修正が実装担当の当初スコープ（InfraPopover/ActionHint に限定）を超えるため、同一Issueの追修正とするか別Issueに切るかは統括の判断に委ねる。QAとしては条件4を満たしていないため現状のままの合格チェックは付けない。
 
 （検証は commit / push していない。統括が内容を確認のうえ対応方針を決める。）
+
+### 2026-07-23 Issue #410 差し戻し対応（frontend）
+
+- 担当: frontend
+- 対応内容: QA検証結果（受け入れ条件4未達）を受け、カードヘッダーの
+  「ワークベンチ」ラベル（`GlossaryTerm`、`entity.kind === "workbench"`
+  のとき `termKey="workbench"`）の用語解説ポップオーバーを、操作パネルが
+  開いている間だけ抑制する対応を追加した。
+
+#### 設計メモ（実装前）
+
+- 既存の `ActionHint` の `suppressed?: boolean` prop と全く同じ設計を
+  `GlossaryTerm` にも導入する。`useHoverPopover` 自体のホバー追跡ロジックは
+  変更せず、`visible = open && !suppressed` という表示条件の合成のみを
+  追加する（内部のホバー/フォーカス状態は保持され、抑制が外れれば再ホバー
+  不要で元の見た目に戻る）。z-indexの入れ替えのような対症療法は行わない
+  （レビュー・QA双方から一貫して指摘されている方針）。
+- `GlossaryTerm` は用語集全体で使われる共有コンポーネントのため、
+  `suppressed` はデフォルト `false` にし、他の呼び出し箇所（バッジの
+  `bootnode`、`InfraPopover` 内、`WalletCard`/`ContractCard` 等）には
+  一切影響が出ないようにする。抑制を渡すのは `InfraNodeCard.tsx` の
+  ヘッダーラベル1箇所のみに限定する。
+  - 理由: 操作パネルが存在するのはワークベンチカードのみで、抑制が必要な
+    重なりが起きるのもこの1箇所だけ。バッジ（`bootnode`）は
+    `entity.kind === "node"` のときにしか出ず操作パネルとは同時に存在しない
+    ため対象外。`InfraPopover` 内の用語解説は、既存実装により
+    `InfraPopover` 自体が操作パネル表示中は描画されなくなるため、そもそも
+    連鎖的に出ない（前回実装の設計どおり）。
+
+#### 実装
+
+- `packages/frontend/src/glossary/GlossaryTerm.tsx`: `suppressed?: boolean`
+  prop を追加（デフォルト `false`）。`visible = open && !suppressed` を
+  算出し、`aria-describedby` とポップオーバーの描画条件を `open` から
+  `visible` に置き換えた。`useHoverPopover` の呼び出し方・他のロジックは
+  変更していない。
+- `packages/frontend/src/entities/InfraNodeCard.tsx`: ヘッダーの
+  `GlossaryTerm`（`termKey={entity.kind === "workbench" ? "workbench" :
+  "container"}`）に `suppressed={entity.kind === "workbench" &&
+  operationPanelOpen}` を追加した。`entity.kind === "node"` のカードには
+  操作パネルが存在しないため、常に `suppressed=false` 相当になり影響しない。
+
+#### テスト（vitest）
+
+- `packages/frontend/src/glossary/GlossaryTerm.suppressed.test.tsx`
+  （新規）: `ActionHint.suppressed.test.tsx` /
+  `ActionHint.suppressedHoverSync.test.tsx` と同じ観点を `GlossaryTerm` に
+  適用した7件（抑制で隠す・内部状態を保持したまま抑制解除で戻す・抑制中は
+  ホバーしても開かない・`aria-describedby` も連動して消える・prop省略時は
+  従来どおり・抑制中に実際にマウスが離れた/blurした場合は解除後も復活
+  しない・抑制中に新規に始まったホバーは解除時に反映される）。既存の
+  `GlossaryTerm.test.tsx`（基本挙動）を肥大化させないよう別ファイルに
+  分けた。
+- `packages/frontend/src/entities/InfraNodeCardOperationPanelPopoverSuppression.test.tsx`
+  （既存ファイルに追記）: `InfraPopover`/`ActionHint` の抑制確認と同じ
+  関心事（`operationPanelOpen` に連動した表示抑制）のため、既存ファイルに
+  ヘッダーラベルの抑制確認を追加する形にした（新規ファイルには分けず、
+  Issue #410 のカード側統合確認として一本化）。ワークベンチカードで
+  操作パネルを開閉するとヘッダーラベルの用語解説ポップオーバーが
+  連動して消える/戻ることの確認3件、通常ノードカード（`entity.kind ===
+  "node"`）では抑制条件の影響を受けずヘッダーラベルが通常どおり動作する
+  ことの確認1件を追加した（既存の `renderCard` ヘルパーに glossary を
+  差し替えられる引数を追加。`GlossaryTerm` は glossary に用語が登録されて
+  いないと unknown 扱いでポップオーバー自体を持たないため、この確認だけ
+  `workbench`/`container` を実際に登録した glossary を渡している）。
+
+#### 回帰検出・実機検証の確認
+
+- 回帰検出: 上記2ファイルの新規/追加テストについて、`GlossaryTerm.tsx` の
+  `visible = open && !suppressed` を一時的に `visible = open`（抑制無効）に
+  改変した状態で実行し、`GlossaryTerm.suppressed.test.tsx` 全7件と
+  `InfraNodeCardOperationPanelPopoverSuppression.test.tsx` のヘッダー
+  ラベル関連6件（新規3件＋既存の抑制外テスト含む実行結果としては新規3件が
+  失敗）が実際に失敗することを確認してから元に戻した。
+- 実機検証（QAの再現手順をそのまま踏襲）: `pnpm --filter @chainviz/frontend
+  exec vite --port 5299`（モックデータ）でフロントエンドを起動し、
+  `@playwright/test` の chromium
+  （`LD_LIBRARY_PATH=/home/zoe/chrome-deps/root/usr/lib/x86_64-linux-gnu`）
+  から一時スクリプトで実操作した（リポジトリには含めていない）。
+  - **修正前の状態を再現**して問題を確認: `GlossaryTerm.tsx` の抑制条件を
+    一時的に無効化した状態で、ワークベンチカード（`workbench-alice`）の
+    操作パネルを開き、ヘッダー「ワークベンチ」ラベルにカーソルを乗せると
+    用語解説ポップオーバーが表示され（DOM要素数 1）、金額入力欄
+    （`operation-transfer-amount`）の中心座標で `document.elementFromPoint`
+    を評価すると `glossary-popover__definition` が返り、実際に
+    `locator.click()` が4秒でタイムアウトして失敗することを確認した
+    （QAの報告内容と完全に一致する再現）。
+  - **修正を戻した状態**で同じ手順を再実行し、ポップオーバーが表示されず
+    （DOM要素数 0）、`elementFromPoint` が操作パネルの入力欄要素
+    （`operation-field__input`）を返し、金額欄への `click()` と値の入力
+    （`1.5`）が成功することを確認した。
+- `pnpm lint && pnpm build && pnpm test`（リポジトリ全体）が通ることを
+  確認済み（frontend: 245ファイル3059件全件成功）。
+
+#### 差し戻し対応後の受け入れ条件との突き合わせ
+
+1〜3: 変更なし（前回実装のまま）。
+4「操作パネル自体は、開いている間は常にカーソルの位置に関わらず全体が
+視認・操作可能な状態を維持する」: QAが指摘したヘッダーラベル経由の重なりを
+含め、実機検証で解消を確認した。レビュー時に残っていた「他カード種別」
+「別カードとの重なり」のスコープ外判断は今回も変更していない（引き続き
+将来問題が報告された場合の対応方針として有効）。
