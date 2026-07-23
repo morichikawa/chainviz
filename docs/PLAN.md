@@ -1038,6 +1038,16 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       イーサリアムでの用途を説明。処理帯コンテナのaria-hiddenは実
       コンテンツになったため解除)
       [#406](https://github.com/morichikawa/chainviz/issues/406)
+- [x] チェーンを遡れるようにしたい
+      (ユーザーからの要望。Issue本文が空だったため、designerが要望を解釈し
+      スコープを確定した: collectorの保持窓(BLOCK_RETENTION=32、約6.4分)の
+      範囲内で任意のブロックの詳細を見て前後に移動できる「ブロック詳細
+      パネル」に絞り、保持窓外への遡及取得・全チェーン検索UI(本格
+      エクスプローラー)・セッションリプレイは対象外とした(既存の
+      #317/#298/#320と同じ「保持している範囲内で表示側の制限を緩める」
+      方針の踏襲。ARCHITECTURE.md §17)。packages/shared・collectorの
+      変更は無くfrontendのみで完結する設計。実装着手は後日)
+      [#409](https://github.com/morichikawa/chainviz/issues/409)
 
 ## 運用ルール（全ステップ共通）
 
