@@ -39,6 +39,7 @@
 
 | Issue | 内容 | 記録 |
 | --- | --- | --- |
+| #408 | Issue #408 メモリプールがどこに格納されているか分かりにくい件のUX設計(ux)。実機(モックデータ+Playwright)で確認し、ノードカード本体にmempool/txpoolの手がかりが無い・InfraPopoverのtxpool行が同期ステージ10行の下に埋もれている・MempoolPanelの「ノード別txpool」欄がキャンバス上の実カードと視覚的に結び付いていない、の3点を特定。ノードカードへのtxpoolバッジ追加・InfraPopover内txpool行の並び順変更・MempoolPanelノード別行のクリック可能化(該当カードへパン)を実装方針として提案。shared型変更・collector変更は不要 | [2026-07-23](worklog/issue-408.md) |
 | #1-#5 | Issue #1・#2・#3 Ethereum プロファイルのノード環境 | [2026-07-04](worklog/issue-1-5.md) |
 | #7-#9 | Issue #7・#8・#9 A層(インフラ可視化)の collector 実装 | [2026-07-04](worklog/issue-7-9.md) |
 | #10-#16 | Issue #10〜#16 Phase 1 フロントエンド(A層インフラ可視化) | [2026-07-04](worklog/issue-10-16.md) |

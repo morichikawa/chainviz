@@ -1038,6 +1038,17 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       イーサリアムでの用途を説明。処理帯コンテナのaria-hiddenは実
       コンテンツになったため解除)
       [#406](https://github.com/morichikawa/chainviz/issues/406)
+- [ ] メモリプールがどこに格納されているか分かりにくい
+      (ユーザーからの指摘。mempool自体の可視化(#330のMempoolPanel・
+      ステップ9のInfraPopover txpool行)は既にあるが、「各ノードが個別に
+      mempoolを持つ」ことがキャンバスの見た目からは伝わらない。ノード
+      カード本体にtxpoolの手がかりが無い・InfraPopover内でtxpool行が
+      同期ステージ10行の下に埋もれている・MempoolPanelの「ノード別
+      txpool」欄が実際のノードカードと視覚的に結び付いていない、の3点を
+      chainviz-uxが特定しUX設計をまとめた。shared型変更・collector変更は
+      不要。着手時はUX設計(docs/worklog/issue-408.md)に沿って
+      chainviz-frontendが実装)
+      [#408](https://github.com/morichikawa/chainviz/issues/408)
 
 ## 運用ルール（全ステップ共通）
 
