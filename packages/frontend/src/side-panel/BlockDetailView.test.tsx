@@ -199,6 +199,24 @@ describe("BlockDetailView: prev/next navigation buttons", () => {
       "次のブロックが見つかりません",
     );
   });
+
+  it("disables both directions and shows both reasons for an isolated block (no parent, no child)", () => {
+    // 保持窓に対象ブロック1件しか無い（親も子も観測されていない）境界。
+    // 前後どちらのボタンも無効になり、両方向の理由文言が同時に出る。
+    const target = block({ hash: "0xisolated" });
+    renderView({
+      block: target,
+      navigation: navigation({ parent: undefined, child: undefined, isLatest: false }),
+    });
+    expect(isDisabled("block-detail-prev-0xisolated")).toBe(true);
+    expect(isDisabled("block-detail-next-0xisolated")).toBe(true);
+    expect(screen.getByTestId("block-detail-prev-reason").textContent).toBe(
+      "これより前は保持期間外のため表示できません",
+    );
+    expect(screen.getByTestId("block-detail-next-reason").textContent).toBe(
+      "次のブロックが見つかりません",
+    );
+  });
 });
 
 describe("BlockDetailView: transaction list", () => {
@@ -251,6 +269,25 @@ describe("BlockDetailView: transaction list", () => {
     const callCell = screen.getByTestId(`block-detail-tx-call-${call.hash}`);
     expect(callCell.textContent).toContain("transfer");
     expect(callCell.textContent).toContain("ChainvizToken");
+  });
+
+  it("falls back to the shortened contract address when the target contract name is not resolvable", () => {
+    // 宛先コントラクトが catalog に無い（未観測・別 tx で観測されただけ 等）
+    // 場合、名前ではなく shortHex(アドレス) にフォールバックする
+    // （deriveTxCallPreview の契約。resolved 名の表示は別テストで確認済み）。
+    const contractAddress = `0x${"d".repeat(40)}`;
+    const call = tx({
+      hash: "0xcalltx0000000000000000000000000000002",
+      contractCall: { contractAddress, functionName: "approve", args: [] },
+    });
+    renderView({
+      visibleTransactions: [call],
+      totalTxCount: 1,
+      contractsByAddress: new Map<string, ContractEntity>(),
+    });
+    const callCell = screen.getByTestId(`block-detail-tx-call-${call.hash}`);
+    expect(callCell.textContent).toContain("approve");
+    expect(callCell.textContent).toContain("0xdddddd");
   });
 
   it("shows an overflow message when overflowCount is greater than zero", () => {

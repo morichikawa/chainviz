@@ -89,6 +89,22 @@ describe("ChainRibbonPopover: block detail entry (Issue #409)", () => {
     expect((button as HTMLButtonElement).type).toBe("button");
   });
 
+  it("marks the entry button with nodrag so React Flow does not treat it as a canvas pan/drag", () => {
+    // ポップオーバーはチェーンリボンノード（React Flow ノード）の中に描画される
+    // ため、React Flow の `nodrag` クラスが無いとボタンの押下がキャンバスの
+    // パン操作として横取りされる（InfraNodeCard の削除ボタンと同じ要件）。
+    // stopPropagation（バブリング抑止）とは別の防御であり、双方を固定する。
+    render(
+      <LanguageProvider initialLanguage="ja">
+        <GlossaryProvider glossary={{}}>
+          <Harness blockTile={tile("0xchild")} />
+        </GlossaryProvider>
+      </LanguageProvider>,
+    );
+    const button = screen.getByTestId("chain-ribbon-popover-block-detail-open-0xchild");
+    expect(button.classList.contains("nodrag")).toBe(true);
+  });
+
   it("opens the blockDetail side panel view for this tile's hash when clicked, without bubbling to ancestors", () => {
     const parentClick = vi.fn();
     render(

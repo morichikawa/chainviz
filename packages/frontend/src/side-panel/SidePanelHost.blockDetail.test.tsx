@@ -144,6 +144,22 @@ describe("SidePanelHost: blockDetail dispatch", () => {
     expect(screen.getAllByTestId("side-panel")).toHaveLength(1);
   });
 
+  it("navigates to the parent block when the parent-hash field link is clicked (a second entry point besides the prev button)", () => {
+    const parent = block({ hash: "0xparent", number: 9 });
+    const target = block({ hash: "0xtarget", number: 10, parentHash: "0xparent" });
+    const blocksByHash = new Map([
+      [parent.hash, parent],
+      [target.hash, target],
+    ]);
+    renderHost({ blocksByHash, hash: target.hash });
+    fireEvent.click(screen.getByText("open"));
+    expect(screen.getByText("#10")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId(`block-detail-parent-link-${target.hash}`));
+    expect(screen.getByText("#9")).toBeTruthy();
+    expect(screen.getAllByTestId("side-panel")).toHaveLength(1);
+  });
+
   it("disables 'next block' with the latest-block reason when the target hash matches latestBlockHash", () => {
     const target = block({ hash: "0xtarget", number: 10 });
     renderHost({
