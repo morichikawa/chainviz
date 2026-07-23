@@ -31,6 +31,7 @@ function wrap(props: {
   totalPendingCount?: number;
   nodeEntries?: MempoolNodeEntry[];
   onSelectTx?: (walletCardId: string) => void;
+  onSelectNode?: (nodeId: string) => void;
   lang?: "ja" | "en";
 }) {
   const {
@@ -39,6 +40,7 @@ function wrap(props: {
     totalPendingCount = txEntries.length,
     nodeEntries = [],
     onSelectTx = () => {},
+    onSelectNode = () => {},
     lang = "ja",
   } = props;
   return render(
@@ -50,6 +52,7 @@ function wrap(props: {
           totalPendingCount={totalPendingCount}
           nodeEntries={nodeEntries}
           onSelectTx={onSelectTx}
+          onSelectNode={onSelectNode}
         />
       </GlossaryProvider>
     </LanguageProvider>,
@@ -230,5 +233,58 @@ describe("MempoolPanel", () => {
     expect(screen.getByTestId("mempool-panel").textContent).toContain(
       "No pending transactions",
     );
+  });
+});
+
+// Issue #408: ノード別 txpool 行のクリック導線（対応するノードカードへの
+// パン）。既存の tx 行（クリック可能な行は button 化される）と同じ流儀を
+// ノード別行にも適用したことを確認する。
+describe("MempoolPanel node row click (Issue #408)", () => {
+  it("renders each node row as a clickable button", () => {
+    wrap({
+      txEntries: [],
+      nodeEntries: [{ nodeId: "n1", label: "reth-1", pending: 3, queued: 1 }],
+    });
+    expect(screen.getByTestId("mempool-node-row-n1").tagName).toBe("BUTTON");
+  });
+
+  it("calls onSelectNode with the entry's nodeId when a node row is clicked", () => {
+    const onSelectNode = vi.fn();
+    wrap({
+      txEntries: [],
+      nodeEntries: [{ nodeId: "n1", label: "reth-1", pending: 3, queued: 1 }],
+      onSelectNode,
+    });
+    fireEvent.click(screen.getByTestId("mempool-node-row-n1"));
+    expect(onSelectNode).toHaveBeenCalledWith("n1");
+  });
+
+  it("calls onSelectNode independently per row when multiple node entries exist", () => {
+    const onSelectNode = vi.fn();
+    wrap({
+      txEntries: [],
+      nodeEntries: [
+        { nodeId: "n1", label: "reth-1", pending: 3, queued: 1 },
+        { nodeId: "n2", label: "reth-2", pending: 0, queued: 0 },
+      ],
+      onSelectNode,
+    });
+    fireEvent.click(screen.getByTestId("mempool-node-row-n2"));
+    expect(onSelectNode).toHaveBeenCalledTimes(1);
+    expect(onSelectNode).toHaveBeenCalledWith("n2");
+  });
+
+  it("does not call onSelectTx when a node row is clicked (independent callbacks)", () => {
+    const onSelectTx = vi.fn();
+    const onSelectNode = vi.fn();
+    wrap({
+      txEntries: [],
+      nodeEntries: [{ nodeId: "n1", label: "reth-1", pending: 3, queued: 1 }],
+      onSelectTx,
+      onSelectNode,
+    });
+    fireEvent.click(screen.getByTestId("mempool-node-row-n1"));
+    expect(onSelectTx).not.toHaveBeenCalled();
+    expect(onSelectNode).toHaveBeenCalledTimes(1);
   });
 });

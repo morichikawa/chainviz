@@ -18,6 +18,14 @@ import { shortHex } from "./transaction.js";
  * だけの薄いコールバック」の分離）。from に対応するウォレットカードが
  * キャンバス上に存在しない行（`walletCardId === undefined`）はクリック
  * 不可として描画する。
+ *
+ * 下段（ノード別 txpool）の各行もクリック可能で、対応するノードカード
+ * （`InfraNodeCard`）へパンする（Issue #408。以前はテキストを並べるだけで
+ * キャンバス上の実カードと視覚的に結び付いていなかった）。
+ * `MempoolNodeEntry.nodeId` は `buildMempoolNodeEntries` が `rfNodes` 上の
+ * インフラカードから直接作るため、`walletCardId` のような「存在しない」
+ * ケースの解決は不要（常にクリック可能。パン先が消えた場合の防御は
+ * `Canvas.tsx` 側のハンドラが `handleJumpToContract` と同じ流儀で持つ）。
  */
 export function MempoolPanel({
   txEntries,
@@ -25,6 +33,7 @@ export function MempoolPanel({
   totalPendingCount,
   nodeEntries,
   onSelectTx,
+  onSelectNode,
 }: {
   /** 表示上限で切り出し済みの行（`limitMempoolTxEntries` の出力）。 */
   txEntries: MempoolTxEntry[];
@@ -35,6 +44,8 @@ export function MempoolPanel({
   nodeEntries: MempoolNodeEntry[];
   /** クリックされた行の `walletCardId`（= 解決済みのウォレットカード id）を渡す。 */
   onSelectTx: (walletCardId: string) => void;
+  /** クリックされた行の `nodeId`（= 対応するノードカードの id）を渡す。 */
+  onSelectNode: (nodeId: string) => void;
 }) {
   const { t } = useLanguage();
 
@@ -69,18 +80,22 @@ export function MempoolPanel({
           </div>
           <ul className="mempool-panel__node-rows">
             {nodeEntries.map((node) => (
-              <li
-                key={node.nodeId}
-                className="mempool-panel__node-row"
-                data-testid={`mempool-node-row-${node.nodeId}`}
-              >
-                <span className="mempool-panel__node-label">{node.label}</span>
-                <span className="mempool-panel__node-counts">
-                  {format(t("txpool.value"), {
-                    pending: String(node.pending),
-                    queued: String(node.queued),
-                  })}
-                </span>
+              <li key={node.nodeId}>
+                <button
+                  type="button"
+                  className="mempool-panel__node-row"
+                  data-testid={`mempool-node-row-${node.nodeId}`}
+                  title={t("mempoolPanel.nodeJumpHint")}
+                  onClick={() => onSelectNode(node.nodeId)}
+                >
+                  <span className="mempool-panel__node-label">{node.label}</span>
+                  <span className="mempool-panel__node-counts">
+                    {format(t("txpool.value"), {
+                      pending: String(node.pending),
+                      queued: String(node.queued),
+                    })}
+                  </span>
+                </button>
               </li>
             ))}
           </ul>
