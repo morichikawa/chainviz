@@ -251,3 +251,73 @@
 - **確認**: `pnpm lint && pnpm build && pnpm test`が全パッケージで通ることを
   確認済み（frontend 3090件・collector 1673件・shared 75件・e2eは
   `tsc --noEmit`型検証のみ。e2eのPlaywright実機実行は未実施）。
+
+### 2026-07-23 Issue #409 チェーンを遡れるようにしたい（レビュー）
+- 担当: reviewer
+- ブランチ: issue-409-block-detail-navigation（レビューは、既に別worktreeで
+  当該ブランチをチェックアウト中だったため、同一コミットを指す一時ローカル
+  ブランチ`review-issue-409`上で実施した。内容は同じコミット履歴）
+- 判定: **合格**
+
+- **確認した内容**:
+  - `main`との差分全体（`packages/shared`・collector側の変更が無いこと、
+    frontend + e2eのみで完結していることを含む）を読んだ。設計メモ・
+    ARCHITECTURE.md §17との整合を確認し、齟齬は見つからなかった
+  - 境界の遵守: フロントはDocker/ノードAPIに直接触れていない。チェーン
+    固有語彙（`eth_getLogs`等）の漏出も無い。`blockDetail.ts`は既存の
+    `BlockEntity`/`TransactionEntity`の再結合のみで新規観測を伴わない
+  - チェーンプロファイルの独立性: 既存プロファイルへの分岐追加は無い
+  - `packages/shared`: 変更なし。ビルド・テストへの影響なしを確認
+  - `findChildBlock`のtie-break規則が`chainRibbon.ts`の
+    `pickCanonicalPerNumber`と実際に一致することは妥当な設計判断と判断した。
+    両者は`latestReceiptTime`（`blockPulse.ts`、両ファイルで共通利用）を
+    入力に使う同一の比較式を独立に持っているが、走査対象（「特定ブロックの
+    子候補」対「同一番号内の正史選択」）が異なるため関数の直接共有はしづらく、
+    tester担当が追加したcross-checkテスト（`findChildBlock`の勝者と
+    `deriveRibbonTiles`経由の正史選択が一致することを直接突き合わせる）が
+    規則の乖離を検知できるため、リスクは許容範囲内と判断した
+  - 固定値の妥当性: `BLOCK_DETAIL_TX_DISPLAY_LIMIT = 100`は表示密度の
+    安全弁であり、`mempoolList.ts`の`MEMPOOL_TX_DISPLAY_LIMIT`と同種で
+    データの動的な性質に依存しない値。collectorの`BLOCK_RETENTION`
+    （32、現状不変）はこの実装のどこにもハードコードされておらず、常に
+    frontendに届くデータ（`blocksByHash`）から動的に導出している。
+    e2eテストの待機時間（`BLOCK_DETAIL_TIMEOUT_MS`）も`SLOT_DURATION_MS`
+    から導出する動的な式であり、決め打ちの絶対値ではない
+  - エラーの握りつぶし: 今回の変更はいずれも純粋関数・表示コンポーネントで
+    非同期処理や`catch`を含まない。該当なし
+  - ダングリングガード: 既存の`contractSource`と全く同じ仕組み
+    （`useEffect`で`dangling`を監視して`close()`）を再利用しており、
+    新規のバグ混入リスクは低い
+  - ビルド・lint・テスト: `pnpm lint && pnpm build && pnpm test`を
+    リポジトリ全体で実行し、全パッケージ通過を確認した（frontend
+    3090件・collector 1673件・shared 75件・e2e(vitest) 185件、e2eの
+    `build`は`tsc --noEmit`）。worklogの申告と一致
+  - テストコードの質: `blockDetail.test.ts`はフォークのtie-break・Map反復
+    順非依存・`isLatest`とchildの独立成立・nonce欠損tx・
+    `limitBlockTransactions`の境界（ちょうど上限・0・空）等、異常系・境界値を
+    広くカバーしている。`SidePanelHost.blockDetail.test.tsx`は
+    ダングリングガードの発火・親hashリンクからのナビゲーション・tx絞り込みを
+    個別に検証しており、実装の詳細をなぞるだけの無意味なテストにはなって
+    いない。テストファイルもCLAUDE.mdの1ファイル1責務方針に沿って関心事
+    ごとに分割されている
+  - スコープの逸脱確認: tx行からウォレット/コントラクトカードへのジャンプ
+    機能は追加されておらず（ARCHITECTURE.md §17.4で明示的に対象外とした
+    範囲）、過剰実装は見当たらない。保持窓外への遡及RPCも追加されていない
+  - コミット粒度: `git log main..HEAD`で8コミットを確認し、
+    「データ導出関数の追加」「サイドパネルviewの追加」「導線の配線」
+    「e2eシナリオ追加」「worklog記録」「テスト強化」「e2eアサーション
+    修正」がそれぞれ独立したコミットに分かれており、1変更1コミットの
+    方針に沿っていた
+  - docsとの整合: `docs/ARCHITECTURE.md` §17・`docs/PLAN.md`のチェック
+    ボックス・`packages/e2e/SCENARIOS.md`のUI-B-07が実装内容と一致して
+    いることを確認した
+
+- **軽微な所感（合否に影響しない）**: `findChildBlock`と
+  `pickCanonicalPerNumber`のtie-break比較式そのもの（6行程度）は独立実装
+  のまま重複している。将来この規則を変える際は両方の更新が必要になる点は
+  worklogに明記済みであり、cross-checkテストが安全網として機能するため、
+  現時点でこの設計を変更させる指摘はしない
+
+- **次の担当**: chainviz-qaによる実機検証（特にPlaywright
+  `block-detail.spec.ts`の実行と、保持窓境界・フォーク時の前後ナビゲーション
+  の目視確認）を推奨する。
