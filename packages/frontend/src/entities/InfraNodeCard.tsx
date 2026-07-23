@@ -202,7 +202,10 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
         )}
       {entity.kind === "workbench" && (
         <div className="infra-card__operate-wrapper">
-          <ActionHint hint={resolveWorkbenchOperationsHint(rpcTargetContainerName, t)}>
+          <ActionHint
+            hint={resolveWorkbenchOperationsHint(rpcTargetContainerName, t)}
+            suppressed={operationPanelOpen}
+          >
             <button
               type="button"
               className={
@@ -233,7 +236,15 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
           </ActionHint>
         </div>
       )}
-      {hovered && (
+      {/* Issue #410: 操作パネルが開いている間はホバー詳細ポップオーバーを
+          出さない。操作パネルは `.infra-card` の DOM 子要素として描画されて
+          おり、カーソルがパネル内へ移っても `.infra-card` の mouseleave は
+          発火しない（hovered が true のまま残り続ける）ため、パネルの開閉
+          状態を明示的に条件へ加えて抑制する。パネル内に埋め込まれた用語
+          解説ポップオーバー（z-index がこのポップオーバーより操作パネルより
+          高く、実際にポインタ操作をブロックしていた）もこの条件一本で
+          連鎖的に出なくなる。パネルを閉じれば通常のホバー挙動に戻る。 */}
+      {hovered && !operationPanelOpen && (
         <InfraPopover
           anchorRef={cardRef}
           entity={entity}
