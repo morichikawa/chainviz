@@ -500,3 +500,68 @@ QAで「ワークベンチ」ラベルをホバー→操作パネルを開く→
 含め、実機検証で解消を確認した。レビュー時に残っていた「他カード種別」
 「別カードとの重なり」のスコープ外判断は今回も変更していない（引き続き
 将来問題が報告された場合の対応方針として有効）。
+
+### 2026-07-23 Issue #410 差し戻し対応の再レビュー結果（reviewer, 合格）
+
+- 対象コミット: `2fc7310`（fix）, `103028d`（test）, `028b7f9`（docs）。
+  前回合格時点（`7eb42cf`）からの追加差分のみを確認した。
+
+#### 確認内容
+
+- **設計一貫性**: `GlossaryTerm.tsx` に追加した `suppressed?: boolean` prop
+  は、既存の `ActionHint.tsx` と同一設計（`useHoverPopover` のホバー追跡
+  ロジック自体は変更せず、`visible = open && !suppressed` という表示条件の
+  合成のみを行う）。z-index の入れ替えのような対症療法にはなっていない。
+- **影響範囲の限定**: `suppressed` はデフォルト `false` で、`InfraNodeCard.tsx`
+  のヘッダーラベル1箇所以外の既存の `GlossaryTerm` 呼び出し（bootnodeバッジ、
+  `WalletCard`/`ContractCard`/`InfraPopover` 等、30ファイル超）には一切
+  渡されておらず、影響を受けない。
+- **スコープ漏れの有無**: `suppressed={entity.kind === "workbench" &&
+  operationPanelOpen}` の条件について、`operationPanelOpen` state 自体が
+  ワークベンチカードにしか存在する操作ボタンからしか `true` にならないため
+  `entity.kind === "workbench"` の明示チェックは実質的に安全側の冗長
+  チェックであり、node/wallet/contract 等の他カード種別には影響しない。
+  新規テスト（`InfraNodeCardOperationPanelPopoverSuppression.test.tsx` の
+  「does not affect a plain node card's header label popover」）で、通常
+  ノードカードのヘッダーラベルが操作パネルの有無に関わらず通常どおり動作
+  することを直接確認している。
+- **品質ゲート**: catch握りつぶし・エラー内容のすり替え・環境依存の固定値は
+  今回の差分に含まれていない（純粋な表示条件の合成のみ）。
+- **テストの質**: `GlossaryTerm.suppressed.test.tsx`（新規7件）は
+  `ActionHint.suppressed*.test.tsx` と同じ観点（抑制で隠す・内部ホバー状態を
+  保持したまま抑制解除で復元・抑制中のホバー/blurは復元しない・抑制中に
+  始まったホバーは解除後に反映される・`aria-describedby` 連動・prop省略時の
+  非影響）をカバーしており、ハッピーパスに留まらない。worklog の記述では、
+  `visible = open && !suppressed` を一時的に `visible = open` に戻した状態で
+  新規テストが実際に失敗することを確認してから元に戻したとあり、回帰検出力も
+  確認済み。
+- **実機再現**: worklog に、修正前の状態（抑制条件を無効化）で実際に
+  Playwright から操作パネルの入力欄クリックがタイムアウトすることを再現し、
+  修正後に成功することを確認した記録がある。「直したはず」で終わらせず
+  実際に再現・解消を確認する運用ルールを満たしている。
+- **コミット粒度**: `2fc7310`（fix）/ `103028d`（test）/ `028b7f9`（docs）の
+  3コミットに分かれており、関心事ごとに独立している。
+- **docs との整合**: 前回合格時と同様、この変更は `ARCHITECTURE.md` の
+  記述レベル（用語集ポップオーバーの一般的な挙動）を変えるものではなく、
+  実装内部の表示抑制ロジックの拡張に留まるため、`ARCHITECTURE.md` /
+  `CONCEPT.md` の追加更新は不要と判断した。
+
+#### 静的検証コマンド
+
+- `pnpm lint` — 成功（エラーなし）
+- `pnpm build` — 成功（shared / collector / e2e / frontend 全パッケージ）
+- `pnpm test` — 全パッケージ成功
+  - shared: 6 files / 75 tests
+  - collector: 83 files / 1673 tests
+  - frontend: 245 files / 3059 tests
+  - e2e: 16 files / 185 tests
+  （collector のテスト出力に現れるエラーログ行は、意図的な異常系テスト
+  ケース内でのログ出力であり失敗ではない）
+
+#### 判定
+
+合格。QAが指摘した受け入れ条件4未達（ヘッダーラベルの用語解説ポップオーバー
+による操作パネルへの物理的な干渉）への対応は、既存の `suppressed` パターンと
+一貫した設計で行われており、他カード種別・他の `GlossaryTerm` 呼び出しへの
+副作用もない。品質ゲート（エラー握りつぶし・固定値埋め込み）にも抵触しない。
+コミット・push・PR作成・マージは行っていない（統括の判断に委ねる）。
