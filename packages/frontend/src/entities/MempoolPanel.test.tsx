@@ -287,4 +287,89 @@ describe("MempoolPanel node row click (Issue #408)", () => {
     expect(onSelectTx).not.toHaveBeenCalled();
     expect(onSelectNode).toHaveBeenCalledTimes(1);
   });
+
+  it("does not call onSelectNode when a tx row is clicked (reverse independence)", () => {
+    const onSelectTx = vi.fn();
+    const onSelectNode = vi.fn();
+    wrap({
+      txEntries: [txEntry({ hash: "0x1", walletCardId: "0xAAA" })],
+      nodeEntries: [{ nodeId: "n1", label: "reth-1", pending: 3, queued: 1 }],
+      onSelectTx,
+      onSelectNode,
+    });
+    fireEvent.click(screen.getByTestId("mempool-tx-row-0x1"));
+    expect(onSelectNode).not.toHaveBeenCalled();
+    expect(onSelectTx).toHaveBeenCalledTimes(1);
+  });
+
+  it("fires onSelectNode once per click with no built-in double-submit guard", () => {
+    // tx 行・削除ボタンと同じく、連打の抑止は UI 側では行わない
+    // （各クリックが独立に1発行。パン先の解決・防御は Canvas.tsx 側の責務）。
+    const onSelectNode = vi.fn();
+    wrap({
+      txEntries: [],
+      nodeEntries: [{ nodeId: "n1", label: "reth-1", pending: 3, queued: 1 }],
+      onSelectNode,
+    });
+    const row = screen.getByTestId("mempool-node-row-n1");
+    fireEvent.click(row);
+    fireEvent.click(row);
+    expect(onSelectNode).toHaveBeenCalledTimes(2);
+    expect(onSelectNode).toHaveBeenNthCalledWith(1, "n1");
+    expect(onSelectNode).toHaveBeenNthCalledWith(2, "n1");
+  });
+
+  it("passes the correct nodeId when clicking rows in an arbitrary order across many nodes", () => {
+    // 複数ノードの行を連続でクリックしても、常にクリックした行自身の
+    // nodeId が渡る（隣接行のインデックスずれ・取り違えが無いこと）。
+    const onSelectNode = vi.fn();
+    wrap({
+      txEntries: [],
+      nodeEntries: [
+        { nodeId: "n1", label: "reth-1", pending: 1, queued: 0 },
+        { nodeId: "n2", label: "reth-2", pending: 2, queued: 0 },
+        { nodeId: "n3", label: "reth-3", pending: 3, queued: 0 },
+      ],
+      onSelectNode,
+    });
+    fireEvent.click(screen.getByTestId("mempool-node-row-n3"));
+    fireEvent.click(screen.getByTestId("mempool-node-row-n1"));
+    fireEvent.click(screen.getByTestId("mempool-node-row-n2"));
+    expect(onSelectNode.mock.calls.map((c) => c[0])).toEqual(["n3", "n1", "n2"]);
+  });
+
+  it("renders a clickable node row even when the label is an empty string (defensive)", () => {
+    // containerName が空文字でも行（ボタン）自体は描画し、クリックで
+    // nodeId を渡す（空ラベルでパン導線を落とさない安全側）。
+    const onSelectNode = vi.fn();
+    wrap({
+      txEntries: [],
+      nodeEntries: [{ nodeId: "n1", label: "", pending: 0, queued: 0 }],
+      onSelectNode,
+    });
+    const row = screen.getByTestId("mempool-node-row-n1");
+    expect(row.tagName).toBe("BUTTON");
+    fireEvent.click(row);
+    expect(onSelectNode).toHaveBeenCalledWith("n1");
+  });
+
+  it("renders large pending/queued counts in a node row without truncation", () => {
+    wrap({
+      txEntries: [],
+      nodeEntries: [{ nodeId: "n1", label: "reth-1", pending: 123456, queued: 98765 }],
+    });
+    expect(screen.getByTestId("mempool-node-row-n1").textContent).toContain(
+      "pending 123456 · queued 98765",
+    );
+  });
+
+  it("exposes the jump hint as the node row's title attribute", () => {
+    wrap({
+      txEntries: [],
+      nodeEntries: [{ nodeId: "n1", label: "reth-1", pending: 3, queued: 1 }],
+    });
+    expect(screen.getByTestId("mempool-node-row-n1").getAttribute("title")).toBe(
+      "クリックでキャンバス上のノードカードへ移動",
+    );
+  });
 });

@@ -327,6 +327,62 @@ describe("InfraNodeCard txpool badge (Issue #408)", () => {
       screen.queryByTestId("infra-card-txpool-reth-follower-1"),
     ).not.toBeNull();
   });
+
+  it("renders the fully formatted 'pending N · queued M' string (not just the loose digits)", () => {
+    // 既存テストは個別の数字の存在（.toContain("3")）しか見ないため、
+    // フォーマット済み文字列そのものが崩れていても検出できない。ここでは
+    // txpool.value のテンプレート展開結果全体を固定する。
+    const withMempool: NodeEntity = {
+      ...node,
+      internals: { mempool: { pending: 3, queued: 1 } },
+    };
+    renderCard(withMempool);
+    expect(
+      screen.getByTestId("infra-card-txpool-reth-follower-1").textContent,
+    ).toContain("pending 3 · queued 1");
+  });
+
+  it("renders large pending/queued counts without truncation or crash", () => {
+    // 境界値: 桁数の大きい件数（表示崩れ・切り詰めが無いこと）。String()で
+    // そのまま展開されるため、桁区切りなどの加工は入らない前提を固定する。
+    const busy: NodeEntity = {
+      ...node,
+      internals: { mempool: { pending: 123456, queued: 98765 } },
+    };
+    renderCard(busy);
+    expect(
+      screen.getByTestId("infra-card-txpool-reth-follower-1").textContent,
+    ).toContain("pending 123456 · queued 98765");
+  });
+
+  it("renders an asymmetric count (many pending, zero queued)", () => {
+    const backedUp: NodeEntity = {
+      ...node,
+      internals: { mempool: { pending: 250, queued: 0 } },
+    };
+    renderCard(backedUp);
+    expect(
+      screen.getByTestId("infra-card-txpool-reth-follower-1").textContent,
+    ).toContain("pending 250 · queued 0");
+  });
+
+  it("shows the txpool badge for any node role that carries internals.mempool (display is data-driven, not role-gated)", () => {
+    // カード面の mempool 導出は `entity.kind === "node" ? internals?.mempool
+    // : undefined` で role を見ない。Ethereum プロファイルでは consensus/
+    // validator は internals.mempool を持たないため実際には到達しないが、
+    // 万一持った場合はバッジを出すという現状挙動を固定する（InfraPopover の
+    // 同名の非対称テストと揃える）。
+    const validatorWithMempool: NodeEntity = {
+      ...node,
+      clientType: "lighthouse",
+      nodeRole: "validator",
+      internals: { mempool: { pending: 1, queued: 2 } },
+    };
+    renderCard(validatorWithMempool);
+    expect(
+      screen.queryByTestId("infra-card-txpool-reth-follower-1"),
+    ).not.toBeNull();
+  });
 });
 
 describe("InfraNodeCard new-arrival highlight (Issue #123 §4-4)", () => {

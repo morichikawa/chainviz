@@ -313,4 +313,17 @@ describe("buildMempoolNodeEntries", () => {
     const entries = buildMempoolNodeEntries(nodes);
     expect(entries.map((e) => e.nodeId)).toEqual(["n3", "n1", "n2"]);
   });
+
+  it("passes large pending/queued counts through unchanged (no capping)", () => {
+    const nodes = [
+      nodeEntity({
+        id: "n1",
+        containerName: "reth-1",
+        internals: { mempool: { pending: 123456, queued: 98765 } },
+      }),
+    ];
+    expect(buildMempoolNodeEntries(nodes)).toEqual([
+      { nodeId: "n1", label: "reth-1", pending: 123456, queued: 98765 },
+    ]);
+  });
 });
