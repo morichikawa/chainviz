@@ -270,6 +270,65 @@ describe("InfraNodeCard bootnode badge (Issue #124 C)", () => {
   });
 });
 
+describe("InfraNodeCard txpool badge (Issue #408)", () => {
+  it("shows a txpool badge with pending/queued counts when internals.mempool is present", () => {
+    const withMempool: NodeEntity = {
+      ...node,
+      internals: { mempool: { pending: 3, queued: 1 } },
+    };
+    renderCard(withMempool);
+    const badge = screen.getByTestId("infra-card-txpool-reth-follower-1");
+    expect(badge.textContent).toContain("txpool");
+    expect(badge.textContent).toContain("3");
+    expect(badge.textContent).toContain("1");
+  });
+
+  it("shows the badge even when pending and queued are both zero (0件も意味のある情報)", () => {
+    const emptyMempool: NodeEntity = {
+      ...node,
+      internals: { mempool: { pending: 0, queued: 0 } },
+    };
+    renderCard(emptyMempool);
+    expect(
+      screen.getByTestId("infra-card-txpool-reth-follower-1"),
+    ).not.toBeNull();
+  });
+
+  it("does not show a txpool badge when internals.mempool is absent", () => {
+    renderCard(node);
+    expect(screen.queryByTestId("infra-card-txpool-reth-follower-1")).toBeNull();
+  });
+
+  it("does not show a txpool badge when internals is present without mempool (e.g. syncStages only)", () => {
+    const syncOnly: NodeEntity = {
+      ...node,
+      internals: { syncStages: [] },
+    };
+    renderCard(syncOnly);
+    expect(screen.queryByTestId("infra-card-txpool-reth-follower-1")).toBeNull();
+  });
+
+  it("does not show a txpool badge for a workbench card (mempool is a node-only concept)", () => {
+    renderCard(workbench);
+    expect(screen.queryByTestId("infra-card-txpool-workbench-1")).toBeNull();
+  });
+
+  it("shows the txpool badge alongside the bootnode badge (independent conditions)", () => {
+    const bootnodeWithMempool: NodeEntity = {
+      ...node,
+      p2pRole: "bootnode",
+      internals: { mempool: { pending: 2, queued: 0 } },
+    };
+    renderCard(bootnodeWithMempool);
+    expect(
+      screen.queryByTestId("infra-card-bootnode-reth-follower-1"),
+    ).not.toBeNull();
+    expect(
+      screen.queryByTestId("infra-card-txpool-reth-follower-1"),
+    ).not.toBeNull();
+  });
+});
+
 describe("InfraNodeCard new-arrival highlight (Issue #123 §4-4)", () => {
   it("does not add the highlight class by default", () => {
     renderCard(node);

@@ -2104,6 +2104,28 @@ button.mempool-panel__row:hover {
   white-space: nowrap;
 }
 
+/* --- ノードカードの txpool バッジ(Issue #408) --- */
+/* ブートノードバッジ(.infra-card__badge--bootnode)と同じ配色・サイズの
+   pill だが、ヘッダー行に詰め込むとブートノードバッジ・削除ボタンと
+   横幅を奪い合い折り返し/はみ出しの懸念があるため、専用の行として
+   サブタイトルの直下に独立させている。 */
+.infra-card__txpool-row {
+  margin-top: 4px;
+}
+
+.infra-card__badge--txpool {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  background: rgba(70, 87, 125, 0.18);
+  white-space: nowrap;
+}
+
 /* --- ゴースト → 接続予定先ノードの「接続予定エッジ」（Issue #123） --- */
 /* まだ実接続ではないことを示すため、実エッジより低彩度・細めの点線にする。
    node ゴースト由来はピア接続系（青系）、workbench ゴースト由来は操作
