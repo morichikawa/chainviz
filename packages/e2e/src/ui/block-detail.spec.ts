@@ -73,7 +73,14 @@ test("UI-B-07: ブロック詳細パネルで保持窓内を前後に辿れる",
       const nextButton = page.getByTestId(`block-detail-next-${firstHash}`);
       await expect(nextButton).toBeEnabled({ timeout: BLOCK_DETAIL_TIMEOUT_MS });
       await nextButton.click();
-      await expect(page.getByTestId("block-detail-view")).not.toContainText(firstHash);
+      // 差し替わったことは「表示中ブロックに紐づく nav ボタンの hash」で判定する。
+      // 子ブロックはヘッダ以外に親hash欄へ firstHash を全文表示するため、
+      // block-detail-view のテキストに firstHash が含まれるか否かでは判定
+      // できない（親hash欄が firstHash を含むので not.toContainText は誤判定
+      // になる）。prev/next ボタンの data-testid は常に「今表示している
+      // ブロック」の hash で採番されるので、firstHash 採番の next ボタンが
+      // 消えたことをもって子ブロックへ切り替わったと判定する。
+      await expect(page.getByTestId(`block-detail-next-${firstHash}`)).toHaveCount(0);
       // 1枚のパネルのまま中身だけが差し替わる（新しいパネルが重ねて開かない）。
       await expect(page.getByTestId("side-panel")).toHaveCount(1);
     },

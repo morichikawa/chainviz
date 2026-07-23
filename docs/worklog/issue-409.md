@@ -202,3 +202,52 @@
     自体を変更する場合は両方を更新する必要がある
   - e2eテスト（`block-detail.spec.ts`）はこのセッションでは実行確認して
     いない（Docker環境が無い）。chainviz-qaでの実行を必須とする
+
+### 2026-07-23 Issue #409 チェーンを遡れるようにしたい（テスト強化）
+- 担当: tester
+- ブランチ: issue-409-block-detail-navigation
+- 内容: 実装担当が書いた基本テストに対し、異常系・境界値・不変条件の観点で
+  ケースを追加した。新機能の実装・実装ロジックの変更はしていない。
+
+- **追加した観点**（既存テストファイルの関心事に沿って追記。1ファイル1責務を維持）:
+  - `entities/blockDetail.test.ts`:
+    - `findChildBlock`のフォークtie-break規則が`chainRibbon.ts`の
+      正史選択（`deriveRibbonTiles`経由の`pickCanonicalPerNumber`）と実際に
+      同じ勝者を選ぶことを直接突き合わせるcross-check（申し送りの「規則は
+      同じだが独立実装」という不変条件を、片方だけ規則が変わった場合に
+      検知できるようにする回帰テスト）
+    - `findChildBlock`のtie-breakがMapの反復順（＝挿入順）に依存せず
+      決定的であること
+    - `resolveBlockNavigation`で`isLatest=true`と`child`定義済みが同時に
+      成立しうること（両者は独立に導出される）
+    - `selectBlockTransactions`が`blockHash`未定義のtxを除外すること・
+      入力配列を破壊しないこと
+    - `limitBlockTransactions`の境界: 件数が上限ちょうど（overflow 0）・
+      上限0・0件・返り値が入力とは別インスタンスであること
+  - `side-panel/BlockDetailView.test.tsx`:
+    - 親も子も無い孤立ブロック（保持窓に1件のみ）で前後ボタンが両方
+      無効になり両方向の理由文言が同時に出ること
+    - tx呼び出しプレビューの宛先コントラクト名が解決できない場合に
+      `shortHex(アドレス)`へフォールバックすること
+  - `side-panel/SidePanelHost.blockDetail.test.tsx`:
+    - 親hashフィールドのリンク（prevボタンとは別の導線）からの前ブロック
+      移動がパネル1枚のまま中身差し替えで動くこと
+  - `entities/ChainRibbonPopover.blockDetailEntry.test.tsx`:
+    - 「ブロック詳細を見る」ボタンが`nodrag`クラスを持つこと（React Flowの
+      パン操作にボタン押下を横取りされない防御。stopPropagationとは別の
+      観点で、双方を固定）
+
+- **見つかった問題と対応**:
+  - e2eテスト`packages/e2e/src/ui/block-detail.spec.ts`のアサーション不備を
+    修正した。「次のブロック」クリック後に子ブロックへ差し替わったことを
+    `block-detail-view`のテキストに`firstHash`が含まれないこと
+    （`not.toContainText(firstHash)`）で判定していたが、子ブロックは親hash欄に
+    `firstHash`を全文表示する（`parentHash === 親（=firstHash）`）ため、
+    機能が正しく動いていてもこのアサーションは失敗する。表示中ブロックの
+    hashで採番されるnav ボタン（`block-detail-next-${firstHash}`）が消えたこと
+    で差し替わりを判定するよう修正した（Playwrightの実機実行は未確認だが、
+    コードレベルの論理的な不備として修正。実機検証はchainviz-qaに委ねる）。
+
+- **確認**: `pnpm lint && pnpm build && pnpm test`が全パッケージで通ることを
+  確認済み（frontend 3090件・collector 1673件・shared 75件・e2eは
+  `tsc --noEmit`型検証のみ。e2eのPlaywright実機実行は未実施）。
