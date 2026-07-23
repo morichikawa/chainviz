@@ -48,4 +48,17 @@ export type SidePanelView =
        * 初期状態から始まる。
        */
       kind: "signatureDemo";
+    }
+  | {
+      /**
+       * ブロック詳細パネル（Issue #409。`docs/ARCHITECTURE.md` §17）。
+       * collector が現在保持している範囲（`BLOCK_RETENTION`）内で、任意の
+       * ブロックの詳細と前後ナビゲーションを見られる。エンティティ本体では
+       * なく hash のみを保持し、表示側（`SidePanelHost`）が世界の状態から
+       * 都度引く（`contractSource` と同じ流儀。対象ブロックが保持窓の外に
+       * 出た場合のダングリングガードにも自然に対応できる）。前後移動は
+       * この hash を書き換えるだけで実現する（§17.3）。
+       */
+      kind: "blockDetail";
+      hash: string;
     };

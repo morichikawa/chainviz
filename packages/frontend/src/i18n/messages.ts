@@ -459,6 +459,24 @@ export const messages = {
     en: "No receipt times observed yet",
   },
   "chainRibbon.popover.receivedByOffset": { ja: "+{ms}ms", en: "+{ms}ms" },
+  // --- ブロック詳細パネル（kind: "blockDetail"。Issue #409。
+  // ARCHITECTURE.md §17） ---
+  "blockDetail.title": { ja: "ブロック詳細", en: "Block detail" },
+  "blockDetail.open": { ja: "ブロック詳細を見る", en: "View block detail" },
+  "blockDetail.prev": { ja: "前のブロック", en: "Previous block" },
+  "blockDetail.next": { ja: "次のブロック", en: "Next block" },
+  "blockDetail.prev.unavailable": {
+    ja: "これより前は保持期間外のため表示できません",
+    en: "Earlier blocks are outside the retained window",
+  },
+  "blockDetail.next.latest": {
+    ja: "最新のブロックです",
+    en: "This is the latest block",
+  },
+  "blockDetail.next.unavailable": {
+    ja: "次のブロックが見つかりません",
+    en: "No next block found",
+  },
   // --- ブロック生成タイミングのインジケータ（チェーンリボンカードのヘッダ。
   // ARCHITECTURE.md §10.5。Issue #343） ---
   "ribbon.nextBlockCountdown": {
