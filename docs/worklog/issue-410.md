@@ -162,3 +162,74 @@ actionability チェックが "element intercepts pointer events" として
    原則）。今回は「自カードの操作パネルと自カードの `InfraPopover`/
    `ActionHint` の組み合わせ」に絞った修正を推奨する。他カードとの重なりが
    実際に問題として報告されたら、その時点で改めて設計する。
+
+### 2026-07-23 Issue #410 実装メモ
+
+- 担当: frontend
+- 実装前の再現確認: `pnpm --filter @chainviz/frontend exec vite --port
+  5299`（モックデータ）で frontend を起動し、`packages/e2e` の Playwright
+  （`LD_LIBRARY_PATH=/home/zoe/chrome-deps/root/usr/lib/x86_64-linux-gnu`
+  を付けて起動、chromium）から実際にワークベンチカードをホバー→操作パネル
+  を開く→パネル内の金額入力欄（`operation-transfer-amount`）へカーソルを
+  移す、という手順を踏んで3つの原因すべてを実機で再現した。特に原因3
+  （用語解説ポップオーバーによるポインタ操作のブロック）は、金額欄に対する
+  `locator.click()` が実際に3秒のタイムアウトで失敗することを確認した
+  （宛先入力欄は位置的にポップオーバーと重ならず塞がれなかったため、
+  金額欄で再現する必要があった）。修正後は同じ手順で3つとも解消し、金額欄
+  のクリックが成功することを確認した。使ったスクリプトは一時ファイルで
+  リポジトリには含めていない。
+
+- 実装方針は worklog の設計メモどおり、(b) 案（`ActionHint` に
+  `suppressed?: boolean` prop を追加）を採用した。`useHoverPopover` の
+  共通 API・他の利用箇所（`GlossaryTerm` 等）には一切手を入れていない。
+  - `packages/frontend/src/canvas/ActionHint.tsx`: `suppressed` prop を
+    追加。内部のホバー状態(`open`)はそのまま保持し、表示条件だけ
+    `visible = open && !suppressed` に変更（`aria-describedby` の算出も
+    `visible` に揃えた）。ホバー状態自体を閉じない設計にしたのは、
+    操作パネルを閉じたときに再度ホバーし直さなくても元の見た目に戻る
+    （＝suppressed が外れた瞬間、保持していたホバー状態がそのまま反映
+    される）挙動をそのまま実現できるため。
+  - `packages/frontend/src/entities/InfraNodeCard.tsx`:
+    「操作を実行…」ボタンを包む `ActionHint` に
+    `suppressed={operationPanelOpen}` を渡した。また `InfraPopover` の
+    描画条件を `hovered && (...)` から `hovered && !operationPanelOpen
+    && (...)` に変更した。z-index の並び替えは行っていない
+    （設計メモの方針どおり、表示条件そのものを制御する）。
+- `InfraPopover` 内に埋め込まれた用語解説ポップオーバー（`rpc-endpoint`
+  等、z-index 30）は、`InfraPopover` 自体が描画されなくなることで連鎖的
+  に出なくなる。個別の抑制コードは追加していない（設計メモの見立て通り）。
+- スコープ外として明記されていた「他のカード種別（`WalletCard`/
+  `ContractCard` 等）」「操作パネルと重ならない別カードのポップオーバー」
+  には手を入れていない。またワークベンチカードのヘッダーにある
+  「ワークベンチ」ラベル自体の `GlossaryTerm`（`InfraPopover` の外、
+  カード本体の `hovered` 状態とは独立したホバー状態を持つ）も今回の
+  抑制対象には含めていない。Issue 本文には「カードヘッダーのラベルに
+  触れても前面表示される」との記述もあるが、受け入れ条件・設計メモの
+  実装方針の指示範囲は一貫して「`InfraPopover`/`ActionHint`」の2つに
+  限定されており、ヘッダーラベルの独立ホバーへの言及は無かったため対象
+  外とした。将来ヘッダーラベルのホバーが操作パネルと重なる問題が実際に
+  報告された場合は、別途 `suppressed` prop を渡すか同様の条件を足す
+  形で対応できる（`ActionHint` と同じ抑制の仕組みが流用できる）。
+- テスト（vitest）:
+  - `packages/frontend/src/canvas/ActionHint.suppressed.test.tsx`
+    （新規）: `suppressed` prop 単体の挙動（開いている状態から
+    suppressed=true で隠れる、内部のホバー状態は保持されたままで
+    suppressed が外れると再ホバーなしで戻る、suppressed 中はホバーしても
+    開かない、`aria-describedby` も連動して消える、prop 省略時は従来どおり
+    という5点）。既存の `ActionHint.test.tsx`（ホバー/フォーカスの基本
+    挙動）を肥大化させないよう別ファイルに分けた。
+  - `packages/frontend/src/entities/InfraNodeCardOperationPanelPopoverSuppression.test.tsx`
+    （新規）: `InfraNodeCard` 側の統合的な確認（パネルを開くと
+    `InfraPopover`/`ActionHint` 双方が消える、パネルを閉じると再ホバー
+    無しで両方戻る）。既存の `InfraNodeCardOperationButton.test.tsx`
+    （ボタン・パネル開閉そのもの）とは関心事を分けた。
+  - 回帰検出の確認: 実装前に `InfraNodeCard.tsx` の変更2箇所
+    （`suppressed={operationPanelOpen}` と `!operationPanelOpen` 条件）を
+    一時的に取り除いた状態で新規テストを走らせ、4件のテストが実際に
+    失敗すること（=このバグを検出できること）を確認してから修正を戻した。
+- `pnpm lint && pnpm build && pnpm test`（リポジトリ全体）が通ることを
+  確認済み。
+- 次の担当への申し送り: 決めきれていない点の1（他カード種別の同種問題）
+  ・2（他カードとの重なり）・ヘッダーラベルの独立ホバーは、いずれも今回
+  未対応のまま。実際に問題が報告された場合の対応方針は上記のとおり
+  `suppressed` prop の流用で対応できる見込み。
