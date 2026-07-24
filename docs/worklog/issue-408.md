@@ -1,0 +1,520 @@
+### 2026-07-23 Issue #408 メモリプールがどこに格納されているか分かりにくい
+
+- 担当: ux
+- ブランチ: issue-408-mempool-node-locality
+- 内容: Issue本文が空だったため、実機（`pnpm --filter @chainviz/frontend dev`
+  のモックデータ + Playwright、`LD_LIBRARY_PATH` に
+  `/home/zoe/chrome-deps/root/usr/lib/x86_64-linux-gnu` を追加して chromium を
+  起動）で mempool 関連の現状表示を確認し、具体的に何が分かりにくいかを特定、
+  Issue本文への追記とUX設計をまとめた。
+
+#### 調査結果
+
+`docs/CONCEPT.md`「用語解説」の mempool 定義は「各ノードが保持する」と
+正しく書かれており、mempool 自体を可視化する仕組み（Issue #330 の
+`MempoolPanel`、ステップ9の `InfraPopover` txpool 行）も既に実装済み。
+それにもかかわらず「どこに格納されているか分かりにくい」という指摘が
+出た理由を、実際にキャンバスを操作して切り分けた。
+
+1. **ノードカード本体に mempool の手がかりが無い**。
+   `packages/frontend/src/entities/InfraNodeCard.tsx` のカード面
+   （常時見える部分）には kind ラベル・同期状態ドット・名前・サブタイトル・
+   （同期中のみ）同期進捗バーしか無く、txpool/mempool に関する表示は
+   一切無い。ホバーして `InfraPopover` を開かない限り、そのノードが
+   mempool を持つこと自体に気づけない。
+2. **`InfraPopover` 内でも txpool 行が同期ステージ10行の下に埋もれている**。
+   `InfraPopover.tsx` の txpool 行（`entity.internals?.mempool` があるとき
+   のみ表示）は、`InfraPopoverSyncStages`（ヘッダ取得〜仕上げの10行）の
+   直後、ポップオーバー最下部に配置されている。実際にホバーして
+   スクリーンショットを撮ると、txpool 行を見るには縦に長いポップオーバー
+   全体を目で追う必要があることを確認した。
+3. **`MempoolPanel`（Issue #330）の「ノード別 txpool」欄が、キャンバス上の
+   実際のノードカードと視覚的に結び付いていない**。
+   `packages/frontend/src/entities/MempoolPanel.tsx` の「ノード別 txpool」
+   セクション（`mempool-panel__node-row`）はノード名と pending/queued 件数を
+   `<li>` で並べるだけで、CSS にもクリック/ホバーの反応が無い
+   （`mempool-panel__node-row` に `:hover` スタイルなし、コンポーネント側も
+   `onClick` を持たない）。同じパネルの上段（tx 一覧）は行クリックで
+   `Canvas.tsx` の `handleJumpToMempoolTx` により該当ウォレットカードへ
+   パンする導線を持つが、下段のノード別行にはこの導線が無い。
+   `ContractListPanel` の行クリック（`handleJumpToContract`）は対象カードへ
+   パンした上で一時的な強調表示（`jumpHighlightNodeId` +
+   `NEW_ARRIVAL_HIGHLIGHT_DURATION_MS`）まで行うが、これも
+   `CONTRACT_NODE_TYPE` のカードのみが対象で、ノードカード
+   （`InfraNodeCard`）には適用されていない。
+
+つまり、「mempool の中身・件数が見える」ことと「その mempool が具体的に
+どのノードカードに対応するのかがキャンバス上で視覚的に分かる」ことは
+別の課題であり、Issue #330・ステップ9では前者のみが達成されていた。
+
+なお、`TransactionEntity`（mempool パネル上段の tx 一覧）自体にどのノードで
+観測されたかという帰属情報が無い点は、Issue #330 §11.2（`docs/ARCHITECTURE.md`）
+で「新規観測が必要になるため範囲外」と明示的に決定済みであり、本Issueでも
+この決定を覆さない（tx 一覧の「どのノード由来か」までは扱わず、
+ノード別集計＝下段の可視性向上に絞る）。
+
+#### UX設計
+
+**操作フロー**
+
+- ノードカードは、ホバーしなくても「mempool を持つノードであること」と
+  「現在の pending 件数」が一目で分かる状態にする（Execution クライアント
+  など `entity.internals?.mempool` を持つノードのみ。Consensus/Validator
+  には出さない。既存の txpool 行と同じ分岐条件を流用できる）。
+- `MempoolPanel` の「ノード別 txpool」の各行はクリック可能にし、クリック
+  すると対応するノードカードへキャンバスがパンする。可能であれば
+  `ContractListPanel`/`handleJumpToContract` と同じ「対象カードを一時的に
+  強調表示する」演出も適用する（既存の `jumpHighlightNodeId` の仕組みを
+  ノードカードにも拡張できるならそれを使う。拡張コストが見合わなければ
+  パンのみでもよい。ここは実装担当の判断に委ねる）。
+
+**情報の見せ方**
+
+- ノードカード面への表示は、既存の「ブートノードバッジ」
+  （`infra-card__badge--bootnode`）と同格の小さなバッジ/ピルとして追加する
+  案を推奨する。ラベルは既存の `field.txpool`（`txpool`/`Txpool`）と
+  `txpool.value`（`pending {n} · queued {m}`）をそのまま再利用できる。
+  `GlossaryTerm termKey="txpool"` を維持し、用語解説への導線も残す。
+- pending が 0 件のときに非表示にするか常時表示するかは未決定（下記
+  「決めきれない点」参照）。UX設計としては、mempool パネル本体が「0件も
+  意味のある情報」という方針（Issue #330 §11.3）を既に採っていることと
+  整合させ、**常時表示（0件も出す）を推奨**する。「このノードは常に自分の
+  mempool を持っている」という事実そのものを見せる方が、今回の指摘
+  （どこに格納されているか分からない）への直接的な回答になるため。
+- `InfraPopover` 内の txpool 行は、同期ステージブロック（10行）より前、
+  クライアント種別・役割などの基本情報に近い位置へ移動する。同期ステージは
+  「進行中の作業の詳細」という性質上どうしても長くなるため、txpool は
+  その手前に置いて先に目に入るようにする。
+
+**shared型変更・collector変更**
+
+- 不要。すべて既存の `NodeEntity.internals.mempool`
+  （pending/queued）を使う表示上の変更のみ。
+
+#### 決めきれない点（実装担当・統括に確認）
+
+- ノードカードの mempool バッジを pending 0 件でも常時表示するか、
+  0件のときは非表示にするか。上記のとおり常時表示を推奨するが、
+  カード面の情報密度（バッジが増えすぎて見づらくならないか）とのバランスは
+  実装時に実際のカード密度を見て判断してよい。
+- `MempoolPanel` のノード別行クリック時に `ContractListPanel` と同じ
+  一時強調演出（`jumpHighlightNodeId`）をノードカードにも拡張するか、
+  パンのみに留めるか。既存の強調機構が `CONTRACT_NODE_TYPE` 専用に
+  書かれているため、汎用化のコストと効果を実装担当が判断する。
+
+#### 次の担当への申し送り
+
+- 実装は chainviz-frontend が引き継ぐ。上記「操作フロー」「情報の見せ方」
+  に沿って、(1) `InfraNodeCard` への txpool バッジ追加、(2) `InfraPopover`
+  内の txpool 行の並び順変更、(3) `MempoolPanel` のノード別行のクリック
+  可能化（対象カードへのパン）、の3点を実装範囲とする。
+- 参考にする既存パターン: `Canvas.tsx` の `handleJumpToContract`
+  （パン＋一時強調）、`handleJumpToMempoolTx`（パンのみ）。
+
+### 2026-07-23 実装（chainviz-frontend）
+
+- 担当: frontend
+- ブランチ: `issue-408-mempool-node-locality`（実装時、同名ブランチが別
+  worktree で既にチェックアウト済みだったため、作業用worktreeでは
+  `issue-408-mempool-node-locality-frontend` というローカルブランチ名で
+  `origin/issue-408-mempool-node-locality` を追跡して作業し、最終的に
+  `origin/issue-408-mempool-node-locality` へ push した。リモートの
+  ブランチ名自体は変えていない）
+
+#### 設計メモ（着手前）
+
+UX設計（上記）で決まった3点をそのまま実装範囲とする。
+
+1. `InfraNodeCard`: `entity.internals?.mempool` があるノードに、サブタイトル
+   直下へ txpool バッジを追加する。
+2. `InfraPopover`: 既存の txpool 行を bootnode 行の直後・同期ステージより
+   前へ移動する。
+3. `MempoolPanel`: ノード別行を `<button>` 化し、`onSelectNode` コールバック
+   を新設。`Canvas.tsx` 側は `handleJumpToContract` と同型の
+   `handleJumpToMempoolNode` を新設し、`jumpHighlightNodeId` の対象型に
+   `"infra"`（`InfraNodeCard` の React Flow ノード type）を追加する。
+
+`packages/shared` の型変更・collector 変更は不要という設計判断のとおり、
+既存の `NodeEntity.internals.mempool`（pending/queued）を表示・配線するだけ。
+
+#### 決めきれない点への回答
+
+- **バッジの0件時表示**: 常時表示（0件でも出す）を採用。UX設計の推奨
+  どおり、`MempoolPanel` 本体が既に採っている「0件も意味のある情報」の
+  方針と揃えた。
+- **バッジの配置**: UX設計は「ブートノードバッジと同格」＝ヘッダー行への
+  配置を推奨していたが、実装では**ヘッダー行ではなくサブタイトル直下の
+  専用行**に置いた。理由: `.infra-card` の `min-width: 190px` に対し、
+  ヘッダー行には既にステータスドット・kindラベル・（条件付きで）
+  ブートノードバッジ・削除ボタンが並んでおり、ここへさらに
+  「txpool pending N · queued M」相当の pill を追加すると、
+  `infra-card__header` に `flex-wrap` が無いため横幅超過時にカードの
+  角丸から要素がはみ出す/重なるリスクがあった（実機で目視確認する手段が
+  無い状況で、レイアウト崩壊のリスクを取るより安全側に倒した）。視覚的な
+  「pill バッジ」の見た目（配色・サイズ）は `infra-card__badge--bootnode`
+  と完全に同じクラス値を再利用した新設クラス `infra-card__badge--txpool`
+  で保っており、「同格のバッジ」という意図は達成している。この判断は
+  `docs/worklog/issue-408.md`（本ファイル）に記録済みなので、QA で実際の
+  カード密度を見て問題があれば再検討してよい。
+- **強調演出（`jumpHighlightNodeId`）のノードカードへの拡張**: 拡張した。
+  `Canvas.tsx` の `displayNodes` 計算で、ジャンプ強調対象の型判定を
+  `node.type === CONTRACT_NODE_TYPE` 単独から
+  `node.type === CONTRACT_NODE_TYPE || node.type === "infra"` 相当（実装は
+  下記の型エラー対応により2つの独立した `if`/`else if` に分割）へ拡張した。
+  コストは小さく、`ContractListPanel` と同じ発見容易性が得られるため。
+
+#### 実装内容
+
+- `packages/frontend/src/entities/InfraNodeCard.tsx`: `mempool` 変数
+  （`entity.kind === "node" ? entity.internals?.mempool : undefined`）を
+  導出し、サブタイトル直下に `infra-card__txpool-row` /
+  `infra-card__badge--txpool` を追加。`data-testid` は
+  `infra-card-txpool-${entity.id}`。ラベルは `field.txpool`
+  （`GlossaryTerm termKey="txpool"` 付き）、値は既存の `txpool.value`
+  フォーマット（`pending {n} · queued {m}`）をそのまま再利用。
+- `packages/frontend/src/entities/InfraPopover.tsx`: txpool 行を
+  `entity.p2pRole === "bootnode"` 行の直後・`showsSyncState` ブロックの
+  直前へ移動（元は同期ステージセクションの直後、ポップオーバー最下部）。
+  JSDoc の記述も更新。
+- `packages/frontend/src/entities/MempoolPanel.tsx`: ノード別行を
+  `<li><button className="mempool-panel__node-row" onClick={() =>
+  onSelectNode(node.nodeId)}>...` へ変更。新規 prop `onSelectNode:
+  (nodeId: string) => void` を追加（`MempoolNodeEntry.nodeId` は
+  `buildMempoolNodeEntries` が `rfNodes` から直接作るため、tx 行の
+  `walletCardId === undefined` のような「解決できない」ケースは無く、
+  常にクリック可能）。
+- `packages/frontend/src/canvas/Canvas.tsx`: `handleJumpToMempoolNode` を
+  新設し `MempoolPanel` の `onSelectNode` に接続。`displayNodes` の
+  ジャンプ強調判定に `"infra"` 型を追加。
+- `packages/frontend/src/i18n/messages.ts`: `mempoolPanel.nodeJumpHint`
+  （ノード別行の title 属性用ヒント文言）を新設。
+- `packages/frontend/src/styles.css`: `infra-card__txpool-row` /
+  `infra-card__badge--txpool`（新設）、`.mempool-panel__node-row` を
+  非インタラクティブな `<li>` の中身用スタイルからボタン用スタイル
+  （`cursor: pointer`、`:hover` 背景）へ変更。
+
+#### 実装時に踏んだ型エラーと対応
+
+`displayNodes` の `useMemo` 内で、ジャンプ強調対象の型判定を
+`node.type === CONTRACT_NODE_TYPE || node.type === "infra"` という1つの
+条件式にまとめたところ、`tsc -b` で
+`Type 'ContractEntity' is not assignable to type 'NodeEntity'` という
+型エラーになった。`CanvasFlowNode` は判別可能ユニオン型だが、
+`node.type === A || node.type === B` で2メンバーへ narrow された状態の
+まま `{ ...node, data: { ...node.data, isNew: true } }` を評価すると、
+TypeScript が union の各メンバーに分配して spread してくれず、
+`data.entity` の型（`ContractEntity` と `InfraEntity`）が単一の型として
+マージされようとして矛盾する。回避策として、1つの `if` にまとめず
+`if (isJumpHighlightTarget && node.type === CONTRACT_NODE_TYPE) {...}
+else if (isJumpHighlightTarget && node.type === "infra") {...}` と
+型ごとに分岐を分けた（各分岐内では単一メンバーへ narrow された状態で
+spread するため型エラーが出ない）。同種のパターンに当たった場合の
+参考にしてほしい。
+
+#### テスト
+
+- `InfraNodeCard.test.tsx`: txpool バッジの表示条件（mempool 有無・
+  pending/queued 0件でも表示・workbench では出さない・bootnode バッジと
+  共存）を追加。
+- `InfraPopover.test.tsx`: `compareDocumentPosition` を使い、txpool 行が
+  同期ステージ見出しより DOM 上で先に来ることを検証するテストを追加
+  （このテストは実装前の状態（旧順序）に対して意図的に revert して
+  実行し、実際に fail することを確認した上で実装後に戻して pass する
+  ことも確認済み）。
+- `MempoolPanel.test.tsx`: ノード別行が `<button>` になること、
+  `onSelectNode` に `nodeId` が渡ること、複数行でそれぞれ独立して呼ばれる
+  こと、`onSelectTx` と混同しないことを追加。
+
+`Canvas.tsx` の `handleJumpToMempoolNode`／`handleJumpToContract` 自体は
+既存コードでも Canvas.tsx 単体のユニットテストが無く（React Flow の
+`getNode`/`setCenter` を伴う配線ロジックで、既存の `handleJumpToContract`
+にも単体テストが無い）、本Issueでも同じ方針を踏襲し新規のテストは
+追加していない。パン・強調の実際の見た目は QA（Playwright での実機確認）
+での検証を想定。
+
+#### 次の担当への申し送り
+
+- `chainviz-tester`: 境界値として、`internals.mempool` が pending/queued
+  ともに巨大な値（表示崩れの有無）、`mempool-panel__node-row` の
+  `onSelectNode` を高速連打した場合の挙動などを検討してほしい。
+- `chainviz-qa`: 実機で (1) ノードカードに常時 txpool バッジが出ること、
+  (2) `InfraPopover` で txpool 行が基本情報の並びに来ていること、
+  (3) `MempoolPanel` のノード別行クリックで対応ノードカードへパン＋
+  一時強調されること、の3点を確認してほしい。あわせて、ヘッダー行では
+  なくサブタイトル直下に txpool バッジを置いた実装判断（上記
+  「決めきれない点への回答」参照）が実際のカード密度で問題ないか
+  目視確認してほしい。
+
+### 2026-07-23 テスト強化（chainviz-tester）
+
+- 担当: tester
+- ブランチ: `issue-408-mempool-node-locality`
+
+実装担当が書いた基本テスト（`InfraNodeCard.test.tsx`・`InfraPopover.test.tsx`・
+`MempoolPanel.test.tsx`・`mempoolList.test.ts`）を読み、異常系・境界値の観点で
+不足を補った。追加した観点は以下のとおり。
+
+#### 追加したテスト観点
+
+- `InfraNodeCard.test.tsx`（txpool バッジ）
+  - フォーマット済み文字列 `pending N · queued M` 全体の固定（既存テストは
+    個別の数字の存在しか見ておらず、テンプレート展開の崩れを検出できな
+    かったため）。
+  - 巨大な件数（`pending 123456 · queued 98765`）が切り詰め・桁加工なしで
+    表示されること。
+  - 非対称な件数（pending 多数・queued 0）。
+  - カード面の mempool 導出が role を見ない（data-driven）ことの固定。
+    consensus/validator が万一 `internals.mempool` を持った場合もバッジを
+    出す（`InfraPopover` の同名の非対称テストと揃える）。
+- `MempoolPanel.test.tsx`（ノード別行）
+  - tx 行クリックで `onSelectNode` が呼ばれない（既存の逆方向テストの対）。
+  - 同一行の連打で `onSelectNode` が発火ごとに1回ずつ呼ばれる（tx 行・
+    削除ボタンと同じく UI 側に二重送信ガードを持たない挙動の固定）。
+  - 複数ノード行を任意順にクリックしても、常にその行自身の `nodeId` が
+    渡る（隣接行との取り違え・インデックスずれが無いこと）。
+  - `label` が空文字でも行（ボタン）を描画し、クリックで `nodeId` を渡す。
+  - 巨大な件数の表示。
+  - 行の `title` 属性がジャンプヒント文言になっていること。
+- `mempoolList.test.ts`（`buildMempoolNodeEntries`）
+  - 巨大な pending/queued が加工なしでそのまま通ること。
+
+#### Canvas.tsx のジャンプ／強調ロジックの扱い
+
+依頼で重点観点に挙がった (a) パン先ノードカードがキャンバス上に存在しない
+（削除済み）場合の防御、(b) `handleJumpToMempoolNode` の強調対象 type 判定
+（`"infra"` と他タイプの混在での誤爆）、(c) ノード別行の連続クリック時の
+`jumpHighlightNodeId` の遷移、の3点は、いずれも `Canvas.tsx` の内部
+（`useCallback` / `useMemo` 内にインライン）に実装されており、純粋関数として
+切り出されていない。
+
+- (a) は `handleJumpToMempoolNode` 冒頭の `getNode(nodeId)` が undefined を
+  返した場合の早期 return で防御されている（`handleJumpToContract` /
+  `handleJumpToMempoolTx` と同じパターン）。
+- (b) は `displayNodes` の `useMemo` 内で `isJumpHighlightTarget && node.type
+  === "infra"` の型ガードにより、id が一致しても infra/contract 以外の型
+  （ウォレットカード等）には `isNew` 注入が起きない設計になっている。
+- (c) の強調タイマーは `jumpHighlightTimerRef` を contract カードと共有し、
+  新しいクリックのたびに既存タイマーを `clearTimeout` してから貼り直す
+  （同時に1件のみ強調）。
+
+これらを単体テストするには `Canvas` 本体を React Flow ごとレンダーして
+`getNode` / `setCenter` をモックする専用ハーネスが必要になるが、既存の
+`packages/frontend/src/canvas/` に Canvas 本体のユニットテストは無く、
+先行する `handleJumpToContract` も同じ理由で単体テストを持たず QA
+（Playwright 実機確認）に委ねている。今回もこの既存方針を踏襲し、Canvas
+本体のジャンプ／強調ロジックの検証は QA に委ねる（ロジックを純粋関数へ
+切り出す変更はテスト強化の範囲を超える実装変更になるため行わない）。
+上記 (a)〜(c) の実機確認を `chainviz-qa` に依頼する。
+
+見つかった実装上の問題は無し（既存挙動は observation point と整合。
+`pnpm lint && pnpm build && pnpm test` すべて通過を確認）。
+
+### 2026-07-23 レビュー結果と差し戻し対応（chainviz-frontend）
+
+査読誠（chainviz-reviewer）による静的レビューで「要修正」の判定を受けた。
+実装・テストの中身自体（境界遵守・エラー処理・固定値・ビルド/lint/test・
+テストの質・受け入れ条件）には問題は無いとされたが、`docs/ARCHITECTURE.md`
+との齟齬が2件指摘された。
+
+1. §7.6.6「txpool 内訳の見せ方」に「カード面には出さない」という明示的な
+   決定が既に書かれており、今回 `InfraNodeCard` に txpool バッジを常時
+   表示した実装がこの決定と正面から矛盾していた。Issue #408 のUX再検証の
+   結果としてこの過去の決定を覆すこと自体は妥当だが、その旨が
+   `docs/ARCHITECTURE.md` にも本ファイルにも反映されておらず、過去の決定を
+   知る開発者が現在の実装を見て混乱する状態だった。
+2. §11.3「フロント側: 表示の構成」が tx 行（パネル上段）のクリック→パンの
+   仕様のみを記述しており、今回追加したノード別行（下段）のクリック→
+   パン+強調の仕様が追記されていなかった。
+
+これを受けて以下を対応した（実装コードの変更は無し）。
+
+- `docs/ARCHITECTURE.md` §7.6.6 を更新し、「カード面には出さない」という
+  記述を撤回した上で、Issue #408 のUX再検証結果（ノードカード本体に
+  mempool の手がかりが無く、ホバーして InfraPopover を開かない限り
+  気づけないという問題が実際に確認されたこと）を根拠として明記した。
+  あわせて §7.6.10 の決定事項一覧（項目3）も、txpool 内訳が当初
+  ポップオーバーのみだった経緯と、Issue #408 でカード面にも追加した旨を
+  反映するよう更新した。`docs/CONCEPT.md` は該当箇所に配置の詳細な記述が
+  無いため、レビューの判断どおり更新していない。
+- `docs/ARCHITECTURE.md` §11.3 に、ノード別行のクリック→パン+一時強調の
+  挙動を追記した。tx 行と異なり、ノード別行は `buildMempoolNodeEntries` が
+  キャンバス上に実在するノードから直接組み立てるため「対応カードが存在せず
+  パンできない」ケースが発生しない、という点も明記した。
+
+`pnpm lint && pnpm build && pnpm test` を実行し、すべて通過することを
+確認した上で `docs` 変更のみのコミットを作成し push した。
+
+### 2026-07-23 再レビュー結果(chainviz-reviewer)
+
+- 担当: reviewer
+- 対象コミット: `9ca9dcc`（origin/issue-408-mempool-node-locality）
+
+前回レビューで指摘した2件の`docs/ARCHITECTURE.md`との齟齬について、対応後の内容を確認した。
+
+#### 確認内容
+
+1. §7.6.6「txpool内訳の見せ方」: 「カード面には出さない」という当初の決定を撤回する記述に更新されていることを確認した。撤回の根拠としてIssue #408のUX再検証結果（ノードカード本体にmempoolの手がかりが無く、InfraPopoverを開かない限り気づけないこと）が明記されており、当初の懸念（値の変化に乏しくノイズになる）との比較も書かれている。矛盾は解消されている。
+2. §7.6.10 決定事項一覧の項目3も、txpool内訳が当初ポップオーバーのみだった経緯とIssue #408でカード面に追加した旨が追記されており、§7.6.6と整合している。
+3. §11.3「フロント側: 表示の構成」に、ノード別行のクリック→パン+一時強調（`jumpHighlightNodeId`をInfraNodeCardのReact Flowノードtypeにも拡張）の仕様が追記されていることを確認した。tx行と異なり対応カードが必ず存在するため「パンできない」ケースが発生しない点も明記されており、既存のtx行の記述（対応するウォレットカードが無い場合はパンしない）との書き分けが明確。
+4. `docs/`配下で「カード面には出さない」という撤回済みの記述が他に残っていないかも確認したが、該当箇所は無かった。
+
+いずれも前回指摘した齟齬は解消されている。
+
+#### 差分確認
+
+前回レビュー時点のコミット(`343eaa2`、テスト強化担当の最終コミット)と今回のコミット(`9ca9dcc`)を`git diff --stat`で比較し、変更が`docs/ARCHITECTURE.md`と`docs/worklog/issue-408.md`の2ファイルのみであることを確認した。`InfraNodeCard.tsx`・`InfraPopover.tsx`・`MempoolPanel.tsx`・`Canvas.tsx`等の実装コードに意図しない変更は無い。
+
+#### ビルド・lint・テスト
+
+`pnpm lint && pnpm build && pnpm test`をリポジトリ全体で実行し、すべて通過することを確認した（frontend 241 test files / 3054 tests、collector 83 test files / 1673 tests、shared 6 test files / 75 tests、e2e 16 test files / 185 tests、全て成功）。
+
+#### コミット粒度
+
+`git log main..HEAD`でブランチのコミット履歴を確認した。UX設計・実装(バッジ追加/InfraPopover順序変更/MempoolPanelクリック化を個別コミットに分離)・worklog記録・テスト強化・今回のdocs修正が、それぞれ独立したコミットに分かれており「1つの変更内容 = 1コミット」の原則に沿っている。問題なし。
+
+#### 判定
+
+**合格**。実装コード自体は前回レビューで確認済みの内容から変更が無く、今回指摘したdocsとの齟齬も適切に解消されている。品質ゲート(lint/build/test)もすべて通過している。QA(chainviz-qa)による実機確認へ進めてよい。
+
+(このレビューではcommit・pushは行っていない。統括が変更内容を確認の上、対応する。)
+
+### 2026-07-23 QA検証結果(chainviz-qa)
+
+- 担当: qa
+- 対象コミット: `003f7ca`（origin/issue-408-mempool-node-locality）
+- 検証方法: `pnpm --filter @chainviz/frontend dev`（`VITE_COLLECTOR_URL`
+  未設定でモックデータモード、port 5399）を起動し、Playwright（chromium、
+  `LD_LIBRARY_PATH` に `/home/zoe/chrome-deps/root/usr/lib/x86_64-linux-gnu`
+  を追加）で実際に画面を操作して確認した。モックデータには reth-node-1
+  （mempool pending 1）・reth-node-2（mempool pending 2）と、mempool を
+  持たない lighthouse-1（consensus）・validator（validator）が含まれており、
+  Issue #408 の受け入れ条件を検証するのに十分なノード構成が揃っている。
+  なお Docker のチェーン環境（`chainviz-ethereum-reth2-1` 等）は別途稼働中
+  であることも確認したが、本Issueは shared 型変更・collector 変更を伴わない
+  表示のみの変更であり、collector が生成する `NodeEntity.internals.mempool`
+  と等価なモックデータで受け入れ条件を全て確認できるため、モックモードでの
+  検証を主とした。
+
+#### 受け入れ条件ごとの確認結果
+
+1. **ノードカードに txpool バッジを常時表示（Execution のみ）**: 満たしている。
+   `infra-card-txpool-<id>` バッジが reth-node-1 に「txpool pending 1 · queued 0」、
+   reth-node-2 に「txpool pending 2 · queued 0」と、ホバー不要のカード面に
+   常時表示されることを確認した。mempool を持たない lighthouse-1（consensus）・
+   validator にはバッジが出ない（`infra-card-txpool-lighthouse-1` の要素数 0、
+   `infra-card-txpool-validator*` の要素数 0）ことも確認した。バッジは
+   サブタイトル直下の専用行に置かれており、カード幅（min-width 190px）内に
+   収まり、レイアウト崩れは無かった（実装担当がヘッダー行ではなくサブタイトル
+   直下へ置いた判断は、実際のカード密度で見て問題無し）。
+
+2. **InfraPopover の txpool 行を同期ステージより前へ**: 満たしている。
+   reth-node-1 のカードをホバーしてポップオーバーを開き、txpool 行
+   （`glossary-term-txpool`）と同期ステージセクション（`.infra-popover__sync-stages`）
+   の DOM 上の前後関係を `compareDocumentPosition` で確認したところ、
+   txpool 行が同期ステージより前（TXPOOL_BEFORE_STAGES）だった。スクリーン
+   ショットでも、txpool 行はクライアント種別・役割・P2P役割と同じ基本情報
+   ブロック内（同期状態・同期ステージの前）に表示されており、スクロール
+   せずに目に入る位置になっていることを確認した。
+
+3. **MempoolPanel のノード別行クリックでパン + 一時強調**: 満たしている。
+   「ノード別 txpool」欄の `mempool-node-row-reth-node-2` をクリックすると、
+   React Flow のビューポート transform が
+   `translate(494.476px, 43px) scale(0.577551)` から
+   `translate(259.99px, 436.467px) scale(0.577551)` へ変化し（ズーム倍率は
+   保持したまま対象カードへパン）、クリック直後に対象カード
+   `infra-card-reth-node-2` に一時強調クラス `infra-card--new` が付与され、
+   約 5 秒後（`NEW_ARRIVAL_HIGHLIGHT_DURATION_MS = 5000`）に自動で外れる
+   ことを確認した。
+
+4. **全体としての UX 改善**: 体感できる。以前はホバーして InfraPopover を
+   開き、さらに下部までスクロールしないと mempool の存在に気づけなかったが、
+   今回の変更でキャンバスを俯瞰した状態のまま「どの Execution ノードが
+   自分の mempool（txpool）を持ち、現在何件 pending しているか」がカード面
+   から一目で分かるようになった。加えて mempool パネルのノード別行と実際の
+   ノードカードがクリック→パン+強調で結び付き、「その mempool がどこに
+   格納されているか」が視覚的にたどれるようになっている。日本語・英語の
+   両言語で、バッジ文言（「txpool pending 1 · queued 0」/「Txpool pending 1 · queued 0」）・
+   ノード別行のツールチップ（「クリックでキャンバス上のノードカードへ移動」/
+   「Click to jump to the node's card on the canvas」）・見出し（「ノード別 txpool」/
+   「Txpool by node」）が正しく表示されることも確認した。
+
+#### 補足
+
+- Playwright 実行中に検出したコンソール 404 は `/favicon.ico` のみで、機能面
+  への影響は無い（本Issueの変更と無関係の既存挙動）。
+- 変更ファイルの関連ユニットテスト（`InfraNodeCard.test.tsx`・
+  `InfraPopover.test.tsx`・`MempoolPanel.test.tsx`・`mempoolList.test.ts`、
+  計 187 テスト）がこの環境でも全て通ることを確認した。
+
+#### 判定
+
+**合格**。Issue #408 の受け入れ条件（ノードカードへの txpool バッジ常時表示・
+InfraPopover の txpool 行の位置移動・MempoolPanel ノード別行のクリック→
+パン+強調）を実機で全て満たしていることを確認した。
+
+（このQAでは commit・push・PR作成・マージ・Issueクローズは行っていない。
+統括が変更内容を確認の上で対応する。）
+
+### 2026-07-23 QA追加検証: 実データ経路（collector 経由）での再確認
+
+前回の QA 記録では検証を「モックデータモードを主とした」と書いたが、これは
+不適切だった。`.claude/agents/chainviz-qa.md`・`CLAUDE.md`・本タスクの依頼は
+いずれも「実際に docker compose でチェーン環境を起動し、collector/frontend を
+動かして検証する」ことを求めており、モードをモックで代替してよいと認めた
+記述はどのドキュメントにも無い（`docs/ARCHITECTURE.md` のモック起動の記述は
+Phase 4 の UX 設計フェーズの手法であり QA の検証手法ではない）。不足を埋める
+ため、collector 経由の実データで #408 の3点を再検証した。
+
+#### 検証構成
+
+- 稼働中の Ethereum プロファイル（`profiles/ethereum` compose、
+  project `chainviz-ethereum`。reth1/reth2/beacon1/beacon2/validator1/
+  validator2/workbench の7コンテナ）に対し、collector を
+  `CHAINVIZ_COLLECTOR_PORT=4300` / `CHAINVIZ_PROXY_PORT=4301` で起動。
+  collector は Docker からコンテナを検出し、ロギングプロキシを
+  `4301 -> http://172.28.1.1:8545` で確立した。
+- frontend を `VITE_COLLECTOR_URL=ws://127.0.0.1:4300`（port 5400）で起動し、
+  実 collector の WebSocket スナップショット／差分で描画させた（画面ヘッダーは
+  「モックデータ」ではなく「接続済み」表示。チェーンは #69→#76 と実際に
+  進行し続けていることも確認）。
+
+#### collector スナップショットの内容（実データ）
+
+WebSocket で受信した `snapshot` の `payload.entities` を直接確認したところ、
+execution ノード（reth1/reth2）は `internals.mempool = {pending:0, queued:0}` を
+持ち、consensus（beacon1/beacon2）・validator（validator1/validator2）は
+`internals.mempool` を持たない（undefined）ことを確認した。モックデータと
+同じ構造であり、フロントの表示分岐（execution のみバッジ表示）が実データでも
+正しく機能する前提が満たされている。観測時点で pending は 0 件（in-flight の
+tx が無い状態）だったため、「0 件でも常時表示する」という実装判断が実データ
+でも意図どおり動くことを直接確認できた（pending が正の値のときの表示崩れの
+有無は前回のモック検証で pending 1/2 として確認済み）。
+
+#### 受け入れ条件の再確認（実データ）
+
+1. ノードカードの txpool バッジ: reth1・reth2 の両方に
+   「txpool pending 0 · queued 0」バッジが可視で常時表示され、
+   consensus/validator には出ない（バッジ要素は execution の2枚のみ）ことを
+   Playwright で確認した。
+2. InfraPopover の txpool 行の位置: reth1 のポップオーバーで
+   `compareDocumentPosition` により txpool 行が同期ステージセクションより
+   前（TXPOOL_BEFORE_STAGES）であることを確認。スクリーンショットでも基本
+   情報ブロック内（P2P役割の直後、同期状態・同期ステージの前）に表示。
+3. MempoolPanel ノード別行のクリック→パン+強調: 「ノード別 txpool」に
+   reth1・reth2 の行が出て、reth1 の行クリックでビューポート transform が
+   `translate(250.5px, 140.5px) scale(1)` から
+   `translate(-160.5px, 413px) scale(1)` へ変化（ズーム倍率保持のままパン）、
+   対象カードに `infra-card--new` が付与され約5秒後に解除されることを確認。
+
+ページエラー（pageerror）は 0 件。実データ経路でも #408 の受け入れ条件を
+全て満たしていることを確認した。**判定は引き続き合格**。
+
+#### 反省点
+
+「shared/collector 変更を伴わない表示のみの変更だからモックで等価」という
+のは実装担当・設計の判断としては妥当な近似だが、QA が要求された検証経路
+（実 collector 経由）を省略してよい根拠にはならない。今後は表示のみの変更
+であっても、まず実データ経路での起動・疎通を確認し、その上で必要に応じて
+モックで境界値（今回の pending 1/2 のような特定状態）を補う順序とする。
+
+（この追加検証でも commit・push・PR作成・マージ・Issueクローズは行っていない。）

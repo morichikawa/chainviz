@@ -527,16 +527,53 @@ function CanvasInner({
     [getNode, setCenter, getZoom],
   );
 
+  // mempool パネルのノード別行クリック（Issue #408）。`handleJumpToContract`
+  // と同じ「対象カードへパン + 一時的な新着発光と同じ強調」の演出を、
+  // インフラカード（`InfraNodeCard`。React Flow 上の type は "infra"）にも
+  // 拡張する。`jumpHighlightNodeId`/`jumpHighlightTimerRef` はコントラクト
+  // カードと共有する（対象がどちらの型でも同時に1件しか強調しない設計）。
+  const handleJumpToMempoolNode = useCallback(
+    (nodeId: string) => {
+      const node = getNode(nodeId);
+      if (!node) return;
+      const center = resolveNodeCenter(node.position, node.measured);
+      setCenter(center.x, center.y, { zoom: getZoom(), duration: 400 });
+
+      if (node.type !== "infra") return; // 想定外の型は強調演出のみ省略
+      if (jumpHighlightTimerRef.current) {
+        clearTimeout(jumpHighlightTimerRef.current);
+      }
+      setJumpHighlightNodeId(nodeId);
+      jumpHighlightTimerRef.current = setTimeout(() => {
+        setJumpHighlightNodeId(null);
+      }, NEW_ARRIVAL_HIGHLIGHT_DURATION_MS);
+    },
+    [getNode, setCenter, getZoom],
+  );
+
   // 表示直前にジャンプ強調・レイヤーレンズの dim 状態を注入する
   // （displayEdges の hover/dim 注入と同じパターン）。rfNodes 自体・各
   // NodeData の型は変えない。ゴーストカード・新着発光中のカードは
   // layerVisibility.dimNodeIds に含まれないため常に対象外になる
   // （entities/canvasLayers.ts の computeLayerVisibility 参照）。
+  // 強調演出の対象型はコントラクトカード（CONTRACT_NODE_TYPE）と
+  // インフラカード（"infra"。Issue #408 でノード別 txpool 行のジャンプ先
+  // として追加）の2種類。どちらも NodeData が `isNew?: boolean` を持つが、
+  // `node.type === A || node.type === B` の1条件にまとめると、TypeScript が
+  // `node`（CanvasFlowNode という判別可能ユニオン型）を2メンバーの
+  // ユニオンへ narrow した状態のまま `{ ...node, data: {...} }` を評価し、
+  // spread結果がユニオンとして分配されず `data.entity` の型が
+  // 一致しないという型エラーになる。型ごとに分岐を分けて、各分岐内では
+  // 単一メンバーへ narrow された状態で spread することでこれを避ける。
   const displayNodes = useMemo(
     () =>
       rfNodes.map((node) => {
+        const isJumpHighlightTarget =
+          jumpHighlightNodeId !== null && node.id === jumpHighlightNodeId;
         let next = node;
-        if (jumpHighlightNodeId !== null && node.id === jumpHighlightNodeId && node.type === CONTRACT_NODE_TYPE) {
+        if (isJumpHighlightTarget && node.type === CONTRACT_NODE_TYPE) {
+          next = { ...node, data: { ...node.data, isNew: true } };
+        } else if (isJumpHighlightTarget && node.type === "infra") {
           next = { ...node, data: { ...node.data, isNew: true } };
         }
         const dim = layerVisibility.dimNodeIds.has(node.id);
@@ -596,6 +633,7 @@ function CanvasInner({
         totalPendingCount={mempoolTxEntries.length}
         nodeEntries={mempoolNodeEntries}
         onSelectTx={handleJumpToMempoolTx}
+        onSelectNode={handleJumpToMempoolNode}
       />
       <SidePanelHost
         contractsByAddress={contractsByAddress}

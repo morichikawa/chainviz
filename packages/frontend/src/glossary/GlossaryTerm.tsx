@@ -13,6 +13,15 @@ export interface GlossaryTermProps {
   termKey: string;
   /** 表示テキスト。省略時は用語名（現在の言語）を表示する。 */
   children?: ReactNode;
+  /**
+   * true の間はホバー/フォーカス状態に関わらず定義ポップオーバーを表示
+   * しない（Issue #410）。呼び出し側（カード等）が、自分より前面に出て
+   * 他のUI（操作パネル等）を覆ってしまう状況で明示的に隠すための出口。
+   * `ActionHint` の同名 prop と同じ設計方針: `useHoverPopover` 自体の
+   * ホバー追跡ロジックは変更せず、表示条件だけを合成する（抑制が外れれば
+   * 保持していたホバー状態がそのまま反映され、再ホバー不要で元に戻る）。
+   */
+  suppressed?: boolean;
 }
 
 /**
@@ -37,7 +46,7 @@ function resolveRelatedTermLabel(key: string, glossary: Glossary, lang: Language
  * `null` を返すため、クリック連携は no-op にフォールバックする（例外を
  * 投げない）。
  */
-export function GlossaryTerm({ termKey, children }: GlossaryTermProps) {
+export function GlossaryTerm({ termKey, children, suppressed = false }: GlossaryTermProps) {
   const { glossary, lookup } = useGlossary();
   const { lang, t } = useLanguage();
   const sidePanel = useOptionalSidePanel();
@@ -45,6 +54,9 @@ export function GlossaryTerm({ termKey, children }: GlossaryTermProps) {
   const { isOpen: open, onMouseEnter, onMouseLeave, onFocus, onBlur, close } =
     useHoverPopover();
   const popoverId = useId();
+  // Issue #410: 内部のホバー状態(open)はそのままに、表示だけを外部から
+  // 抑制する（ActionHint.tsx と同じ設計）。
+  const visible = open && !suppressed;
   // Issue #245: React Flow のノードはそれぞれ独立したスタッキングコンテキスト
   // を持つため、隣接カードの下に隠れないよう body 直下へ portal 描画する
   // （PopoverPortal 参照）。位置合わせの基準はこの用語自体（アンカー）。
@@ -72,7 +84,7 @@ export function GlossaryTerm({ termKey, children }: GlossaryTermProps) {
       className="glossary-term"
       tabIndex={0}
       role="button"
-      aria-describedby={open ? popoverId : undefined}
+      aria-describedby={visible ? popoverId : undefined}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       onFocus={onFocus}
@@ -90,7 +102,7 @@ export function GlossaryTerm({ termKey, children }: GlossaryTermProps) {
       data-testid={`glossary-term-${termKey}`}
     >
       <span className="glossary-term__label">{label}</span>
-      {open && (
+      {visible && (
         <PopoverPortal
           anchorRef={anchorRef}
           gapPx={6}

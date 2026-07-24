@@ -356,6 +356,11 @@ export const messages = {
   },
   "mempoolPanel.overflow": { ja: "他 {count} 件", en: "+{count} more" },
   "mempoolPanel.nodesTitle": { ja: "ノード別 txpool", en: "Txpool by node" },
+  // Issue #408: ノード別 txpool 行のクリックヒント（tx 行の jumpHint と対）。
+  "mempoolPanel.nodeJumpHint": {
+    ja: "クリックでキャンバス上のノードカードへ移動",
+    en: "Click to jump to the node's card on the canvas",
+  },
   // --- D層: 内部リンクエッジ・活動パルス（ARCHITECTURE.md §7.6.3/§7.6.4。
   // Issue #188） ---
   "edge.internalLink": { ja: "内部リンク（Engine API）", en: "Internal link (Engine API)" },

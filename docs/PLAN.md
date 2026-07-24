@@ -1055,8 +1055,57 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       前後に移動できるようにした。対象ブロックが保持窓から外れた場合は
       contractSourceと同じダングリングガードでパネルを自動的に閉じる。
       packages/e2e/SCENARIOS.mdにUI-B-07として追記しPlaywrightテストを
-      実装)
+      実装。初回QAでe2eテストがチェーンリボンの表示凍結とライブデータの
+      乖離でフレークし差し戻し、テストの安定化対応後に再レビュー・再QA
+      とも合格)
       [#409](https://github.com/morichikawa/chainviz/issues/409)
+- [x] ワークベンチの操作パネルを開いた時、他のツールチップ/ポップオーバーに
+      隠れて操作しづらい
+      (ユーザーからの指摘。原因は3点: (1)「操作を実行…」ボタンの予告
+      ツールチップ(ActionHint)がボタンクリック直後もカーソルがボタン上に
+      残っているため開いた操作パネルに重なる、(2)操作パネルが
+      `.infra-card`のDOM子要素のため操作パネル操作中も`mouseleave`が
+      発火せずホバー詳細ポップオーバー(InfraPopover)が表示され続ける、
+      (3)InfraPopover内の用語解説ポップオーバー(z-index 30)が操作パネル
+      (z-index 25)より前面に出て実際にポインタ操作をブロックする。
+      `ActionHint`に`suppressed`propを追加してボタンクリック時に予告を
+      明示的に隠し、`InfraPopover`の表示条件に`!operationPanelOpen`を
+      加えて連鎖的に解消。z-indexの並び替えのような対症療法はせず表示
+      条件そのものを制御する方針で対応。QA検証でヘッダー「ワークベンチ」
+      ラベルの用語解説ポップオーバーも同様に操作パネルを覆うことが
+      判明したため、`GlossaryTerm`にも同型の`suppressed`propを追加)
+      [#410](https://github.com/morichikawa/chainviz/issues/410)
+- [x] メモリプールがどこに格納されているか分かりにくい
+      (ユーザーからの指摘。mempool自体の可視化(#330のMempoolPanel・
+      ステップ9のInfraPopover txpool行)は既にあるが、「各ノードが個別に
+      mempoolを持つ」ことがキャンバスの見た目からは伝わらない。ノード
+      カード本体にtxpoolの手がかりが無い・InfraPopover内でtxpool行が
+      同期ステージ10行の下に埋もれている・MempoolPanelの「ノード別
+      txpool」欄が実際のノードカードと視覚的に結び付いていない、の3点を
+      chainviz-uxが特定しUX設計をまとめた。shared型変更・collector変更は
+      不要。着手時はUX設計(docs/worklog/issue-408.md)に沿って
+      chainviz-frontendが実装)
+      [#408](https://github.com/morichikawa/chainviz/issues/408)
+- [ ] ブロックチェーンに対する一般的な攻撃手法を理解できるようにする
+      (ユーザーからの要望。designerが①グロッサリー解説+既存可視化との
+      紐付け、②実チェーン上での意図的な再現、③#401/#402と同型のフロント内
+      独立シミュレーション砂場、の3案と攻撃手法ごとの向き不向きを比較した
+      のち、ユーザーが方針を決定: ①を51%攻撃・ダブルスペンド・リオーグ・
+      フロントランニング・ロングレンジ攻撃・eclipse攻撃の6手法共通の
+      土台とし、③を51%攻撃・ロングレンジ攻撃・eclipse攻撃の3手法に適用
+      (`packages/shared`型変更は不要と判断)。designerが実装可能な粒度まで
+      詳細設計し`docs/ARCHITECTURE.md`§17に反映。対象範囲が広いため
+      統括が以下4Issueに分割し、本Issueは親issueとして残した。詳細は
+      docs/worklog/issue-412.md参照)
+      [#412](https://github.com/morichikawa/chainviz/issues/412)
+  - [ ] 攻撃手法解説の土台(glossary + 既存可視化アンカー)
+        [#413](https://github.com/morichikawa/chainviz/issues/413)
+  - [ ] 51%攻撃のシミュレーション砂場
+        [#414](https://github.com/morichikawa/chainviz/issues/414)
+  - [ ] ロングレンジ攻撃のシミュレーション砂場
+        [#415](https://github.com/morichikawa/chainviz/issues/415)
+  - [ ] eclipse攻撃のシミュレーション砂場
+        [#416](https://github.com/morichikawa/chainviz/issues/416)
 
 ## 運用ルール（全ステップ共通）
 
