@@ -4,7 +4,7 @@ import { ActionHint } from "../canvas/ActionHint.js";
 import { describeNodeRole, nodeShowsSyncState } from "../chain-profiles/ethereum/nodeRoles.js";
 import { useCommandActions } from "../commands/CommandActionsContext.js";
 import { resolveWorkbenchOperationsHint } from "../commands/commandMessages.js";
-import { pickLocale } from "../i18n/i18n.js";
+import { format, pickLocale } from "../i18n/i18n.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { useHoverPopover } from "../interaction/useHoverPopover.js";
@@ -38,6 +38,15 @@ import type { InfraFlowNode } from "./infraNode.js";
  * カード枠を縁取る。同じ tip を見ているノードは同じ色になる（ARCHITECTURE.md
  * §9.3、Issue #296）。既存の役割別カード枠（ワークベンチの紫等）とは別の
  * CSSプロパティ（outline）を使うため両立する。
+ *
+ * `entity.internals?.mempool` があるノード（Execution クライアント等）には、
+ * サブタイトル直下に txpool バッジを常時表示する（Issue #408）。以前は
+ * ホバーして `InfraPopover` を開かない限り、そのノードが mempool を持つ
+ * ことに気づけなかった（各ノードが個別に mempool を保持するという事実が
+ * カード面から伝わらない、という指摘）。pending が 0 件でも「このノードは
+ * 常に自分の mempool を持っている」という事実そのものを見せるため非表示に
+ * しない（`MempoolPanel` が 0 件も意味のある情報として扱う流儀と揃える。
+ * `docs/worklog/issue-408.md` 参照）。
  */
 export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
   const {
@@ -89,6 +98,10 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
   // 旧スナップショット・別チェーンでは p2pRole が省略されるため、その場合は
   // バッジを出さないフォールバックに倒す（通常ピア前提の表示にしない）。
   const isBootnode = entity.kind === "node" && entity.p2pRole === "bootnode";
+  // このノードローカルの mempool（txpool）内訳。Consensus/Validator など
+  // internals.mempool を持たないノードでは undefined のままバッジ自体を
+  // 出さない（Issue #408。既存の InfraPopover 側と同じ分岐条件）。
+  const mempool = entity.kind === "node" ? entity.internals?.mempool : undefined;
 
   const onRemove = () => {
     if (entity.kind === "node") actions.removeNode(entity.id);
@@ -199,6 +212,20 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
       </div>
       <div className="infra-card__name">{entity.containerName}</div>
       <div className="infra-card__subtitle">{subtitle}</div>
+      {mempool && (
+        <div className="infra-card__txpool-row">
+          <span
+            className="infra-card__badge--txpool"
+            data-testid={`infra-card-txpool-${entity.id}`}
+          >
+            <GlossaryTerm termKey="txpool">{t("field.txpool")}</GlossaryTerm>{" "}
+            {format(t("txpool.value"), {
+              pending: String(mempool.pending),
+              queued: String(mempool.queued),
+            })}
+          </span>
+        </div>
+      )}
       {entity.kind === "node" &&
         entity.syncStatus === "syncing" &&
         entity.internals?.syncStages && (
