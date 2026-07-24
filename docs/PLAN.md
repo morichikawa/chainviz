@@ -1038,6 +1038,22 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       イーサリアムでの用途を説明。処理帯コンテナのaria-hiddenは実
       コンテンツになったため解除)
       [#406](https://github.com/morichikawa/chainviz/issues/406)
+- [x] ワークベンチの操作パネルを開いた時、他のツールチップ/ポップオーバーに
+      隠れて操作しづらい
+      (ユーザーからの指摘。原因は3点: (1)「操作を実行…」ボタンの予告
+      ツールチップ(ActionHint)がボタンクリック直後もカーソルがボタン上に
+      残っているため開いた操作パネルに重なる、(2)操作パネルが
+      `.infra-card`のDOM子要素のため操作パネル操作中も`mouseleave`が
+      発火せずホバー詳細ポップオーバー(InfraPopover)が表示され続ける、
+      (3)InfraPopover内の用語解説ポップオーバー(z-index 30)が操作パネル
+      (z-index 25)より前面に出て実際にポインタ操作をブロックする。
+      `ActionHint`に`suppressed`propを追加してボタンクリック時に予告を
+      明示的に隠し、`InfraPopover`の表示条件に`!operationPanelOpen`を
+      加えて連鎖的に解消。z-indexの並び替えのような対症療法はせず表示
+      条件そのものを制御する方針で対応。QA検証でヘッダー「ワークベンチ」
+      ラベルの用語解説ポップオーバーも同様に操作パネルを覆うことが
+      判明したため、`GlossaryTerm`にも同型の`suppressed`propを追加)
+      [#410](https://github.com/morichikawa/chainviz/issues/410)
 - [x] メモリプールがどこに格納されているか分かりにくい
       (ユーザーからの指摘。mempool自体の可視化(#330のMempoolPanel・
       ステップ9のInfraPopover txpool行)は既にあるが、「各ノードが個別に

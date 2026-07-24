@@ -156,8 +156,15 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
           />
         )}
         <span className="infra-card__kind">
+          {/* Issue #410: ヘッダーの「ワークベンチ」ラベルの用語解説
+              ポップオーバーは、幅260pxでラベル直下からカード幅を超えて
+              右へ張り出すため、カード右側に開く操作パネルと構造的に
+              重なる（QAで実機確認済み。操作パネル自体を覆い、入力欄への
+              クリックが物理的にブロックされていた）。entity.kind===
+              "node" のカードには操作パネルが存在しないため抑制不要。 */}
           <GlossaryTerm
             termKey={entity.kind === "workbench" ? "workbench" : "container"}
+            suppressed={entity.kind === "workbench" && operationPanelOpen}
           >
             {kindLabel}
           </GlossaryTerm>
@@ -229,7 +236,10 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
         )}
       {entity.kind === "workbench" && (
         <div className="infra-card__operate-wrapper">
-          <ActionHint hint={resolveWorkbenchOperationsHint(rpcTargetContainerName, t)}>
+          <ActionHint
+            hint={resolveWorkbenchOperationsHint(rpcTargetContainerName, t)}
+            suppressed={operationPanelOpen}
+          >
             <button
               type="button"
               className={
@@ -260,7 +270,15 @@ export function InfraNodeCard({ data }: NodeProps<InfraFlowNode>) {
           </ActionHint>
         </div>
       )}
-      {hovered && (
+      {/* Issue #410: 操作パネルが開いている間はホバー詳細ポップオーバーを
+          出さない。操作パネルは `.infra-card` の DOM 子要素として描画されて
+          おり、カーソルがパネル内へ移っても `.infra-card` の mouseleave は
+          発火しない（hovered が true のまま残り続ける）ため、パネルの開閉
+          状態を明示的に条件へ加えて抑制する。パネル内に埋め込まれた用語
+          解説ポップオーバー（z-index がこのポップオーバーより操作パネルより
+          高く、実際にポインタ操作をブロックしていた）もこの条件一本で
+          連鎖的に出なくなる。パネルを閉じれば通常のホバー挙動に戻る。 */}
+      {hovered && !operationPanelOpen && (
         <InfraPopover
           anchorRef={cardRef}
           entity={entity}
