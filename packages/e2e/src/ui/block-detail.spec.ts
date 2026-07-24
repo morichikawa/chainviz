@@ -2,7 +2,7 @@
 // packages/e2e/SCENARIOS.md「B層: P2P グラフ（UI-B）」節の実装
 // (docs/ARCHITECTURE.md §8.4 の記法規約に従う)。
 
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { SLOT_DURATION_MS } from "../helpers/slot-time.js";
 
 /**
@@ -17,7 +17,30 @@ const BLOCK_DETAIL_TIMEOUT_MS = SLOT_DURATION_MS * 3 + 20_000;
 const CHAIN_RIBBON_TILE_SELECTOR =
   '[data-testid^="chain-ribbon-tile-"][data-connected-to-previous]';
 
+/**
+ * `block-detail-view` に表示中のブロックの hash を取得する。「前のブロック」
+ * ボタンの `data-testid`（`block-detail-prev-<hash>`）は常に「今表示している
+ * ブロック」の hash で採番される（disabled でも要素自体は残る）ため、これを
+ * 読み取ることで表示内容の hash を確実に取得できる。
+ */
+async function getDisplayedBlockHash(page: Page): Promise<string> {
+  const testId = await page
+    .getByTestId("block-detail-view")
+    .locator('[data-testid^="block-detail-prev-"]')
+    .getAttribute("data-testid");
+  const hash = testId?.replace("block-detail-prev-", "") ?? "";
+  if (!hash) throw new Error("block detail view has no prev button data-testid");
+  return hash;
+}
+
 test("UI-B-07: ブロック詳細パネルで保持窓内を前後に辿れる", async ({ page }) => {
+  // 「次のブロックが観測されるまで待つ」ステップと、最終ステップの「ライブの
+  // チェーン先端へ追いつくまで next を辿るフォールバックループ」の両方が
+  // 最大 BLOCK_DETAIL_TIMEOUT_MS 分の待ちを持ちうる（chain-ribbon.spec.ts の
+  // UI-B-06 と同じ考え方で、直列に重なる待ちの合計に安全マージンを載せて
+  // 既定のテストタイムアウトを個別に緩める）。
+  test.setTimeout(2 * BLOCK_DETAIL_TIMEOUT_MS + 30_000);
+
   await test.step(
     "frontend を開き、チェーンリボンカードにタイルが1件以上表示されるまで待つ",
     async () => {
@@ -89,20 +112,29 @@ test("UI-B-07: ブロック詳細パネルで保持窓内を前後に辿れる",
   await test.step(
     "差し替わった後の「前のブロック」で元のブロックへ戻れる",
     async () => {
-      const childHash =
-        (await page
-          .getByTestId("block-detail-view")
-          .locator('[data-testid^="block-detail-prev-"]')
-          .getAttribute("data-testid"))?.replace("block-detail-prev-", "") ?? "";
-      if (!childHash) throw new Error("block detail view has no prev button data-testid");
+      const childHash = await getDisplayedBlockHash(page);
       await page.getByTestId(`block-detail-prev-${childHash}`).click();
       await expect(page.getByTestId("block-detail-view")).toContainText(firstHash);
     },
   );
 
   await test.step(
-    "チェーンリボンの最新タイル（chain-ribbon-latest と同じブロック）のブロック詳細を開くと、「次のブロック」が disabled になり「最新のブロックです」の理由が示される",
+    "チェーンリボンの最新タイル（chain-ribbon-latest と同じブロック）のブロック詳細を開き、実際のチェーン先端に達すると「次のブロック」が disabled になり「最新のブロックです」の理由が示される",
     async () => {
+      // QA差し戻し(Issue #409): チェーンリボンの表示は Issue #298/#351 の
+      // `useFrozenRibbonTiles` によりホバー中（このテストではここまでの
+      // ステップで開いたポップオーバーの余韻を含む）表示窓の前進が凍結
+      // される。一方パネルの blocksByHash/latestBlockHash は Canvas.tsx が
+      // 常にライブの data.tiles/data.blocks から導出しており、データの
+      // 出所が異なる。凍結が残ったまま「最新に見えるタイル」を選ぶと、
+      // 実際のチェーン先端より遅れたブロックを開いてしまい、next が
+      // disabled にならず不安定になる（実機7回中6回失敗）。
+      // まずホバーを明示的に外して凍結を解除し、`HOVER_POPOVER_CLOSE_DELAY_MS`
+      // (200ms) の遅延クローズ猶予より十分長く待ってから表示窓の再計算を
+      // 待つことで、なるべくライブに近いタイルを選び直す。
+      await page.mouse.move(0, 0);
+      await page.waitForTimeout(500);
+
       const latestTile = page.locator(CHAIN_RIBBON_TILE_SELECTOR).last();
       const latestHash =
         (await latestTile.getAttribute("data-testid"))?.replace(
@@ -115,7 +147,25 @@ test("UI-B-07: ブロック詳細パネルで保持窓内を前後に辿れる",
         .getByTestId(`chain-ribbon-popover-block-detail-open-${latestHash}`)
         .click();
       await expect(page.getByTestId("block-detail-view")).toContainText(latestHash);
-      await expect(page.getByTestId(`block-detail-next-${latestHash}`)).toBeDisabled();
+
+      // 上記の対策後もなお、選んだタイルが実際のチェーン先端よりわずかに
+      // 遅れていた場合（例: 選択直後に次ブロックが到着した）に備え、
+      // パネル自身の「次のブロック」ナビゲーションでライブの先端に追いつく
+      // まで辿ってから disabled を検証する（QAの提案「検証対象が子を持たない
+      // 状態を確実に保証する」を、パネル自身の遷移で実現する）。追いつく
+      // 前に BLOCK_DETAIL_TIMEOUT_MS（他の待ちと同じ SLOT_DURATION_MS 由来の
+      // 式）を超えたらループを打ち切り、以降の disabled アサーションに委ねる
+      // （真に製品側の不具合であればここで失敗し、フレークとは区別できる）。
+      const followDeadline = Date.now() + BLOCK_DETAIL_TIMEOUT_MS;
+      let hash = latestHash;
+      while (Date.now() < followDeadline) {
+        const nextButton = page.getByTestId(`block-detail-next-${hash}`);
+        if (await nextButton.isDisabled()) break;
+        await nextButton.click();
+        hash = await getDisplayedBlockHash(page);
+      }
+
+      await expect(page.getByTestId(`block-detail-next-${hash}`)).toBeDisabled();
       await expect(page.getByTestId("block-detail-next-reason")).toHaveText(
         "最新のブロックです",
       );
