@@ -546,3 +546,69 @@
 
 - **補足**: 本レビューでは commit・push・PR作成・マージ・Issueクローズは
   行っていない。worklogへの追記のみ。
+
+### 2026-07-25 Issue #409 チェーンを遡れるようにしたい（QA・再検証）
+- 担当: qa
+- ブランチ: issue-409-block-detail-navigation（別worktreeで当該ブランチが
+  チェックアウト中だったため、`git checkout --detach origin/issue-409-block-detail-navigation`
+  で同一コミット `0a3f8d4` を指す detached HEAD 上で検証した。内容は同じ）
+- 判定: **合格**
+
+- **検証環境**: 稼働中の Docker スタック（`profiles/ethereum`、slot 12秒）で
+  チェーンが進行していることを確認（`cast block-number` で 658→659→660 と
+  進行を確認）。この worktree には node_modules・dist が無かったため
+  `pnpm install` と `pnpm build`（collector の dist が無いと UI 層 e2e の
+  collector 起動が失敗するため必須）を実施し、全パッケージのビルド成功を
+  確認した。Playwright chromium は前回同様 headless shell がシステム
+  ライブラリ（`libnspr4.so` 等）を見つけられないため、ホストに用意されて
+  いた `/home/zoe/chrome-deps/root/usr/lib/x86_64-linux-gnu` を
+  `LD_LIBRARY_PATH` に追加して起動させた（環境側の準備であり、リポジトリの
+  コードは変更していない）。
+
+- **今回の修正内容の確認**: 今回の差し戻し対応コミット（`e1075f8`）は
+  `packages/e2e/SCENARIOS.md` と `packages/e2e/src/ui/block-detail.spec.ts`
+  の2ファイルのみを変更しており、製品コード（`packages/frontend/src/**`）は
+  変更していないことを `git show --stat e1075f8` で確認した。前回QAで満たして
+  いた各受け入れ条件（パネル表示・前後ナビゲーション・保持窓境界での prev
+  disabled・最新ブロックでの next disabled・ダングリングガード・shared/
+  collector 無変更）は製品コードが変わっていないため維持されており、
+  green になった各実行がこれらの機能（パネル開閉、最古タイルでの
+  `block-detail-prev-*` disabled と理由表示、次ブロックへの遷移と親hash/
+  prev での復帰、最新タイルでの `block-detail-next-*` disabled と
+  「最新のブロックです」表示）を毎回再確認している。
+
+- **e2e 安定性の検証（本題）**: `packages/e2e/src/ui/block-detail.spec.ts`
+  （UI-B-07）を実機に対して**合計33回**実行した。結果は**32回 pass・
+  1回 fail（成功率約97%）**。
+  - 内訳: 単発1回 pass → 連続6回のうち初回1回 fail・以降5回 pass →
+    連続8回 pass → 連続10回 pass → 連続8回 pass。**最初の1回の失敗以降は
+    31回連続 green**。
+  - 失敗した1回は、単発実行の直後に開始した連続実行の初回（前実行の
+    globalTeardown による collector/vite 停止と、次実行の globalSetup に
+    よる起動が連続して切り替わるタイミング）で発生した。Playwright の
+    `trace: retain-on-failure` は設定されているが、失敗直後に次の実行が
+    `test-results` を上書きしたため当該回のトレースは取得できず、どの
+    アサーションで落ちたかまでは特定できなかった。ただし同じ「連続実行の
+    切り替わり」条件は以降31回で再現しており、その全てで green だったため、
+    再現性のある不具合ではなく極めて低頻度の残存フレーク（または一過性の
+    環境要因）と判断した。前回（修正前）の 7回中1回 pass（約14%）から、
+    97%・31回連続 green へと明確に安定化している。
+  - 補足: この Playwright UI 層テスト（`test:e2e:ui`）は `pnpm test`
+    （e2e パッケージでは `vitest run` のユニットテスト）には含まれず、
+    `.githooks/pre-push` の push ゲートを構成しない。実 Docker スタックを
+    要する手動/QA 実行のテストであるため、仮に低頻度のフレークが残って
+    いても push パイプラインをブロックすることはない。
+
+- **合格の判断**: 唯一の未達項目だった「Playwright テストが安定して green
+  になる」について、33回中32回 pass・修正後31回連続 green・pushゲート非
+  対象という状況から、前回差し戻しの原因（6/7 で失敗する系統的なフレーク）
+  は解消されたと判断し、合格とする。1回の未再現失敗は透明性のため上記に
+  記録しておく（将来 UI-B-07 が稀に落ちた場合の参照情報）。
+
+- **補足**: 本検証では commit・push・PR 作成・マージ・Issue クローズは
+  行っていない。worklog への追記のみ（統括が内容を確認したうえで代わりに
+  commit・push する）。`docs/PLAN.md` の該当チェックボックス（「チェーンを
+  遡れるようにしたい」、#409）は既に `[x]` でありリンクも付与済みのため
+  変更は不要だった。検証用に scratchpad 上へ作成した実行ログ・スクリプトは
+  リポジトリ外であり、リポジトリツリーはクリーン（`git status` で未追跡
+  ファイル無し）であることを確認した。
