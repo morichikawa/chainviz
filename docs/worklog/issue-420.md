@@ -209,3 +209,110 @@ Beacon API の応答を確認した。
 
 以上を GitHub Issue #420 本文にも転記した。`docs/ARCHITECTURE.md` の
 更新は、案の決定後（Issue #412 と同じ進め方）に行う
+
+### 2026-07-24 Issue #420 詳細設計（案B確定後、designer）
+
+- 担当: designer
+- 前提: ユーザーが案B（VCメトリクス新規スクレイプ）を採用と決定。「内部で
+  何をやっているか」への期待値（職務の種類＋実施確認＋所要時間の代表値が
+  限度）はこの決定の前提として共有済み
+- 内容: 実装コードは書かず、実装可能な粒度までの詳細設計と
+  `docs/ARCHITECTURE.md` §7.6.12 への反映を行った。設計内容の全文は
+  `docs/ARCHITECTURE.md` §7.6.12（および §7.6.11・§7.1 の更新箇所）を
+  正とする。ここには設計の過程で確認した事実・判断の根拠のみ記録する
+
+#### 作業ブランチについて
+
+このIssueのブランチ `issue-420-validator-activity-visualization` は既に
+別のworktree（`chainviz-designer` の前回セッション）にチェックアウト済み
+だったため、今回のセッションは同じコミット（`0d92277`）を起点に
+`issue-420-validator-activity-visualization-designer` という別名ローカル
+ブランチで作業した。統括が最終的に commit・push する際は、これを元の
+`issue-420-validator-activity-visualization` ブランチへ反映すること
+（`issue-408-mempool-node-locality-frontend` 等、既存の複数worktree
+並行作業と同じ合流パターン）。
+
+#### lighthouse VC のメトリクス名の確認方法
+
+実行中の `profiles/ethereum` 環境（QA等の他作業で使用中の可能性がある
+コンテナ）には触れず、`sigp/lighthouse` の GitHub リポジトリ（`stable`
+ブランチ）を直接読んでメトリクス名を確認した（`docker exec` で
+`lighthouse vc --help` を叩く程度の読み取り専用操作は問題ないが、
+`--metrics` を実際に有効化するには稼働中コンテナの再作成が要り、実運用中の
+鍵を使った二重起動の二重署名リスクを避けるため今回は行わなかった）:
+
+- `validator_client/validator_metrics/src/lib.rs`: メトリクス定義一覧
+  （`vc_signed_beacon_blocks_total` 等）
+- `validator_client/lighthouse_validator_store/src/lib.rs`: 上記カウンタが
+  実際に `inc_counter_vec` で増やされている箇所。`status` ラベルの値
+  （`success`/`slashable`/`same_data`/`unregistered`）を確認し、
+  **validator_index・公開鍵のラベルが一切無いこと**を確認した
+  （「validator_index → VC コンテナの対応付けは不要」という結論の根拠）
+- `validator_client/signing_method/src/lib.rs`: `vc_signing_times_seconds`
+  が signer backend（`local_keystore`/`web3signer`）別の集計であり、
+  職務種別（提案/証明）別ではないことを確認した
+- `validator_client/validator_services/src/attestation_service.rs`:
+  `vc_attestation_service_task_times_seconds{task="attestations_http_post"}`
+  が証明の提出 HTTP 呼び出しの所要時間であることを確認した（署名処理
+  そのものの時間ではない近似値）
+
+**注意**: これは `stable` ブランチのソースであり、`profiles/ethereum` が
+使う `sigp/lighthouse:latest` Docker イメージの実際のバージョンと厳密に
+一致するかは未確認。reth のとき（Issue #185）は実機の `/metrics` を実際に
+curl して確定させたが、今回は二重署名リスクを避けるためソース確認に
+留めた。したがって `docs/ARCHITECTURE.md` §7.6.12 に書いたメトリクス名は
+「暫定（実装時に実機で再確認すること）」という位置づけにしてある。
+実装時は、安全な手順（例: 既存の稼働環境を一度 `docker compose down` して
+から `--metrics` を有効化して `up` し直す。並行複製起動はしない）で
+`/metrics` の実際の出力を確認してから確定させること
+
+#### validator_index → VC コンテナの対応付け問題について
+
+調査段階（案の比較時点）では「案A」特有の課題として書かれていたが、今回
+確定した案Bでは以下の理由で**そもそも対応付けが不要**という結論になった:
+
+1. collector は各 VC コンテナの `/metrics` を個別にスクレイプする
+   （reth の `executionMetricsTargets` と同型。対象＝観測結果の対応は
+   Docker 観測（コンテナ IP + `com.chainviz.role: "validator"` ラベル）
+   だけで一意に決まり、これは Issue #246 で既に解決済みの仕組み）
+2. VC のカウンタ自体が validator_index を持たない（プロセス単位の集計。
+   上記のソース確認で裏付け済み）ため、「どの validator_index がどの
+   VC コンテナに属するか」を知る必要のある場面が発生しない
+
+そのため `generate-genesis.sh` の range 分割ロジックを collector に
+教える変更（環境変数経由・compose 設定への追記等）は行わない。ユーザーの
+依頼文はこの対応付けを「解決する」ことを求めていたが、実際の設計結果は
+「（案Bを採る限り）対応付けという概念自体が不要になる」という形の解決に
+なった。この点はレビュー時に見落とされやすいポイントなので明記しておく
+
+#### ファイル構成・関数構成
+
+`docs/ARCHITECTURE.md` §7.6.12 に記載した内容が正。要点のみ再掲:
+
+- node-env: `profiles/ethereum/scripts/lighthouse-vc.sh` に
+  `--metrics --metrics-address 0.0.0.0 --metrics-port 5064` を追加。
+  `docker-compose.yml` の変更は不要（reth の 9001 番と同じくホスト
+  非公開のまま、collector はコンテナ IP へ直接到達する）
+- collector: 新設 `vc-metrics-client.ts` / `vc-metrics.ts` /
+  `vc-metrics-tracker.ts` / `vc-node-internals.ts`（reth の D層実装 4
+  ファイルと対称）。`targets.ts` に `validatorMetricsTargets` を追加。
+  `index.ts` の既存 `subscribeNodeInternals` の周期ループに相乗りさせる
+  （新しいループは作らない、Issue #274 の前例どおり）。`toNodeId` の
+  解決には Issue #285 で実装済みの `beaconStableIdForValidator` を
+  そのまま再利用でき、新規実装は不要
+- frontend: `internalLinkKinds.ts` の `showsActivity` を反転、
+  `validatorApiMethodLabels.ts` を新設、`internalLinkActivity.ts` の
+  `formatInternalCallEntry` を reth/VC 両テーブルの2段フォールバックに
+  変更、`glossary/ethereum/terms/d-internal.yaml` の `beacon-api` 定義を
+  更新
+- `packages/shared` の型変更は**無し**（`NodeLinkActivity`/
+  `InternalCallStats`/`ChainAdapter`/`NodeInternalsHandlers` いずれも
+  既存のまま使える。調査段階の判断どおり）
+
+#### Issue の粒度についての判断
+
+1つのIssue（#420）のまま3パッケージ分担で実装しきれる粒度と判断した。
+Issue #412（4つの独立した機能への分割）とは異なり、本Issueは「validator
+の活動パルスを流す」という単一の成果に向けた分担であり、Issue #285 や
+#187/#274 と同じ「1 Issue・複数パッケージ」の形が適切。依存関係・並行
+着手の可否は §7.6.12 の「作業分担・Issue の粒度」に記載した
