@@ -1456,11 +1456,26 @@ button.mempool-panel__row:hover {
   padding: 0;
 }
 
+/* Issue #408: ノード別 txpool 行をボタン化し、対応するノードカードへの
+   パン導線を持たせる（tx 一覧側の button.mempool-panel__row と同じ
+   「素の見た目 + hover でだけ背景が付く」流儀）。 */
 .mempool-panel__node-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 2px 0;
+  width: 100%;
+  padding: 2px 4px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.mempool-panel__node-row:hover {
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .mempool-panel__node-counts {
@@ -2095,6 +2110,28 @@ button.mempool-panel__row:hover {
 /* 異常ではないため wallet-card__orphan の赤系とは違う中立配色にする。 */
 .infra-card__badge--bootnode {
   margin-left: auto;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  background: rgba(70, 87, 125, 0.18);
+  white-space: nowrap;
+}
+
+/* --- ノードカードの txpool バッジ(Issue #408) --- */
+/* ブートノードバッジ(.infra-card__badge--bootnode)と同じ配色・サイズの
+   pill だが、ヘッダー行に詰め込むとブートノードバッジ・削除ボタンと
+   横幅を奪い合い折り返し/はみ出しの懸念があるため、専用の行として
+   サブタイトルの直下に独立させている。 */
+.infra-card__txpool-row {
+  margin-top: 4px;
+}
+
+.infra-card__badge--txpool {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 999px;

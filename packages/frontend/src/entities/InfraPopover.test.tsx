@@ -577,6 +577,27 @@ describe("InfraPopover txpool row (ARCHITECTURE.md §7.6.6, Issue #189)", () => 
     renderPopover(corrupted);
     expect(screen.queryByText("txpool")).toBeNull();
   });
+
+  it("places the txpool row before the sync stages section (Issue #408: avoids being buried below the 10 sync-stage rows)", () => {
+    const syncingWithMempool: NodeEntity = {
+      ...node,
+      syncStatus: "syncing",
+      blockHeight: 64,
+      internals: {
+        mempool: { pending: 1, queued: 0 },
+        syncStages: [{ stage: "Headers", checkpoint: 128 }],
+      },
+    };
+    renderPopover(syncingWithMempool, "ja", undefined, 128);
+    const txpoolLabel = screen.getByText("txpool");
+    const syncStagesHeading = screen.getByText("同期ステージ");
+    // compareDocumentPosition の DOCUMENT_POSITION_FOLLOWING(4) は
+    // 「引数側のノードが基準ノードより後にある」ことを表す。txpool 行の
+    // 要素を基準に見て、同期ステージ見出しが後方（= 下）にあることを
+    // 確認する（=txpool 行の方が先に描画されている）。
+    const position = txpoolLabel.compareDocumentPosition(syncStagesHeading);
+    expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });
 
 describe("InfraPopover sync stages section (ARCHITECTURE.md §7.6.5, Issue #189)", () => {

@@ -69,7 +69,10 @@ function Field({ label, value }: { label: string; value: string }) {
  * （同期ステージのミニバーの分母。ARCHITECTURE.md §7.6.5。Issue #189）。
  * `entity.internals.syncStages` がある node にのみ「同期ステージ」セクションを、
  * `entity.internals.mempool` がある node にのみ「txpool」行を追加する
- * （どちらも省略時はセクション/行ごと出さない既存の流儀を踏襲）。
+ * （どちらも省略時はセクション/行ごと出さない既存の流儀を踏襲）。「txpool」
+ * 行は bootnode 行の直後、同期状態・同期ステージより前に置く（Issue #408。
+ * 以前は同期ステージ10行の下に埋もれてスクロールしないと目に入らなかった。
+ * クライアント種別・役割・P2P役割と同じ「基本情報」寄りに位置づける）。
  *
  * node には `nodeRole` が解釈できれば「役割」行（`field.role` を再利用。
  * 値に `GlossaryTerm termKey={descriptor.glossaryKey}`）をクライアント行の
@@ -183,6 +186,19 @@ export function InfraPopover({
               </span>
             </div>
           )}
+          {entity.internals?.mempool && (
+            <div className="infra-field">
+              <span className="infra-field__label">
+                <GlossaryTerm termKey="txpool">{t("field.txpool")}</GlossaryTerm>
+              </span>
+              <span className="infra-field__value">
+                {format(t("txpool.value"), {
+                  pending: String(entity.internals.mempool.pending),
+                  queued: String(entity.internals.mempool.queued),
+                })}
+              </span>
+            </div>
+          )}
           {showsSyncState && (
             <>
               <Field
@@ -238,19 +254,6 @@ export function InfraPopover({
               stages={entity.internals.syncStages}
               targetHeight={maxElBlockHeight ?? 0}
             />
-          )}
-          {entity.internals?.mempool && (
-            <div className="infra-field">
-              <span className="infra-field__label">
-                <GlossaryTerm termKey="txpool">{t("field.txpool")}</GlossaryTerm>
-              </span>
-              <span className="infra-field__value">
-                {format(t("txpool.value"), {
-                  pending: String(entity.internals.mempool.pending),
-                  queued: String(entity.internals.mempool.queued),
-                })}
-              </span>
-            </div>
           )}
         </>
       )}
