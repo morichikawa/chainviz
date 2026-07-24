@@ -94,3 +94,111 @@
 `packages/shared` を含むコード変更は行っていないため、
 `pnpm build && pnpm test` の実行・確認は不要（変更はドキュメント
 （`docs/`）と GitHub Issue本文のみ）。
+
+---
+
+### 2026-07-24 Issue #412 詳細設計（方針確定後）
+
+- 担当: designer
+- 内容: ユーザーが「案1を全攻撃手法共通の土台として敷く」「案3を51%攻撃・
+  ロングレンジ攻撃・eclipse攻撃の3手法に適用する」「リオーグ・ダブル
+  スペンド・フロントランニングは解説のみで今回は砂場を作らない」「図解を
+  重視する」という方針を決定したのを受け、実装に着手できる粒度まで
+  データフロー・型変更の要否・作業分担・図解の設計方針を具体化した。
+  設計内容は `docs/ARCHITECTURE.md` §17（新設）に反映済み。
+
+#### 1. `packages/shared` の型変更: 不要と判断
+
+土台（glossary + 既存可視化へのアンカー追加）・3つの砂場
+（`fiftyOnePercentAttackDemo`/`longRangeAttackDemo`/`eclipseAttackDemo`）の
+いずれも、実チェーンの観測結果（ワールドステートのエンティティ）を新たに
+必要としない。3つの砂場は Issue #401/#402 の `hashChainDemo`/
+`signatureDemo` と同型の「フロント内で完結した疑似データ」であり、
+`packages/shared`・collector・node-env の変更は発生しない。そのため今回は
+`packages/shared` にコードを一切書いていない（`pnpm build && pnpm test`
+の実行・確認は不要）。
+
+#### 2. データフロー・作業分担の要点（詳細は ARCHITECTURE.md §17）
+
+- **土台**: `glossary/ethereum/terms/b-network.yaml` に4語
+  （`fiftyOnePercentAttack`/`longRangeAttack`/`eclipseAttack`/`reorg`）、
+  `glossary/ethereum/terms/c-transaction.yaml` に2語（`doubleSpend`/
+  `frontRunning`）を追加する。既存の「ファイル = layer」の1:1対応
+  （§5・frontend の `glossary/data.ts` が4ファイルを明示import）を崩さない
+  ため、新規ファイルは作らない（`data.ts` の import 追加も不要）。各語に
+  glossary パネル以外からのアンカーを最低1箇所持たせる（Issue #124の
+  ルール。配置先は `InfraPopover.tsx` / `ChainRibbonCard.tsx` /
+  `PeerNetworkLegend.tsx` / `TxLifecyclePopover.tsx` / `MempoolPanel.tsx`。
+  実測でファイルパス・既存アンカー箇所を確認済み）
+- **3つの砂場**: `sidePanelView.ts` の `SidePanelView` に新規 kind を3つ
+  追加し、中身は `packages/frontend/src/attack-demo/`（`crypto-demo/`とは
+  別フォルダ）に置く。暗号プリミティブの実計算（keccak256/ecrecover）を
+  扱う `crypto-demo/` と異なり、こちらは「バリデーターの投票集計」
+  「ピア接続の掌握」のようなネットワーク・合意レベルの疑似シミュレーション
+  であるため名前空間を分けた
+- 依存順序: 3つの砂場は自分の glossary アンカー（例:
+  `GlossaryTerm termKey="eclipseAttack"`）が土台で追加した用語に依存する
+  ため、**土台が先にmainへマージされている必要がある**。土台が終わって
+  いれば3つの砂場は互いに独立（別ファイル・別 kind）なので並行に進められる
+
+#### 3. Issue分割の提案（実際の起票は統括に委ねる）
+
+対象範囲が「glossary + 5箇所のアンカー追加」（土台）と「独立した3つの
+frontend実装」（各砂場）に自然に分かれ、実装コスト・レビュー観点も
+異なるため、**1 Issue のまま進めず4分割を推奨する**:
+
+1. 攻撃手法解説の土台（glossary 6語 + 既存可視化へのアンカー5箇所。
+   frontend ラベル。chainviz-ux は不要、標準パイプラインで足りる）
+2. 51%攻撃のシミュレーション砂場（`fiftyOnePercentAttackDemo`。土台に依存）
+3. ロングレンジ攻撃のシミュレーション砂場（`longRangeAttackDemo`。土台に依存）
+4. eclipse攻撃のシミュレーション砂場（`eclipseAttackDemo`。土台に依存）
+
+2〜4は土台マージ後に並行して進められる。#412 をそのまま1（土台）に
+充てるか、#412 を親issue的に残して4つとも新規発行するかは統括の運用
+判断に委ねる。`docs/PLAN.md` の該当行（現在1チェックボックスで #412 の
+み参照）も、分割後は「チェックボックス1行 = Issue 1つ」の原則に沿って
+4行へ分けることを推奨する（実際の書き換えは統括が Issue 発行後に行う）。
+
+#### 4. 図解の設計方針とUX設計への引き継ぎ判断
+
+ユーザーからの「図解を重視してほしい」という要望を踏まえ、3つの砂場は
+以下の共通原則を持たせることとした（ARCHITECTURE.md §17.5 に詳細）:
+
+- **本物の判定ロジックの原則**: Issue #401/#402が「記号的な図解ではなく
+  本物の計算（keccak256/ecrecover）をする」ことを核としたのと同じ精神を、
+  「ネットワーク・合意レベルの疑似シミュレーション」という異なる題材でも
+  継承する。単なる演出アニメーションではなく、実際に動く簡略化ロジック
+  （51%攻撃=重み集計によるfork choice簡略版、ロングレンジ攻撃=finality
+  checkpointとの比較、eclipse攻撃=ピア占有率の実計算）を持たせ、ユーザーの
+  操作に応じて結果が実際に再計算される
+- **既存可視化との視覚的な結びつき**: 51%攻撃は既存のフォーク色パレット
+  （§9.3）、ロングレンジ攻撃は既存のブロックタイル表現（§10/§15）、
+  eclipse攻撃はメインキャンバスのP2Pエッジの視覚言語を、それぞれ流用する
+  よう指定した。ユーザーが普段見ている可視化と砂場内の表現が地続きになる
+  ことを狙う
+
+一方で、3手法それぞれが必要とする図解（分岐ツリー・並走する2本の履歴・
+ピアを取り囲むミニグラフ）は、Issue #401/#402が確立した「編集できる入力 →
+処理帯 → 導出値 → 検証バッジ」という単一テンプレートにそのまま乗らない
+**個別の図解**であり、レイアウト・アニメーション・操作フローの細部は
+本設計の範囲を超える。そのため**3つの砂場それぞれについて、
+chainviz-frontend着手前にchainviz-uxのUX設計を挟むことを推奨する**。
+本設計が固定したのは概念モデル・判定ロジックの原則・視覚的結びつきの
+方針までで、具体的なレイアウトはUX設計に委ねる（先回りしない）。
+
+土台（glossaryへのアンカー追加のみ）は既存パターンの延長でありUX設計は
+不要と判断した。
+
+#### 5. 意図的に決めなかったこと
+
+- glossary用語「finality」の独立エントリ新設要否（`doubleSpend`・
+  `longRangeAttack`の説明文中で概念として触れるに留め、実装時の文章量
+  次第で判断してよいとした）
+- チェーンリボンカードのsubtitle-rowに砂場の入口ボタンが並びすぎる
+  懸念（`hashChainDemo`に加えて`fiftyOnePercentAttackDemo`・
+  `longRangeAttackDemo`で3つ目のボタンになる）への対処（単純追加か、
+  「砂場一覧」的な単一入口への統合か）。UX設計側の判断に委ねる
+- リオーグ・ダブルスペンド・フロントランニングを実チェーン上で再現する
+  案2の要否（今回は案1のみとし、案2は別Issueとして後日検討）
+- `docs/PLAN.md`の該当チェックボックスの分割・書き換え自体（実際のIssue
+  発行後に統括が行う）
