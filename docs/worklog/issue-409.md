@@ -492,3 +492,57 @@
     今後 UI-B-07 以外のチェーンリボン関連テストで同様の「凍結表示のタイル
     hash に依存した選択」を書く場合は、同じ落とし穴（凍結中にライブデータが
     先行して進む）に注意する必要がある。
+
+### 2026-07-24 Issue #409 チェーンを遡れるようにしたい（再レビュー）
+- 担当: reviewer
+- ブランチ: issue-409-block-detail-navigation（別worktreeで当該ブランチが
+  チェックアウト中だったため、`git switch --detach origin/issue-409-block-detail-navigation`
+  で同一コミットを指す detached HEAD 上で検証した。内容は同じ）
+- 判定: **合格**
+
+- **確認した内容**:
+  - 前回レビュー時点のコミット（`28732b6`）からの差分を確認した。変更は
+    `packages/e2e/src/ui/block-detail.spec.ts`・`packages/e2e/SCENARIOS.md`・
+    `docs/worklog/issue-409.md` の3ファイルのみで、`packages/frontend/src/**`
+    を含む製品コードには一切変更が無いことを確認した
+    （`git diff 28732b6..HEAD --stat`）。
+  - テストの安定化ロジックがその場しのぎでないことを確認した。QAが特定した
+    一次原因（`useFrozenRibbonTiles` によるチェーンリボン表示の凍結と、
+    `Canvas.tsx` が常にライブの `data.tiles`/`data.blocks` から導出する
+    `blocksByHash`/`latestBlockHash` との出所の違い）に加え、
+    frontend担当がさらに `ChainRibbonCard.tsx` の
+    `isHoverActive = hoveredBlockHash !== null || openPopoverHashes.size > 0`
+    （いずれかのポップオーバーが開いている間ずっと凍結され続ける）という
+    具体的なコード上の根拠まで踏み込んで特定していることをソースを読んで
+    確認した。対策も (1) 明示的なアンホバーで凍結を解除してから選び直す、
+    (2) それでも残るレースにはパネル自身の「次のブロック」でライブの
+    チェーン先端まで追いつかせてから検証する、の2段構えで、単なるリトライや
+    タイムアウト延長ではなく凍結解除の実施箇所そのものに手を入れている。
+  - 固定値の追加が無いことを確認した。`page.waitForTimeout(500)` は
+    新規の決め打ちに見えるが、`packages/frontend/src/interaction/useHoverPopover.ts`
+    の実在の定数 `HOVER_POPOVER_CLOSE_DELAY_MS = 200` に安全マージンを
+    載せた値であり、同じパターンが既存の `chain-ribbon.spec.ts`
+    （`HOVER_POPOVER_CLOSE_DELAY_MS=200ms` を参照する既存コメント）でも
+    使われている確立済みの慣行であることをソースで確認した。追いつき
+    ループの上限も新規定数ではなく既存の `BLOCK_DETAIL_TIMEOUT_MS`
+    （`SLOT_DURATION_MS` から動的に導出）をそのまま再利用しており、
+    「現在観測できる値」に依存した新規の決め打ちは追加されていない。
+  - `pnpm lint && pnpm build && pnpm test` をリポジトリ全体で実行し、
+    全パッケージが通過することを確認した（frontend 3090件・collector
+    1673件・shared 75件・e2e(vitest) 185件、e2eの`build`は`tsc --noEmit`）。
+  - 稼働中の実 Docker スタック（`profiles/ethereum`）に対し、
+    `packages/e2e/src/ui/block-detail.spec.ts` を独立して3回連続実行し、
+    **3回とも green** であることを自分の手で確認した（実装担当は7回中
+    7回green確認済み。今回はレビュー担当による独立した追加確認）。
+  - コミット粒度: `git log 28732b6..HEAD --oneline` で3コミット
+    （QA検証結果の記録／e2eの安定化修正／QA再修正結果の記録）を確認し、
+    それぞれ独立した関心事に分かれていた。
+  - docsとの整合: `packages/e2e/SCENARIOS.md` のUI-B-07記述に、最終操作が
+    「実際のチェーン先端に達するまでnextで追いつかせる」ことを追記しており、
+    テストの実装内容と一致していた。
+
+- **次の担当**: chainviz-qaによる再検証（`block-detail.spec.ts` の実機実行が
+  安定してgreenになることの確認）を推奨する。
+
+- **補足**: 本レビューでは commit・push・PR作成・マージ・Issueクローズは
+  行っていない。worklogへの追記のみ。
