@@ -17,7 +17,8 @@ import {
 } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChainRibbonCard } from "../entities/ChainRibbonCard.js";
-import { CHAIN_RIBBON_NODE_TYPE } from "../entities/chainRibbonNode.js";
+import { buildBlocksByHash } from "../entities/blockDetail.js";
+import { CHAIN_RIBBON_NODE_TYPE, type ChainRibbonFlowNode } from "../entities/chainRibbonNode.js";
 import type { LayerFilter } from "../entities/canvasLayers.js";
 import { computeLayerVisibility, withLayerDimClassName } from "../entities/canvasLayers.js";
 import { ContractCallPulseEdge } from "../entities/ContractCallPulseEdge.js";
@@ -87,6 +88,11 @@ const nodeTypes: NodeTypes = {
   [GHOST_NODE_TYPE]: GhostNodeCard,
   [CHAIN_RIBBON_NODE_TYPE]: ChainRibbonCard,
 };
+// Issue #409: チェーンリボンノードがまだ無い（初回スナップショット受信前）
+// 場合の nodeLabelById 既定値。SidePanelHost の props 型に合わせた安定参照
+// （毎レンダー新しい Map を作らないため）。
+const EMPTY_NODE_LABEL_BY_ID: ReadonlyMap<string, string> = new Map();
+
 const edgeTypes: EdgeTypes = {
   [PEER_EDGE_TYPE]: PeerPropagationEdge,
   [OWNERSHIP_EDGE_TYPE]: OwnershipEdge,
@@ -437,6 +443,28 @@ function CanvasInner({
     return map;
   }, [rfNodes]);
 
+  // Issue #409: サイドパネル(ブロック詳細)が対象ブロック・親子ナビゲーション・
+  // 受信ノード表示に使う索引。チェーンリボンノード(rfNodes中に常に1つ)の
+  // data.blocks/data.nodeLabelById/data.tiles から作る(contractsByAddress と
+  // 同じ「rfNodes を filter するだけ」の流儀)。data.tiles は番号昇順・末尾が
+  // 最新（`deriveRibbonTiles` の契約）なので、その末尾の hash が現在の
+  // 最新ブロック（`ChainRibbonCard` 内のホバー凍結で表示上は遅延することが
+  // あるが、それは表示のみの局所 state。データ導出側は常に生の data.tiles を
+  // 使う）。
+  const chainRibbonNode = useMemo(
+    () =>
+      rfNodes.find(
+        (node): node is ChainRibbonFlowNode => node.type === CHAIN_RIBBON_NODE_TYPE,
+      ),
+    [rfNodes],
+  );
+  const blocksByHash = useMemo(
+    () => buildBlocksByHash(chainRibbonNode?.data.blocks ?? []),
+    [chainRibbonNode],
+  );
+  const blockNodeLabelById = chainRibbonNode?.data.nodeLabelById ?? EMPTY_NODE_LABEL_BY_ID;
+  const latestBlockHash = chainRibbonNode?.data.tiles.at(-1)?.block.hash;
+
   // Issue #317: 通信ログのノードフィルタ（設計メモ §5.4）に出す、現存の
   // node/workbench 一覧。表示名はカードと同じ解決（node は containerName、
   // workbench は label）を使う（`resolveActorLabel` と同じ流儀。ここでは
@@ -613,6 +641,10 @@ function CanvasInner({
         commsLogNodeOptions={commsLogNodeOptions}
         layerFilter={layerFilter}
         onLayerFilterChange={onLayerFilterChange}
+        blocksByHash={blocksByHash}
+        blockNodeLabelById={blockNodeLabelById}
+        latestBlockHash={latestBlockHash}
+        transactions={transactions}
       />
     </ReactFlow>
   );

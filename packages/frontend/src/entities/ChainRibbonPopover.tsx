@@ -145,6 +145,22 @@ export function ChainRibbonPopover({
           </ul>
         )}
       </div>
+      {/* Issue #409: このブロックの詳細パネル（フル hash・受信ノード全件・
+          取り込み tx 全件 + 前後ナビゲーション）を開く文脈導線。既存の
+          「ハッシュのしくみを試す」ボタン（Issue #401）と同型のパターン
+          （ポップオーバー内ボタン。タイル本体には新規クリックトリガーを
+          足さない。ARCHITECTURE.md §17.2）。 */}
+      <button
+        type="button"
+        className="chain-ribbon-popover__block-detail-open nodrag"
+        onClick={(event) => {
+          event.stopPropagation();
+          sidePanel?.open({ kind: "blockDetail", hash: block.hash });
+        }}
+        data-testid={`chain-ribbon-popover-block-detail-open-${block.hash}`}
+      >
+        {t("blockDetail.open")}
+      </button>
       {/* Issue #401: ポップオーバー内の文脈導線(常設入口はカード側の
           subtitle 行に別途ある)。ホバー中クリック可能なため、ここから直接
           砂場デモへ飛べる。 */}

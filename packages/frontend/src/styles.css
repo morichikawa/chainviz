@@ -3148,8 +3148,9 @@ button.mempool-panel__row:hover {
   cursor: pointer;
 }
 
-/* Issue #401: ポップオーバー末尾の文脈導線。 */
-.chain-ribbon-popover__hash-demo-open {
+/* Issue #409: ポップオーバー末尾のブロック詳細パネルへの導線。「受信した
+   ノード」欄との区切りとして上ボーダーを持つ（このボタンが先頭）。 */
+.chain-ribbon-popover__block-detail-open {
   margin-top: 6px;
   padding-top: 6px;
   border-top: 1px solid var(--divider);
@@ -3157,6 +3158,21 @@ button.mempool-panel__row:hover {
   border-left: none;
   border-right: none;
   border-bottom: none;
+  color: var(--accent);
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+/* Issue #401: ポップオーバー末尾の文脈導線。Issue #409 でブロック詳細への
+   導線を追加したため、上の区切り線は block-detail-open 側が受け持ち、
+   こちらは詰めて並ぶ2番目のボタンとして小さい上マージンのみ持つ。 */
+.chain-ribbon-popover__hash-demo-open {
+  margin-top: 2px;
+  background: none;
+  border: none;
   color: var(--accent);
   font-size: 12px;
   text-decoration: underline;
@@ -3591,6 +3607,178 @@ button.mempool-panel__row:hover {
   display: flex;
   gap: 10px;
   margin: 0 0 6px;
+}
+
+/* --- ブロック詳細パネル（kind: "blockDetail"。Issue #409。
+   docs/ARCHITECTURE.md §17）。フィールド行は `.infra-field` を再利用する。 --- */
+.block-detail-view__header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.block-detail-view__number {
+  font-weight: 600;
+}
+
+.block-detail-view__hash {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-size: calc(12px * var(--side-panel-font-scale, 1));
+}
+
+/* 親hashフィールドをクリック可能な移動導線にする際のボタン化リセット
+   （見た目は `.infra-field` のまま、ボタン既定の枠・背景・フォントだけ消す）。 */
+.block-detail-view__parent-link {
+  width: 100%;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.block-detail-view__parent-link:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.block-detail-view__received {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--divider);
+}
+
+.block-detail-view__received-label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.block-detail-view__received-empty {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.block-detail-view__received-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.block-detail-view__received-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  padding: 2px 0;
+}
+
+.block-detail-view__received-offset {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.block-detail-view__tx-section {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--divider);
+}
+
+.block-detail-view__tx-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.block-detail-view__tx-count {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.block-detail-view__tx-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.block-detail-view__tx-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.block-detail-view__tx-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.block-detail-view__tx-hash {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.block-detail-view__tx-nonce {
+  color: var(--muted);
+}
+
+.block-detail-view__tx-addr {
+  font-variant-numeric: tabular-nums;
+}
+
+.block-detail-view__tx-call {
+  color: var(--accent);
+}
+
+.block-detail-view__tx-overflow {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.block-detail-view__nav {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--divider);
+}
+
+.block-detail-view__nav-button {
+  flex: 1;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.block-detail-view__nav-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.block-detail-view__nav-button:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.block-detail-view__nav-reason {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 11px;
 }
 
 /* --- Issue #327 フォールバック ---

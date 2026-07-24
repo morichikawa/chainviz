@@ -1,17 +1,32 @@
-import type { ContractEntity } from "@chainviz/shared";
+import type { BlockEntity, ContractEntity, TransactionEntity } from "@chainviz/shared";
 import { useEffect } from "react";
 import type { CommsLogCategory, CommsLogEntry } from "../comms-log/commsLogEntry.js";
 import type { CommsLogFilterState } from "../comms-log/commsLogFilter.js";
+import {
+  limitBlockTransactions,
+  resolveBlockNavigation,
+  selectBlockTransactions,
+} from "../entities/blockDetail.js";
 import type { LayerFilter } from "../entities/canvasLayers.js";
+import { deriveReceivedOrder } from "../entities/chainRibbon.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { HashChainDemoView } from "../crypto-demo/HashChainDemoView.js";
 import { SignatureDemoView } from "../crypto-demo/SignatureDemoView.js";
+import { BlockDetailView } from "./BlockDetailView.js";
 import { CommsLogView } from "./CommsLogView.js";
 import type { CommsLogNodeOption } from "./CommsLogFilterBar.js";
 import { ContractSourceView } from "./ContractSourceView.js";
 import { GlossaryPanelView } from "./GlossaryPanelView.js";
 import { SidePanel } from "./SidePanel.js";
 import { useSidePanel } from "./SidePanelContext.js";
+
+// SidePanelHostProps の省略可能な blockDetail 関連 props（後述）の既定値。
+// モジュールスコープの固定参照にして、props 省略時に毎レンダー新しい
+// Map/配列を作らないようにする（`contractsByAddress` 等と違い、これらは
+// Canvas.tsx から渡されない単体テスト・ハーネスで頻繁に省略されるため）。
+const EMPTY_BLOCKS_BY_HASH: ReadonlyMap<string, BlockEntity> = new Map();
+const EMPTY_NODE_LABEL_BY_ID: ReadonlyMap<string, string> = new Map();
+const EMPTY_TRANSACTIONS: readonly TransactionEntity[] = [];
 
 export interface SidePanelHostProps {
   /** address → ContractEntity の索引（Canvas.tsx が rfNodes から算出する）。 */
@@ -39,6 +54,37 @@ export interface SidePanelHostProps {
   };
   /** 通信ログのノードフィルタ用ドロップダウンに出す、現存の node/workbench 一覧。 */
   commsLogNodeOptions: CommsLogNodeOption[];
+  /**
+   * ブロック詳細パネル（Issue #409。ARCHITECTURE.md §17）が対象ブロック・
+   * 前後ナビゲーションを引くための hash → `BlockEntity` の索引。Canvas.tsx が
+   * チェーンリボンノード（`type === CHAIN_RIBBON_NODE_TYPE`）の
+   * `data.blocks`（保持窓内の全件）から算出する（`contractsByAddress` と
+   * 同じ「rfNodes を filter するだけ」の流儀）。省略時は空 Map（パネルは
+   * 常にダングリング扱いになり即座に閉じる。Canvas.tsx を経由しない単体
+   * テスト・ハーネス向けの既定値）。
+   */
+  blocksByHash?: ReadonlyMap<string, BlockEntity>;
+  /**
+   * ブロック詳細パネルの「受信したノード」欄の解決に使う、ノード id →
+   * 表示名の索引。チェーンリボンノードの `data.nodeLabelById` と同じもの
+   * （`deriveReceivedOrder` の第2引数）。省略時は空 Map。
+   */
+  blockNodeLabelById?: ReadonlyMap<string, string>;
+  /**
+   * 現在の最新ブロックの hash（チェーンリボンの最新タイルと同じ値）。
+   * ブロック詳細パネルの「次のブロック」ボタンが disabled のとき、
+   * 「最新に到達した」か「観測が追い付いていない等」かを出し分けるために
+   * 使う（`resolveBlockNavigation` の `isLatest`）。省略時（チェーンリボンが
+   * まだ1件もタイルを持たない等）は常に isLatest=false 扱い。
+   */
+  latestBlockHash?: string;
+  /**
+   * ブロック詳細パネルの tx 一覧に使う、ワールドステートの全
+   * `TransactionEntity`（mempool パネルに渡しているものと同じ生の配列。
+   * `selectBlockTransactions` がここで対象ブロックへ絞り込む）。省略時は
+   * 空配列（tx 一覧は常に0件表示になる）。
+   */
+  transactions?: readonly TransactionEntity[];
 }
 
 /**
@@ -72,6 +118,13 @@ export interface SidePanelHostProps {
  *
  * signatureDemo（Issue #402）: hashChainDemo と同じ理由でダングリング
  * ガードの対象外。
+ *
+ * blockDetail（Issue #409）: 対象 hash の `BlockEntity` を `blocksByHash` から
+ * 引く（保持するのは hash のみ。contractSource と同じ「未知→既知の昇格」
+ * ではなく「保持窓から外れて消える」向きの遷移だが、同じダングリングガード
+ * の仕組みで扱える）。対象ブロックが保持窓から外れて `blocksByHash` から
+ * 消えた場合、contractSource と同じ方針でパネルを自動的に閉じる
+ * （ARCHITECTURE.md §17.2「ダングリングガード」）。
  */
 export function SidePanelHost({
   contractsByAddress,
@@ -79,14 +132,21 @@ export function SidePanelHost({
   onLayerFilterChange,
   commsLog,
   commsLogNodeOptions,
+  blocksByHash = EMPTY_BLOCKS_BY_HASH,
+  blockNodeLabelById = EMPTY_NODE_LABEL_BY_ID,
+  latestBlockHash,
+  transactions = EMPTY_TRANSACTIONS,
 }: SidePanelHostProps) {
   const { t } = useLanguage();
-  const { view, close } = useSidePanel();
+  const { view, open, close } = useSidePanel();
   const contract =
     view?.kind === "contractSource"
       ? contractsByAddress.get(view.address)
       : undefined;
-  const dangling = view?.kind === "contractSource" && contract === undefined;
+  const block = view?.kind === "blockDetail" ? blocksByHash.get(view.hash) : undefined;
+  const dangling =
+    (view?.kind === "contractSource" && contract === undefined) ||
+    (view?.kind === "blockDetail" && block === undefined);
 
   useEffect(() => {
     if (dangling) close();
@@ -148,6 +208,31 @@ export function SidePanelHost({
     return (
       <SidePanel ariaLabel={t("sigDemo.title")} title={t("sigDemo.title")} onClose={close}>
         <SignatureDemoView />
+      </SidePanel>
+    );
+  }
+
+  if (view.kind === "blockDetail" && block !== undefined) {
+    const navigation = resolveBlockNavigation(block, blocksByHash, latestBlockHash);
+    const blockTransactions = selectBlockTransactions(block.hash, transactions);
+    const { visible: visibleTransactions, overflowCount } =
+      limitBlockTransactions(blockTransactions);
+    return (
+      <SidePanel
+        ariaLabel={t("blockDetail.title")}
+        title={t("blockDetail.title")}
+        onClose={close}
+      >
+        <BlockDetailView
+          block={block}
+          navigation={navigation}
+          receivedOrder={deriveReceivedOrder(block, blockNodeLabelById)}
+          visibleTransactions={visibleTransactions}
+          totalTxCount={blockTransactions.length}
+          overflowCount={overflowCount}
+          contractsByAddress={contractsByAddress}
+          onNavigate={(hash) => open({ kind: "blockDetail", hash })}
+        />
       </SidePanel>
     );
   }
