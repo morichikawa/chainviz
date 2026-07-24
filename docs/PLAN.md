@@ -1046,11 +1046,18 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       フロントランニング・ロングレンジ攻撃・eclipse攻撃の6手法共通の
       土台とし、③を51%攻撃・ロングレンジ攻撃・eclipse攻撃の3手法に適用
       (`packages/shared`型変更は不要と判断)。designerが実装可能な粒度まで
-      詳細設計し`docs/ARCHITECTURE.md`§17に反映、対象範囲が広いため
-      「土台」「51%攻撃砂場」「ロングレンジ攻撃砂場」「eclipse攻撃砂場」
-      の4Issue分割を統括に提案した(未実行)。実装未着手のためチェックは
-      未完了のまま。詳細はdocs/worklog/issue-412.md参照)
+      詳細設計し`docs/ARCHITECTURE.md`§17に反映。対象範囲が広いため
+      統括が以下4Issueに分割し、本Issueは親issueとして残した。詳細は
+      docs/worklog/issue-412.md参照)
       [#412](https://github.com/morichikawa/chainviz/issues/412)
+  - [ ] 攻撃手法解説の土台(glossary + 既存可視化アンカー)
+        [#413](https://github.com/morichikawa/chainviz/issues/413)
+  - [ ] 51%攻撃のシミュレーション砂場
+        [#414](https://github.com/morichikawa/chainviz/issues/414)
+  - [ ] ロングレンジ攻撃のシミュレーション砂場
+        [#415](https://github.com/morichikawa/chainviz/issues/415)
+  - [ ] eclipse攻撃のシミュレーション砂場
+        [#416](https://github.com/morichikawa/chainviz/issues/416)
 
 ## 運用ルール（全ステップ共通）
 
