@@ -584,3 +584,140 @@ mempoolが空（pending 0件）の状態で、フロントランニングのヒ�
   課題であるため、まとめて扱うか別Issueにするかは統括の判断に委ねる
 - `docs/PLAN.md` のチェックボックスは、5-1 の対応が済むまで本QAでは触っていない
   （#413 の行は実装担当が既にチェック済みの状態のまま）
+
+---
+
+### 2026-07-25 Issue #413 差し戻し対応（5-1 のみ。担当: frontend）
+
+- 担当: frontend
+- ブランチ: `issue-413-attack-glossary-foundation`（実体は別 worktree に
+  checkout されていたため、作業は同じリモートブランチを追跡するローカル
+  ブランチ `issue-413-fix-worktree` 上で行い、`git push` 時に
+  `issue-413-attack-glossary-foundation` へ反映する）
+- 対応したのは QA 検証結果の 5-1（mempool パネルのヘッダー行が層フィルター
+  バーに覆われる退行）のみ。5-2（P2P凡例の `eclipseAttack` ポップオーバーが
+  画面下端で切れる）は対応方針を検討したが見送った（理由は下記）
+
+#### 設計メモ（着手前）
+
+- 原因は `.mempool-panel`（`packages/frontend/src/styles.css`）が
+  `bottom: 385px` 固定で、内容が増えると上方向に伸びる作りであること。
+  Issue #413 で追加した `frontRunning` ヒント行が高さを増やし、ビューポート
+  高が低いとき（1280x720 を含む）にパネル上端が `.canvas-overlay-top`
+  （キャンバスツールバー + レイヤーフィルターバー）より上に出るように
+  なった
+- 対応方針の候補を3つ検討した:
+  1. ヒント行のテキストを短くして高さを抑える
+  2. パネルの配置・最大高さの計算方法を見直す
+  3. 上記の組み合わせ
+  - 候補1は、パネル幅（220〜280px）に対してヒント文はどのみち2行に
+    折り返すため、意味のある文言のままでは高さの削減効果が薄いと判断し
+    見送った
+  - 候補2を採用した。実測（Playwright、後述）で「アイドル状態（0件）でも
+    重なる」原因はヒント行だけでなく、既存の「ノード別 txpool」欄
+    （`nodeEntries.length > 0` で常に描画される。6ノード構成では常時
+    表示される）も高さの主要因であることを確認した。ヒント行だけを
+    削らず、パネル全体の上限高さをビューポート高に応じて動的に絞る方が
+    根本的な解決になると判断した
+- 実装方針: `.mempool-panel` の `max-height` を `min(260px, calc(100vh -
+  585px))` に変更する。`585px` は「このパネルの `bottom` オフセット
+  (385px) + `.canvas-overlay-top` 下端に対する安全マージン込みの予約領域
+  (200px)」。ビューポートが十分高い（900px 以上目安）場合は従来どおり
+  `260px` が上限のまま変わらず、低いビューポートでのみ上限が絞られて
+  パネル内部のスクロール（既存の `overflow-y: auto`）に content が
+  逃げる形にする。`200px` は 1280 幅で実測した `.canvas-overlay-top` の
+  下端（約175px）に25pxの余裕を足した値で、固定値であることをCSSの
+  コメントに明記し、ツールバー/チップバーの行数が将来増えた場合は
+  見直しが必要である旨も記載した
+- 5-2（P2P凡例ポップオーバーのはみ出し）は見送った。原因は
+  `PopoverPortal`（`packages/frontend/src/interaction/PopoverPortal.tsx`）
+  が常にアンカー下にポップオーバーを配置し、画面外に出る場合の上方向への
+  反転を持たないこと。`PopoverPortal` は9箇所（`InfraPopover` /
+  `ChainRibbonPopover` / `WalletPopover` / `ContractPopover` /
+  `ContractCard` / `ChainRibbonCard` / `TxLifecyclePopover` / `ActionHint` /
+  `GlossaryTerm`）から使われている共通コンポーネントで、反転ロジックを
+  追加するとアプリ全体のポップオーバー配置に影響する。QA が明確に
+  「軽微・推奨だが必須ではない」と切り分けているため、差し戻し対応の
+  スコープ（5-1 の退行解消）を超えると判断し、別 Issue（統括判断）に
+  委ねることにした
+
+#### 実際に確認した手順（CLAUDE.md「直したはず」で済ませないルールに従う）
+
+1. `pnpm --filter @chainviz/shared build` / `pnpm --filter @chainviz/collector
+   build` の後、`VITE_COLLECTOR_URL` を稼働中の collector に向けて
+   `vite` を dev 起動し、Playwright（chromium、
+   `LD_LIBRARY_PATH=/home/zoe/chrome-deps/root/usr/lib/x86_64-linux-gnu`）で
+   ビューポート 1280x720/700/720/730/900 の `.mempool-panel` /
+   `.layer-filter-bar` の `getBoundingClientRect()` を実測し、QA報告と
+   同じ座標（700/720で重なる、730/900で重ならない）を再現した
+2. `mempool` 用語アンカーを Playwright の `locator.click()` で実際にクリック
+   し、修正前は QA と同じ `element intercepts pointer events` タイムアウトで
+   失敗することを確認した
+3. `styles.css` の `max-height` を修正した後、同じ手順で全ビューポート幅で
+   重なりが解消し、クリックも成功することを確認した
+4. `packages/e2e/src/ui/mempool-panel-layout.spec.ts`（新規、後述）を
+   `pnpm exec playwright test`（`globalSetup` が実 Docker スタック + 専用
+   collector + vite dev server を起動する既存の仕組み）で実行し、修正前の
+   CSS に戻すと（`git stash` で `styles.css` のみ一時的に戻す）このテストが
+   実際に失敗し、修正を戻すと通過することを確認した（CLAUDE.md の
+   「回帰テストは意図的に壊した状態で一度失敗を確認してから元に戻す」を
+   実施）
+
+#### 追加した自動テスト
+
+- `packages/e2e/src/ui/mempool-panel-layout.spec.ts`（新規。
+  `packages/e2e/SCENARIOS.md` に `UI-OVERLAY-01` として追記）: mempool
+  パネルのヘッダーが層フィルターバーの下端より下にあること・
+  `mempool` 用語アンカーのクリックが他要素にブロックされず用語集パネルを
+  開くことを実ブラウザで検証する。jsdom は実際のレイアウト（座標計算）を
+  行わないため、この種の「要素同士の重なり」はユニットテスト（vitest）
+  では代用できず、Playwright の UI 層 E2E に置いた
+- 実装時の注意点: ページ読み込み直後は「ノード別 txpool」欄
+  （`NodeEntity.internals.mempool` 由来、D層のスクレイプで数秒後に埋まる）
+  がまだ空で、パネルの実際の高さが本来より低く出る。これを待たずに
+  座標を測定すると、パネル高さが低いために退行を誤って「無い」と判定して
+  しまう（実際に本番相当の稼働時間が長い collector に接続した状態と、
+  起動直後の collector に接続した状態とで測定値が大きく異なることを実測で
+  確認した）。テストは「ノード別 txpool」欄が表示されるまで待ってから
+  座標を測定するようにしている
+- `pnpm test:e2e:ui` は全19ファイルを対象にすると重い（実 Docker スタックを
+  要する）ため、今回は対象を `mempool-panel-layout.spec.ts` に絞って実行し
+  確認した。全体（`pnpm test`）には Playwright UI E2E は含まれないため
+  （`packages/e2e` の `test` スクリプトはプロトコル層の vitest のみ）、
+  今回追加したテストは `pnpm test` の対象には含まれない（既存の
+  `test:e2e:ui` 配下の全テストと同じ扱い）
+
+#### 変更したファイル
+
+- `packages/frontend/src/styles.css`: `.mempool-panel` の `max-height` を
+  `min(260px, calc(100vh - 585px))` に変更し、根拠をコメントに追記
+- `packages/e2e/SCENARIOS.md`: 「浮遊オーバーレイパネルのレイアウト
+  重なり回避（UI-OVERLAY）」節と `UI-OVERLAY-01` を追加
+- `packages/e2e/src/ui/mempool-panel-layout.spec.ts`（新規）: 上記の実装
+
+#### 確認済み
+
+`pnpm lint && pnpm build && pnpm test`（リポジトリ全体）がすべて成功
+することを確認した（frontend 267ファイル3380件、shared 6ファイル75件、
+collector 92ファイル1765件、e2e（プロトコル層）16ファイル185件、いずれも
+失敗なし）。
+
+#### 次の担当が知っておくべきこと
+
+- 5-2（P2P凡例ポップオーバーの下端はみ出し）は未対応のまま。対応するなら
+  `PopoverPortal`/`computePopoverPosition` に「画面外に出る場合は上方向へ
+  反転する」ロジックを追加する形になるが、9箇所の呼び出し元すべてに
+  影響するため、別Issueとして切り出し、既存の各ポップオーバー配置の
+  回帰確認も合わせて行うべきと判断した
+- `.mempool-panel` の `max-height` に使った `585px`（385 + 200）は、
+  現在の `.canvas-overlay-top` の実際の高さ（1280幅で下端が約175px）を
+  前提にした固定値。将来 `CanvasToolbar` / `LayerFilterBar` の内容が増えて
+  行数が増える（例: レイヤー種別が増えてチップが折り返す）と、この
+  200px の余裕を超える可能性がある。その場合はこの値の見直しが必要
+- より根本的には、`.mempool-panel` の `bottom: 385px` 固定というレイアウト
+  自体（`.contract-list-panel` との積み上げ計算に基づく決め打ち）が、
+  ビューポートの変化に弱い設計になっている。今回はその場しのぎではなく
+  「ビューポート高に応じて動的に絞る」形にしたが、`.canvas-overlay-top`
+  の実際の高さを JS で測定して反映するような、より頑健な仕組みへの
+  刷新は本対応のスコープ外とした（QAの「過剰な作り込みは避け、今回の
+  退行を解消する範囲に留める」という指示に沿った判断）
