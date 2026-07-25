@@ -1085,6 +1085,20 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
         [#415](https://github.com/morichikawa/chainviz/issues/415)
   - [ ] eclipse攻撃のシミュレーション砂場
         [#416](https://github.com/morichikawa/chainviz/issues/416)
+- [x] バリデーターの動き自体をもっと可視化したい
+      (ユーザーからの指摘。validator→beaconの内部リンクエッジは常設描画
+      されるが活動パルスは意図的に流していなかった(#285、collectorが
+      VC起点の通信を観測する経路を持たないため)。4案(A: Beacon API相関、
+      B: VCメトリクス新規スクレイプ、C: 併用、D: ログtail解析=不採用)を
+      比較し、attribution問題(どのバリデーターがどのVCコンテナの担当か)
+      が発生しない案Bをユーザーが選択。lighthouse VCの`--metrics`を
+      有効化(node-env)、VCのPrometheusメトリクス
+      (`vc_signed_beacon_blocks_total`等)をポーリングしvalidator→beaconの
+      `NodeLinkActivity`として配信(collector)、活動パルスの表示反転と
+      ラベル整備(frontend)。`packages/shared`型変更は不要。レビューで
+      発見された所要時間サンプルの有限値チェック漏れも修正。実機で
+      パルス点灯・ポップオーバー表示・用語集の整合を確認済み)
+      [#420](https://github.com/morichikawa/chainviz/issues/420)
 
 ## 運用ルール（全ステップ共通）
 
