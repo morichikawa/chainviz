@@ -411,3 +411,146 @@ interface EclipseAttackDemoState {
 本設計はドキュメント（`docs/worklog/issue-416.md`、本ファイル）のみの
 追加で、`packages/*`のコード変更は行っていない。`pnpm lint && pnpm
 build && pnpm test`の実行・確認は不要。
+
+### 2026-07-25 Issue #416 実装（frontend）
+
+- 担当: frontend
+- ブランチ: issue-416-eclipse-attack-demo（既存のUX設計コミットの上に実装を追加）
+
+#### 実装方針（設計メモ）
+
+UX設計（本ファイル上部）と `docs/ARCHITECTURE.md` §17.5.3・§17.6 に沿って、
+`hashChainDemo`/`signatureDemo`（Issue #401/#402）と同型の「状態は
+コンポーネントローカルな `useState` で完結する砂場」として実装した。
+
+- `packages/frontend/src/attack-demo/eclipseAttackDemo.ts`: 純粋ロジック。
+  `EclipseAttackDemoState`（`slots: readonly PeerSlotState[]`、固定8要素）・
+  `createInitialEclipseAttackDemoState`・`addAttackerPeer`（先頭から見て
+  最初の `honest` スロットを `attacker` に置換。全て `attacker` なら
+  no-op で同一参照を返す冪等な実装）・`attackerCount`/`occupancyRatio`/
+  `isFullyEclipsed`（導出値。stateには持たない）・
+  `visibleChainBlockKeys`（`isFullyEclipsed` から実際に導出して
+  `REAL_CHAIN_BLOCK_KEYS`/`FAKE_CHAIN_BLOCK_KEYS` を切り替える）を持つ。
+  `nextHonestSlotIndex` はView側がフラッシュ対象インデックスを「state更新前に」
+  算出するための共通ヘルパー（`addAttackerPeer` 内部でも同じ関数を使う）。
+- `packages/frontend/src/attack-demo/EclipseAttackPeerGraph.tsx`: ミニ
+  包囲グラフのSVG描画のみを担当する専用コンポーネント（1ファイル1責務。
+  View本体から図解を切り出した）。スロット位置は
+  `angle = index * 45度`（0=12時）から `sin/cos` で座標計算する
+  `slotPosition()` に集約。正規=青`#7db8ff`・攻撃者=`var(--attacker-peer)`
+  （新設したCSS変数。実体は既存の危険色`#ff6b6b`のリテラルをそのまま
+  代入。UX設計 §8「CSS変数名を新設するかリテラル直接参照かは実装判断」の
+  結論として変数名を切った。理由をコメントで明記）。色だけに頼らない
+  区別として、各スロットの `<g>` に `role="img"` +
+  `aria-label`（「正規ピア」/「攻撃者ピア」）を付け、視覚的にも
+  ✓（正規）/!（攻撃者）のグリフを描画する。
+- `packages/frontend/src/attack-demo/EclipseAttackDemoView.tsx`: 本体。
+  `hashChainDemo` のフラッシュ演出（`NEW_ARRIVAL_HIGHLIGHT_DURATION_MS`と
+  同じ定数・同じ「対象indexをrefで管理してタイムアウトで解除」パターン）
+  を流用。「攻撃者ピアを追加」は state 更新の**前**に
+  `nextHonestSlotIndex(state)` でフラッシュ対象を求めてから
+  `setState(addAttackerPeer)` する（更新後の diff を取るより単純で、
+  eclipseAttackDemo.ts のロジックとフラッシュ対象特定を同じ関数に
+  委ねられる）。占有率メーターは `format(t("eclipseDemo.occupancy"), …)`
+  で数値を埋め込み、`aria-live="polite"` を付けた `<p>` に文言全体を持たせる
+  （UX設計 §3の指示どおり）。defenseNote 内の discovery/bootnode 用語
+  アンカーは、当初 `withTermAnchor` での文中差し込みを検討したが、
+  `withTermAnchor` は「1つの部分文字列」の一致に依存するため、ja/enで
+  異なる部分文字列を同じ関数呼び出しでは扱えない（`withTermAnchor` の
+  戻り値はReactNodeであり2回目の呼び出しに文字列として渡せない、という
+  型の制約もある）。`SignatureDemoView.tsx` の
+  `sigDemo.otherVerifications` が採っている「文の下に用語チップを並べる」
+  パターン（`<GlossaryTerm termKey="…" />` を段落として別行に置く）に
+  合わせ、同じ構成にした。
+- `packages/frontend/src/side-panel/sidePanelView.ts`: `{ kind:
+  "eclipseAttackDemo" }` を判別共用体に追加。
+- `packages/frontend/src/side-panel/SidePanelHost.tsx`: 新kindのディスパッチ
+  を追加。`hashChainDemo`/`signatureDemo` と同じくダングリングガードの
+  対象外（world state のエンティティを持たないため）。
+- `packages/frontend/src/entities/PeerNetworkLegend.tsx`: UX設計どおり、
+  ヒント文の下に「eclipse攻撃のしくみを試す」ボタンを1行追加した。
+  既存の `.tx-lifecycle-popover__sig-demo-open` と同じ「テキストリンク調」
+  の見た目（`.p2p-legend__eclipse-demo-open`）。Issue #413（用語アンカー
+  基盤）は本実装時点でまだmainに未マージだったため、`eclipseAttack`
+  用語アンカー自体はこのファイルにまだ存在しない。UX設計が想定した
+  とおり、#413が先にマージされても後にマージされても「ヒント文または
+  用語アンカーの下に砂場入口ボタンを追記する」形で自然に共存できる
+  構造にしてある（今回追加したのはヒント文の直後の新規行であり、#413が
+  ヒント文中に用語を差し込む場合でも要素の追加位置が競合しない）。
+- `packages/frontend/src/i18n/messages.ts`: `eclipseDemo.*`
+  名前空間をUX設計§5の初稿どおり追加（ja/en両方）。加えて
+  「被害ノードが見ているチェーン」の疑似ブロック文言
+  （`eclipseDemo.block.real.1〜3`/`eclipseDemo.block.fake.1〜3`）を
+  UX設計の例文を踏まえて具体化した（real: Alice→Bob→Carol→Daveの
+  順当な送金3件、fake: 攻撃者へ大金が流れる不自然な内容3件）。
+- `packages/frontend/src/styles.css`: `--attacker-peer: #ff6b6b`
+  というCSS変数を新設（新しい色ではなく既存の危険色のリテラルをそのまま
+  代入。理由をコメントに明記）。`.p2p-legend__eclipse-demo-open`・
+  `.eclipse-demo__*`一式（グラフ・占有率メーター・操作行・見ている
+  チェーン・警告文・フッター注記）を追加。被害ノードのoutline切替は
+  `InfraNodeCard`のフォークoutline（`.infra-card--fork-*`の
+  border-color/box-shadow切替という手法）と同じ視覚言語を、SVG向けに
+  rectの`stroke`切替として再現した（`.eclipse-demo__victim`/
+  `--eclipsed`）。
+
+#### `packages/shared`の型変更
+
+無し（UX設計・ARCHITECTURE.md §17.2どおり、`packages/frontend`のみで完結）。
+
+#### テスト
+
+- `eclipseAttackDemo.test.ts`: 初期状態8/8正規、固定順での置換
+  （0→7）、全置換後の冪等性（同一参照を返すことまで確認）、占有率・
+  完全包囲判定の境界値（7/8では非包囲・`visibleChainBlockKeys`が正規の
+  まま、8/8で初めて包囲・偽データへ切り替わる）、リセットの動作を検証。
+- `EclipseAttackDemoView.test.tsx`: 初期状態の表示、1クリックごとの
+  固定順置換と占有率メーターの更新、7/8→8/8境界での被害ノードoutline・
+  バッジ・見ているチェーンの内容・警告文の切り替わり、8/8到達後の
+  追加ボタンdisabled化、スロットのフラッシュ演出（付与・
+  `NEW_ARRIVAL_HIGHLIGHT_DURATION_MS`経過後の解除・次クリックでの
+  対象スロット切り替え）、リセットでの初期状態への復帰を確認。
+- `EclipseAttackDemoView.i18n.test.tsx`: ja/en双方で主要文言（初期状態・
+  8/8完全包囲時の警告文・偽ブロック内容）が表示されることを確認。
+- `EclipseAttackDemoView.a11y.test.tsx`: 追加/リセットボタンが実
+  `<button>`でアクセシブル名を持つこと、各ピアスロットが
+  `role="img"`+`aria-label`で色以外の手がかりを持つこと、占有率
+  メーターのテキストが`aria-live="polite"`であること、装飾的な
+  SVG要素（線・グリフ）が`aria-hidden`であることを確認。
+- `EclipseAttackDemoView.glossaryAnchor.test.tsx`: フッター注記の
+  discovery/bootnodeアンカーがそれぞれ1回ずつ出ることを確認（Issue #124
+  「アンカーの無い用語を作らない」教訓）。
+- `EclipseAttackPeerGraph.test.tsx`: 図解コンポーネント単体で、スロット
+  0/2/4/6の時計位置（12時・3時・6時・9時）が幾何学的に正しいこと、
+  honest/attackerで色クラス・グリフが切り替わること、被害ノードの
+  eclipsedクラス切り替えを確認（`EclipseAttackDemoView.test.tsx`とは
+  責務を分離: こちらは純粋に図解コンポーネントの入出力）。
+- `SidePanelHost.eclipseAttackDemo.test.tsx`: 新kindへの振り分け・
+  `contractSource`との排他制御・ダングリングガード対象外であること・
+  開き直すたびに初期状態へ戻ることを確認（`SidePanelHost.hashChainDemo.
+  test.tsx`と同型）。
+- `PeerNetworkLegend.test.tsx`: 入口ボタンが表示されることを追加で確認
+  （既存テストの1ケース追加のみ）。
+- `PeerNetworkLegend.eclipseDemoEntry.test.tsx`: 入口ボタンが
+  `SidePanelProvider`無しでも例外を投げないこと、実`<button>`として
+  キーボード到達可能であること、クリックで`eclipseAttackDemo`パネルが
+  開くことを確認（`TxLifecyclePopover.sigDemoEntry.test.tsx`と同型）。
+
+テストを書く過程で、SVG要素の `className` は `SVGAnimatedString`
+（`.baseVal`が必要）であり、通常のHTML要素の `className`（文字列）と
+同じ流儀の `toContain` アサーションが使えないことに気付いた
+（jsdomの実装差に依存する落とし穴になりうるため、素直に
+`getAttribute("class")` で文字列として読む方針に統一した）。
+
+#### 次の担当（レビュー/QA）への申し送り
+
+- `eclipseAttackDemo`はglossary変更を伴わない。Issue #413（用語集土台）が
+  未マージの状態でも本Issueは独立してレビュー・マージ可能（#413マージ後
+  に`PeerNetworkLegend.tsx`が変わっても、今回の追記はヒント文の下の新規
+  行であり構造的にコンフリクトしにくい設計にしてある。ただし実際に
+  cherry-pick/rebaseする際は、`PeerNetworkLegend.tsx`のdiffを両方
+  見比べて意図した位置関係になっているか確認すること）。
+- 「見ているチェーン」の疑似ブロック文言（`eclipseDemo.block.*`）は
+  UX設計の例文を私（frontend）が具体化したもの。英語表現の質は
+  chainviz-i18n（Sam Wordsmith）のレビュー対象に含める。
+- `pnpm lint && pnpm build && pnpm test`をリポジトリルートで実行し、
+  全パッケージ（shared/collector/frontend/e2e）が通ることを確認済み。

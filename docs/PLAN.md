@@ -1104,7 +1104,7 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
         [#414](https://github.com/morichikawa/chainviz/issues/414)
   - [ ] ロングレンジ攻撃のシミュレーション砂場
         [#415](https://github.com/morichikawa/chainviz/issues/415)
-  - [ ] eclipse攻撃のシミュレーション砂場
+  - [x] eclipse攻撃のシミュレーション砂場
         [#416](https://github.com/morichikawa/chainviz/issues/416)
 - [x] バリデーターの動き自体をもっと可視化したい
       (ユーザーからの指摘。validator→beaconの内部リンクエッジは常設描画
