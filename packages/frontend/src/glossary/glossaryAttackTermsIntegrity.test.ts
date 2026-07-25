@@ -6,51 +6,27 @@
 // ファイルにも適用）。dangling参照ゼロ・自己参照ゼロという全体不変条件は
 // 既存ファイルが引き続き検証するため、ここでは新設6語固有のスキーマと
 // 双方向リンクだけを見る。
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { mergeGlossaries, parseGlossaryYaml } from "./parse.js";
-import type { Glossary } from "./types.js";
+import {
+  ATTACK_TERM_KEYS,
+  EXPECTED_ATTACK_TERM_PLACEMENT,
+} from "./attackTermsFixture.js";
+import { loadRealGlossary } from "./realGlossaryFixture.js";
 
-function findGlossaryFile(relativePath: string): string {
-  let dir = process.cwd();
-  for (let i = 0; i < 6; i++) {
-    const candidate = resolve(dir, relativePath);
-    if (existsSync(candidate)) return candidate;
-    dir = dirname(dir);
-  }
-  throw new Error(`${relativePath} not found from cwd`);
-}
+// 用語 YAML の読み込みと対象キーの一覧は、同じ6語を見る他のテストファイル
+// （glossaryAttackTermsLocalization / Placement / Search / UiConsistency）と
+// 共有する（realGlossaryFixture.ts / attackTermsFixture.ts）。
+const glossary = loadRealGlossary();
 
-function loadMergedGlossary(): Glossary {
-  const names = ["a-infra", "b-network", "c-transaction", "d-internal"];
-  return mergeGlossaries(
-    ...names.map((name) =>
-      parseGlossaryYaml(
-        readFileSync(findGlossaryFile(`glossary/ethereum/terms/${name}.yaml`), "utf8"),
-      ),
-    ),
-  );
-}
-
-const glossary = loadMergedGlossary();
-
-const NEW_KEYS = [
-  "fiftyOnePercentAttack",
-  "longRangeAttack",
-  "eclipseAttack",
-  "reorg",
-  "doubleSpend",
-  "frontRunning",
-] as const;
+const NEW_KEYS = ATTACK_TERM_KEYS;
 
 const EXPECTED_LAYER: Record<(typeof NEW_KEYS)[number], string> = {
-  fiftyOnePercentAttack: "b-network",
-  longRangeAttack: "b-network",
-  eclipseAttack: "b-network",
-  reorg: "b-network",
-  doubleSpend: "c-transaction",
-  frontRunning: "c-transaction",
+  fiftyOnePercentAttack: EXPECTED_ATTACK_TERM_PLACEMENT.fiftyOnePercentAttack.layer,
+  longRangeAttack: EXPECTED_ATTACK_TERM_PLACEMENT.longRangeAttack.layer,
+  eclipseAttack: EXPECTED_ATTACK_TERM_PLACEMENT.eclipseAttack.layer,
+  reorg: EXPECTED_ATTACK_TERM_PLACEMENT.reorg.layer,
+  doubleSpend: EXPECTED_ATTACK_TERM_PLACEMENT.doubleSpend.layer,
+  frontRunning: EXPECTED_ATTACK_TERM_PLACEMENT.frontRunning.layer,
 };
 
 describe("attack term entries (Issue #413)", () => {
