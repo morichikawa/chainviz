@@ -691,3 +691,125 @@ UX設計（本ファイル上部）と `docs/ARCHITECTURE.md` §17.5.3・§17.6 
 リポジトリルートで `pnpm lint`・`pnpm build`・`pnpm test` を実行し、
 全パッケージが通ることを確認した（frontend: 268ファイル / 3386ケース。
 テスト強化前は264ファイル / 3237ケース）。
+
+### 2026-07-25 Issue #416 レビュー（reviewer）
+
+- 担当: reviewer
+- ブランチ: issue-416-eclipse-attack-demo（レビューは `review-issue-416`
+  ブランチ上で行った。branch `issue-416-eclipse-attack-demo` は別worktreeで
+  使用中だったため、`origin/issue-416-eclipse-attack-demo` を追跡する別名
+  ブランチをレビュー専用に作成した。commit・pushは行っていない。統括が
+  実ブランチ側に反映する）
+
+#### 判定: 合格（1件、軽微な修正を実施）
+
+#### テスト強化担当からの申し送り2件への判断
+
+1. **ミニ包囲グラフの入れ子 `role="img"`（a11y）**: 実際にコードを確認し
+   （`EclipseAttackPeerGraph.tsx`）、指摘は技術的に正確であると判断した。
+   ただし、UX設計・ARCHITECTURE.md §17.5.3が明示的に要求しているのは
+   「色のみに依存しない」ことであり、これはグリフ（✓/!）による視覚的
+   区別、占有率テキスト（`aria-live="polite"`）、バッジ文言、完全包囲時の
+   警告文によって満たされている。個々のスロットへの `role="img"` +
+   `aria-label` は実装が自主的に追加した上乗せの配慮であり、要求仕様
+   そのものの未達ではない。正しく直すには
+   `EclipseAttackPeerGraph.tsx`本体に加えて、現在の入れ子構造を前提に
+   書かれたテスト3本（`EclipseAttackDemoView.a11y.test.tsx`・
+   `EclipseAttackPeerGraph.test.tsx`・
+   `EclipseAttackPeerGraph.colorIndependence.test.tsx`）のアサーションを
+   書き換える必要があり、「軽微な修正」の範囲を超えると判断した。
+   差し戻しには値しない（設計要件は満たされている）ため、今回は修正せず、
+   将来の改善余地として記録に留める。改善案: 外側 `<svg>` の
+   `aria-label` を「被害ノード」単体ではなく図全体の状態要約
+   （例:「被害ノードと8個の接続スロット。攻撃者 n/8」）にする、または
+   外側の `role="img"` を外して各スロットのラベルを支援技術に露出させる
+2. **占有率算出の重複（軽微）**: 実際にコードを確認し
+   （`EclipseAttackDemoView.tsx`）、指摘のとおり `percent` が
+   `count / ECLIPSE_DEMO_SLOT_COUNT` から、`addDisabled` が
+   `count >= ECLIPSE_DEMO_SLOT_COUNT` から計算されており、
+   `eclipseAttackDemo.ts` の `occupancyRatio`/`nextHonestSlotIndex` を
+   使っていなかった。固定8スロットの現状では結果に差はないが、「導出は
+   ロジック側に集約する」という同ファイル・同Issueの設計方針（実際
+   `eclipseAttackDemo.edgeCases.test.ts` は `occupancyRatio` が
+   `state.slots.length` から導出されスロット数定数の焼き付けが無いことを
+   固定している）と揃えるべき軽微な修正と判断し、レビュー担当自身で
+   修正した。`EclipseAttackDemoView.tsx` の `percent` を
+   `Math.round(occupancyRatio(state) * 100)` に、`addDisabled` を
+   `nextHonestSlotIndex(state) === null` に変更した。動作は変わらない
+   （既存の268ファイル/3386ケースが無変更で全て通ることを確認済み）。
+   `ECLIPSE_DEMO_SLOT_COUNT` は `eclipseDemo.occupancy` の `total` 埋め込み
+   （表示用の定数値そのもの）としては引き続き使用しており、この用途は
+   導出の重複には当たらないため変更していない
+
+#### 境界・設計原則の確認
+
+- **境界の遵守**: 変更は `packages/frontend` のみ（`packages/shared`・
+  collector・node-envへの変更なし）。フロントはDocker/ノードAPIに直接
+  触れていない。チェーン固有語彙（`eth_getLogs`等）の混入なし
+  （`packages/frontend/src/attack-demo/` 配下をgrepし確認済み）
+- **チェーンプロファイルの独立性**: 該当なし（このIssueは新チェーン対応
+  ではない）
+- **`packages/shared`の整合**: 型変更なし。設計メモ・Issue本文どおり
+- **データとコードの分離**: glossaryの変更は無し（Issue #413の担当範囲。
+  本Issueは`discovery`/`bootnode`という既存glossaryエントリへの
+  アンカーのみ追加しており、両エントリが `glossary/ethereum/terms/
+  b-network.yaml` に実在することを確認した）
+
+#### ビルド・テスト
+
+`pnpm lint && pnpm build && pnpm test` をリポジトリルートで実行し、
+shared（6ファイル/75ケース）・collector（92ファイル/1765ケース）・
+e2e（16ファイル/185ケース）・frontend（268ファイル/3386ケース）の
+全パッケージが通ることを確認した。上記の軽微な修正後も再度
+`pnpm lint`・`pnpm --filter @chainviz/frontend build`・
+`pnpm --filter @chainviz/frontend test` を実行し、268ファイル/3386ケースが
+無変更で全て通ることを確認した。
+
+#### Issue本文・ARCHITECTURE.md §17.5.3・§17.6との突き合わせ
+
+- 完了条件「サイドパネルからeclipse攻撃シミュレーションを開始・操作
+  できる」: `sidePanelView.ts`に`eclipseAttackDemo` kindを追加、
+  `SidePanelHost.tsx`でディスパッチ、`PeerNetworkLegend.tsx`に入口ボタンを
+  設置済み。設計どおり
+- 完了条件「実際に動く簡略化アルゴリズムで結果が決まる（演出のみのフェイク
+  にしない）」: `eclipseAttackDemo.ts`の`isFullyEclipsed`/
+  `visibleChainBlockKeys`が占有率の実計算から結果を導出しており、
+  ARCHITECTURE.md §17.5.3の「攻撃者ピアの占有率が100%に達した時点で
+  実際に切り替わる」を満たす
+- 完了条件「対応するユニットテストがある」: 純粋ロジック・View・図解
+  コンポーネント・a11y・i18n・glossaryアンカー・入口ボタンの各観点で
+  テストが揃っている。テスト強化担当が意図的にロジックを壊して各テストが
+  実際に検知することを確認した記録もworklogにある
+- §17.6「3つの砂場は個別の図解を必要とし…UX設計を経ることを推奨」:
+  chainviz-uxによる設計（本ファイル冒頭）を経て実装している
+- §17.4「eclipseAttack用語アンカーはPeerNetworkLegend.tsxに置く」:
+  Issue #413（土台）が本Issue着手時点で未マージのため、`eclipseAttack`
+  自体の用語アンカーは本Issueの範囲外（#413の担当）。本Issueは
+  `PeerNetworkLegend.tsx`への砂場入口ボタン追加のみを行っており、
+  設計メモが説明する「#413が先でも後でも自然に共存できる」構造になって
+  いることを確認した
+
+#### コミットの粒度
+
+`git log main..issue-416-eclipse-attack-demo`を確認した。設計
+（UX設計）・純粋ロジック（`eclipseAttackDemo.ts`）・デモパネル本体
+（`EclipseAttackDemoView.tsx`/`EclipseAttackPeerGraph.tsx`とその基本
+テスト）・凡例への入口ボタン追加・worklog記録、という関心事ごとに分けた
+実装コミット5本と、テスト強化担当による関心事別のテストファイル追加
+コミット6本（純粋ロジック・View境界値・図解の色非依存性・i18n・
+再表示テスト・入口ボタン境界ケース）に分かれており、1コミット1関心事の
+方針に沿っている。問題なし
+
+#### 次の担当（統括）への申し送り
+
+- レビュー中に軽微な修正を1件加えた（`EclipseAttackDemoView.tsx`の
+  `percent`/`addDisabled`をロジック層の`occupancyRatio`/
+  `nextHonestSlotIndex`経由に変更）。この変更は`review-issue-416`
+  ブランチ（`origin/issue-416-eclipse-attack-demo`を追跡）にコミットせず
+  作業ツリーに留めてある。統括が実際のブランチ
+  `issue-416-eclipse-attack-demo`側（別worktree）に同じ変更を反映し、
+  `fix(frontend): eclipse攻撃デモの占有率算出をロジック層に一本化する
+  (Issue #416)`のような単独コミットとしてコミットすること
+- 入れ子`role="img"`のa11y所見は差し戻し不要と判断し、コードは変更して
+  いない。将来的な改善候補として記録するに留めた
+- QA（chainviz-qa）による実機検証へ進めてよい
