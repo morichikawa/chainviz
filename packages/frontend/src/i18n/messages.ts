@@ -442,6 +442,9 @@ export const messages = {
     ja: "新しいブロックが右端に積まれていきます",
     en: "New blocks stack up on the right",
   },
+  // Issue #414: subtitle-row の学習用砂場入口を単一メニューへ統合する
+  // `<summary>` ラベル（`docs/worklog/issue-414.md` UX設計 §4）。
+  "chainRibbon.demoMenu.open": { ja: "学習用の砂場", en: "Learning sandboxes" },
   "chainRibbon.latest": { ja: "#{number}", en: "#{number}" },
   "chainRibbon.older.tooltip": {
     ja: "これより前のブロックは表示していません",

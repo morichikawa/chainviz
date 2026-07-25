@@ -3137,15 +3137,59 @@ button.mempool-panel__row:hover {
   gap: 8px;
 }
 
-.chain-ribbon-card__hash-demo-open {
+/* Issue #414: subtitle-row の常設入口を単一メニューへ統合
+   (`<details>`/`<summary>`。docs/worklog/issue-414.md UX設計 §4)。 */
+.chain-ribbon-card__demo-menu {
+  position: relative;
   flex: none;
-  background: none;
-  border: none;
-  padding: 0;
+}
+
+.chain-ribbon-card__demo-menu-summary {
+  list-style: none;
   color: var(--accent);
   font-size: 11px;
   text-decoration: underline;
   cursor: pointer;
+}
+
+.chain-ribbon-card__demo-menu-summary::-webkit-details-marker {
+  display: none;
+}
+
+.chain-ribbon-card__demo-menu-list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 200px;
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--glass-popover-bg);
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
+  border: 1px solid var(--glass-border);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 var(--glass-highlight);
+}
+
+.chain-ribbon-card__demo-menu-item {
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+
+.chain-ribbon-card__demo-menu-item:hover,
+.chain-ribbon-card__demo-menu-item:focus-visible {
+  background: rgba(79, 157, 255, 0.16);
 }
 
 /* Issue #409: ポップオーバー末尾のブロック詳細パネルへの導線。「受信した
@@ -4032,7 +4076,8 @@ button.mempool-panel__row:hover {
   .glossary-popover,
   .tx-lifecycle-popover,
   .operation-panel,
-  .side-panel {
+  .side-panel,
+  .chain-ribbon-card__demo-menu-list {
     background: #0c1119;
   }
 }
