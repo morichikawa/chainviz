@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { GlossaryProvider } from "../glossary/GlossaryProvider.js";
 import type { Glossary } from "../glossary/types.js";
 import { LanguageProvider } from "../i18n/LanguageProvider.js";
+import { messages } from "../i18n/messages.js";
 import type { PeerFlowEdge } from "./peerEdge.js";
 import { PeerNetworkLegend } from "./PeerNetworkLegend.js";
 
@@ -39,10 +40,14 @@ function edge(id: string, networkId: string): PeerFlowEdge {
   };
 }
 
-function wrap(edges: PeerFlowEdge[], lang: "ja" | "en" = "ja") {
+function wrap(
+  edges: PeerFlowEdge[],
+  lang: "ja" | "en" = "ja",
+  glossaryOverride?: Glossary,
+) {
   return render(
     <LanguageProvider initialLanguage={lang}>
-      <GlossaryProvider glossary={glossary}>
+      <GlossaryProvider glossary={glossaryOverride ?? glossary}>
         <PeerNetworkLegend edges={edges} />
       </GlossaryProvider>
     </LanguageProvider>,
@@ -68,5 +73,52 @@ describe("PeerNetworkLegend eclipse attack anchor (Issue #413)", () => {
   it("does not render the eclipse hint when the legend itself is hidden (no peer edges)", () => {
     wrap([]);
     expect(screen.queryByTestId("p2p-legend-eclipse-hint")).toBeNull();
+  });
+
+  it("keeps the eclipse hint as the last line, after the existing discovery hint", () => {
+    // 既存ヒント（ノード発見）の2行目として添える設計（Issue #413 設計メモ
+    // §4）。順序が入れ替わると「まず正常な動きを説明し、その裏返しとして
+    // 攻撃を示す」という説明の流れが崩れる。
+    wrap([edge("e1", "chainviz-ethereum-execution")]);
+    const hints = [
+      ...screen.getByTestId("p2p-legend").querySelectorAll<HTMLElement>(".p2p-legend__hint"),
+    ];
+    expect(hints).toHaveLength(2);
+    expect(hints[0].textContent ?? "").toContain("ノード発見");
+    expect(hints[1].dataset.testid).toBe("p2p-legend-eclipse-hint");
+  });
+
+  it("shows the eclipse hint once even when several networks are listed", () => {
+    // 凡例の行はネットワークごとに増えるが、ヒントは凡例全体に1つ。
+    wrap([
+      edge("e1", "chainviz-ethereum-execution"),
+      edge("e2", "chainviz-ethereum-consensus"),
+    ]);
+    expect(screen.getAllByTestId("p2p-legend-eclipse-hint")).toHaveLength(1);
+    expect(screen.getAllByTestId("glossary-term-eclipseAttack")).toHaveLength(1);
+  });
+
+  it("keeps the hint sentence readable when the glossary lacks eclipseAttack", () => {
+    // 用語エントリが読み飛ばされても、アンカーには表示テキスト（children）を
+    // 渡しているため文としては崩れない（生キーが露出しない）。
+    wrap([edge("e1", "chainviz-ethereum-execution")], "ja", {});
+    const hint = screen.getByTestId("p2p-legend-eclipse-hint");
+    expect(hint.textContent ?? "").toContain("Eclipse攻撃");
+    expect(hint.textContent ?? "").not.toContain("eclipseAttack");
+    expect(screen.queryByTestId("glossary-term-eclipseAttack")).toBeNull();
+  });
+
+  it("composes the ja hint as prefix + anchor + suffix in that order", () => {
+    // prefix/term/suffix の3分割（Issue #341 の legend.hint と同型）が
+    // 1文として繋がっていること。文言自体の整合は
+    // i18n.attackHintTrios.test.ts が見るため、ここでは「3つを順に並べた
+    // 結果がそのまま描画される」ことだけを固定する。
+    wrap([edge("e1", "chainviz-ethereum-execution")]);
+    const hint = screen.getByTestId("p2p-legend-eclipse-hint");
+    expect(hint.textContent ?? "").toBe(
+      messages["legend.eclipseHint.prefix"].ja +
+        messages["legend.eclipseHint.term"].ja +
+        messages["legend.eclipseHint.suffix"].ja,
+    );
   });
 });
