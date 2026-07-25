@@ -1390,6 +1390,14 @@ body {
   line-height: 1.4;
 }
 
+/* 攻撃手法解説の土台（ARCHITECTURE.md §17.4。Issue #413）:
+   フロントランニングへの用語アンカー。 */
+.mempool-panel__hint {
+  margin: 4px 0 8px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
 .mempool-panel__rows {
   list-style: none;
   margin: 0;
@@ -2634,6 +2642,16 @@ button.mempool-panel__row:hover {
 .tx-lifecycle-popover__stage--pending .tx-lifecycle-popover__stage-label,
 .tx-lifecycle-popover__stage--pending .tx-lifecycle-popover__stage-desc {
   opacity: 0.6;
+}
+
+/* 攻撃手法解説の土台（ARCHITECTURE.md §17.4。Issue #413）:
+   ダブルスペンドへの用語アンカー。 */
+.tx-lifecycle-popover__double-spend-hint {
+  margin: 6px 0 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--divider);
+  color: var(--muted);
+  line-height: 1.4;
 }
 
 /* --- トースト通知（コマンド失敗のエラー表示など） --- */
