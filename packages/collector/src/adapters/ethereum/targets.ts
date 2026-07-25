@@ -8,6 +8,7 @@ import { BEACON_API_PORT } from "./beacon-api.js";
 import { classifyContainer } from "./classify.js";
 import { ROLE_LABEL } from "./labels.js";
 import { EXECUTION_METRICS_PORT } from "./reth-metrics-client.js";
+import { VALIDATOR_METRICS_PORT } from "./vc-metrics-client.js";
 
 const COMPOSE_SERVICE_LABEL = "com.docker.compose.service";
 
@@ -60,6 +61,17 @@ export interface ExecutionPeerTarget {
  * Execution ノードの到達先。
  */
 export interface ExecutionMetricsTarget {
+  /** ノードの安定識別子（NodeEntity.id と一致）。 */
+  stableId: string;
+  /** `/metrics` の URL。 */
+  metricsUrl: string;
+}
+
+/**
+ * D層: VC（validator client）自身の職務メトリクス（Prometheus、Issue #420）を
+ * ポーリングする validator ノードの到達先。executionMetricsTargets と同型。
+ */
+export interface ValidatorMetricsTarget {
   /** ノードの安定識別子（NodeEntity.id と一致）。 */
   stableId: string;
   /** `/metrics` の URL。 */
@@ -372,6 +384,30 @@ export function executionMetricsTargets(
     targets.push({
       stableId: obs.stableId,
       metricsUrl: `http://${obs.ip}:${EXECUTION_METRICS_PORT}/metrics`,
+    });
+  }
+  return targets;
+}
+
+/**
+ * D層の VC 職務メトリクス（Prometheus、Issue #420）のポーリング対象になる
+ * validator（VC）ノードを観測値から抽出する。選別基準は
+ * `isValidatorService(obs)`（`com.chainviz.role === "validator"`、
+ * Issue #246）+ `obs.ip` が取れること（executionMetricsTargets と同型）。
+ * VC は自分が鍵を管理する validator の活動だけを自分のメトリクスとして
+ * 公開するため、validator_index → VC コンテナの対応付けは不要
+ * （docs/ARCHITECTURE.md §7.6.12）。
+ */
+export function validatorMetricsTargets(
+  observations: ContainerObservation[],
+): ValidatorMetricsTarget[] {
+  const targets: ValidatorMetricsTarget[] = [];
+  for (const obs of observations) {
+    if (!obs.ip) continue;
+    if (!isValidatorService(obs)) continue;
+    targets.push({
+      stableId: obs.stableId,
+      metricsUrl: `http://${obs.ip}:${VALIDATOR_METRICS_PORT}/metrics`,
     });
   }
   return targets;

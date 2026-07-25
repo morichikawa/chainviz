@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ContainerObservation } from "../../docker/types.js";
 import { ROLE_LABEL } from "./labels.js";
 import { EXECUTION_METRICS_PORT } from "./reth-metrics-client.js";
+import { VALIDATOR_METRICS_PORT } from "./vc-metrics-client.js";
 import {
   beaconStableIdForExecution,
   beaconStableIdForValidator,
@@ -14,6 +15,7 @@ import {
   executionStableIdForBeacon,
   executionTargets,
   isValidatorService,
+  validatorMetricsTargets,
 } from "./targets.js";
 
 function obs(overrides: Partial<ContainerObservation> = {}): ContainerObservation {
@@ -1183,5 +1185,57 @@ describe("executionMetricsTargets", () => {
 
   it("returns no targets for an empty observation set", () => {
     expect(executionMetricsTargets([])).toEqual([]);
+  });
+});
+
+describe("validatorMetricsTargets (Issue #420)", () => {
+  it("selects validator (VC) nodes and builds their metrics URL", () => {
+    expect(validatorMetricsTargets([validator1])).toEqual([
+      {
+        stableId: "chainviz-ethereum/validator1",
+        metricsUrl: `http://172.28.0.3:${VALIDATOR_METRICS_PORT}/metrics`,
+      },
+    ]);
+  });
+
+  it("excludes execution, beacon and workbench containers", () => {
+    expect(validatorMetricsTargets([obs(), beacon1, workbench])).toEqual([]);
+  });
+
+  it("excludes a node whose service name contains 'validator' but whose role label is not 'validator'", () => {
+    const misleadingService = obs({
+      stableId: "chainviz-ethereum/tx-validator1",
+      labels: { "com.docker.compose.service": "tx-validator1" },
+    });
+    expect(validatorMetricsTargets([misleadingService])).toEqual([]);
+  });
+
+  it("excludes validator nodes without an IP address", () => {
+    expect(validatorMetricsTargets([{ ...validator1, ip: "" }])).toEqual([]);
+  });
+
+  it("lists every reachable validator node", () => {
+    const validator2 = obs({
+      stableId: "chainviz-ethereum/validator2",
+      labels: {
+        "com.docker.compose.service": "validator2",
+        [ROLE_LABEL]: "validator",
+      },
+      image: "sigp/lighthouse:latest",
+      ip: "172.28.0.4",
+      processes: [{ command: "lighthouse vc", name: "lighthouse" }],
+    });
+    expect(
+      validatorMetricsTargets([validator1, validator2]).map(
+        (t) => t.metricsUrl,
+      ),
+    ).toEqual([
+      `http://172.28.0.3:${VALIDATOR_METRICS_PORT}/metrics`,
+      `http://172.28.0.4:${VALIDATOR_METRICS_PORT}/metrics`,
+    ]);
+  });
+
+  it("returns no targets for an empty observation set", () => {
+    expect(validatorMetricsTargets([])).toEqual([]);
   });
 });

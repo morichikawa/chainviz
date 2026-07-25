@@ -93,6 +93,29 @@ export function rethFixture(service: string, ip: string): Fixture {
   };
 }
 
+/**
+ * validator（VC）コンテナのフィクスチャ。`com.chainviz.role: "validator"`
+ * ラベル付きで、compose サービス名は "validator..." にする（beaconFixture と
+ * ペアにすると `beaconStableIdForValidator` で対応付けられる。Issue #420）。
+ */
+export function validatorFixture(service: string, ip: string): Fixture {
+  return {
+    summary: {
+      Id: `id-${service}`,
+      Names: [`/chainviz-ethereum-${service}-1`],
+      Image: "sigp/lighthouse:latest",
+      State: "running",
+      Labels: {
+        "com.docker.compose.project": "chainviz-ethereum",
+        "com.docker.compose.service": service,
+        "com.chainviz.role": "validator",
+      },
+      NetworkSettings: { Networks: { chain: { IPAddress: ip } } },
+    },
+    top: { Titles: ["CMD"], Processes: [["lighthouse vc"]] },
+  };
+}
+
 export function gethFixture(service: string, ip: string): Fixture {
   return {
     summary: {
