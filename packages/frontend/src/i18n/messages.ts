@@ -768,6 +768,64 @@ export const messages = {
     ja: "実際の tx はここに出した項目のほかにも多くの情報（nonce・gas など）を含み、決められた形式（RLP）で並べてから署名します。この砂場では「内容と署名が結びついている」ことに絞って簡略化しています。",
     en: "A real tx contains many more fields than shown here (such as nonce and gas) and is encoded in a fixed format (RLP) before signing. This sandbox is simplified down to the single idea that the content and the signature are bound together.",
   },
+  // --- チェーンリボンカードの「攻撃を学ぶ」入口行（Issue #415。
+  // `docs/worklog/issue-415.md` UX設計 §6。既存 subtitle-row とは別の
+  // 新規行。将来 #414（51%攻撃）が同種の入口を必要とした場合、この行に
+  // ボタンを1つ追加するだけで済む想定） ---
+  "chainRibbon.attackDemoRowLabel": { ja: "攻撃を学ぶ", en: "Learn about attacks" },
+  // --- 「ロングレンジ攻撃」デモ（kind: "longRangeAttackDemo"。Issue #415。
+  // docs/worklog/issue-415.md UX設計 §8。英語版は初稿で、
+  // chainviz-i18n のレビュー対象） ---
+  "longRangeDemo.open": { ja: "ロングレンジ攻撃を体験する", en: "Try a long-range attack" },
+  "longRangeDemo.title": { ja: "ロングレンジ攻撃のしくみ", en: "How long-range attacks work" },
+  "longRangeDemo.intro": {
+    ja: "ここは学習用の砂場です。実際のチェーンには影響しません。同じ genesis から始まっていても、攻撃者は後から別の履歴を作り直すことができます。下の2本の履歴を見比べ、『確定(finality)をどこまで進めるか』を動かして、どちらの履歴が正しいと判定されるか確かめてください。",
+    en: "This is a learning sandbox. It doesn't affect the real chain. Even though both histories start from the same genesis, an attacker can later rebuild a different one. Compare the two chains below, and try moving how far finality has progressed to see which history gets accepted.",
+  },
+  "longRangeDemo.canonicalLabel": { ja: "正規のチェーン", en: "Canonical chain" },
+  "longRangeDemo.attackerLabel": {
+    ja: "攻撃者が作り直した履歴",
+    en: "Attacker's rewritten history",
+  },
+  "longRangeDemo.rivalNote": {
+    ja: "同じ番号でも中身が違う、ライバルのブロックです",
+    en: "Same number, different contents — these blocks are rivals",
+  },
+  "longRangeDemo.checkpointHeading": {
+    ja: "確定(finality)はどこまで進んでいますか？",
+    en: "How far has finality progressed?",
+  },
+  "longRangeDemo.checkpointOption": { ja: "#{number}まで確定", en: "Finalized through #{number}" },
+  "longRangeDemo.finalizedBadge": { ja: "確定済み", en: "Finalized" },
+  "longRangeDemo.verdict.naiveHeading": {
+    ja: "単純な『長い方を正しいとする』ルールなら",
+    en: "Under a naive 'longest chain wins' rule",
+  },
+  "longRangeDemo.verdict.naiveResult": {
+    ja: "攻撃者の履歴（#{attackerMax}まで）が採用されてしまいます",
+    en: "The attacker's history (through #{attackerMax}) would be accepted",
+  },
+  "longRangeDemo.verdict.finalityHeading": {
+    ja: "確定(finality)を考慮すると",
+    en: "Once finality is taken into account",
+  },
+  "longRangeDemo.verdict.protected": {
+    ja: "正規のチェーンを維持できます（#{divergeAt}はすでに確定済みのため、攻撃者の履歴は拒否されます）",
+    en: "The canonical chain holds (#{divergeAt} is already finalized, so the attacker's history is rejected)",
+  },
+  "longRangeDemo.verdict.vulnerable": {
+    ja: "まだ#{divergeAt}が確定していないため、この攻撃を防げません",
+    en: "#{divergeAt} isn't finalized yet, so this attack can't be stopped",
+  },
+  "longRangeDemo.reset": { ja: "最初に戻す", en: "Reset" },
+  "longRangeDemo.whoDecides": {
+    ja: "実際のPoS Ethereumでは、バリデーターの投票（attestation）の積み重ねによってブロックが確定します。一度確定したブロックより前を書き換える提案は、たとえ長くても採用されません。",
+    en: "In real PoS Ethereum, blocks become finalized as validator votes (attestations) accumulate. Once a block is finalized, no proposal that rewrites anything before it will be accepted, no matter how long it is.",
+  },
+  "longRangeDemo.simplifiedNote": {
+    ja: "この砂場は考え方を確かめるための簡略化したモデルです。実際のfinalityの仕組み（2/3以上の投票、epoch単位の確定など）はもっと複雑です。",
+    en: "This sandbox is a simplified model for exploring the idea. Real finality (two-thirds-plus voting, epoch-based finalization, etc.) is more involved.",
+  },
 } as const satisfies Record<string, Localized>;
 
 export type MessageKey = keyof typeof messages;

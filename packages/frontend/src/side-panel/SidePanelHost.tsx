@@ -12,6 +12,8 @@ import { deriveReceivedOrder } from "../entities/chainRibbon.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { HashChainDemoView } from "../crypto-demo/HashChainDemoView.js";
 import { SignatureDemoView } from "../crypto-demo/SignatureDemoView.js";
+import { LongRangeAttackDemoView } from "../attack-demo/LongRangeAttackDemoView.js";
+import { withTermAnchor } from "../glossary/withTermAnchor.js";
 import { BlockDetailView } from "./BlockDetailView.js";
 import { CommsLogView } from "./CommsLogView.js";
 import type { CommsLogNodeOption } from "./CommsLogFilterBar.js";
@@ -119,6 +121,9 @@ export interface SidePanelHostProps {
  * signatureDemo（Issue #402）: hashChainDemo と同じ理由でダングリング
  * ガードの対象外。
  *
+ * longRangeAttackDemo（Issue #415）: hashChainDemo/signatureDemo と同じ
+ * 理由でダングリングガードの対象外。
+ *
  * blockDetail（Issue #409）: 対象 hash の `BlockEntity` を `blocksByHash` から
  * 引く（保持するのは hash のみ。contractSource と同じ「未知→既知の昇格」
  * ではなく「保持窓から外れて消える」向きの遷移だが、同じダングリングガード
@@ -137,7 +142,7 @@ export function SidePanelHost({
   latestBlockHash,
   transactions = EMPTY_TRANSACTIONS,
 }: SidePanelHostProps) {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const { view, open, close } = useSidePanel();
   const contract =
     view?.kind === "contractSource"
@@ -208,6 +213,26 @@ export function SidePanelHost({
     return (
       <SidePanel ariaLabel={t("sigDemo.title")} title={t("sigDemo.title")} onClose={close}>
         <SignatureDemoView />
+      </SidePanel>
+    );
+  }
+
+  if (view.kind === "longRangeAttackDemo") {
+    return (
+      <SidePanel
+        ariaLabel={t("longRangeDemo.title")}
+        // Issue #415 UX設計 §7: パネルタイトル中の「ロングレンジ攻撃」
+        // （en: "long-range attacks"）へ用語集アンカーを付ける。ariaLabel は
+        // スクリーンリーダー向けのプレーンテキストを維持するため、この
+        // アンカーは見た目の title（ReactNode 許容）にのみ適用する。
+        title={withTermAnchor(
+          t("longRangeDemo.title"),
+          lang === "ja" ? "ロングレンジ攻撃" : "long-range attacks",
+          "longRangeAttack",
+        )}
+        onClose={close}
+      >
+        <LongRangeAttackDemoView />
       </SidePanel>
     );
   }
