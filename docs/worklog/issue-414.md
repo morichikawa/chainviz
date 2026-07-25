@@ -334,3 +334,125 @@ Issue #412 の設計（§17.2）で既に「土台・3つの砂場のいずれ�
   パターン（家族単位でまとめて1回）を踏襲するのが自然。#414単体の時点で
   CONCEPT.mdに手を入れると、並行して進んでいる#415/#416のUX設計と
   同じ箇所への重複編集・コンフリクトを招くおそれもある
+
+### 2026-07-25 Issue #414 実装（frontend）
+
+- 担当: frontend
+- ブランチ: `issue-414-fifty-one-percent-attack-demo`
+  （worktree の都合上、ローカルでは `issue-414-work` という別名ブランチで
+  作業し、push 時に `issue-414-fifty-one-percent-attack-demo` へ向けて
+  push した。origin 上のブランチ名は変わらない）
+- 前提の確認: 着手前に `git merge-base --is-ancestor` で確認したところ、
+  Issue #413（`fiftyOnePercentAttack`/`reorg` を含む glossary 追加）は
+  この時点でまだ `main` へマージされていなかった。UX設計 §8 の指示どおり
+  「マージされてから着手」を待つと並行作業が止まってしまうため、
+  `GlossaryTerm` の既存の防御的フォールバック（未知語は下線無しの
+  `glossary-term--unknown` としてそのまま表示し例外を投げない。
+  `GlossaryTerm.tsx` 参照）に乗る形で `termKey="fiftyOnePercentAttack"`
+  を先に実装した。#413 が先にマージされていれば正しくアンカーとして
+  機能し、まだの場合も未知語表示に留まるだけで壊れない。この暫定挙動は
+  `FiftyOnePercentAttackDemoView.glossaryAnchor.test.tsx`
+  の2件目のテストケース（未知語のときの表示）で固定してある。**マージ
+  順序（#413 → #414）が守られているかは統括がマージ時に再確認すること**
+
+#### 設計メモ（実装方針）
+
+- 純粋ロジックとView/表示を分離する既存パターン（`crypto-demo/
+  hashChainDemo.ts` + `HashChainDemoView.tsx`）をそのまま踏襲し、
+  `packages/frontend/src/attack-demo/` に以下を新設した:
+  - `fiftyOnePercentAttackDemo.ts`: 状態は `attackerValidatorIds:
+    ReadonlySet<number>`（バリデーター7人固定、id は1〜7）。個体の
+    同一性を保つ要件（UX設計§6）を満たすため、人数だけを持つ設計には
+    しなかった。`weightOfBranchA/B`・`canonicalBranch`（同数は枝A優先の
+    決定的規則）・`marginToFlip`（あと何人でBが逆転するかを整数で返す。
+    既に逆転済みなら `{flipped: true}` の別形にする判別共用体）・
+    `toggleValidator`・`branchValidatorIds` を実装
+  - `AttackBranchBox.tsx`: 枝1つぶんの表示（見出し・バリデーターボタン
+    群・空状態・重み・canonical バッジ）。`HashChainBlockRow.tsx` と
+    同じ「1エンティティ1ファイル」の粒度
+  - `FiftyOnePercentAttackDemoView.tsx`: 状態は `useState` でコンポーネント
+    ローカルに持ち、`SidePanelView` 側には持たせない（既存2デモと同じ
+    「開くたびに初期状態」方針）。フラッシュ演出は
+    `NEW_ARRIVAL_HIGHLIGHT_DURATION_MS` を再利用し、`HashChainDemoView`
+    と同じ「Set + タイマーMap」パターンをバリデーター単位・バッジ単位で
+    適用（新しいアニメーション機構は作らない）
+- `sidePanelView.ts` に `{ kind: "fiftyOnePercentAttackDemo" }` を追加
+  （対象データを持たない。既存2デモと同型）。`SidePanelHost.tsx` に
+  振り分け case を追加し、ダングリングガードの対象外である旨のコメントを
+  既存の hashChainDemo/signatureDemo と同じ書式で追記
+- fork choice ルール説明文への用語集アンカー（UX設計§3-5「この行の中の
+  語（または見出し）をラップ」）は、既存の `withTermAnchor` パターン
+  （ja/en 訳文中の共通の部分文字列を差し替える）が使えなかった点が
+  設計判断のポイント。ja「fork choiceルール」と en「fork-choice rule」は
+  ハイフンの有無で完全一致する部分文字列を持たないため、文全体を
+  `GlossaryTerm` の children にする方式にした（`ChainRibbonCard.tsx` が
+  `t("chainRibbon.title")` という短い文字列全体を `GlossaryTerm` で
+  ラップしている前例を、より長い文へ適用した形）
+- 入口メニュー化（UX設計§4）: `ChainRibbonCard.tsx` の subtitle-row にあった
+  単一ボタン（`hashDemo.open`）を `<details>`/`<summary>` に置き換えた。
+  `<details>` の開閉は uncontrolled（ブラウザ標準）のままにし、メニュー
+  項目クリック時だけ `useRef<HTMLDetailsElement>` 経由で `.open = false`
+  を設定して明示的に閉じる（React state 化して `onToggle` で同期する
+  方式より単純なため採用）。他Issue（#415/#416）が同じメニューへ
+  項目を追加しやすいよう、`<div className="chain-ribbon-card__demo-menu-list">`
+  内にボタンを並べるだけの単純な構造にした（特別な拡張ポイントは
+  先回りして作り込んでいない。UX設計§4の申し送りどおり）
+- 既存の `chain-ribbon-hash-demo-open`（Issue #401）の testid・クリック
+  挙動は変更していない（ボタンは同じ属性のまま、親要素が `<details>` に
+  変わっただけ）。既存の回帰テスト
+  `ChainRibbonCard.hashDemoEntry.test.tsx` は「先に
+  `chain-ribbon-demo-menu-open` をクリックしてメニューを開いてから」
+  操作する形に更新した。jsdom 25 は `<details>`/`<summary>` の
+  クリック開閉（activation behavior）を実装しているため、
+  `fireEvent.click(summary)` で実際に `open` 属性が切り替わることを
+  確認済み
+- `packages/e2e/src/ui/hash-chain-demo.spec.ts`（Playwright）も、実ブラウザ
+  では閉じた `<details>` の中身がレイアウト上非表示になり
+  `getByTestId("chain-ribbon-hash-demo-open").click()` が単体では
+  タイムアウトするため、先に `chain-ribbon-demo-menu-open` をクリックする
+  よう最小限の修正を入れた（`packages/e2e/SCENARIOS.md` の該当記述も
+  合わせて更新）。51%攻撃デモ自体の新規 e2e シナリオは今回のタスク範囲外
+  （vitest ユニットテストのみを指示された）としてQA側の判断に委ねた
+
+#### 実装したファイル
+
+- 新規: `packages/frontend/src/attack-demo/fiftyOnePercentAttackDemo.ts`・
+  `fiftyOnePercentAttackDemo.test.ts`・`AttackBranchBox.tsx`・
+  `FiftyOnePercentAttackDemoView.tsx`・`FiftyOnePercentAttackDemoView.test.tsx`・
+  `FiftyOnePercentAttackDemoView.a11y.test.tsx`・
+  `FiftyOnePercentAttackDemoView.i18n.test.tsx`・
+  `FiftyOnePercentAttackDemoView.glossaryAnchor.test.tsx`
+- 新規: `packages/frontend/src/side-panel/SidePanelHost.fiftyOnePercentAttackDemo.test.tsx`
+- 新規: `packages/frontend/src/entities/ChainRibbonCard.demoMenu.test.tsx`・
+  `ChainRibbonCard.attack51DemoEntry.test.tsx`
+- 変更: `packages/frontend/src/side-panel/sidePanelView.ts`（新規 kind 追加）・
+  `SidePanelHost.tsx`（振り分け case 追加）・
+  `packages/frontend/src/entities/ChainRibbonCard.tsx`（入口メニュー化）・
+  `packages/frontend/src/entities/ChainRibbonCard.hashDemoEntry.test.tsx`
+  （メニュー経由の操作に更新）・`packages/frontend/src/i18n/messages.ts`
+  （`chainRibbon.demoMenu.open` と `attack51Demo.*` を追加）・
+  `packages/frontend/src/styles.css`（メニュー・デモ本体のスタイル追加）
+- 変更（e2e、影響を受けた既存シナリオの最小修正）:
+  `packages/e2e/src/ui/hash-chain-demo.spec.ts`・`packages/e2e/SCENARIOS.md`
+- 変更: `docs/PLAN.md`（該当チェックボックスにチェック）
+
+#### 確認したこと
+
+- `pnpm --filter @chainviz/frontend build` / `pnpm --filter @chainviz/frontend test`
+  （264 test files / 3234 tests、全て成功）
+- `pnpm build` / `pnpm test`（ルート、全パッケージ）・`pnpm lint` も実行し
+  全て成功することを確認した
+
+#### 次の担当（レビュー・QA）が知っておくべき注意点
+
+- Issue #413（glossary の `fiftyOnePercentAttack`/`reorg` 追加）が
+  `main` へマージされているかを確認してからマージすること。マージ順が
+  逆になっても壊れはしない（未知語フォールバックで表示自体はできる）が、
+  用語集アンカーとして機能しない状態でユーザーの目に触れることになる
+- `ChainRibbonCard.tsx` の subtitle-row は Issue #415（ロングレンジ攻撃）も
+  同じメニューへ項目を追加する見込みで、`ChainRibbonCard.hashDemoEntry.test.tsx`
+  同様の更新が入る可能性が高い。マージ時にコンフリクトが出ることは
+  想定済み（統括の申し送りどおり）
+- `docs/PLAN.md` のチェックボックスは自分の作業分のみ更新した。他の
+  攻撃デモ（#415/#416）のブランチも同じファイルの近傍行を編集する見込みの
+  ため、マージ時に統括がコンフリクトを解消すること
