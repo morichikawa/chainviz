@@ -1350,7 +1350,20 @@ body {
    隙間(15)」で固定し、ContractListPanel がどこまで伸びても重ならないように
    する。
    Issue #327 追補: 浮遊オーバーレイパネルとして contract-list-panel と
-   同じすりガラス化。 */
+   同じすりガラス化。
+   Issue #413 差し戻し対応: `bottom` 固定 + 内容量に応じて上方向へ伸びる
+   このパネルは、ビューポート高が低いとき左上の `.canvas-overlay-top`
+   （ツールバー + レイヤーフィルターバー）に重なりうる（Issue #413 の
+   frontRunning ヒント行追加で、mempool が0件のアイドル状態でも
+   1280x720（Playwright 標準ビューポート）で重なるようになった。
+   `docs/worklog/issue-413.md` QA検証結果 5-1 参照）。`max-height` を
+   `100vh` 基準の上限でも制限し、低いビューポートでは内容を内部スクロール
+   （既存の `overflow-y: auto`）に逃がして、パネル上端が
+   `.canvas-overlay-top` の下端（1280 幅で実測 175px 前後）より上に出ない
+   ようにする。`585px` は「このパネルの bottom オフセット(385px) +
+   `.canvas-overlay-top` の下端に対する安全マージン込みの予約領域
+   (200px)」。ツールバー/チップバーの行数が増えて実際の下端がこの
+   200px を超えるようになったら、この値も見直すこと。 */
 .mempool-panel {
   position: absolute;
   left: 15px;
@@ -1358,7 +1371,7 @@ body {
   z-index: 6;
   min-width: 220px;
   max-width: 280px;
-  max-height: 260px;
+  max-height: min(260px, calc(100vh - 585px));
   overflow-y: auto;
   padding: 8px 10px;
   border-radius: 10px;
