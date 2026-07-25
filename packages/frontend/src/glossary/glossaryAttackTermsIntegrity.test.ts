@@ -79,6 +79,25 @@ describe("attack term relatedTerms (Issue #413 ARCHITECTURE.md §17.3)", () => {
     expect(glossary.gas.relatedTerms).toContain("frontRunning");
   });
 
+  it("validator/attestation link to fiftyOnePercentAttack, and it links back", () => {
+    // a-infra 側からの導線（ARCHITECTURE.md §17.4 が「検討する」としていた
+    // 追加リンク）。実装は双方向で張っている（51%攻撃はバリデーターの投票権限
+    // の偏りが主題のため）。導線が片側だけ消えると、バリデーターのカードから
+    // 攻撃解説へ辿れる/辿れないが言語や導線によって食い違う。
+    expect(glossary.validator.relatedTerms).toContain("fiftyOnePercentAttack");
+    expect(glossary.attestation.relatedTerms).toContain("fiftyOnePercentAttack");
+    expect(glossary.fiftyOnePercentAttack.relatedTerms).toEqual(
+      expect.arrayContaining(["validator", "attestation"]),
+    );
+  });
+
+  it.each(NEW_KEYS)("%s lists no duplicate relatedTerms", (key) => {
+    // ポップオーバーの関連用語は relatedTerms をそのまま連結して表示する
+    // （GlossaryTerm.tsx）ため、重複すると同じ用語名が2回並ぶ。
+    const related = glossary[key].relatedTerms;
+    expect(related).toEqual([...new Set(related)]);
+  });
+
   it("longRangeAttack references existing keys (block/fiftyOnePercentAttack/reorg)", () => {
     // longRangeAttack自体は設計(ARCHITECTURE.md §17.3)がblock以外との
     // 双方向リンクを指定していないため、参照先が存在することのみ検証する
@@ -87,5 +106,15 @@ describe("attack term relatedTerms (Issue #413 ARCHITECTURE.md §17.3)", () => {
       expect.arrayContaining(["block", "fiftyOnePercentAttack", "reorg"]),
     );
     expect(glossary.block.relatedTerms).toContain("longRangeAttack");
+  });
+
+  it("keeps the longRangeAttack -> fiftyOnePercentAttack/reorg links one-way on purpose", () => {
+    // 実装時の判断（docs/worklog/issue-413.md 設計メモ §3）: 設計が明示した
+    // fork ↔ fiftyOnePercentAttack ↔ reorg の三角形を勝手に広げないため、
+    // longRangeAttack からの参照は片方向に留めている。この非対称は「張り
+    // 忘れ」と見分けが付かないので、意図であることをテストで明示する
+    // （3砂場のUX設計で双方向にする判断をしたら、このテストを更新する）。
+    expect(glossary.fiftyOnePercentAttack.relatedTerms).not.toContain("longRangeAttack");
+    expect(glossary.reorg.relatedTerms).not.toContain("longRangeAttack");
   });
 });
