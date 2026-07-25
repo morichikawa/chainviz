@@ -1258,6 +1258,24 @@ body {
   line-height: 1.4;
 }
 
+/* Issue #416: eclipse攻撃デモの入口ボタン。tx-lifecycle-popover の
+   __sig-demo-open と同じ「テキストリンク調」の見た目を踏襲する
+   （UX設計 docs/worklog/issue-416.md §4）。 .p2p-legend__hint が既に
+   上端に区切り線を持つため、ここでは区切り線を重ねない。 */
+.p2p-legend__eclipse-demo-open {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font-size: 11px;
+  text-decoration: underline;
+  cursor: pointer;
+  text-align: left;
+}
+
 /* --- C層拡張: コントラクト一覧パネル(Issue #218/#211「単位C」) --- */
 /* キャンバス左下、Controls(既定 bottom-left、ズームイン/アウト/フィット/
    ロックの4ボタン、実測高さ約110px+マージン15px)の上に重ならないよう
