@@ -71,6 +71,9 @@ export const messages = {
   "sync.syncing": { ja: "同期中", en: "Syncing" },
   // B層拡張: フォーク（一時的な分岐）の色分け（ARCHITECTURE.md §9。Issue #296）。
   "field.headTip": { ja: "見ている tip", en: "Following tip" },
+  // 攻撃手法解説の土台（ARCHITECTURE.md §17.4。Issue #413）: 「見ている
+  // tip」欄の近傍に51%攻撃・リオーグへの用語アンカーを添える見出し。
+  "field.headTipAttackHint": { ja: "関連する用語", en: "Related terms" },
   "ghost.status": { ja: "起動中…", en: "Starting…" },
   "canvas.empty": {
     ja: "表示するコンテナがありません",
@@ -130,6 +133,21 @@ export const messages = {
   // 文構造ではprefixで文が完結するため）。
   "legend.hint.suffix": {
     ja: "により時間とともに自動で増えます",
+    en: "",
+  },
+  // 攻撃手法解説の土台（ARCHITECTURE.md §17.4。Issue #413）: P2P凡例に
+  // Eclipse攻撃への用語アンカーを添える2行目のヒント。3分割の理由は
+  // legend.hint.prefix/term/suffix と同じ。
+  "legend.eclipseHint.prefix": {
+    ja: "接続先ピアが攻撃者だけで埋め尽くされると",
+    en: "If every connected peer ends up controlled by an attacker, it becomes an ",
+  },
+  "legend.eclipseHint.term": {
+    ja: "Eclipse攻撃",
+    en: "eclipse attack",
+  },
+  "legend.eclipseHint.suffix": {
+    ja: "になります",
     en: "",
   },
   "peerEdge.hint": {
@@ -258,6 +276,21 @@ export const messages = {
     ja: "実行が失敗として記録されました（ブロックには取り込まれています）",
     en: "Recorded as failed (still included in a block).",
   },
+  // 攻撃手法解説の土台（ARCHITECTURE.md §17.4。Issue #413）: 「確定後は
+  // 覆らない」という説明とtxライフサイクルの文脈が合うため、段階リストの
+  // 末尾にダブルスペンドへの用語アンカーを添える。
+  "tx.lifecycle.doubleSpendHint.prefix": {
+    ja: "取り込み済みのtxが確定後に覆ることはなく、",
+    en: "An included tx never gets undone once final, which is exactly why a ",
+  },
+  "tx.lifecycle.doubleSpendHint.term": {
+    ja: "ダブルスペンド（二重支払い）",
+    en: "double-spend",
+  },
+  "tx.lifecycle.doubleSpendHint.suffix": {
+    ja: "は原理的に成立しません",
+    en: " cannot succeed once it has reached this stage.",
+  },
   // --- C層拡張: 定型操作パネル（送金・デプロイ・コントラクト呼び出し。
   // ARCHITECTURE.md §6.5/§6.8） ---
   "action.workbenchOperations": { ja: "操作を実行…", en: "Run operation…" },
@@ -355,6 +388,21 @@ export const messages = {
     en: "Click to jump to the sender wallet's card",
   },
   "mempoolPanel.overflow": { ja: "他 {count} 件", en: "+{count} more" },
+  // 攻撃手法解説の土台（ARCHITECTURE.md §17.4。Issue #413）: tx順序への
+  // 言及とmempool俯瞰の文脈が合うため、フロントランニングへの用語アンカーを
+  // 添える。
+  "mempoolPanel.frontRunningHint.prefix": {
+    ja: "ここに並ぶ未承認txの中身を見て自分のtxを先に割り込ませる行為が",
+    en: "Watching the pending transactions listed here and slipping your own tx ahead of one of them is called ",
+  },
+  "mempoolPanel.frontRunningHint.term": {
+    ja: "フロントランニング",
+    en: "front-running",
+  },
+  "mempoolPanel.frontRunningHint.suffix": {
+    ja: "です",
+    en: ".",
+  },
   "mempoolPanel.nodesTitle": { ja: "ノード別 txpool", en: "Txpool by node" },
   // Issue #408: ノード別 txpool 行のクリックヒント（tx 行の jumpHint と対）。
   "mempoolPanel.nodeJumpHint": {
@@ -464,6 +512,12 @@ export const messages = {
     en: "No receipt times observed yet",
   },
   "chainRibbon.popover.receivedByOffset": { ja: "+{ms}ms", en: "+{ms}ms" },
+  // 攻撃手法解説の土台（ARCHITECTURE.md §17.4。Issue #413）: 「親ブロック」
+  // 行の近傍にロングレンジ攻撃への用語アンカーを添える見出し。
+  "chainRibbon.popover.longRangeHint": {
+    ja: "関連する用語",
+    en: "Related terms",
+  },
   // --- ブロック詳細パネル（kind: "blockDetail"。Issue #409。
   // ARCHITECTURE.md §17） ---
   "blockDetail.title": { ja: "ブロック詳細", en: "Block detail" },
