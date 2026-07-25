@@ -386,3 +386,147 @@ function pickByFinalityAwareRule(
   （既存の `chain-ribbon-tile--landing` keyframes の再利用）は、
   §17.5.2「一瞬で正規チェーンより長く/新しく見せかけられる」の体感を
   強める推奨演出だが、必須要件ではない（実装コストと相談して判断してよい）
+
+### 2026-07-25 Issue #415 実装メモ・実装内容
+
+- 担当: frontend
+- ブランチ: issue-415-long-range-attack-demo
+
+#### 設計メモ（着手前）
+
+UX設計（上記）で図解レイアウト・判定ロジック・モジュール構成案が既に
+実装粒度まで詰まっていたため、大きな設計判断の追加は無い。実装前に
+以下を決めた:
+
+- **共有グリッドは3段まとめて1つの CSS Grid**にする（3つの別々のグリッド
+  コンテナを並べる案ではなく）。ブロック番号Nの列を `tileGridColumn(N) =
+  2 + 2N`（列1はラベル列、以降2列ずつ「タイル列+コネクタ列」を消費）という
+  純粋関数で決め、正規/checkpoint/攻撃者のどの行もこの同じ関数で列を
+  決めることで「同じブロック番号は必ず同じ列」という不変条件を構造的に
+  保証する。3段の連結線（ブロック間の実線/破線）も、専用のコネクタ列
+  （タイル列の直後）に配置することで、列のズレを起こさずに表現できた
+- ブロック本体（`CANONICAL_CHAIN`/`ATTACKER_CHAIN`）はユーザーが編集
+  できないため、`hashChainDemo.ts` のように `useState` 初期化関数の中で
+  毎回導出するのではなく、モジュールスコープの定数として一度だけ導出する
+  設計にした（「起動時に一度だけ導出して固定」というUX設計の要求を
+  そのまま満たす、より単純な実装）
+- `packages/shared` の型変更・collectorの変更は無し（UX設計・
+  ARCHITECTURE.md §17.2 の判断どおり）
+
+#### 実装内容
+
+- `packages/frontend/src/attack-demo/longRangeAttackDemo.ts`: 疑似データ
+  （`CANONICAL_CHAIN` 4ブロック・`ATTACKER_CHAIN` 5ブロック、`#0`・`#1`は
+  同じ文字列から同じハッシュが出ることを利用して共有区間を表現）、
+  finality checkpoint の state（`createInitialLongRangeAttackDemoState`/
+  `resetLongRangeAttackDemoState`/`setCheckpoint`/`isFinalized`）、2つの
+  fork choice ルール（`pickByNaiveLongestChainRule`/
+  `pickByFinalityAwareRule`、UX設計 §5 のシグネチャそのまま）、共有
+  グリッドの列計算（`tileGridColumn`/`connectorGridColumnAfter`）
+- `packages/frontend/src/attack-demo/LongRangeChainRow.tsx`: 正規/攻撃者
+  共通のタイル行描画。呼び出し側が指定した `gridRow` のセルだけを埋め、
+  グリッド自体は生成しない（グリッドの生成元を1箇所に保つことで列ズレを
+  防ぐ）
+- `packages/frontend/src/attack-demo/LongRangeAttackDemoView.tsx`:
+  パネル本体。導入文 → 共有グリッド（正規行/checkpoint見出し+チップ行/
+  攻撃者行）→ 判定バナー（2行）→ リセット → フッター注記2本、という
+  UX設計どおりの構成
+- `side-panel/sidePanelView.ts` に `{ kind: "longRangeAttackDemo" }` を
+  追加、`SidePanelHost.tsx` に対応する case を追加（ダングリングガード
+  対象外は `hashChainDemo`/`signatureDemo` と同じ理由）
+- `entities/ChainRibbonCard.tsx`: `.chain-ribbon-card__attack-demo-row`
+  を新規追加（着手時点で #414 のメニュー化実装はまだ存在しなかったため、
+  UX設計どおり専用行として実装した。#414 が後から同種の入口を必要とする
+  場合、この行にボタンを1つ追加するだけで済む設計にしてある。§6参照）
+- `entities/ChainRibbonPopover.tsx`: 既存の「ハッシュのしくみを試す」
+  ボタンの下にもう1つボタンを追加
+- `i18n/messages.ts`: `chainRibbon.attackDemoRowLabel` + `longRangeDemo.*`
+  をUX設計 §8のとおり追加（英語版は初稿のまま。chainviz-i18n のレビュー
+  対象）
+- `styles.css`: 共有グリッド・タイル・チップ・判定バナーのスタイルを新設
+
+#### glossary アンカーについての判断（重要な申し送り）
+
+UX設計 §7 は「`longRangeAttack` エントリは Issue #413 が先にマージされて
+いる前提」としていたが、着手時点で **Issue #413（攻撃手法解説の土台）は
+まだ `main` に未マージ**だった（実装自体は #413 のブランチに存在し、
+`ChainRibbonPopover.tsx` に `longRangeAttack` へのアンカーを追加済み）。
+
+このため、以下の方針で実装した:
+
+- `GlossaryTerm` コンポーネントは、指定した `termKey` が glossary データに
+  存在しない場合でも例外を投げず「未知の用語」として下線無しでそのまま
+  表示する（`glossary/GlossaryTerm.tsx` の既存の防御的フォールバック）。
+  これを踏まえ、`longRangeAttack`/`attestation` へのアンカーは**glossary
+  データの存在を前提にせず**、UX設計どおりの箇所（パネルタイトル・
+  checkpoint見出し・確定済みバッジ・フッターの attestation 説明）に
+  `GlossaryTerm`/`withTermAnchor` を先に実装した
+- `attestation` は Issue #402 で既に追加済みの既存用語のため問題なし
+- `longRangeAttack` は #413 のマージ後に実データが揃う。#413 と #415 は
+  どちらも `ChainRibbonPopover.tsx` を編集しているため、マージ時に
+  コンフリクトが起きる見込み（#413が「親ブロック」行の下にヒント欄を
+  追加、#415が末尾に導線ボタンを追加。編集箇所は異なる行のため機械的な
+  マージ解決で問題ない見込みだが、統括のマージ時に要確認）
+- **導入文（`longRangeDemo.intro`）自体には `longRangeAttack` のアンカーを
+  付けなかった**。UX設計 §7 は「パネルタイトル・導入文中の『ロングレンジ
+  攻撃』という語をラップする」としていたが、確定した導入文の文言
+  （§8）には「ロングレンジ攻撃」という語自体が literal には含まれて
+  いなかった（「攻撃者は後から別の履歴を作り直すことができます」という
+  言い換えのみ）。文言を書き換えてまで無理に埋め込むより、literal に
+  その語を含むパネルタイトル（`longRangeDemo.title`）側にアンカーを
+  付ける方針にした。`SidePanel` の `title` prop は `ReactNode` を許容する
+  ため、`ariaLabel`（スクリーンリーダー向けのプレーンテキスト）とは別に
+  `title` だけを `withTermAnchor` でラップしている
+- checkpoint見出し・確定済みバッジは、UX設計 §7 の「独立の `finality`
+  エントリを新設しない場合の代替」どおり `longRangeAttack` へフォール
+  バックしてアンカーした（#413のブランチを確認したところ、実際に
+  `finality` の独立エントリは新設されていなかった）
+
+#### テスト
+
+- `attack-demo/longRangeAttackDemo.chain.test.ts`: `CANONICAL_CHAIN`/
+  `ATTACKER_CHAIN` の形・共有区間（`#0`・`#1`）のハッシュ一致・分岐後
+  （`#2`〜）のハッシュ不一致を固定
+- `attack-demo/longRangeAttackDemo.state.test.ts`: checkpoint state の
+  create/reset/set/isFinalized
+- `attack-demo/longRangeAttackDemo.verdict.test.ts`: 2つの fork choice
+  ルールの境界値（`checkpointIndex = divergeAt - 1` と `divergeAt` の境界
+  で実際に切り替わること）と、naive ルールが決め打ちでなく実際に長さを
+  比較していることの回帰確認（長さの前提を変えても壊れないことを直接
+  確認）
+- `attack-demo/longRangeAttackDemo.grid.test.ts`: グリッド列計算の不変
+  条件（同じブロック番号は同じ列になる）
+- `attack-demo/LongRangeChainRow.test.tsx`: タイル/連結線/注記の描画
+- `attack-demo/LongRangeAttackDemoView.test.tsx`: checkpoint操作→判定
+  バナーの実際の切り替わり、reset
+- `attack-demo/LongRangeAttackDemoView.i18n.test.tsx`: ja/en文言
+- `attack-demo/LongRangeAttackDemoView.a11y.test.tsx`: aria-pressed・
+  キーボード到達可能性・色だけに頼らない状態伝達
+- `attack-demo/LongRangeAttackDemoView.glossaryAnchor.test.tsx`:
+  `longRangeAttack`/`attestation` アンカーの存在確認
+- `entities/ChainRibbonCard.longRangeDemoEntry.test.tsx` /
+  `entities/ChainRibbonPopover.longRangeDemoEntry.test.tsx`: 入口ボタンが
+  `sidePanel.open({ kind: "longRangeAttackDemo" })` を呼ぶこと
+- `side-panel/SidePanelHost.longRangeAttackDemo.test.tsx`: kindの振り分け・
+  他パネルとの排他・ダングリングガード対象外・再オープン時の初期化・
+  タイトルの用語アンカー
+
+`pnpm lint && pnpm build && pnpm test`（frontend パッケージ、および
+モノレポ全体の `pnpm build`）を実行し、全て成功することを確認済み。
+
+#### 次の担当（reviewer/QA、および #414/#416 担当）への申し送り
+
+- **#413マージ時**: `ChainRibbonPopover.tsx` のコンフリクト解消を確認
+  （上記参照）。マージ後、`longRangeAttack`/`finality` 関連の glossary
+  アンカーが実データで正しく機能することを実機/テストで再確認することを
+  推奨する（現状のテストは glossary データをモックで注入しているため、
+  実データとのキー不一致を検出できない）
+- **#414（51%攻撃）**: `.chain-ribbon-card__attack-demo-row` は
+  `flex-wrap: wrap` にしてあるので、#414が同じ行に入口ボタンを追加したい
+  場合は `chain-ribbon-card__attack-demo-row` 内にボタンを1つ足すだけで
+  レイアウトが壊れない想定。ただし #414 が `<details>`/`<summary>` の
+  メニュー化を先に実装済みだった場合は、この専用行に無理に合流させず
+  そちらのメニューへ統合する方が自然（統括からの申し送りどおり）
+- **#416（eclipse攻撃）**: 本Issueとの直接の依存・競合は無い
+  （`PeerNetworkLegend.tsx` を触る想定で、本Issueが触ったファイルとは
+  重複しない）
