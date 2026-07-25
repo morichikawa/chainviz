@@ -811,3 +811,141 @@ CLAUDE.md の「回帰テストは意図的に壊した状態で検出できる�
   75件、e2e 16ファイル185件）
 - 上記「気になる点」1・2 は実装の変更を伴うため、必要と判断されれば
   collector 担当へ差し戻すこと（tester 側では実装を変更していない）
+
+### 2026-07-25 Issue #420 レビュー結果(合格・軽微な修正2件を実施)
+
+- 担当: reviewer
+- 対象: `origin/issue-420-validator-activity-visualization`(コミット
+  `280ab67`まで。node-env/collector/frontend/testerの実装・テスト強化を
+  含む全体)
+- 差分は `origin/main`(コミット `8a92e52`、Issue #409まで反映済み)との比較で
+  確認した。ローカルの`main`ブランチはこの時点でIssue #408/#410/#412分だけ
+  古かったため、実際の統合先である`origin/main`を基準にした
+
+#### tester申し送り1点目(有限値チェック漏れ): 実装を修正した
+
+`packages/collector/src/adapters/ethereum/vc-metrics.ts`の
+`parseValidatorDutyCounters`で、ブロック提案側の所要時間
+(`vc_block_signing_times_seconds_sum`)だけ`firstValue()`の戻り値を
+`Number.isFinite`で検査せずに`sumSeconds`へ渡していた点を、実際に手元で
+再現して確認した。
+
+再現方法: `vc-metrics.ts`をビルドし、1回目のスクレイプで有限値
+(`vc_block_signing_times_seconds_sum 0.12`)、2回目で`+Inf`
+(`vc_block_signing_times_seconds_sum +Inf`)を与えて`VcMetricsTracker.observe`
+を2回呼んだところ、修正前は`{"method":"vc_signed_beacon_blocks_total:success","count":2,"latencyMs":Infinity}`
+が生成され、これを`JSON.stringify`すると`latencyMs`が`null`になることを
+確認した。`entities/internalLinkActivity.ts`の`formatInternalCallEntry`は
+`call.latencyMs !== undefined`でしか判定していないため、`null`は「観測できた」
+側として扱われ、`Math.round(null)`が`0`になることで「平均0ms」という
+実際には観測できていない値を表示してしまう。証明側の`attestationSubmitSumSeconds()`
+や`reth-metrics.ts`の同種の処理はすでに`Number.isFinite`チェックを持っており、
+提案側だけこのチェックが欠けていた非対称は実装上のミスと判断した。
+
+修正は既存の`attestationSubmitSumSeconds`と対称的な`blockSigningTimeSumSeconds`
+関数を新設し、`firstValue()`の戻り値を有限値チェックしてから使うように
+した(`packages/collector/src/adapters/ethereum/vc-metrics.ts`)。修正後に
+同じ再現手順を実行し、`latencyMs`が付与されなくなる(`{"method":"vc_signed_beacon_blocks_total:success","count":2}`)
+ことを確認した。既存の`vc-metrics-malformed.test.ts`の該当テスト(`never
+reports a non-finite block signing sum as a usable duration`ほか)は
+`sumSeconds`が`undefined`になっても`Number.isFinite(result[0].sumSeconds ??
+NaN)`の判定式は変わらず`false`のまま成立するため、テスト側の修正は不要
+だった。`pnpm test`で collector 全件が通ることを確認済み。1行程度の
+軽微な修正と判断し、collectorへの差し戻しはせず自分で修正した(コミットは
+統括が行う)
+
+#### tester申し送り2点目(docコメント陳腐化): 修正した
+
+`packages/collector/src/adapters/ethereum/targets.ts`の
+`beaconStableIdForValidator`のdocコメントが「lighthouse VC の HTTP
+API・メトリクスはノード環境テンプレートで無効のまま」と書いていたが、
+Issue #420で`--metrics`を有効化したため事実と異なっていた。実際には
+メトリクス自体は有効化されたが、VCのカウンタ(`vc_signed_beacon_blocks_total`
+等)が接続先beaconを識別するラベルを一切持たないため、静的解決
+(compose サービス名のノード群キー)を続ける理由自体は変わらない。この
+実態に合わせてコメントを更新した(HTTP API=Keymanager系は引き続き
+未有効化であることも明記)
+
+#### 差分全体のレビュー結果
+
+- **境界の遵守**: フロントの変更はすべて`chain-profiles/ethereum/`配下
+  (`validatorApiMethodLabels.ts`)に閉じており、`vc_signed_*`のような
+  チェーン固有語彙が`packages/shared`や汎用フロントコード(`entities/`の
+  ロジック本体)に漏れていないことを確認した。`entities/internalLinkActivity.ts`
+  やそのテストに生の`vc_signed_*`文字列が現れるのは、既存の`engine_*`
+  文字列と同じ「生の識別子をそのまま持ち、解釈はチェーンプロファイル側が
+  担う」という既存パターン(Issue #274/#285)どおりであり、ロジックの
+  漏れではない
+  - `packages/shared`の型変更は無し(設計どおり)。`docker-compose.yml`の
+    変更も無し(設計どおり)
+- **チェーンプロファイルの独立性**: 新設ファイルはすべてEthereumプロファイル
+  配下に閉じており、他チェーンプロファイルのコードへの分岐追加は無い
+- **collectorのD層実装**: `vc-metrics-client.ts`/`vc-metrics.ts`/
+  `vc-metrics-tracker.ts`/`vc-node-internals.ts`は`reth-metrics-client.ts`等
+  4ファイルと対称的な構造で、取得・パース失敗時は`console.error`に
+  `stableId`と実際のエラー内容を残してから`undefined`を返す設計になって
+  おり、エラーの握りつぶしは無い。`index.ts`の`pollOneValidatorInternals`も
+  `beaconStableIdForValidator`が解決できない場合に配信をスキップしつつ
+  理由をログに残しており、「黙って握りつぶさない」方針を守っている
+- **固定値の扱い**: `VALIDATOR_METRICS_PORT = 5064`・
+  `createFetchVcMetricsClient(timeoutMs = 3000)`はいずれも「同一Docker
+  ネットワーク内のスクレイプで、チェーンの進行状態(稼働時間・ブロック高)に
+  依存しない値」という前提条件がコード上のコメントに明記されており、
+  `reth-metrics-client.ts`と同じ考え方が踏襲されている。「今この瞬間に
+  観測できる状態」に依存する決め打ち値は見当たらなかった
+- **コミットの粒度**: `git log origin/main..review-issue-420`で24コミットを
+  確認した。設計2件・node-env実装1件・collector実装2件(パース/トラッカー
+  新設とD層配線を分離)・frontend実装2件(ラベルテーブル新設とパルス配線を
+  分離)・glossary更新1件・各段階のworklog記録・テスト強化11件(ファイル
+  単位で関心事が分かれている)で、いずれも1コミット1関心事になっていた
+- **ビルド・lint・テスト**: `pnpm lint`/`pnpm build`/`pnpm test`をリポジトリ
+  全体で実行し、すべて成功することを確認した(collector 92ファイル1765件、
+  frontend 252ファイル3136件、shared 6ファイル75件、e2e[unit] 16ファイル
+  185件。上記の2点の修正を反映した状態で再実行して確認)
+- **テストコードの質**: tester担当が追加した11本のテストを確認した。
+  `validator-node-internals-multi.test.ts`は複数VCの取り違え検出・片方の
+  スクレイプ失敗時の縮退・IP無しコンテナの除外・beacon/executionを
+  validator対象と誤認しないことを実際のアサーションで固定しており、
+  タイトルだけで中身が伴わない「意味のないテスト」ではなかった。
+  `internalLinkKinds.glossaryConsistency.test.ts`は`glossary/ethereum/terms/d-internal.yaml`を
+  Issue #285時点の記述に戻すと実際に失敗することをtester自身が確認済みで、
+  コードとYAMLの整合を守る安全網として機能する。`InternalLinkEdgePopover.test.tsx`の
+  該当ブロックも「非表示」の期待値をただ反転させるのではなく、
+  no-activity/stale/freshの3ケースに作り直されており、UIの表示内容
+  そのもの(ラベル・レイテンシの丸め表示)を検証していた
+- **acceptance条件との突き合わせ**: GitHub Issue #420本文・
+  `docs/ARCHITECTURE.md` §7.6.12の設計内容(node-envの`--metrics`追加・
+  `docker-compose.yml`変更なし・collectorの新規4ファイル+配線・
+  `packages/shared`型変更なし・frontendの`showsActivity`反転+ラベル
+  テーブル+2段フォールバック+glossary更新)は、実装のすべてが記載どおりに
+  なっていることを確認した
+
+#### 気になった点(非ブロッキング、フォローアップとして記録)
+
+`packages/e2e`のプロトコル層テスト(`d-layer.test.ts`、Issue #191で新設)には
+`PROTO-D-01`としてbeacon1→reth1のEngine API `nodeLinkActivity`受信を実
+Dockerスタックに対して検証するテストがあるが、今回のvalidator→beaconの
+`nodeLinkActivity`受信については対応するシナリオ(`PROTO-D-02`相当)が
+追加されていない。`docs/ARCHITECTURE.md` §8.1は「D層 E2E(Issue #191)」を
+明示的にプロトコル層に残す理由として「モックではなく実際の collector が
+実環境のメトリクスを正しく解釈できているかはUIのモックデータを使うテストでは
+検証できない」ことを挙げており、今回追加されたVCの`/metrics`スクレイプ経路
+(新しいポート5064・新しいコンテナ選別基準)にも同じ理由が当てはまる。
+collector・frontend各担当が実機で手動確認(一時スクリプト)を行い結果は
+worklogに記録済みだが、これは一度きりの確認であり、将来lighthouseの
+イメージ更新等でメトリクス名が変わった場合に自動で検知する仕組みは
+現状無い。
+
+ただし、これはGitHub Issue #420本文にもARCHITECTURE.md §7.6.12にも
+必須の受け入れ条件として明記されておらず、`pnpm test`(pre-push相当)にも
+含まれない`packages/e2e`の`test:e2e`スクリプト(実Docker使用)の範囲の話
+なので、今回のPRをブロックする理由にはしなかった。chainviz-qaの動作検証
+時に判断材料として共有し、必要であれば別Issueとして
+`d-layer.test.ts`への`PROTO-D-02`相当シナリオ追加を検討することを推奨する
+
+#### 判定
+
+**合格**。上記2点の軽微な修正(`vc-metrics.ts`の有限値チェック追加、
+`targets.ts`のdocコメント更新)を自分(reviewer)で行った。commit・pushは
+行っていない(統括が実施する)。e2eプロトコル層カバレッジの点は
+非ブロッキングの推奨事項としてchainviz-qaへ申し送る
