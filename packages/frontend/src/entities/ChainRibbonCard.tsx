@@ -261,6 +261,25 @@ export function ChainRibbonCard({ data }: NodeProps<ChainRibbonFlowNode>) {
           {t("hashDemo.open")}
         </button>
       </div>
+      {/* Issue #415: 攻撃デモへの常設入口をまとめる専用行（subtitle-row とは
+          別）。UX設計 §6: subtitle-row は既にほぼ余白なく1ボタン分の幅しか
+          無いことを実機確認した上で、行そのものを分けた。`flex-wrap: wrap`
+          にしてあるため、将来 #414（51%攻撃）が同種の入口を必要とした場合は
+          この行にボタンを1つ追加するだけで済む想定（`docs/worklog/issue-415.md`
+          §6）。 */}
+      <div className="chain-ribbon-card__attack-demo-row">
+        <span className="chain-ribbon-card__attack-demo-label">
+          {t("chainRibbon.attackDemoRowLabel")}
+        </span>
+        <button
+          type="button"
+          className="chain-ribbon-card__long-range-demo-open nodrag"
+          onClick={() => sidePanel?.open({ kind: "longRangeAttackDemo" })}
+          data-testid="chain-ribbon-long-range-demo-open"
+        >
+          {t("longRangeDemo.open")}
+        </button>
+      </div>
       {tiles.length === 0 ? (
         <div className="chain-ribbon-card__empty" data-testid="chain-ribbon-empty">
           {t("chainRibbon.empty")}

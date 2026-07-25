@@ -175,6 +175,20 @@ export function ChainRibbonPopover({
       >
         {t("hashDemo.open")}
       </button>
+      {/* Issue #415: ハッシュのしくみデモと同じ文脈導線パターンで、ロング
+          レンジ攻撃デモへも直接飛べるようにする（縦積みのため幅の制約は
+          無い。`docs/worklog/issue-415.md` UX設計 §6）。 */}
+      <button
+        type="button"
+        className="chain-ribbon-popover__long-range-demo-open nodrag"
+        onClick={(event) => {
+          event.stopPropagation();
+          sidePanel?.open({ kind: "longRangeAttackDemo" });
+        }}
+        data-testid={`chain-ribbon-popover-long-range-demo-open-${block.hash}`}
+      >
+        {t("longRangeDemo.open")}
+      </button>
     </PopoverPortal>
   );
 }
