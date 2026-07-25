@@ -11,6 +11,7 @@ import {
   createInitialEclipseAttackDemoState,
   isFullyEclipsed,
   nextHonestSlotIndex,
+  occupancyRatio,
   resetEclipseAttackDemoState,
   visibleChainBlockKeys,
   type EclipseAttackDemoState,
@@ -68,9 +69,13 @@ export function EclipseAttackDemoView() {
   }
 
   const count = attackerCount(state);
-  const percent = Math.round((count / ECLIPSE_DEMO_SLOT_COUNT) * 100);
+  // 導出値はロジック側（eclipseAttackDemo.ts）に集約する。View 側で
+  // count/ECLIPSE_DEMO_SLOT_COUNT から再計算しない（レビュー指摘。固定
+  // 8スロットの現状では結果は同じだが、スロット数が将来変わっても
+  // occupancyRatio/nextHonestSlotIndex の契約に自動的に追従する）。
+  const percent = Math.round(occupancyRatio(state) * 100);
   const eclipsed = isFullyEclipsed(state);
-  const addDisabled = count >= ECLIPSE_DEMO_SLOT_COUNT;
+  const addDisabled = nextHonestSlotIndex(state) === null;
   const chainBlockKeys = visibleChainBlockKeys(state);
 
   return (
