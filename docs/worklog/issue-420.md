@@ -654,3 +654,160 @@ D層実装（`reth-metrics-client.ts` / `reth-metrics.ts` /
   `formatInternalCallList` の区切り表示あたりが手薄になりやすい
 - `packages/shared` の型変更は行っていない（設計判断どおり）
 - glossary (`beacon-api`) の英語訳は chainviz-i18n のレビュー対象
+
+### 2026-07-25 Issue #420 テスト強化（tester）
+
+- 担当: tester
+- ブランチ: 元の `issue-420-validator-activity-visualization` は別worktreeで
+  使用中だったため、`origin/issue-420-validator-activity-visualization`
+  （frontend実装コミット `63f6359`）を起点に `issue-420-tester` という別名
+  ローカルブランチで作業し、`git push origin issue-420-tester:issue-420-validator-activity-visualization`
+  で元のブランチへ反映した（designer・node-env・collector・frontend 各担当と
+  同じ合流パターン）
+- 内容: 実装は変更していない。既存テストを読んだうえで、異常系・境界値の
+  観点で不足していたケースをテストファイル11本（新規9本）に追加した
+
+#### 追加したテストの観点
+
+collector（`packages/collector/src/adapters/ethereum/`）:
+
+1. `vc-metrics-client.test.ts`（新規）: 実装時点でこのファイルに対応する
+   テストが無かったため、`reth-metrics-client.test.ts` と同じ観点をそろえた。
+   非2xx（500 / `--metrics` 未有効化に相当する404）・非2xxではボディを読まない
+   こと・ネットワーク断の例外がそのまま伝わること・タイムアウトでの abort・
+   タイムアウト直前は abort しないこと・成功時にタイマーが解放されること。
+   あわせて `VALIDATOR_METRICS_PORT === 5064` を固定した（`lighthouse-vc.sh`
+   の `--metrics-port` と一致していることの、パッケージをまたぐ結合の確認）
+2. `vc-metrics-malformed.test.ts`（新規）: `parseValidatorDutyCounters` の
+   想定外入力に対する縮退。`status=""`（空ラベル）・`success` 以外の全 status
+   値（`slashable`/`same_data`/`unregistered`）・未知の将来の status 値・
+   status 以外のラベルが同居する場合・カウンタ値が `NaN`/`+Inf`/非数値
+   トークンの場合・カウンタ 0（正当な値として読むこと）・同一 status の
+   重複行・メトリクス名が前方一致するだけの別名（`vc_signed_..._total_extra`）。
+   所要時間側は、histogram の `_bucket` 行を `_sum` と誤認しないこと・`_sum`
+   のみ／`_count` のみの場合・`vc_attestation_service_task_times_seconds` の
+   `task` ラベルが別値／欠落の場合・提案側の所要時間を証明側へ付けないこと・
+   `vc_signing_times_seconds`（signer backend別）を取り違えないこと
+3. `vc-metrics-tracker-edge-cases.test.ts`（新規）: 累積カウンタのリセット
+   （カウンタが 0 に戻る／1→0 の1段リセット／リセット時の所要時間の扱い／
+   リセット直後の次の tick）・所要時間だけが巻き戻った場合に `latencyMs` を
+   省略すること・`latencyMs` が 0 のとき（sum が動かなかった）は省略ではなく
+   0 として出すこと・`sumSeconds` が「前回はあったが今回消えた」場合・ある
+   method が1回の観測から消えた場合にベースラインを保持すること・新しい
+   status が初めて現れたときに累積値をそのまま増分として配信しないこと・
+   `forgetNode` を未知ノード／同一ノードに2回呼んでも壊れないこと
+4. `vc-node-internals-degraded.test.ts`（新規）: HTTP は成功したが本文が
+   Prometheus 形式でない場合（HTMLエラーページ・コメント行のみ・空白のみ）に
+   `undefined` を返し stableId と URL 付きでログすること・`Error` 以外
+   （文字列・`undefined`）が throw された場合・失敗した tick が tracker の
+   ベースラインを汚さないこと（失敗を挟んでも回数の取りこぼしが無いこと）・
+   同一 tracker を複数ノードで共有してもベースラインが混ざらないこと・
+   非 success status がそのまま上位へ渡ること・カウンタ行が後の観測から
+   消えた場合に増分を出さないこと
+5. `validator-node-internals-multi.test.ts`（新規）: 複数 VC が同時に居る
+   ときの配線。validator1→beacon1 / validator2→beacon2 と node群ごとに
+   正しく対応付くこと（取り違えの検出）・一方の VC のスクレイプが失敗しても
+   他方の配信が続くこと・IP が取れない VC はそもそもスクレイプ対象に
+   ならないこと・beacon/execution コンテナを validator の対象と誤認しないこと
+
+frontend（`packages/frontend/src/`）:
+
+6. `chain-profiles/ethereum/validatorApiMethodLabels.fallback.test.ts`（新規）:
+   前方一致の境界（status 接尾辞なしの素のファミリー名・途中で切れた名前・
+   大文字・先頭空白・接尾辞が長い場合）と、スコープ外メトリクス
+   （`vc_signed_aggregates_total`・sync committee 系・`vc_validators_*_count`）が
+   `undefined`（生名フォールバック）になること。加えてラベルテーブル自体の
+   整合（ja/en が空でない・接頭辞の重複が無い・接頭辞同士が包含関係に
+   ない＝並び順に依存しない）
+7. `chain-profiles/ethereum/methodLabelNamespaces.test.ts`（新規）: Engine API
+   テーブルと validator テーブルの接頭辞が互いに包含関係を持たないこと、
+   一方の接頭辞が他方の `describe*` では引けないこと、両テーブルの ja/en
+   ラベル文言が重複しないこと。`formatInternalCallEntry` の2段フォールバックが
+   依拠している「名前空間が重ならない」前提（§7.6.12）を、テーブルを
+   増やしたときに崩れたら気付けるようにするための不変条件テスト
+8. `entities/internalLinkActivity.mixedMethods.test.ts`（新規）: 2段
+   フォールバックが両方外れる場合（スコープ外メトリクス・空文字 method）・
+   分類ラベルが無くても `latencyMs` の併記は残ること・`latencyMs` が 0 /
+   0.4 / 0.5 / 1234.5 の丸め・`count` が 0 の場合・非 success status でも
+   分類ラベルが付くこと・提案と証明が同時に届いた場合の区切り表示（ja/en）・
+   Engine API と validator の method が混在した一覧・並び順の保持
+9. `entities/InternalLinkEdgePopover.validatorActivity.test.tsx`（新規）:
+   validator エッジのポップオーバーで、提案と証明の2件が1本の文字列として
+   表示されること・英語表示・非 success status の表示・未知メトリクスの
+   生名表示・鮮度ちょうど境界（`INTERNAL_LINK_FRESHNESS_MS`）で内訳が
+   出続けること・境界+1msで「最近の呼び出しはありません」に切り替わること・
+   `observedAt` がわずかに未来（collector と frontend の時計差）でも
+   stale 扱いにしないこと・役割不明の組では Issue #420 以降も活動セクションを
+   出さないこと
+10. `entities/useNodeLinkActivityPulses.validatorDirection.test.tsx`（新規）:
+    validator→beacon の活動イベントが validator が source 側の常設エッジに
+    だけ乗ること・向きが逆（beacon→validator）のイベントはダングリング
+    ガードで落ちること・同じ beacon を端点に持つ beacon→reth エッジへ
+    漏れないこと・1 tick に Engine API と validator の両方が届いてもそれぞれ
+    自分のエッジに乗ること・パルス消滅後も直近観測が残ること。既存の
+    フックのテストは Engine API 方向（beacon→reth）だけを扱っていたため、
+    「駆動する側」が入れ替わる validator 方向の取り違えが素通りしていた
+11. `chain-profiles/ethereum/internalLinkKinds.glossaryConsistency.test.ts`
+    （新規）: `showsActivity` と用語集 `beacon-api` の定義文の主張が食い違わ
+    ないことを固定（コードと YAML が別ファイルなので、片方だけ Issue #285
+    時点の記述に戻ると「パルスが流れているのに流れないと説明する」矛盾が
+    静かに残る）。実際に `glossary/ethereum/terms/d-internal.yaml` を main の
+    版に戻すとこのテストが落ちることを確認済み
+
+#### 追加テストが実際に退行を検出できることの確認
+
+CLAUDE.md の「回帰テストは意図的に壊した状態で検出できることを確認する」に
+従い、実装を一時的に改変して新規テストが落ちることを確認したうえで元に
+戻した（改変は commit していない）:
+
+- `vc-metrics.ts` の `if (!status) continue;` を `status === undefined` 判定に、
+  `Number.isFinite(sample.value)` ガードを削除 → 空 status・NaN・+Inf の
+  ケースが失敗
+- `vc-metrics-tracker.ts` の `deltaCount <= 0` を `deltaCount < 0` に、
+  `deltaSumSeconds >= 0` を `!== undefined` に → リセット系4件・所要時間の
+  巻き戻し1件が失敗
+- `index.ts` の `pollOneValidatorInternals` の `fromNodeId`/`toNodeId` を
+  入れ替え → 新規の複数 validator テスト2件＋既存の配線テスト2件が失敗
+- `glossary/ethereum/terms/d-internal.yaml` を main の版へ戻す →
+  用語集整合テスト1件が失敗
+
+#### 実装側で見つかった気になる点（tester では直していない）
+
+いずれも実装の変更が必要なので、担当への申し送りとして記録する。
+
+1. **`vc-metrics.ts` のブロック提案側の所要時間に有限値チェックが無い**
+   （軽微・実機では起こらない想定）。`attestationSubmitSumSeconds()` は
+   `Number.isFinite(sample.value)` を確認しているが、ブロック提案側は
+   `firstValue(parsed, "vc_block_signing_times_seconds_sum")` の戻り値を
+   そのまま `sumSeconds` に入れている。`reth-metrics.ts` は
+   `Number.isFinite(sumSeconds)` を確認してから付けており、そちらとも
+   非対称。再現手順: `vc_block_signing_times_seconds_sum` が `+Inf` の
+   出力を2回連続でスクレイプさせる（1回目は有限値、2回目が `+Inf`）と、
+   `VcMetricsTracker` の差分が `Infinity` になり `latencyMs: Infinity` が
+   `InternalCallStats` に載る。`JSON.stringify` で `null` になるため
+   `latencyMs?: number` の契約から外れた値がフロントへ届く（フロント側は
+   `null !== undefined` で「観測できた」と判断し `平均 0 ms` と表示する）。
+   `NaN` の場合は差分が `NaN` になり `>= 0` を満たさないので `latencyMs` は
+   付かず、実害は無い。「NaN/+Inf でも使える所要時間として扱わない」ことは
+   `vc-metrics-malformed.test.ts` の有限性チェックで固定してあるので、
+   collector 担当が `Number.isFinite` ガードを足してもテストはそのまま通る
+2. **`targets.ts` の `beaconStableIdForValidator` の doc コメントが陳腐化**
+   （docs 同期の指摘）。「lighthouse VC の HTTP API・メトリクスはノード環境
+   テンプレートで無効のまま」と書かれているが、Issue #420 で `--metrics` を
+   有効化したため事実と異なる。静的解決を続ける理由自体（メトリクスには
+   接続先 beacon の情報が無い）は変わらないので、括弧内の根拠の記述だけを
+   更新すれば足りる
+3. **鮮度内で `calls: []` の観測が届いた場合の表示**（実害なし・参考）。
+   collector は `calls.length === 0` の場合は配信しないため到達しないが、
+   `InternalLinkEdgePopover` は「直近{N}秒の呼び出し」の見出しを出しつつ
+   内訳が空文字になる。到達経路が無いのでテストは書かず、記録に留める
+
+#### 次の担当（reviewer/QA）への申し送り
+
+- テストのみの変更で、`packages/*` の実装コード・`glossary/`・`profiles/` は
+  変更していない（`docs/worklog/issue-420.md` のみ docs 側の変更）
+- `pnpm lint` / `pnpm build` / `pnpm test` はすべて通る状態
+  （collector 92ファイル1765件、frontend 252ファイル3136件、shared 6ファイル
+  75件、e2e 16ファイル185件）
+- 上記「気になる点」1・2 は実装の変更を伴うため、必要と判断されれば
+  collector 担当へ差し戻すこと（tester 側では実装を変更していない）
