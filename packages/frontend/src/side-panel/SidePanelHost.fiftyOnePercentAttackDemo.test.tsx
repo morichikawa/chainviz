@@ -88,6 +88,30 @@ describe("SidePanelHost: fiftyOnePercentAttackDemo kind (Issue #414)", () => {
     expect(screen.getAllByTestId("attack51-demo").length).toBe(1);
   });
 
+  it("starts fresh after the panel is closed with the close button and reopened", () => {
+    // 「パネルは開くたびに初期状態から始まる」方針(ARCHITECTURE.md §17.5)の
+    // うち、kind 切り替えではなく閉じる → 再度開く経路の確認
+    // (Issue #414 のテスト強化)。
+    renderHost();
+    fireEvent.click(screen.getByTestId("trigger-attack51-demo"));
+    for (const id of [1, 2, 3, 4]) {
+      fireEvent.click(screen.getByTestId(`attack51-demo-validator-${id}`));
+    }
+    expect(screen.getByTestId("attack51-demo-branch-b-badge").textContent).toBe("正準");
+
+    fireEvent.click(screen.getByTestId("side-panel-close"));
+    expect(screen.queryByTestId("side-panel")).toBeNull();
+    expect(screen.queryByTestId("attack51-demo")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("trigger-attack51-demo"));
+    expect(screen.getByTestId("attack51-demo-branch-a-weight").textContent).toBe("7");
+    expect(screen.getByTestId("attack51-demo-branch-b-weight").textContent).toBe("0");
+    expect(screen.getByTestId("attack51-demo-branch-a-badge").textContent).toBe("正準");
+    expect(screen.getByTestId("attack51-demo-margin-hint").textContent).toBe(
+      "枝Bが逆転するまであと4人",
+    );
+  });
+
   it("starts fresh each time it is reopened (state does not leak across kind switches)", () => {
     renderHost();
     fireEvent.click(screen.getByTestId("trigger-attack51-demo"));
