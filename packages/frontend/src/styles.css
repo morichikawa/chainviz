@@ -3858,6 +3858,7 @@ button.mempool-panel__row:hover {
   row-gap: 10px;
   align-items: start;
   padding: 4px 2px;
+  width: max-content;
 }
 
 .long-range-demo__row-label {
