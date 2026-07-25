@@ -21,13 +21,13 @@ describe("describeInternalLinkKind (consensus -> execution, Engine API)", () => 
   });
 });
 
-describe("describeInternalLinkKind (validator -> consensus, Beacon API, Issue #285)", () => {
-  it("resolves the Beacon API heading/glossary/description with activity hidden", () => {
+describe("describeInternalLinkKind (validator -> consensus, Beacon API, Issue #285/#420)", () => {
+  it("resolves the Beacon API heading/glossary/description with activity shown (Issue #420: VC metrics observation added)", () => {
     const kind = describeInternalLinkKind("validator", "consensus");
     expect(kind.headingKey).toBe("edge.internalLinkValidator");
     expect(kind.headingGlossaryKey).toBe("beacon-api");
     expect(kind.description).toEqual({ kind: "flat", textKey: "internalEdge.validatorPair" });
-    expect(kind.showsActivity).toBe(false);
+    expect(kind.showsActivity).toBe(true);
   });
 });
 

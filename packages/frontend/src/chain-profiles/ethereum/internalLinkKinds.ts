@@ -50,10 +50,11 @@ export interface InternalLinkKindDescriptor {
   /** エッジポップオーバーの説明文。 */
   description: InternalLinkDescription;
   /**
-   * 「直近の呼び出し」セクションを表示するか。observed 経路が無い組
-   * （validator→consensus）・役割不明の組では false（ARCHITECTURE.md
-   * §7.6.11「観測していないだけで『最近の呼び出しはありません』を常時
-   * 出すと誤情報になるため、セクションごと隠す」）。
+   * 「直近の呼び出し」セクションを表示するか。役割不明の組では false
+   * のまま（ARCHITECTURE.md §7.6.11「観測していないだけで『最近の呼び出しは
+   * ありません』を常時出すと誤情報になるため、セクションごと隠す」）。
+   * validator→consensus は Issue #420（VC 自身の Prometheus メトリクスを
+   * スクレイプする観測経路が新設されたこと、§7.6.12）により true に転換した。
    */
   showsActivity: boolean;
   /** 駆動する側の InfraPopover に出す行（このモジュールの外では未使用。§7.6.11参照）。 */
@@ -81,7 +82,7 @@ const VALIDATOR_TO_CONSENSUS: InternalLinkKindDescriptor = {
   headingKey: "edge.internalLinkValidator",
   headingGlossaryKey: "beacon-api",
   description: { kind: "flat", textKey: "internalEdge.validatorPair" },
-  showsActivity: false,
+  showsActivity: true,
   drivingField: { labelKey: "field.connectsToBeacon", glossaryKey: "beacon-api" },
   drivenField: { labelKey: "field.validatorClient", glossaryKey: "validator" },
 };

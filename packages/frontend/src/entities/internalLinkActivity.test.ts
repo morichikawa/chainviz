@@ -44,6 +44,40 @@ describe("formatInternalCallEntry", () => {
       "engine_getPayloadV4 ×1 (ブロック構築の依頼)",
     );
   });
+
+  it("falls back to the validator API method table (Issue #420) when the Engine API table has no match", () => {
+    const call: InternalCallStats = {
+      method: "vc_signed_beacon_blocks_total:success",
+      count: 3,
+    };
+    expect(formatInternalCallEntry(call, "ja", tJa)).toBe(
+      "vc_signed_beacon_blocks_total:success ×3 (ブロック提案の署名)",
+    );
+    expect(formatInternalCallEntry(call, "en", tEn)).toBe(
+      "vc_signed_beacon_blocks_total:success ×3 (Sign proposed block)",
+    );
+  });
+
+  it("classifies the attestation counter regardless of its status label suffix and includes latency", () => {
+    const call: InternalCallStats = {
+      method: "vc_signed_attestations_total:success",
+      count: 1,
+      latencyMs: 1.42,
+    };
+    expect(formatInternalCallEntry(call, "ja", tJa)).toBe(
+      "vc_signed_attestations_total:success ×1 (証明（attestation）の署名) (平均 1 ms)",
+    );
+  });
+
+  it("shows the raw method name with no classification suffix for an unmapped validator metric", () => {
+    const call: InternalCallStats = {
+      method: "vc_signing_times_seconds:local_keystore",
+      count: 1,
+    };
+    expect(formatInternalCallEntry(call, "ja", tJa)).toBe(
+      "vc_signing_times_seconds:local_keystore ×1",
+    );
+  });
 });
 
 describe("formatInternalCallList", () => {
