@@ -316,3 +316,99 @@ Issue #412（4つの独立した機能への分割）とは異なり、本Issue�
 の活動パルスを流す」という単一の成果に向けた分担であり、Issue #285 や
 #187/#274 と同じ「1 Issue・複数パッケージ」の形が適切。依存関係・並行
 着手の可否は §7.6.12 の「作業分担・Issue の粒度」に記載した
+
+### 2026-07-25 Issue #420 node-env実装（node-env担当）
+
+- 担当: node-env
+- ブランチ: 元の `issue-420-validator-activity-visualization` は別worktree
+  （designer作業時と同じ理由で）で使用中だったため、`origin/issue-420-
+  validator-activity-visualization`（コミット `0c8a0e7`）を起点に
+  `issue-420-nodeenv-work` という別名ローカルブランチで作業した。統括が
+  commit・push を元のブランチへ反映すること
+
+#### 設計メモ（着手前）
+
+- 変更は `profiles/ethereum/scripts/lighthouse-vc.sh` の `exec lighthouse vc`
+  呼び出しに `--metrics --metrics-address 0.0.0.0 --metrics-port 5064` を
+  追加するのみ。`reth-node.sh` の `--metrics 0.0.0.0:9001` 追加（Issue #185）
+  と対称的な変更であり、新規のファイル構成・関数構成は発生しない
+- `docker-compose.yml` は変更しない。設計メモのとおり、reth の 9001 番も
+  `ports:` に列挙されていないことを実際のcompose定義で確認し、
+  validator1/validator2 サービス定義にも現状 `ports:` が無いことを確認した
+  （既存のパターンをそのまま踏襲すれば追加作業は不要という判断の裏付け）
+
+#### 実施内容
+
+1. `lighthouse-vc.sh` の `exec lighthouse vc` に `--metrics` /
+   `--metrics-address 0.0.0.0` / `--metrics-port 5064` を追加し、reth と
+   同じ理由（既定の `--metrics-address` が `127.0.0.1` でコンテナ外から
+   届かないため）を示すコメントを付けた
+2. `docker-compose.yml` は変更なし（上記設計メモのとおり確認のみ行った）
+3. 実機での動作確認: 稼働状況を確認したところ `profiles/ethereum` の
+   コンテナ群（`chainviz-ethereum-*`）は全て `Exited` 状態（他作業による
+   ものと思われるが直前3分以内に停止済み、稼働中ではなかった）だったため、
+   安全と判断し `docker compose up -d` で起動し直した（`down -v` は
+   行わず、既存の genesis / validator 鍵ボリュームをそのまま再利用。
+   `--metrics` の追加はスクリプトのbindマウント経由で反映されるため
+   イメージの再ビルドは不要）。確認後は `docker compose down`
+   （`-v` なし）で元の停止状態に戻し、ボリューム・genesisは破棄していない
+4. 起動確認: 全コンテナが `Up` になり、beacon の
+   `GET /eth/v1/beacon/headers/head` でslotが進行していること
+   （確認時点でslot 6まで到達）、validator1のログに
+   `Successfully published block` / `Successfully published attestations`
+   が出ていることを確認した。二重署名リスクは、既存の稼働環境を複製せず
+   単一のコンテナ群として起動し直しただけなので発生していない
+
+#### 実測結果: lighthouse VC `/metrics` の実際の出力（設計メモの「暫定」を確定）
+
+`docker inspect` で確認したイメージバージョンは `Lighthouse
+v8.2.0-120c3c6`（`sigp/lighthouse:latest`、確認日時点のタグ実体）。
+`curl` はVC/beaconイメージ内に無かったため、Dockerブリッジネットワーク
+（`172.28.0.0/16`）がホストから直接到達可能なことを利用し、ホストから
+`curl http://<コンテナIP>:5064/metrics` で実際の出力を確認した
+（`validator1` のコンテナIPは `172.28.0.2`、`validator2` は `172.28.0.4`。
+`reth1`/`beacon1`のような固定IP指定がvalidatorサービスには無いため
+DHCP割当。collector実装時は`targets.ts`がDocker観測で得たIPを使うため
+この点は影響しない）。
+
+設計メモ・`docs/ARCHITECTURE.md` §7.6.12 に書かれた「暫定」のメトリクス名・
+ラベル・型は、**すべて実機の出力と一致することを確認した**（`stable`
+ブランチのソース確認と実際のDockerイメージの出力に差異は無かった）:
+
+- `vc_signed_beacon_blocks_total{status="success"} 4`
+  （`# TYPE ... counter`）。`status`ラベルの値は稼働中の観測範囲では
+  `"success"`のみ出現（正常運用のため`slashable`等は未出現。ラベルの
+  取りうる値自体はソースコード上の定義であり実測不要と判断）
+- `vc_signed_attestations_total{status="success"} 4`（同上、counter）
+- `vc_block_signing_times_seconds`（`# TYPE ... histogram`、ラベル無し。
+  `_sum 0.1207...` / `_count 4`）。設計メモの「TYPE判定はhistogramも
+  許容するよう緩めること」という注記どおり、実機でも`summary`ではなく
+  `histogram`だった
+- `vc_attestation_service_task_times_seconds{task="attestations_http_post"}`
+  が実在（`_sum`/`_count`とも複数task値の中の1つとして確認）。設計メモの
+  「証明の提出HTTP呼び出しの所要時間」という位置づけどおり
+- `vc_signing_times_seconds{type="local_keystore", le=...}`（histogram）に
+  職務種別ラベルが無く、signer backend種別（`type="local_keystore"`）のみ
+  であることも実機で確認した（設計メモの「対応付け不要」の根拠の裏付け）
+- `vc_signed_beacon_blocks_total`/`vc_signed_attestations_total`いずれも
+  validator_index・公開鍵のラベルを一切持たないことを実機出力で確認した
+  （設計メモの「validator_index→VCコンテナの対応付けは不要」という結論を
+  実機でも裏付け）
+- validator1・validator2 それぞれの`/metrics`が別々のコンテナから
+  個別に取得でき、カウント値も別々（validator1:
+  `vc_signed_beacon_blocks_total=1`/`vc_signed_attestations_total=7`、
+  validator2:同`=1`/`=7`は起動タイミング依存の一例であり固定値ではない）
+  であることを確認した。これはcollectorが各VCコンテナへ個別にGETする
+  設計（§7.6.12）が実機でもそのまま機能することの裏付け
+
+#### collector実装担当への申し送り
+
+- 上記のとおり、設計メモに書かれたメトリクス名・ラベル・型はすべて実機で
+  確認済みなので、そのまま実装を進めてよい（追加のブランチ切り直し・
+  再調査は不要）
+- `vc_signing_times_seconds`と`vc_block_signing_times_seconds`は別物
+  （前者はsigner backend別、後者はブロック提案の署名専用）。設計メモの
+  区別を取り違えないこと
+- `curl`/`wget`がVC/reth/beaconいずれのイメージにも入っていないため、
+  コンテナ内から`docker exec`で`/metrics`を叩いて動作確認したい場合は
+  ホスト側から直接IPを叩く方法（本記録の実施内容参照）を使うこと
