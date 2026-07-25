@@ -538,3 +538,119 @@ D層実装（`reth-metrics-client.ts` / `reth-metrics.ts` /
   「取れなければ省略してよい」という想定より高い確率で観測できた）が、
   署名処理そのものではなく HTTP submit 呼び出し全体の近似値である点は
   UI文言・用語集で誤解を招かないよう注意
+
+### 2026-07-25 Issue #420 frontend実装（frontend担当）
+
+- 担当: frontend
+- ブランチ: 元の `issue-420-validator-activity-visualization` は別worktree
+  で使用中だったため、`origin/issue-420-validator-activity-visualization`
+  （collector実装コミット `fe897bc`）を起点に
+  `issue-420-validator-activity-visualization-frontend` という別名ローカル
+  ブランチで作業した。統括が commit・push を元のブランチへ反映すること
+
+#### 設計メモ（着手前）
+
+`docs/ARCHITECTURE.md` §7.6.12「フロントエンドの変更」に記載済みの設計を
+そのまま実装する。変更対象は4箇所:
+
+1. `internalLinkKinds.ts` の `VALIDATOR_TO_CONSENSUS.showsActivity` を
+   `false` → `true` に変更する（`InternalLinkEdgePopover` は
+   `describeInternalLinkKind().showsActivity` を見て「直近の呼び出し」
+   セクションの表示可否を判定しているため、この1行の変更だけでUIの
+   表示条件が反転する。コンポーネント自体・`internalLinkEdgesToFlowEdges`
+   等のデータ変換は無変更のまま動く設計は§7.6.11の時点で先取りされている）
+2. `nodeInternals.ts` の `ENGINE_API_METHOD_LABELS`/
+   `describeEngineApiMethod` と同型の
+   `validatorApiMethodLabels.ts`（`VALIDATOR_API_METHOD_LABELS`/
+   `describeValidatorApiMethod`）を新設する。前方一致の接頭辞は
+   メトリクスファミリー名まで（`vc_signed_beacon_blocks_total` /
+   `vc_signed_attestations_total`）に留め、`status` ラベル値
+   （`:success` 等）が変わってもマッチする設計にする
+3. `internalLinkActivity.ts` の `formatInternalCallEntry` を
+   `describeEngineApiMethod(call.method) ?? describeValidatorApiMethod(call.method)`
+   の2段フォールバックに変更する。両テーブルの接頭辞
+   （`engine_*` / `vc_signed_*`）は名前空間が重ならないため誤マッチの
+   心配はない
+4. `glossary/ethereum/terms/d-internal.yaml` の `beacon-api` 定義文
+   （ja/en）を更新する。「呼び出しの観測経路が無いためパルスは流れない」
+   という一文を削除し、`engine-api` の定義文と同じ文体（パルス1本＝
+   観測間隔内のハートビート、内訳はホバーで確認）で「VC 自身の
+   Prometheus メトリクスから観測したパルスが流れる」旨に書き換える
+
+#### 実施内容
+
+1. 上記4点をそのまま実装した。`i18n` の新規キー追加は不要（設計メモの
+   とおり、`internalEdge.recentCalls`/`noRecentCalls`/`latency` は
+   メソッド非依存の汎用文言であり Issue #285 実装時点で既に存在する）
+2. テスト:
+   - `validatorApiMethodLabels.test.ts`（新設）: `nodeInternals.test.ts`
+     と同型のケース（前方一致・status違いでもマッチ・未知メソッドは
+     undefined・空文字）
+   - `internalLinkKinds.test.ts`: `describeInternalLinkKind("validator",
+     "consensus")` の期待値を `showsActivity: false` → `true` に更新
+   - `internalLinkActivity.test.ts`: 2段フォールバックのケース
+     （`vc_signed_beacon_blocks_total:success`/`vc_signed_attestations_total:success`
+     が分類ラベル付きで表示されること、レイテンシ併記、未知の
+     validator系メソッド `vc_signing_times_seconds:local_keystore` は
+     生名のみで表示されること）を追加
+   - `InternalLinkEdgePopover.test.tsx`: 「修正前の状態」の確認を兼ねて、
+     まず既存コードのまま `pnpm test` を実行し、
+     `showsActivity: false` を前提にした既存テスト
+     `hides the recent-calls section entirely, even when lastActivity is
+     fresh (no observed call path)` が意図通り**失敗する**ことを確認して
+     から実装に着手した（修正前は「パルスが流れない」ことをテスト自身が
+     固定していたことの実地確認）。実装後はこのテストを
+     「no-recent-calls fallback（lastActivity無し）」
+     「stale時のfallback」「fresh時の内訳表示（`vc_signed_beacon_blocks_total`
+     を分類ラベル・レイテンシ付きで表示）」の3ケースに置き換えた
+     （既存の consensus→execution 側のテスト構成と対称にした）
+
+#### 実機での動作確認
+
+既存の `profiles/ethereum` コンテナは全て存在しない状態（`docker ps -a` が
+空）だったため、複製起動の心配なく安全と判断し `docker compose up -d` で
+新規に環境を起動した（新規 genesis での起動になる）。確認手順:
+
+1. `pnpm --filter @chainviz/collector build` 済みの `dist/index.js` を
+   `CHAINVIZ_COLLECTOR_PORT=4123`（他プロセスと衝突しない任意ポート）で
+   直接起動
+2. Node.js 組み込みの `WebSocket` を使った一時スクリプト（コミット対象外、
+   確認後削除）で `ws://127.0.0.1:4123` に接続し、`diff` メッセージ内の
+   `nodeLinkActivity` イベントを観測
+3. 実際に以下の `nodeLinkActivity` が届くことを確認した（collector実装
+   担当の実測ログと一致。`fromNodeId` が validator、`toNodeId` が
+   対応する beacon）:
+   ```
+   {"fromNodeId":"chainviz-ethereum/validator2","toNodeId":"chainviz-ethereum/beacon2",
+    "calls":[{"method":"vc_signed_beacon_blocks_total:success","count":1,"latencyMs":13.4},
+              {"method":"vc_signed_attestations_total:success","count":1,"latencyMs":1.16}]}
+   {"fromNodeId":"chainviz-ethereum/validator1","toNodeId":"chainviz-ethereum/beacon1",
+    "calls":[{"method":"vc_signed_attestations_total:success","count":1,"latencyMs":1.16}]}
+   ```
+4. ビルド済み `dist/chain-profiles/ethereum/validatorApiMethodLabels.js` を
+   直接importし、上記で実際に観測された生の `method` 文字列
+   （`"vc_signed_beacon_blocks_total:success"`/
+   `"vc_signed_attestations_total:success"`）をそのまま渡して
+   `describeValidatorApiMethod()` が期待どおりのラベル
+   （「ブロック提案の署名」/「証明（attestation）の署名」）を返すことを
+   確認した。これにより「実際に collector が配信する生値」と「frontend の
+   分類ロジックが処理できる値」が一致していることを実機ベースで裏付けた
+   （ユニットテストで使っている文字列がフィクションでないことの確認）
+5. 確認後は接続スクリプト・collectorプロセスを停止し、
+   `docker compose down`（`-v` なし）でコンテナ・ネットワークを削除した。
+   起動前は `docker ps -a` が完全に空だったため、`down` 後も同じ空の状態に
+   戻っている（他作業への影響なし）
+
+#### 次の担当（tester/reviewer）への申し送り
+
+- `showsActivity` の反転により、`InternalLinkEdgePopover.test.tsx` の
+  validator→consensus 用テストブロックを既存の consensus→execution
+  ブロックと対称な構成（no-activity fallback / stale fallback / fresh
+  breakdown の3ケース）に作り替えた。異常系・境界値の強化候補としては、
+  `status` ラベルが `success` 以外（`slashable`/`same_data`/
+  `unregistered`）の場合でも `describeValidatorApiMethod` が前方一致で
+  正しく分類できることの追加確認や、`vc_signed_beacon_blocks_total` と
+  `vc_signed_attestations_total` が同時に届いた場合の
+  `formatInternalCallList` の区切り表示あたりが手薄になりやすい
+- `packages/shared` の型変更は行っていない（設計判断どおり）
+- glossary (`beacon-api`) の英語訳は chainviz-i18n のレビュー対象
