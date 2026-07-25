@@ -791,6 +791,18 @@ export const messages = {
     ja: "同じ番号でも中身が違う、ライバルのブロックです",
     en: "Same number, different contents — these blocks are rivals",
   },
+  // QAレビュー申し送り（差し戻し時に併せて対応、任意改善）:
+  // 共有区間（#0〜{lastShared}）を明示する手がかりが無かった点への対応。
+  "longRangeDemo.sharedNote": {
+    ja: "#0〜#{lastShared}は正規のチェーンと攻撃者の履歴で共有されている区間です（ここまでは同じ内容）。",
+    en: "Blocks #0–#{lastShared} are shared between the canonical chain and the attacker's history (identical up to this point).",
+  },
+  // QAレビュー申し送り（差し戻し時に併せて対応、任意改善）:
+  // 破線コネクタが実際のリンク切れではないことを説明する要素が無かった点への対応。
+  "longRangeDemo.forkLinkNote": {
+    ja: "破線は実際にハッシュの連結が切れていることを意味しません。ここから履歴が分かれたことを示す目印です。",
+    en: "The dashed line doesn't mean the hash chain is actually broken — it just marks where the history diverges.",
+  },
   "longRangeDemo.checkpointHeading": {
     ja: "確定(finality)はどこまで進んでいますか？",
     en: "How far has finality progressed?",

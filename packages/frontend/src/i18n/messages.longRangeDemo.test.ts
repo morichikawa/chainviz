@@ -19,6 +19,7 @@ const PLACEHOLDER_KEYS: Record<string, readonly string[]> = {
   "longRangeDemo.verdict.naiveResult": ["attackerMax"],
   "longRangeDemo.verdict.protected": ["divergeAt"],
   "longRangeDemo.verdict.vulnerable": ["divergeAt"],
+  "longRangeDemo.sharedNote": ["lastShared"],
 };
 
 function placeholders(text: string): string[] {
@@ -91,6 +92,17 @@ describe("longRangeDemo dynamic values substitute cleanly", () => {
         expect(placeholders(filled)).toEqual([]);
         expect(filled).toContain(String(DIVERGE_AT));
       }
+    },
+  );
+
+  it.each(["ja", "en"] as const)(
+    "leaves no unresolved placeholder in the shared-section note (%s)",
+    (lang) => {
+      const filled = format(translate("longRangeDemo.sharedNote", lang), {
+        lastShared: String(DIVERGE_AT - 1),
+      });
+      expect(placeholders(filled)).toEqual([]);
+      expect(filled).toContain(String(DIVERGE_AT - 1));
     },
   );
 

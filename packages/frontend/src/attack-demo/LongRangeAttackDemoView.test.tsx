@@ -66,6 +66,29 @@ describe("LongRangeAttackDemoView: pristine initial state (UX設計 §4 操作�
   });
 });
 
+describe("LongRangeAttackDemoView: diagram notes (QAレビュー申し送りの任意改善)", () => {
+  it("explains the shared section with the correct last shared block number", () => {
+    renderView();
+    const text = screen.getByTestId("long-range-demo-shared-note").textContent ?? "";
+    // divergeAt の1つ前が共有区間の末尾（決め打ちではなく実データから導く）。
+    expect(text).toContain(`#${DIVERGE_AT - 1}`);
+    expect(text).not.toContain("{lastShared}");
+  });
+
+  it("explains that the dashed connector marks a fork, not a broken hash link", () => {
+    renderView();
+    expect(screen.getByTestId("long-range-demo-fork-link-note")).toBeTruthy();
+  });
+
+  it("keeps the diagram notes stable across checkpoint changes and reset", () => {
+    renderView();
+    const before = screen.getByTestId("long-range-demo-shared-note").textContent;
+    fireEvent.click(screen.getByTestId(`long-range-demo-checkpoint-${DIVERGE_AT}`));
+    fireEvent.click(screen.getByTestId("long-range-demo-reset"));
+    expect(screen.getByTestId("long-range-demo-shared-note").textContent).toBe(before);
+  });
+});
+
 describe("LongRangeAttackDemoView: moving the finality checkpoint", () => {
   it("flips the finality verdict from vulnerable to protected exactly at the divergence point", () => {
     renderView();

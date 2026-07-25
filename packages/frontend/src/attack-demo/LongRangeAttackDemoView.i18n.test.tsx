@@ -42,6 +42,12 @@ describe("LongRangeAttackDemoView: ja", () => {
     expect(screen.getByText("確定(finality)を考慮すると")).toBeTruthy();
     expect(screen.getByText("最初に戻す")).toBeTruthy();
     expect(screen.getByText("#0まで確定")).toBeTruthy();
+    expect(
+      screen.getByTestId("long-range-demo-shared-note").textContent,
+    ).toContain("#0〜#1");
+    expect(screen.getByTestId("long-range-demo-fork-link-note").textContent).toContain(
+      "実際にハッシュの連結が切れていることを意味しません",
+    );
   });
 });
 

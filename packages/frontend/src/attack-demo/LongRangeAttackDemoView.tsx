@@ -140,6 +140,15 @@ export function LongRangeAttackDemoView() {
             />
           </div>
         </div>
+        {/* QAレビュー申し送り（任意改善、差し戻し対応と併せて実施）:
+            共有区間・破線コネクタの意味を説明する手がかりが画面上に無かった
+            点への対応。図のすぐ下に短い注記を2本添える。 */}
+        <p className="long-range-demo__diagram-note" data-testid="long-range-demo-shared-note">
+          {format(t("longRangeDemo.sharedNote"), { lastShared: String(DIVERGE_AT - 1) })}
+        </p>
+        <p className="long-range-demo__diagram-note" data-testid="long-range-demo-fork-link-note">
+          {t("longRangeDemo.forkLinkNote")}
+        </p>
       </div>
       <div className="long-range-demo__verdict" data-testid="long-range-demo-verdict">
         <p className="long-range-demo__verdict-line">
