@@ -139,6 +139,39 @@ describe("SidePanelHost: longRangeAttackDemo kind (Issue #415)", () => {
     expect(screen.getByTestId("side-panel")).toBeTruthy();
   });
 
+  it("keeps the dialog's accessible name as plain text (no anchor markup leaking into aria-label)", () => {
+    renderHost();
+    fireEvent.click(screen.getByTestId("trigger-long-range-demo"));
+    // title は用語アンカーで <span> に分割されるが、ariaLabel は
+    // スクリーンリーダー向けのプレーンテキストのままであること。
+    expect(screen.getByTestId("side-panel").getAttribute("aria-label")).toBe(
+      "ロングレンジ攻撃のしくみ",
+    );
+  });
+
+  it("starts fresh after being closed and reopened (× ボタン経由)", () => {
+    renderHost();
+    fireEvent.click(screen.getByTestId("trigger-long-range-demo"));
+    fireEvent.click(screen.getByTestId("long-range-demo-checkpoint-2"));
+    expect(
+      screen.getByTestId("long-range-demo-checkpoint-2").getAttribute("aria-pressed"),
+    ).toBe("true");
+
+    fireEvent.click(screen.getByTestId("side-panel-close"));
+    expect(screen.queryByTestId("side-panel")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("trigger-long-range-demo"));
+    expect(
+      screen.getByTestId("long-range-demo-checkpoint-0").getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(
+      screen.getByTestId("long-range-demo-checkpoint-2").getAttribute("aria-pressed"),
+    ).toBe("false");
+    expect(screen.getByTestId("long-range-demo-verdict-finality").textContent).toContain(
+      "防げません",
+    );
+  });
+
   it("starts fresh each time it is reopened (checkpoint does not leak across kind switches)", () => {
     renderHost();
     fireEvent.click(screen.getByTestId("trigger-long-range-demo"));
