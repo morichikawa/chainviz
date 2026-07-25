@@ -1009,3 +1009,92 @@ Playwright（`packages/e2e` 同梱の想定に準じ、`mcr.microsoft.com/playwr
   採用していない（グリッドレイアウトの直後にテキスト注記を追加するのみ）
 - commit / push は実施済み（コミット粒度は git log 参照）。PR作成・
   マージ・Issueクローズは行っていない
+
+### 2026-07-25 Issue #415 再レビュー結果（差し戻し対応後）
+
+- 担当: reviewer
+- ブランチ: issue-415-long-range-attack-demo（検証時点の先頭コミット fb9bc98）
+- 結論: **合格**
+
+#### 確認した差分
+
+- `f43e8a3`: `.long-range-demo__grid` に `width: max-content;` を1行追加した
+  のみ。`grid-template-columns`（各列 `minmax(62px, max-content)`）自体は
+  変更していないため、列定義・`tileGridColumn`/`connectorGridColumnAfter`
+  への影響は無い。グリッドは block 要素で `width: auto` がデフォルトだと
+  親（`.long-range-demo__scroll`。サイドパネル幅に制約される）の幅まで
+  縮められ、利用可能幅が各列の `max-content` 合計より小さいと Grid の
+  トラックサイズ決定アルゴリズムが列を `minmax()` の最小値（62px）まで
+  圧縮する。`width: max-content` を足すことで、グリッド自身の使用幅が
+  「各列の max-content の合計」になり、列を圧縮する代わりに親の
+  `overflow-x: auto`（既存）が横スクロールで吸収する仕組みに変わる。
+  修正の当てている原因とコードの対応が一致していることを確認した
+- `d14c72e`: 図の直下に `<p className="long-range-demo__diagram-note">` を
+  2本追加（`longRangeDemo.sharedNote`/`longRangeDemo.forkLinkNote`）。
+  いずれも `.long-range-demo__scroll`（`overflow-x: auto` の対象、グリッドを
+  含む）の**外側**に配置されており、グリッドの `max-content` 幅計算には
+  影響しない。`sharedNote` の文中の番号は `DIVERGE_AT - 1` から動的に導出
+  しており、UX設計・実装メモが繰り返し要求している「決め打ちにしない」
+  方針を満たしている
+- 新規i18nキー2件（`longRangeDemo.sharedNote`/`longRangeDemo.forkLinkNote`）
+  は既存の `PLACEHOLDER_KEYS` 方式のテスト（`messages.longRangeDemo.test.ts`）
+  に組み込まれ、ja/en整合・プレースホルダ解決の既存テスト網羅に自然に
+  合流していることを確認した
+
+#### 個別の確認項目
+
+1. **退行が実際に解消しているか**: `git show f43e8a3` の差分は
+   `styles.css` の1行追加のみで、QA報告書が原因として特定した箇所
+   （`grid-template-columns` はそのまま、グリッド自身の幅が未指定だった
+   こと）に過不足なく対応している。QA報告の実測値（英語420px時に重なり
+   3箇所、日本語では重なり0）とfrontend担当のPlaywright再現・修正確認の
+   実測値が対応しており、原因と修正の対応関係に矛盾は無い
+2. **他のビューポート・他言語への影響**: `width: max-content` はグリッドの
+   最大内容幅を使う指定であり、パネル幅が広い場合の挙動（列が
+   `max-content` まで伸びる）は変更前後で変わらない。パネル幅が不足する
+   場合の挙動のみ「列を圧縮する」→「横スクロールで吸収する」に変わる。
+   日本語は既にセルの `max-content` 幅（68px）が62pxの最小値を上回って
+   おらず重なりが起きていなかったため、修正後も日本語側の見た目（列幅・
+   スクロール要否）に変化は無いはず、という理屈が実装ワークログの
+   Playwright実測（日本語420px/300pxで重なり0、修正前後で同じ）と一致
+   していることを確認した。回帰は無いと判断する
+3. **任意改善2点の内容**: `sharedNote` は共有区間の末尾番号を
+   `DIVERGE_AT - 1` から導出しており文言と実データが乖離しない作りに
+   なっている。`forkLinkNote` は「破線はハッシュの連結が切れている
+   ことを意味しない」という、QA報告が指摘した誤解（メインキャンバスの
+   `--broken` の意味との衝突）に直接回答する内容になっている。両方とも
+   QAが「任意」として推奨した「短い注記」の形にとどめており、レイアウトに
+   影響する変更（囲み線等）を追加で持ち込んでいないことを確認した
+4. **`pnpm lint && pnpm build && pnpm test`**: モノレポ全体で実行し、
+   全パッケージが成功することを確認した（shared: 6ファイル75ケース、
+   collector: 92ファイル1765ケース、frontend: 276ファイル3465ケース、
+   e2e: 16ファイル185ケース）。collectorのテスト出力に見える
+   `[ethereum] ... failed` 系のログは異常系テストが意図的にエラーを
+   起こしていることの確認であり、テスト失敗ではないことを前回レビュー時と
+   同様に確認した
+5. **コミット粒度**: `git log main..HEAD` で確認。差し戻し対応は
+   `f43e8a3`（グリッド幅の修正のみ）と `d14c72e`（任意改善2点＋対応する
+   テスト、1つの関心事としてまとめて追加）、`fb9bc98`（worklog記録）の
+   3コミットに分かれており、「1つの変更内容 = 1コミット」の原則を満たして
+   いる
+6. **境界の遵守・`packages/shared`との整合**: `git diff main..HEAD --stat`
+   で確認したところ `packages/shared`・`packages/collector`・`profiles/`
+   に変更は無く、今回の差し戻し対応もfrontend内で完結している
+
+#### 総合判定
+
+QA不合格の原因（英語UIの既定パネル幅でのcheckpointチップラベル重なり）は
+解消されており、修正が最小限（CSS1行）でグリッドの列定義・コンポーネント
+構造に影響していないことをコードで確認した。任意改善2点も実データ駆動の
+テキスト注記としてQAの推奨に沿った内容になっている。ビルド・lint・
+テストは全パッケージで成功し、コミット粒度・境界の遵守にも問題は無い。
+以上より合格と判定する。chainviz-qa へ再検証を引き継いでよい。
+
+**次の担当（QA）への申し送り**:
+- 再確認すべき点は主にQA前回報告書の「不合格の理由」欄の再現手順
+  （英語UI・既定パネル幅420pxでのcheckpointチップ表示）が解消していること、
+  および日本語UIでの回帰（重なりが新たに発生していないこと）。今回の
+  静的レビューでは実際のブラウザレイアウトは確認していない（frontend担当の
+  Playwright実測記録を読んでの確認に留まる）
+- commit / push は既にfrontend担当が実施済み。本レビューでの追加のコード
+  修正・commit・pushは無い（本追記のみ）
