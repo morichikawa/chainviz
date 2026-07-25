@@ -303,15 +303,18 @@ export function executionStableIdForBeacon(
  * validator（VC）コンテナが Beacon API で接続する beacon（CL）コンテナの
  * stableId を導く。`NodeEntity.drivesNodeId` の解決に使う（D層、
  * Issue #285）。VC の実接続先（`--beacon-nodes`）を実測観測する経路は
- * 現状存在しない（lighthouse VC の HTTP API・メトリクスはノード環境
- * テンプレートで無効のまま、Beacon API 側にも接続元 VC を列挙する
- * エンドポイントが無い、Docker 観測はコンテナの環境変数を収集しない）ため、
- * `executionStableIdForBeacon`（beacon→execution）と同じ「compose サービス名
- * のノード群キーによる静的解決」にそろえる。`validator` がそもそも
- * validator 役のコンテナでなければ（beacon・execution・workbench 等）
- * 呼び出し元の判定に関わらず即 undefined を返す（`pollInfra` が全
- * NodeEntity に対して機械的に呼べるようにするための自己防衛。
- * `executionStableIdForBeacon` と同型）。
+ * 現状存在しない（lighthouse VC の Prometheus メトリクスは Issue #420 で
+ * 有効化済みだが、`vc_signed_beacon_blocks_total` 等のカウンタは接続先
+ * beacon を識別するラベルを一切持たない（VC プロセス単位の集計。
+ * docs/worklog/issue-420.md 参照）。VC 自身の HTTP API（Keymanager 系）は
+ * 認証トークンが必要で複雑度が高く未有効化のまま。Beacon API 側にも
+ * 接続元 VC を列挙するエンドポイントが無く、Docker 観測はコンテナの環境
+ * 変数を収集しない）ため、`executionStableIdForBeacon`（beacon→execution）
+ * と同じ「compose サービス名のノード群キーによる静的解決」にそろえる。
+ * `validator` がそもそも validator 役のコンテナでなければ（beacon・
+ * execution・workbench 等）呼び出し元の判定に関わらず即 undefined を返す
+ * （`pollInfra` が全 NodeEntity に対して機械的に呼べるようにするための
+ * 自己防衛。`executionStableIdForBeacon` と同型）。
  */
 export function beaconStableIdForValidator(
   validator: ContainerObservation,
