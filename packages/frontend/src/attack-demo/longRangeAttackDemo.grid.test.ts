@@ -2,7 +2,12 @@
 // テスト。正規/checkpoint/攻撃者の3段が同じブロック番号で同じ列に並ぶ、
 // という不変条件を直接固定する。
 import { describe, expect, it } from "vitest";
-import { connectorGridColumnAfter, tileGridColumn } from "./longRangeAttackDemo.js";
+import {
+  ATTACKER_CHAIN,
+  CANONICAL_CHAIN,
+  connectorGridColumnAfter,
+  tileGridColumn,
+} from "./longRangeAttackDemo.js";
 
 describe("tileGridColumn", () => {
   it("reserves column 1 for the row label (block #0 starts at column 2)", () => {
@@ -16,10 +21,15 @@ describe("tileGridColumn", () => {
     expect(tileGridColumn(4)).toBe(10);
   });
 
-  it("places the same block number at the same column regardless of which row calls it (the core alignment invariant)", () => {
-    const canonicalNumberTwoColumn = tileGridColumn(2);
-    const attackerNumberTwoColumn = tileGridColumn(2);
-    expect(canonicalNumberTwoColumn).toBe(attackerNumberTwoColumn);
+  // レビュー(Issue #415)での指摘: 以前はここが `tileGridColumn(2) ===
+  // tileGridColumn(2)` という同一呼び出しの比較になっており、実質何も検証
+  // していなかった。正規/攻撃者それぞれのチェーンが実際に持つ `#2` ブロック
+  // から列を引いて突き合わせる形に直す(広い範囲での不変条件は
+  // `longRangeAttackDemo.gridInvariants.test.ts` が別途担う)。
+  it("places the canonical and attacker chain's own block #2 at the same column (the core alignment invariant)", () => {
+    const canonicalBlock = CANONICAL_CHAIN.find((block) => block.number === 2)!;
+    const attackerBlock = ATTACKER_CHAIN.find((block) => block.number === 2)!;
+    expect(tileGridColumn(canonicalBlock.number)).toBe(tileGridColumn(attackerBlock.number));
   });
 });
 
