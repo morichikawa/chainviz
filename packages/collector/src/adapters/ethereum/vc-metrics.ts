@@ -71,6 +71,20 @@ function attestationSubmitSumSeconds(parsed: ParsedMetrics): number | undefined 
 }
 
 /**
+ * `vc_block_signing_times_seconds_sum` を読む。ラベル無しの単一サンプルだが、
+ * `firstValue` は値の妥当性を検査しないため、ここで有限値であることを確認する
+ * （`attestationSubmitSumSeconds` / reth-metrics.ts の summary 読み取りと同じ
+ * 「非有限値は『取得できなかった』として扱う」流儀にそろえる。有限値チェックを
+ * 省略すると、`+Inf` のような値がそのまま `sumSeconds` に載り、後段の
+ * VcMetricsTracker で差分が `Infinity` になり得る）。
+ */
+function blockSigningTimeSumSeconds(parsed: ParsedMetrics): number | undefined {
+  const value = firstValue(parsed, `${BLOCK_SIGNING_TIME_METRIC}_sum`);
+  if (value === undefined || !Number.isFinite(value)) return undefined;
+  return value;
+}
+
+/**
  * `metricName{status="..."}` の各サンプルから RawValidatorDutyCounter を
  * 組み立てる。`status` ラベルが欠落・空文字のサンプル、値が有限数でない
  * サンプルは個別に読み捨てる（1件の乱れで全体を諦めない。reth-metrics.ts の
@@ -107,7 +121,7 @@ function parseDutyCounters(
 export function parseValidatorDutyCounters(
   parsed: ParsedMetrics,
 ): RawValidatorDutyCounter[] {
-  const blockSigningSumSeconds = firstValue(parsed, `${BLOCK_SIGNING_TIME_METRIC}_sum`);
+  const blockSigningSumSeconds = blockSigningTimeSumSeconds(parsed);
   const attestationSumSeconds = attestationSubmitSumSeconds(parsed);
   return [
     ...parseDutyCounters(
