@@ -721,3 +721,103 @@ collector 92ファイル1765件、e2e（プロトコル層）16ファイル185�
   の実際の高さを JS で測定して反映するような、より頑健な仕組みへの
   刷新は本対応のスコープ外とした（QAの「過剰な作り込みは避け、今回の
   退行を解消する範囲に留める」という指示に沿った判断）
+
+---
+
+### 2026-07-25 Issue #413 差し戻し対応の再レビュー結果（合格）
+
+- 担当: reviewer
+- 対象: `origin/issue-413-attack-glossary-foundation`（差し戻し対応後の先頭
+  コミット `386694e`）。レビューは別ブランチ（一時的に
+  `origin/issue-413-attack-glossary-foundation` を検出した状態）で実施し、
+  push・コミットは行っていない
+
+#### 確認した内容
+
+1. **5-1 の退行が実際に解消されているか**
+   - `git show 1fa5090`（修正コミット）を読み、`.mempool-panel` の
+     `max-height` が `260px` 固定から `min(260px, calc(100vh - 585px))` に
+     変更されていることを確認した
+   - `packages/e2e/src/ui/mempool-panel-layout.spec.ts`（UI-OVERLAY-01）が
+     `getBoundingClientRect()` の実測値でヘッダーとレイヤーフィルターバーの
+     重なりを検出する構成になっており、実装の詳細をなぞるだけの無意味な
+     テストではないことを確認した。ノード別 txpool 欄が埋まってパネルが
+     最大高さになった状態で測定しており、ページ読み込み直後の低い高さで
+     誤って「無い」と判定してしまう見落としを回避している
+   - `docs/worklog/issue-413.md` の記録どおり、修正前のCSSに戻すとこの
+     E2Eが失敗し、修正後は成功する手順を実施済みであることを確認した
+     （記録内容の確認のみ。今回のレビューでは再実行していない。QAで
+     `docker compose` 環境を使った実動作検証が必要なため）
+2. **`max-height` の計算式の妥当性・他ビューポートでの新規問題の有無**
+   - `.mempool-panel` は `position: absolute; bottom: 385px` で、その
+     containing block（`.app__canvas`、`.app` の flex 子要素）の下端は
+     `.app`（`height: 100vh`）と同じ位置にあるため、`100vh` 基準で
+     `bottom` オフセットを解決するのは妥当（ヘッダー高に依存しない）
+   - `.canvas-overlay-top` の実測下端（1280幅で約175px）は
+     `getBoundingClientRect()` によるビューポート絶対座標での実測値
+     であり、`.app__header` の高さを内包した値のため、`100vh` 基準の式と
+     整合する
+   - Playwright を使い、`min(260px, calc(100vh - 585px))` を単体で
+     ビューポート高 900/700/586/500/400/200 で評価したところ、900では
+     260px、700では115pxとなだらかに縮小し、**585px以下では計算結果が
+     負になり `max-height: 0`（`box-sizing: border-box` のため padding
+     込みで実際に高さ0）に丸められ、パネルが完全に不可視になる**ことを
+     確認した。これは新たに見つかった残存課題である。ただし
+     - `packages/e2e` の全UIシナリオ・本Issueの差し戻し対応の実測（QA報告の
+       700/720/730/900）を含め、リポジトリ内でテスト対象になっている
+       ビューポート高はいずれも720px以上であり、585px以下は現状どのテスト・
+       QA手順の対象にもなっていない
+     - `docs/ARCHITECTURE.md`・`docs/CONCEPT.md`にchainvizの最小対応
+       ビューポートサイズの明記は無く、レスポンシブ対応自体が範囲外
+       （デスクトップの開発支援ツールとしての前提。`styles.css`に
+       `@media`によるブレークポイントが一切無いことからも読み取れる）
+     - 585px以下でパネルが不可視になる挙動は、585px超700px未満の範囲
+       （今回のQA・差し戻し対応が実際に確認した範囲）を含む「観測している
+       ビューポート帯」には影響しない
+     - 以上により**ブロッカーとはしない**が、`.mempool-panel`の
+       CSSコメントには「200pxの余裕をツールバー行数増加時に見直す」旨のみ
+       記載されており、「585px以下でパネル自体が不可視になる」という
+       計算式の下限側の挙動には触れていない。次にこの値を触る担当者が
+       同じ計算式を流用する際に気づきにくいため、コメントに一言追記する
+       ことを推奨する（必須の差し戻し理由にはしない）
+3. **5-2（P2P凡例ポップオーバーのはみ出し）の見送り判断の妥当性**
+   - `PopoverPortal`の実際の呼び出し元を`grep`で確認したところ、
+     `ActionHint`/`ChainRibbonCard`/`ChainRibbonPopover`/`ContractCard`/
+     `ContractPopover`/`InfraPopover`/`TxLifecyclePopover`/`WalletPopover`/
+     `GlossaryTerm`の9箇所で、worklogの記載と一致した
+   - `packages/frontend/src/interaction/PopoverPortal.tsx`を読み、
+     画面外に出る場合の上方向への反転ロジックが実際に存在しないことを
+     確認した（`computePopoverPosition`はアンカー下端からのオフセット
+     計算のみで、反転の分岐は無い）
+   - 9箇所すべてに影響する共通コンポーネントの変更を、QAが「軽微・推奨だが
+     必須ではない」と明確に切り分けた指摘の対応として今回のスコープに含める
+     必要はなく、見送り判断は妥当と判断した
+4. **コミット粒度**（`git log main..HEAD`）
+   - 差し戻し対応分は `1fa5090`（CSS修正）・`bcf4fa7`（E2E追加）・
+     `386694e`（worklog記録）の3コミットに分かれており、CSS修正・
+     テスト追加・ドキュメント記録という異なる関心事がそれぞれ独立した
+     コミットになっている。「1つの変更内容 = 1コミット」の原則を満たす
+5. **`docs/ARCHITECTURE.md`・`docs/CONCEPT.md`との齟齬**
+   - 両ドキュメントとも`.mempool-panel`の`max-height`のような実装詳細の
+     数値には言及しておらず、齟齬は無い
+   - `packages/e2e/SCENARIOS.md`は`UI-OVERLAY-01`として今回の追加が
+     反映されており、`docs/ARCHITECTURE.md`§8.4の記法規約
+     （確認/操作の書式）にも沿っている
+6. **`pnpm lint && pnpm build && pnpm test`**（リポジトリ全体、`pnpm install`後）
+   - lint: エラー無し
+   - build: `shared`/`collector`/`frontend`/`e2e`すべて成功
+   - test: `shared` 6ファイル75件・`collector` 92ファイル1765件・
+     `frontend` 267ファイル3380件・`e2e`（プロトコル層）16ファイル185件、
+     いずれも失敗無し（`packages/e2e/src/ui/mempool-panel-layout.spec.ts`は
+     Playwright UI E2Eのため`pnpm test`の対象外。既存の`test:e2e:ui`配下の
+     他テストと同じ扱いで、実ブラウザ・実Dockerスタックでの実行確認はQAに
+     委ねる）
+
+#### 判定
+
+**合格**。5-1の退行はCSS修正とそれを検出する実測ベースのE2Eの両方で
+解消されていることを確認した。5-2の見送り判断も妥当。上記2.で見つけた
+「585px以下でパネルが不可視になる」点は、現状どのテスト・QA手順の対象
+範囲にも入らない残存課題であり、CSSコメントへの一言追記を推奨するに
+留め、差し戻し理由にはしない（対応するかどうかは統括の判断に委ねる）。
+統括によるコミット・push・PR作成・マージの判断に委ねる。
