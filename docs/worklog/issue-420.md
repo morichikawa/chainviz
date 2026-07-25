@@ -412,3 +412,129 @@ DHCP割当。collector実装時は`targets.ts`がDocker観測で得たIPを使�
 - `curl`/`wget`がVC/reth/beaconいずれのイメージにも入っていないため、
   コンテナ内から`docker exec`で`/metrics`を叩いて動作確認したい場合は
   ホスト側から直接IPを叩く方法（本記録の実施内容参照）を使うこと
+
+### 2026-07-25 Issue #420 collector実装（collector担当）
+
+- 担当: collector
+- ブランチ: 元の `issue-420-validator-activity-visualization` は別worktree
+  で使用中だったため、`origin/issue-420-validator-activity-visualization`
+  （node-env実装コミット `759c980`）を起点に `issue-420-collector-work`
+  という別名ローカルブランチで作業した。統括が commit・push を元のブランチ
+  （`issue-420-validator-activity-visualization`）へ反映すること
+
+#### 設計メモ（着手前）
+
+`docs/ARCHITECTURE.md` §7.6.12 に記載済みの設計をそのまま実装する。reth の
+D層実装（`reth-metrics-client.ts` / `reth-metrics.ts` /
+`reth-metrics-tracker.ts` / `reth-node-internals.ts`）と対称的な4ファイルを
+新設し、`targets.ts` に `validatorMetricsTargets` を、`index.ts` の既存
+`subscribeNodeInternals` 周期ループに VC 側の観測を相乗りさせる。着手前に
+決めた実装上の判断:
+
+- `vc-metrics.ts` の `RawValidatorDutyCounter.method` は
+  `"<メトリクスファミリー名>:<statusラベル値>"`（例:
+  `"vc_signed_beacon_blocks_total:success"`）とする。reth の
+  `RawEngineCallCounter.method` が生の JSON-RPC メソッド名をそのまま持つのと
+  同じ「生の識別子をそのまま持ち、解釈はフロントが担う」流儀に合わせる
+- 所要時間メトリクス（`vc_block_signing_times_seconds` /
+  `vc_attestation_service_task_times_seconds{task="attestations_http_post"}`）
+  は、対応するカウンタ自体とは別のメトリクスファミリーであり、かつ
+  status別に分かれていない（ラベル無し、または task 別のみ）。実機出力
+  （node-env実装の実測記録）で `vc_block_signing_times_seconds_count` と
+  `vc_signed_beacon_blocks_total{status="success"}` の値が一致していたこと
+  から、所要時間の合計値は `status="success"` のカウンタにのみ付与し、
+  `slashable`/`same_data`/`unregistered` には付与しない設計にした
+- `vc-node-internals.ts` の `pollVcNodeInternals` は reth の
+  `pollRethNodeInternals`（`{ internals, calls }` を返す）とは異なり
+  `InternalCallStats[] | undefined` を直接返す（設計メモどおり、VC は
+  `NodeInternals` パッチを返さない）
+- `vc-metrics-tracker.ts` の `VcMetricsTracker` は `RethMetricsTracker` と
+  アルゴリズムが同一だが、設計メモの「対象ごとに独立させる既存の一貫性を
+  優先してよい」という裁量に従い、共通クラスへ統合せず個別クラスとして
+  新設した（reth 側の既存実装・既存テストへの影響をゼロにするため）
+
+#### 実施内容
+
+1. `vc-metrics-client.ts` / `vc-metrics.ts` / `vc-metrics-tracker.ts` /
+   `vc-node-internals.ts` を新設（reth の4ファイルと対称構造）
+2. `targets.ts` に `ValidatorMetricsTarget` 型と `validatorMetricsTargets()`
+   を追加（`isValidatorService` + `obs.ip` の選別基準は
+   `executionMetricsTargets` と同型）
+3. `index.ts`: `EthereumAdapterDeps` に `vcMetricsClient` を追加、
+   `vcMetricsClient`/`vcMetricsTracker`/`trackedValidatorInternalsIds`
+   フィールドを追加、`pollNodeInternalsOnce` に validator 側の対象集合の
+   取り直し・`forgetNode` 後始末・`pollOneValidatorInternals` の並行呼び出し
+   を追加。`pollOneValidatorInternals` は `fromNodeId = target.stableId`
+   （VC自身）、`toNodeId = beaconStableIdForValidator()`（Issue #285
+   実装済みをそのまま再利用）で `NodeLinkActivity` を組み立てて
+   `handlers.onLinkActivity` へ渡す。beacon が解決できない場合は配信せず
+   `console.error` に理由を残す（reth 側の `pollOneNodeInternals` と同じ
+   「黙って握りつぶさない」方針）
+4. テスト: `vc-metrics.test.ts`（パース純粋関数）・
+   `vc-metrics-tracker.test.ts`（増分計算）・`vc-node-internals.test.ts`
+   （1ノード分のオーケストレーション）・`targets.test.ts` への
+   `validatorMetricsTargets` ケース追加・`validator-node-internals.test.ts`
+   （`index.ts` の周期ループへの配線。reth用の既存 `node-internals.test.ts`
+   とは別ファイルに分離。1ファイル1責務）を新設。テスト用フィクスチャとして
+   `test-helpers/docker-fixtures.ts` に `validatorFixture()`、
+   `test-helpers/vc-metrics-fixtures.ts`（`queuedVcMetricsClient` /
+   `vcMetricsText`）を新設した
+5. `packages/shared` の型変更は行っていない（設計判断どおり、
+   `NodeLinkActivity`/`InternalCallStats` を無変更のまま再利用できることを
+   実装でも確認した）
+
+#### 実機での疎通確認
+
+既存の `profiles/ethereum` コンテナが（PC再起動により）全て停止・削除済み
+だったことを確認したうえで `docker compose up -d` し、slotが31まで進行して
+いる状態（genesisボリュームを再利用したため起動直後から進行済みだった）で
+以下を確認した:
+
+- `curl http://172.28.0.2:5064/metrics`（validator1）で
+  `vc_signed_beacon_blocks_total{status="success"}` /
+  `vc_signed_attestations_total{status="success"}` /
+  `vc_block_signing_times_seconds_sum`/`_count`（ラベル無し）/
+  `vc_attestation_service_task_times_seconds_sum{task="attestations_http_post"}`
+  が実際に出力されており、node-env実装担当の実測記録と一致することを
+  再確認した
+- `packages/collector` をビルドし、実際の `EthereumAdapter` を実 Docker
+  ソケット・実 `/metrics` エンドポイントに対して動かす一時スクリプトで
+  `subscribeNodeInternals` を購読したところ、以下の `onLinkActivity` が
+  実際に配信されることを確認した（コミット対象外の一時確認用スクリプトは
+  確認後に削除した）:
+  ```
+  {"fromNodeId":"chainviz-ethereum/validator1","toNodeId":"chainviz-ethereum/beacon1",
+   "calls":[{"method":"vc_signed_attestations_total:success","count":1,"latencyMs":1.42}],
+   "observedAt":...}
+  {"fromNodeId":"chainviz-ethereum/validator2","toNodeId":"chainviz-ethereum/beacon2",
+   "calls":[{"method":"vc_signed_attestations_total:success","count":1,"latencyMs":1.31}],
+   "observedAt":...}
+  ```
+  同じウィンドウでは提案（`vc_signed_beacon_blocks_total`）の増分は観測
+  されなかった（1エポック32slotに対しvalidatorは2ノードなので提案頻度が
+  低く、20秒程度の観測窓ではたまたま出現しなかっただけ。コード経路は
+  attestationと対称であり、reth側の `engine_getPayloadV4` 等が同じ
+  ウィンドウで観測できていることからも、提案側のロジック自体は別途
+  ユニットテストで固定済み）
+- 確認後は `docker compose down`（`-v`なし）でコンテナ・ネットワークのみ
+  削除し、genesisボリュームは維持したまま停止状態に戻した
+
+#### frontend実装担当への申し送り
+
+- `packages/shared` の型は無変更（`NodeLinkActivity.calls[].method` に
+  `"vc_signed_beacon_blocks_total:success"` /
+  `"vc_signed_attestations_total:success"` のような文字列が渡ってくる）
+- `docs/ARCHITECTURE.md` §7.6.12 に記載のとおり、
+  `internalLinkKinds.ts` の `VALIDATOR_TO_CONSENSUS.showsActivity` を
+  `true` に変更し、`validatorApiMethodLabels.ts` の新設・
+  `formatInternalCallEntry` の2段フォールバック化・`d-internal.yaml` の
+  `beacon-api` 定義更新を行うこと
+- 実機では `status` ラベルは観測範囲内では常に `"success"` のみ出現した
+  （`slashable`/`same_data`/`unregistered` は正常運用では出現しない）。
+  ただし `method` の生値にはラベル値がそのまま入るため、フロント側の
+  前方一致マッピング（`vc_signed_beacon_blocks_total` プレフィックス）は
+  status の値に関わらずマッチする設計にしておくこと（設計メモの表どおり）
+- `latencyMs` は証明（attestation）側でも取れる（実測で確認済み。設計メモの
+  「取れなければ省略してよい」という想定より高い確率で観測できた）が、
+  署名処理そのものではなく HTTP submit 呼び出し全体の近似値である点は
+  UI文言・用語集で誤解を招かないよう注意
