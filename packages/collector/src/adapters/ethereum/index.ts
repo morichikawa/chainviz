@@ -81,12 +81,20 @@ import {
   executionStableIdForBeacon,
   executionTargets,
   isValidatorService,
+  validatorMetricsTargets,
   type BeaconTarget,
   type ExecutionMetricsTarget,
   type ExecutionPeerTarget,
   type ExecutionTarget,
+  type ValidatorMetricsTarget,
 } from "./targets.js";
 import { TransactionLifecycleTracker } from "./transactions.js";
+import {
+  createFetchVcMetricsClient,
+  type VcMetricsClient,
+} from "./vc-metrics-client.js";
+import { VcMetricsTracker } from "./vc-metrics-tracker.js";
+import { pollVcNodeInternals } from "./vc-node-internals.js";
 import {
   deriveWalletAddress,
   workbenchWalletIndex,
@@ -187,6 +195,14 @@ export interface EthereumAdapterDeps {
    */
   rethMetricsClient?: RethMetricsClient;
   /**
+   * D層: VC（validator client）自身の職務メトリクス（Prometheus、Issue #420）を
+   * 取得する HTTP クライアント。未指定なら `createFetchVcMetricsClient()`
+   * （実 fetch）。rethMetricsClient と同じ既存の D層ループ（
+   * `subscribeNodeInternals`）に相乗りするため、専用のポーリング間隔・
+   * 専用のループは持たない。
+   */
+  vcMetricsClient?: VcMetricsClient;
+  /**
    * D層: ノード内部メトリクスのスクレイプ間隔。未指定なら
    * `NODE_INTERNALS_POLL_INTERVAL_MS`（3000ms。前提条件は
    * reth-metrics-tracker.ts のコメント参照）。
@@ -241,6 +257,11 @@ export class EthereumAdapter implements ChainAdapter {
   private readonly contractTracker: ContractTracker;
   private readonly rethMetricsClient: RethMetricsClient;
   private readonly rethMetricsTracker = new RethMetricsTracker();
+  // D層: VC（validator client）自身の職務メトリクス観測（Issue #420）。
+  // rethMetricsClient/rethMetricsTracker と対称的な独立したクライアント・
+  // トラッカーで、既存の D層ポーリングループ（nodeInternalsTick）に相乗りする。
+  private readonly vcMetricsClient: VcMetricsClient;
+  private readonly vcMetricsTracker = new VcMetricsTracker();
   private readonly nodeInternalsPollIntervalMs: number;
   // D層観測（reth の Finish checkpoint）から NodeEntity.syncStatus/
   // blockHeight を解決するためのキャッシュ（Issue #187）。書き込みは
@@ -359,6 +380,11 @@ export class EthereumAdapter implements ChainAdapter {
   // trackedNodeInternalsIds（EL 用）とは対象が互いに素なので別集合で追跡
   // する（混ぜると forgetNode 先のキャッシュが曖昧になる）。
   private trackedBeaconSyncIds = new Set<string>();
+  // 前回 tick で観測できた validator（VC）ノードの stableId 集合
+  // （Issue #420）。trackedNodeInternalsIds/trackedBeaconSyncIds とは対象が
+  // 互いに素なので別集合で追跡する（VcMetricsTracker.forgetNode() の対象を
+  // 特定するため）。
+  private trackedValidatorInternalsIds = new Set<string>();
   // CL（Beacon API）側ピアポーリングの観測キャッシュ（stableId ごとの
   // 連続失敗回数 + 最後に成功した NodePeers。Issue #287 のログ間引きと
   // Issue #288 の観測ヒステリシスを一元管理する）。
@@ -387,6 +413,7 @@ export class EthereumAdapter implements ChainAdapter {
     this.contractTracker = new ContractTracker(this.chainType, deps.catalog);
     this.rethMetricsClient =
       deps.rethMetricsClient ?? createFetchRethMetricsClient();
+    this.vcMetricsClient = deps.vcMetricsClient ?? createFetchVcMetricsClient();
     this.nodeInternalsPollIntervalMs =
       deps.nodeInternalsPollIntervalMs ?? NODE_INTERNALS_POLL_INTERVAL_MS;
     this.blockSubscriptionReconcileIntervalMs =
@@ -1262,6 +1289,12 @@ export class EthereumAdapter implements ChainAdapter {
    * `pollOneBeaconSync` を並行に呼び、Beacon API の自己申告同期状態から
    * `beaconSyncStatusCache` を更新する（EL 用の対象集合・追跡集合とは
    * 独立。取得失敗はそのノードだけ落として前回値を保持する）。
+   *
+   * Issue #420: 同じ tick で、対象の validator（VC）ノードごとに
+   * `pollOneValidatorInternals` を並行に呼び、VC 自身の職務メトリクス
+   * （ブロック提案・証明の署名）から validator→beacon の駆動リンク上の
+   * 呼び出し活動を `onLinkActivity` へ配信する。VC は internals（同期状態・
+   * mempool 相当）を持たないため `onInternals` は呼ばない。
    */
   private async pollNodeInternalsOnce(
     handlers: NodeInternalsHandlers,
@@ -1296,11 +1329,33 @@ export class EthereumAdapter implements ChainAdapter {
     }
     this.trackedBeaconSyncIds = currentBeaconSyncIds;
 
+    // Issue #420: validator（VC）側の職務メトリクス観測も同じ D層ループに
+    // 相乗りさせる（EL/CL 側と同じ「毎 tick 現在の対象集合を取り直し、
+    // 消えたノードは forgetNode で後始末する」構造）。
+    const validatorTargets = validatorMetricsTargets(observations);
+    const currentValidatorIds = new Set(
+      validatorTargets.map((t) => t.stableId),
+    );
+    for (const id of this.trackedValidatorInternalsIds) {
+      if (!currentValidatorIds.has(id)) {
+        this.vcMetricsTracker.forgetNode(id);
+      }
+    }
+    this.trackedValidatorInternalsIds = currentValidatorIds;
+
     await Promise.all([
       ...targets.map((target) =>
         this.pollOneNodeInternals(target, observations, obsByStableId, handlers),
       ),
       ...beaconSyncTargets.map((target) => this.pollOneBeaconSync(target)),
+      ...validatorTargets.map((target) =>
+        this.pollOneValidatorInternals(
+          target,
+          observations,
+          obsByStableId,
+          handlers,
+        ),
+      ),
     ]);
   }
 
@@ -1373,6 +1428,57 @@ export class EthereumAdapter implements ChainAdapter {
       target.stableId,
       resolveBeaconSyncStatus(snapshot),
     );
+  }
+
+  /**
+   * 1 validator（VC）ノード分の職務メトリクス観測を処理する（Issue #420）。
+   * `pollVcNodeInternals` を呼び、1 件以上の増分があれば validator→beacon の
+   * 駆動リンク上の呼び出し活動として `onLinkActivity` へ配信する。
+   *
+   * - `fromNodeId = target.stableId`（VC 自身。`NodeLinkActivity.fromNodeId`
+   *   は「駆動する側（`drivesNodeId` を持つ側）」であり、validator が
+   *   `drivesNodeId` を持つ側（`beaconStableIdForValidator` で解決）なので
+   *   validator 自身が `fromNodeId` になる。`pollOneNodeInternals`
+   *   （execution→beacon への逆引き）とは逆の向きになる点に注意
+   *   （reth 側は自分自身の内部 API を beacon が駆動するのに対し、VC 側は
+   *   自分自身のメトリクスをスクレイプしており fromNodeId = 自分自身なので
+   *   逆引きは不要という違いがある。docs/ARCHITECTURE.md §7.6.12）。
+   * - `toNodeId`: `beaconStableIdForValidator()`（Issue #285 実装済み）で
+   *   解決する。解決できない場合は配信せず、その旨をログに残す（黙って
+   *   握りつぶさない。`pollOneNodeInternals` と同じ方針）。
+   */
+  private async pollOneValidatorInternals(
+    target: ValidatorMetricsTarget,
+    observations: ContainerObservation[],
+    obsByStableId: Map<string, ContainerObservation>,
+    handlers: NodeInternalsHandlers,
+  ): Promise<void> {
+    const calls = await pollVcNodeInternals(
+      this.vcMetricsClient,
+      target,
+      this.vcMetricsTracker,
+    );
+    // 取得・パース失敗（pollVcNodeInternals が既に stableId と実際の
+    // エラー内容をログ済み）はここでは何もしない。
+    if (!calls || calls.length === 0) return;
+
+    const validatorObs = obsByStableId.get(target.stableId);
+    const toNodeId = validatorObs
+      ? beaconStableIdForValidator(validatorObs, observations)
+      : undefined;
+    if (toNodeId === undefined) {
+      console.error(
+        `[ethereum] cannot resolve the beacon node driven by ${target.stableId}; ` +
+          `dropping ${calls.length} internal call stat(s)`,
+      );
+      return;
+    }
+    handlers.onLinkActivity({
+      fromNodeId: target.stableId,
+      toNodeId,
+      calls,
+      observedAt: this.now(),
+    });
   }
 
   /**
