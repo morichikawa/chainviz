@@ -676,3 +676,95 @@ index を使う、の13件。
 `pnpm lint && pnpm build && pnpm test` をモノレポ全体で実行し、全て成功
 （frontend: 276ファイル 3450ケース。うち #415 関連は 12ファイル64ケース
 → 20ファイル256ケース）。
+
+### 2026-07-25 Issue #415 レビュー結果
+
+- 担当: reviewer
+- ブランチ: issue-415-long-range-attack-demo
+- 結論: **合格**（軽微な修正2件を実施済み。QAへ引き継いで問題ない）
+
+#### 実施した確認
+
+- `pnpm lint && pnpm build && pnpm test` をモノレポ全体で実行し、全パッケージが成功することを確認した
+  （shared: 6ファイル75ケース、collector: 92ファイル1765ケース、frontend: 276ファイル3450ケース、e2e: 16ファイル185ケース）。
+  collectorのテスト出力に見える `[ethereum] ... failed` 系のログは、異常系テストが意図的にエラーを起こして
+  その内容がログ出力されることを確認しているものであり、テスト失敗ではないことを確認した
+- `git log main..HEAD --oneline` でコミット粒度を確認した。設計メモ・データ/ロジック層・パネル本体・
+  入口導線・実装のworklog記録・テスト強化（関心事ごとに12コミットへ分割）・テスト強化のworklog記録の
+  順で、1コミット1関心事になっていることを確認した
+- `git diff main..HEAD --stat` で変更ファイル一覧を確認し、`packages/shared`・`packages/collector`・
+  `profiles/` に変更が無いこと（`docs/ARCHITECTURE.md` §17.2の判断どおり）を確認した
+- `entities/ChainRibbonCard.tsx`・`entities/ChainRibbonPopover.tsx` の変更箇所を確認した。いずれも
+  既存要素を書き換えず新規行・新規ボタンを追加するだけの変更であり、Issue #414（51%攻撃、メニュー統合
+  方針で同じファイルを変更中）との直接のコンフリクトはこの時点では発生していないことを確認した。
+  #414とのマージ時の統合方針は統括の判断に委ねる
+- チェーン固有語彙（`eth_getLogs`等）が新規ファイルに漏れていないこと、`packages/frontend/src/attack-demo/`
+  以下にDocker/ノードAPIへの直接アクセスが無いことを確認した（境界の遵守）
+- `catch`によるエラー握りつぶしが無いか新規ファイルを確認した。該当ファイルはすべて外部I/Oを持たない
+  純粋な疑似データ生成・計算ロジックのため、そもそも`catch`が存在しないことを確認した
+- タイムアウト・件数上限等の「現在の環境状態」に依存する決め打ち値が無いかを確認した。疑似データの
+  ブロック数（正規4・攻撃者5）は`docs/worklog/issue-415.md`のUX設計・実装メモに理由付きで明記された
+  設計定数であり、稼働中のチェーンの状態から動的に変わる値ではないため、CLAUDE.mdが禁止する
+  「観測できる現在の値への依存」には該当しないと判断した
+
+#### テスト強化担当からの申し送り4点への回答
+
+1. **naiveルールの計算結果が表示に使われていない点（重要な観点として丁寧に検討）**:
+   `LongRangeAttackDemoView.tsx`で`pickByNaiveLongestChainRule()`の戻り値は`data-naive-verdict`属性
+   にのみ使われ、画面文言（`longRangeDemo.verdict.naiveResult`）は固定テキストになっている。これは
+   UX設計メモ§3で「1行目は常に同じ・警告色」と明記された意図的な設計であり、かつ本デモのブロック数
+   （正規4・攻撃者5）はユーザーが操作できないモジュールスコープの固定定数であるため、実行時に
+   両者が食い違うことは現状のコードでは起こり得ない。将来デモのブロック数を変更する際に文言の
+   追従を忘れるリスクは残るが、tester担当が追加した回帰テスト（`LongRangeAttackDemoView.test.tsx`の
+   「keeps the naive verdict text and the computed naive verdict in agreement」）が、前提が崩れた
+   場合に確実に検知できる形で仕込まれている。以上より、**現時点ではバグではなく、意図的な設計に
+   対する妥当なガードが既にあると判断し、実装の修正は不要**とした。将来ブロック数を変更する場合は、
+   文言側も分岐させる（`naiveResult`をcanonical/attacker用に分けるなど）べきという点をfrontend/UX
+   への申し送り事項として残す
+2. **既存テストのトートロジー（`longRangeAttackDemo.grid.test.ts`）**: 実際に
+   `tileGridColumn(2) === tileGridColumn(2)`という同一呼び出しの比較で無検証だったことを確認した。
+   tester担当が`gridInvariants.test.ts`で実データ突き合わせの検証を別途追加済みではあるが、元のテスト
+   ファイル自体が「検証している体裁のまま何も検証していない」状態は品質ゲートの観点で望ましくないため、
+   **reviewerの裁量で軽微な修正として直接修正した**（`CANONICAL_CHAIN`/`ATTACKER_CHAIN`それぞれの
+   実際の`#2`ブロックから列を引いて突き合わせる形に書き換え。修正後もテスト・lint・buildが通ることを確認済み）
+3. **共有区間（`#0`・`#1`）の確定済み表示が正規チェーンの行にしか付かない点**: `LongRangeChainRow`の
+   `attackerVariant`は`block.number >= DIVERGE_AT`のときのみ`fork`を返し、共有区間は`plain`のままで、
+   かつ攻撃者行の呼び出しには`finalizedBadgeLabel`自体を渡していないため、確定済みバッジは構造的に
+   正規チェーン側にしか出ない。`docs/worklog/issue-415.md`の実装メモに「『攻撃者の履歴は別物』という
+   見せ方を優先した簡略化」と明記されており、意図的な簡略化であることを確認した。これはUXの見せ方の
+   判断であり、静的レビューの範囲では設計原則との矛盾は無いと判断する。実際の画面で違和感が無いかは
+   UX上の判断であるため、QA/UXでの確認事項として申し送りを維持する（reviewerとしては合格判定を妨げない）
+4. **分岐点の破線コネクタが実際のリンク切れではない点**: 攻撃者チェーンの`#2`の`parentHash`は正規の
+   `#1`のハッシュと一致しており、`buildChain()`の実装上ハッシュの連結自体は途切れていないことをコードで
+   確認した。既存の`.chain-ribbon-card__link--broken`はメインキャンバスの`ChainRibbonCard.tsx`では
+   「実際にリンクが切れている」ことを表す用途で使われており、本デモの`.long-range-demo__link--broken`
+   （別クラス名で新設、スタイルの見た目のみ流用）は「ここで履歴が分岐した」という別の意味で再利用して
+   いる。クラス名自体は独立しているため直接の意味的な衝突は起きないが、ユーザーが実際の画面を見て
+   「リンクが切れているのでは」と誤解しないかは、コードを読むだけでは判定できない知覚上の問題である。
+   分岐点直後の`#2`タイル直下にライバル注記（`longRangeDemo.rivalNote`）が添えられており、文脈的な
+   補足はある。**この点はstatic reviewの範囲を超えるため、chainviz-qaに実機確認を申し送る**
+
+#### その他の指摘（軽微、reviewerが直接修正）
+
+- `docs/WORKLOG.md`の#415行がUX設計フェーズの内容のみで、frontend実装・テスト強化フェーズの内容が
+  反映されていなかったため、既存の記法（#420等）に合わせて同じ行に実装・テスト強化の要約を追記した
+
+#### 総合判定
+
+- 境界の遵守・ChainAdapter境界・チェーンプロファイル独立性: 該当なし（`packages/shared`・collector・
+  node-env変更なし。設計どおり）
+- `docs/ARCHITECTURE.md` §17.5.2の概念モデル（正規/攻撃者2本の履歴、finality checkpointによる採用可否の
+  実計算）・§17.6のUX設計引き継ぎは、実装に正しく反映されていることを確認した
+- コミット粒度・品質ゲート（エラー握りつぶし・環境依存の決め打ち値・Issueクローズ運用）に違反は無い
+- テストコードの質: ハッピーパスに加え境界値・異常系・古い状態が残らないことの確認・実際にコードを
+  壊してテストが検知できることの事前確認まで実施されており、水準は高い。上記2点目の指摘のみ軽微な
+  修正を実施した
+- Issue #414との潜在的なコンフリクトは認識済み。実際の解消は統括のマージ作業に委ねる
+
+**次の担当（統括）への申し送り**:
+- reviewerが`packages/frontend/src/attack-demo/longRangeAttackDemo.grid.test.ts`と`docs/WORKLOG.md`
+  を軽微に修正した。commit・pushは行っていない
+- Issue #414（メニュー統合方針で`ChainRibbonCard.tsx`/`ChainRibbonPopover.tsx`を変更中）とのマージ時の
+  調整が必要
+- Issue #413（`longRangeAttack`用語集エントリ）のマージ時、`ChainRibbonPopover.tsx`でのコンフリクトが
+  見込まれる（実装メモに詳細あり）。マージ後はglossaryアンカーが実データで機能することの再確認を推奨
