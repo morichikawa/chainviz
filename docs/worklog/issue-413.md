@@ -289,3 +289,82 @@ CLAUDE.md「『直したはず』で済ませず、実際に再現して確認�
   `chainRibbon.popover.longRangeHint`はどちらも「関連する用語 / Related
   terms」という同じ値を持つ別キー。値が同じことに依存したテストは書いて
   いないので、片方だけ文言を変えても問題ない
+
+---
+
+### 2026-07-25 Issue #413 レビュー結果（合格）
+
+- 担当: reviewer
+- ブランチ: `issue-413-attack-glossary-foundation`（レビューは同一コミットを
+  指す一時ブランチ `review-issue-413` 上で実施。push・コミットは行っていない）
+
+#### 確認した内容
+
+- `main` との差分全体（`git diff main..HEAD`）を読み、Issue本文・
+  `docs/ARCHITECTURE.md` §17.3・§17.4の設計内容と突き合わせた:
+  - glossary新規6語（`b-network.yaml`4語・`c-transaction.yaml`2語）の
+    配置ファイル・`layer`・relatedTermsの相互リンク
+    （`fiftyOnePercentAttack`↔`fork`↔`reorg`の三角形、`eclipseAttack`↔
+    `peer`/`p2p`/`discovery`、`doubleSpend`↔`transaction`/`nonce`、
+    `frontRunning`↔`mempool`/`transaction`/`gas`、`validator`/
+    `attestation`→`fiftyOnePercentAttack`の双方向）がすべて設計どおり
+  - 既存UI5箇所（`InfraPopover.tsx`/`ChainRibbonPopover.tsx`/
+    `PeerNetworkLegend.tsx`/`TxLifecyclePopover.tsx`/`MempoolPanel.tsx`）
+    への用語アンカー追加が、§17.4が指定した配置（近傍・表示条件）と一致
+  - `packages/shared`・collector・node-envへの変更が無いこと（設計どおり
+    frontendのみで完結）を確認
+- 設計原則との整合: 境界（フロントはDocker/ノードに非接触）・チェーン固有
+  語彙の非漏出（`eth_getLogs`等をgrep、該当なし）・データとコードの分離
+  （用語はYAMLのみに追加、コードはアンカー配置のみ）をすべて確認。既存
+  47語との整合性チェック（重複定義・layer不一致・dangling参照）も既存
+  テストが引き続きカバーしている
+- 「品質ゲートを骨抜きにしない運用ルール」の観点:
+  - `catch`して握りつぶす・エラーを汎用メッセージへすり替える変更は無し
+    （そもそも本Issueはロジックを持たない静的なUI/データ変更）
+  - 「今観測できる値」に依存する決め打ち定数は無し。テスト支援モジュール
+    の`findRepoFile`（親方向へ最大6階層探索してrepoルートを探す）は既存
+    テスト（`glossaryRelatedTermsIntegrity.test.ts`）と全く同じ既存パターン
+    の踏襲であり、新規の環境依存を持ち込んでいない
+  - Issue自動クローズの検証は統括のマージ作業時に別途行うべき事項のため
+    ここでは対象外
+- コミット粒度: `git log main..HEAD`で15コミットを確認。glossaryデータ
+  追加・i18nメッセージ追加・UIアンカー追加・各テストファイル追加が
+  それぞれ独立したコミットに分かれており、「1つの変更内容 = 1コミット」
+  の原則を満たす。i18nメッセージ追加コミット（4c47845）が既存の
+  `i18n.empty-string.test.ts`の「意図的な空文字は1箇所のみ」という
+  不変条件テストも同じコミットで更新しているが、これは新しい意図的な
+  空文字（`legend.eclipseHint.suffix.en`）を追加する変更と不可分（更新
+  しないとそのコミット単体でテストが壊れる）であり、関心事の混在とは
+  判断しなかった
+- `pnpm lint && pnpm build && pnpm test`をリポジトリ全体で実行し、
+  すべて成功することを確認（frontend 267ファイル3380件、shared 75件、
+  collector 1765件、e2e 185件、いずれも失敗なし）
+- テストコードの質: 実装側を意図的に壊すハッピーパスのみのテストではなく、
+  異常系（glossaryエントリ欠損時の縮退・関連語の重複・キー重複定義・
+  layer綴り崩し・折りたたみブロックスカラーの取り違え・和文混入・
+  用語データとUI文言の食い違い）を広くカバーしている。実装の詳細を
+  なぞるだけの無意味なテストは見当たらなかった。テスト強化担当が
+  「実装側を意図的に壊した12パターンでテストが失敗することを確認して
+  から元に戻した」と報告している手順もCLAUDE.mdの運用ルールに沿っている
+
+#### 「観察のみ2点」の判断確認
+
+依頼にあった2件について、テスト強化担当の「本Issueの範囲外」という判断は
+妥当と判断した:
+
+1. 折りたたみブロックスカラー（`>-`）による行末半角空白: 実際に
+   repoの全4YAMLファイルを機械的に走査したところ、既存47語のうち42語
+   （新設6語含む）が同じ状態であることを確認した。Issue #413固有の
+   問題ではなく、repo全体の用語データの書き方の特性であり、本Issueの
+   スコープ（新規6語の追加）を超えて既存データ全体を書き直す話になる。
+   別Issueで扱うべきという判断に同意する
+2. `legend.eclipseHint`のenで文末句点が無い件: 踏襲元の`legend.hint`
+   （Issue #341）を実際にコード上で確認したところ、同じ「prefixに文を
+   寄せてsuffixを空にする」書き方であることを確認した。既存の流儀に
+   意図的に揃えたものであり、この1箇所だけ句点を足すと踏襲元との対称性
+   が崩れる。対応不要という判断に同意する
+
+#### 判定
+
+**合格**。設計・実装・テストのいずれにも指摘事項なし。統括によるコミット・
+push・PR作成・マージの判断に委ねる。
