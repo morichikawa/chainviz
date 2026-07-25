@@ -891,3 +891,121 @@ index を使う、の13件。
 - commit / push / PR作成 / Issueクローズはいずれも行っていない（統括に委ねる）
 - 上記の必須修正が入り次第、同じ手順（英語UI・既定パネル幅でのチップ表示、日本語UIでの回帰、
   checkpoint操作とリセット）で再検証する
+
+### 2026-07-25 Issue #415 差し戻し対応（チップラベル重なりの修正）
+
+- 担当: frontend
+- ブランチ: issue-415-long-range-attack-demo
+
+#### 設計メモ（着手前）
+
+QA指摘の原因は、`.long-range-demo__grid` の `grid-template-columns` が
+`minmax(62px, max-content)` になっている一方、グリッド自体の幅を明示して
+いなかったこと。グリッドは block 要素なので `width: auto` はデフォルトで
+「親要素（`.long-range-demo__scroll`。サイドパネル幅に制約される）の幅
+いっぱいに広がる」動作になる。利用可能幅が各列の `max-content` 合計より
+小さい場合、CSS Grid のトラックサイズ決定アルゴリズムは負の余剰スペースを
+埋めるために各列を `minmax()` の最小値（62px）まで縮める。英語版の
+checkpointチップ（幅約122px）はこの62pxのセルに収まらず、はみ出して隣の
+セルに重なる。日本語版のチップ（幅68px）はセル間の余白（column-gap 6px +
+コネクタ列14px）に収まるため顕在化しなかった。
+
+対応方針は QA報告書が候補として挙げていた「グリッド自体を
+`width: max-content` にする」を採用する。グリッドの使用幅を「各列の
+max-content の合計」に固定すれば、パネル幅が足りない場合は列を縮める
+のではなく `.long-range-demo__scroll` の既存の `overflow-x: auto` が
+横スクロールとして吸収する（「はみ出したら横スクロール」という元々の
+設計方針をそのまま機能させるだけで、グリッドの列定義・コンポーネントの
+構造は変更しない、影響範囲の小さい修正）。
+
+任意改善2点（共有区間の明示、破線コネクタの意味の説明）も、グリッドの
+レイアウト自体には触れず、図の直下に短い注記を2本追加するテキストのみの
+変更として対応する（本Issueがまさにグリッドのレイアウト起因の不具合で
+差し戻された直後のため、レイアウトに影響する変更を追加で持ち込むリスクを
+避けた）。
+
+#### 再現の確認（修正前）
+
+Playwright（`packages/e2e` 同梱の想定に準じ、`mcr.microsoft.com/playwright`
+のDockerイメージを `--network host` で使用。QAと同じ手法）で、
+`pnpm --filter @chainviz/frontend dev` （モックデータ、ポート5417）に対して
+以下を自動化して確認した。
+
+- 英語に切り替え → チェーンリボンカードの「Try a long-range attack」で
+  パネルを開く（サイドパネル幅は既定420px。ビューポート幅ではなく
+  `localStorage` の `chainviz.sidePanel.width.v1` に依存するため、
+  ビューポートは1600pxの広い状態で確認しても既定パネル幅は420pxのまま
+  であることを確認済み）
+- 4つの checkpoint チップの `boundingBox()` を取得し、隣接チップ間の
+  水平方向の重なりを計算
+- 修正前: `overlap=20.6px` の重なりが3箇所（QA報告と一致）
+
+#### 実装内容
+
+- `packages/frontend/src/styles.css`: `.long-range-demo__grid` に
+  `width: max-content;` を追加。それ以外の `grid-template-columns` 等は
+  変更していない
+- `packages/frontend/src/attack-demo/LongRangeAttackDemoView.tsx`:
+  図（`.long-range-demo__diagram`）の直下に注記を2本追加
+  - `longRangeDemo.sharedNote`: 共有区間（`#0`〜`#{DIVERGE_AT - 1}`）を
+    明示する注記。番号は決め打ちではなく `DIVERGE_AT` から導出
+  - `longRangeDemo.forkLinkNote`: 破線コネクタが実際のハッシュ連結切れ
+    ではないことを説明する注記
+- `packages/frontend/src/i18n/messages.ts`: 上記2キーの ja/en を追加
+- `packages/frontend/src/styles.css`: `.long-range-demo__diagram-note`
+  （既存の `.long-range-demo__footer-note` と同系統の控えめな見た目）を新設
+
+#### 修正後の確認
+
+同じPlaywrightスクリプトで以下を確認した。
+
+- 英語・既定パネル幅420px: 重なり0箇所（隣接チップ間に約26pxの空きが
+  できることを確認）
+- 英語・パネル幅300px（最小）/745px/905pxでも重なり0箇所
+- 日本語・パネル幅420px/300px（回帰確認）でも重なり0箇所
+- パネル幅が図の自然な幅（`scrollWidth`）より狭い場合は
+  `.long-range-demo__scroll` の横スクロールで到達できること
+  （`scrollWidth`/`clientWidth` を比較して確認）
+- checkpointチップのクリック操作（`#2`を選択して finality 判定が
+  "The canonical chain holds..." に切り替わること）が修正後も機能すること
+- 実際のスクリーンショットで、4つのチップラベル（`Finalized through #0`〜
+  `#3`）がすべて重なりなく判読できることを目視確認した
+- 追加した2本の注記（共有区間・破線コネクタの説明）が英語・日本語両方で
+  正しく表示されることを確認した
+
+#### テスト
+
+- `packages/frontend/src/i18n/messages.longRangeDemo.test.ts`:
+  `longRangeDemo.sharedNote`/`longRangeDemo.forkLinkNote` を
+  `PLACEHOLDER_KEYS`（`sharedNote` は `{lastShared}` を持つ）に追加し、
+  既存の動的キー収集の枠組みでja/en整合・プレースホルダ整合を検査対象に
+  含めた。`sharedNote` の `format()` 後に未解決のプレースホルダが残らない
+  ことのテストを追加
+- `packages/frontend/src/attack-demo/LongRangeAttackDemoView.test.tsx`:
+  共有区間の注記が実データ（`DIVERGE_AT - 1`）から導かれた番号を含むこと、
+  破線注記が描画されること、checkpoint操作・リセットを挟んでも注記の
+  内容が変わらないことを追加
+- `packages/frontend/src/attack-demo/LongRangeAttackDemoView.i18n.test.tsx`:
+  日本語表示で2つの注記が正しい文言を含むことを追加
+
+このPlaywrightでの目視・自動計測による確認はレイアウトの幾何的な保証
+（jsdomでは検出できない種類の不具合）であり、ユニットテストでは代替
+できない。今後同種のグリッド幅の不具合を防ぐ回帰テストとしてE2E化する
+かどうかは、既存の `packages/e2e` の方針と合わせて別途検討の余地がある
+（本差し戻し対応の範囲では見送った。CSSの`width: max-content`という
+シンプルな修正で、かつ手動のPlaywright確認で再現・解消の両方を確認済み
+のため）。
+
+`pnpm lint && pnpm build && pnpm test` をモノレポ全体で実行し、全パッケージ
+成功を確認した（frontend: 276ファイル3465ケース）。
+
+#### 次の担当（reviewer/QA）への申し送り
+
+- 修正は `.long-range-demo__grid` の `width: max-content` 追加のみで、
+  グリッドの列定義（`tileGridColumn`/`connectorGridColumnAfter`）・
+  コンポーネント構造は変更していない
+- 任意改善2点（共有区間の明示・破線コネクタの説明）は、QA報告の推奨どおり
+  「短い注記」の形で対応した。レイアウトの囲み線等の視覚的な表現は
+  採用していない（グリッドレイアウトの直後にテキスト注記を追加するのみ）
+- commit / push は実施済み（コミット粒度は git log 参照）。PR作成・
+  マージ・Issueクローズは行っていない
