@@ -8,6 +8,7 @@ import { BEACON_API_PORT } from "./beacon-api.js";
 import { classifyContainer } from "./classify.js";
 import { ROLE_LABEL } from "./labels.js";
 import { EXECUTION_METRICS_PORT } from "./reth-metrics-client.js";
+import { VALIDATOR_METRICS_PORT } from "./vc-metrics-client.js";
 
 const COMPOSE_SERVICE_LABEL = "com.docker.compose.service";
 
@@ -60,6 +61,17 @@ export interface ExecutionPeerTarget {
  * Execution ノードの到達先。
  */
 export interface ExecutionMetricsTarget {
+  /** ノードの安定識別子（NodeEntity.id と一致）。 */
+  stableId: string;
+  /** `/metrics` の URL。 */
+  metricsUrl: string;
+}
+
+/**
+ * D層: VC（validator client）自身の職務メトリクス（Prometheus、Issue #420）を
+ * ポーリングする validator ノードの到達先。executionMetricsTargets と同型。
+ */
+export interface ValidatorMetricsTarget {
   /** ノードの安定識別子（NodeEntity.id と一致）。 */
   stableId: string;
   /** `/metrics` の URL。 */
@@ -291,15 +303,18 @@ export function executionStableIdForBeacon(
  * validator（VC）コンテナが Beacon API で接続する beacon（CL）コンテナの
  * stableId を導く。`NodeEntity.drivesNodeId` の解決に使う（D層、
  * Issue #285）。VC の実接続先（`--beacon-nodes`）を実測観測する経路は
- * 現状存在しない（lighthouse VC の HTTP API・メトリクスはノード環境
- * テンプレートで無効のまま、Beacon API 側にも接続元 VC を列挙する
- * エンドポイントが無い、Docker 観測はコンテナの環境変数を収集しない）ため、
- * `executionStableIdForBeacon`（beacon→execution）と同じ「compose サービス名
- * のノード群キーによる静的解決」にそろえる。`validator` がそもそも
- * validator 役のコンテナでなければ（beacon・execution・workbench 等）
- * 呼び出し元の判定に関わらず即 undefined を返す（`pollInfra` が全
- * NodeEntity に対して機械的に呼べるようにするための自己防衛。
- * `executionStableIdForBeacon` と同型）。
+ * 現状存在しない（lighthouse VC の Prometheus メトリクスは Issue #420 で
+ * 有効化済みだが、`vc_signed_beacon_blocks_total` 等のカウンタは接続先
+ * beacon を識別するラベルを一切持たない（VC プロセス単位の集計。
+ * docs/worklog/issue-420.md 参照）。VC 自身の HTTP API（Keymanager 系）は
+ * 認証トークンが必要で複雑度が高く未有効化のまま。Beacon API 側にも
+ * 接続元 VC を列挙するエンドポイントが無く、Docker 観測はコンテナの環境
+ * 変数を収集しない）ため、`executionStableIdForBeacon`（beacon→execution）
+ * と同じ「compose サービス名のノード群キーによる静的解決」にそろえる。
+ * `validator` がそもそも validator 役のコンテナでなければ（beacon・
+ * execution・workbench 等）呼び出し元の判定に関わらず即 undefined を返す
+ * （`pollInfra` が全 NodeEntity に対して機械的に呼べるようにするための
+ * 自己防衛。`executionStableIdForBeacon` と同型）。
  */
 export function beaconStableIdForValidator(
   validator: ContainerObservation,
@@ -372,6 +387,30 @@ export function executionMetricsTargets(
     targets.push({
       stableId: obs.stableId,
       metricsUrl: `http://${obs.ip}:${EXECUTION_METRICS_PORT}/metrics`,
+    });
+  }
+  return targets;
+}
+
+/**
+ * D層の VC 職務メトリクス（Prometheus、Issue #420）のポーリング対象になる
+ * validator（VC）ノードを観測値から抽出する。選別基準は
+ * `isValidatorService(obs)`（`com.chainviz.role === "validator"`、
+ * Issue #246）+ `obs.ip` が取れること（executionMetricsTargets と同型）。
+ * VC は自分が鍵を管理する validator の活動だけを自分のメトリクスとして
+ * 公開するため、validator_index → VC コンテナの対応付けは不要
+ * （docs/ARCHITECTURE.md §7.6.12）。
+ */
+export function validatorMetricsTargets(
+  observations: ContainerObservation[],
+): ValidatorMetricsTarget[] {
+  const targets: ValidatorMetricsTarget[] = [];
+  for (const obs of observations) {
+    if (!obs.ip) continue;
+    if (!isValidatorService(obs)) continue;
+    targets.push({
+      stableId: obs.stableId,
+      metricsUrl: `http://${obs.ip}:${VALIDATOR_METRICS_PORT}/metrics`,
     });
   }
   return targets;

@@ -145,7 +145,7 @@ describe("InternalLinkEdgePopover (consensus→execution, Engine API)", () => {
   });
 });
 
-describe("InternalLinkEdgePopover (validator→consensus, Beacon API, Issue #285)", () => {
+describe("InternalLinkEdgePopover (validator→consensus, Beacon API, Issue #285/#420)", () => {
   function beaconApiProps(
     overrides: Partial<Parameters<typeof InternalLinkEdgePopover>[0]> = {},
   ) {
@@ -172,17 +172,39 @@ describe("InternalLinkEdgePopover (validator→consensus, Beacon API, Issue #285
     ).toBeTruthy();
   });
 
-  it("hides the recent-calls section entirely, even when lastActivity is fresh (no observed call path)", () => {
+  it("shows the no-recent-calls fallback when there is no last activity (Issue #420: activity section now shown)", () => {
+    wrap(beaconApiProps());
+    expect(screen.getByText("最近の呼び出しはありません")).toBeTruthy();
+  });
+
+  it("shows the no-recent-calls fallback when the last activity is stale", () => {
+    const observedAt = Date.now() - INTERNAL_LINK_FRESHNESS_MS - 1;
     wrap(
       beaconApiProps({
         lastActivity: {
-          calls: [{ method: "beacon_publishBlock", count: 1 }],
+          calls: [{ method: "vc_signed_attestations_total:success", count: 1 }],
+          observedAt,
+        },
+      }),
+    );
+    expect(screen.getByText("最近の呼び出しはありません")).toBeTruthy();
+  });
+
+  it("shows the recent call breakdown when lastActivity is fresh (Issue #420: VC metrics observation added)", () => {
+    wrap(
+      beaconApiProps({
+        lastActivity: {
+          calls: [{ method: "vc_signed_beacon_blocks_total:success", count: 1, latencyMs: 120.7 }],
           observedAt: Date.now(),
         },
       }),
     );
     expect(screen.queryByText("最近の呼び出しはありません")).toBeNull();
-    expect(screen.queryByText(/beacon_publishBlock/)).toBeNull();
+    expect(
+      screen.getByText(
+        "vc_signed_beacon_blocks_total:success ×1 (ブロック提案の署名) (平均 121 ms)",
+      ),
+    ).toBeTruthy();
   });
 
   it("localizes the Beacon API heading to English", () => {

@@ -41,8 +41,11 @@ beacon-api:
       提案・証明するか）を問い合わせ、署名した結果を提出する。鍵を預かる
       VC と P2P ネットワークに参加する beacon を別プロセスに分けることで、
       鍵の管理と外部との通信を分離できる。chainviz では validator カード
-      から beacon カードへ引かれる内部リンクの紐として見える（Engine API
-      のリンクと違い呼び出しの観測経路が無いため、パルスは流れない）。
+      から beacon カードへ引かれる内部リンクの紐と、その上を流れるパルス
+      として見える（VC 自身の Prometheus メトリクスから観測。パルス1本は
+      「観測間隔内に少なくとも1回、担当スロットでのブロック提案または証明の
+      署名・提出があったこと」を示すハートビートで、内訳（提案／証明の
+      どちらか、回数）は紐へのホバーで確認できる）。
     en: >-
       The HTTP API that connects the validator client (VC) to the
       consensus client (the beacon node). The VC uses this API to ask
@@ -51,8 +54,12 @@ beacon-api:
       holds signing keys, from the beacon node, which participates in the
       P2P network, keeps key management separate from external
       communication. chainviz shows this as the internal link cord from a
-      validator card to its beacon card (unlike the Engine API link, there
-      is no observed call activity, so no pulses flow along it).
+      validator card to its beacon card, with pulses flowing along it
+      (observed from the VC's own Prometheus metrics). Each pulse is a
+      heartbeat meaning "at least one block proposal or attestation was
+      signed and submitted for an assigned slot in this observation
+      interval"; the breakdown (which duty, and how many) is available by
+      hovering the cord.
   layer: d-internal
   relatedTerms: [validator, cl-client, engine-api]
 

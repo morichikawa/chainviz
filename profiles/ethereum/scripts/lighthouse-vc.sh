@@ -46,9 +46,19 @@ GENESIS_SUSPEND_DETECT_SEC="${GENESIS_SUSPEND_DETECT_SEC:-600}"
 ) &
 
 echo "[validator] 起動(接続先: ${BEACON_NODE})"
+# --metrics 0.0.0.0:5064 は D層(ノード内部可視化、Issue #420)向けの
+# Prometheus メトリクスエンドポイント。既定の --metrics-address は
+# 127.0.0.1 でコンテナ外から届かないため 0.0.0.0 への上書きが必須
+# (reth-node.sh の --metrics 0.0.0.0:9001 と同じ理由)。ホストへの
+# ports: 公開は行わない。collector はこのメトリクスにも JSON-RPC・
+# Beacon API と同じく Docker 観測から得たコンテナ IP へ直接到達する設計
+# のため(docs/ARCHITECTURE.md §7.6.12、docs/worklog/issue-420.md)。
 exec lighthouse vc \
   --testnet-dir /genesis/metadata \
   --datadir /data \
   --beacon-nodes "${BEACON_NODE}" \
   --init-slashing-protection \
-  --suggested-fee-recipient "${FEE_RECIPIENT}"
+  --suggested-fee-recipient "${FEE_RECIPIENT}" \
+  --metrics \
+  --metrics-address 0.0.0.0 \
+  --metrics-port 5064
