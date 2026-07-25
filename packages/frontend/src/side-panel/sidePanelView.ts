@@ -61,4 +61,14 @@ export type SidePanelView =
        */
       kind: "blockDetail";
       hash: string;
+    }
+  | {
+      /**
+       * 「eclipse攻撃のしくみ」デモ（Issue #416。`docs/ARCHITECTURE.md`
+       * §17.5.3、`docs/worklog/issue-416.md` UX設計）。`hashChainDemo`/
+       * `signatureDemo` と同じく実チェーン・実P2P接続から完全に独立した
+       * 学習用の疑似データ（砂場）を扱うため、対象を指すデータは持たない。
+       * 中身（`EclipseAttackDemoView`）は開くたびに初期状態から始まる。
+       */
+      kind: "eclipseAttackDemo";
     };

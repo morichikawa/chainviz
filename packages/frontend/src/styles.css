@@ -50,6 +50,13 @@
      区別する（.infra-card--fork-2/3、下記）ため、2色で4枝まで表現できる。 */
   --fork-color-a: #ffcc00;
   --fork-color-b: #00e0ff;
+  /* Issue #416: eclipse攻撃デモ（attack-demo/EclipseAttackDemoView.tsx）の
+     攻撃者ピア専用色。新規に似た赤を増やさず、既存の危険/無効色
+     `#ff6b6b`（.toast--error・.operation-form__error・
+     .hash-chain-demo__connector--broken 等で既に「壊れている/信頼できない」
+     を表す色として確立済み）をそのまま再利用する（UX設計
+     docs/worklog/issue-416.md §2「既存可視化との視覚的な結びつき」）。 */
+  --attacker-peer: #ff6b6b;
   /* 「静かな夜のガラス」デザイン方針（Issue #327）のガラス表現トークン。
      すりガラス（半透明 + backdrop-filter）は重なりが発生する浮遊要素
      （オーバーレイパネル・ポップオーバー・トースト）にのみ使う。カード群
@@ -3607,6 +3614,206 @@ button.mempool-panel__row:hover {
   display: flex;
   gap: 10px;
   margin: 0 0 6px;
+}
+
+/* --- Issue #416: 「eclipse攻撃のしくみ」デモ(kind: eclipseAttackDemo) ---
+   中央の被害ノード+8スロットのミニ包囲グラフを主役に据える構成
+   (UX設計 docs/worklog/issue-416.md §3レイアウト)。 */
+.eclipse-demo__intro {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+
+.eclipse-demo__graph {
+  display: block;
+  width: 100%;
+  max-width: 280px;
+  height: auto;
+  margin: 0 auto 12px;
+}
+
+.eclipse-demo__slot-line--honest {
+  stroke: #7db8ff;
+  stroke-width: 2;
+  stroke-opacity: 0.85;
+}
+
+.eclipse-demo__slot-line--attacker {
+  stroke: var(--attacker-peer);
+  stroke-width: 2;
+  stroke-opacity: 0.85;
+}
+
+.eclipse-demo__slot-chip--honest {
+  fill: #7db8ff;
+}
+
+.eclipse-demo__slot-chip--attacker {
+  fill: var(--attacker-peer);
+}
+
+/* Issue #416: スロットが置き換わった瞬間の短いフラッシュ演出（既存の
+   新着ハイライト `chainviz-new-arrival` を再利用。上方で定義済み。
+   hashChainDemo のハッシュ値フラッシュと同じ演出方針・同じduration定数
+   `NEW_ARRIVAL_HIGHLIGHT_DURATION_MS` を流用する）。 */
+.eclipse-demo__slot-chip--flash {
+  animation: chainviz-new-arrival 1.4s ease-in-out infinite;
+}
+
+.eclipse-demo__slot-glyph {
+  font-size: 14px;
+  font-weight: 700;
+  fill: #0f1420;
+  pointer-events: none;
+}
+
+/* Issue #416: 被害ノードのoutline切替。InfraNodeCard のフォーク時outline
+   切替（枠のborder-color/box-shadowを状態に応じて変える手法）と同じ視覚
+   言語を再利用する。SVG のため outline ではなく rect の stroke で表現する。 */
+.eclipse-demo__victim {
+  fill: var(--panel-2);
+  stroke: var(--synced);
+  stroke-width: 3;
+}
+
+.eclipse-demo__victim--eclipsed {
+  stroke: var(--attacker-peer);
+}
+
+.eclipse-demo__victim-label {
+  font-size: 12px;
+  fill: var(--text);
+  pointer-events: none;
+}
+
+.eclipse-demo__meter {
+  margin: 4px 0 12px;
+}
+
+.eclipse-demo__meter-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.eclipse-demo__meter-fill {
+  height: 100%;
+  background: var(--attacker-peer);
+  transition: width 0.2s ease;
+}
+
+.eclipse-demo__meter-text {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.eclipse-demo__actions {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.eclipse-demo__add {
+  flex: 1;
+  background: none;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  color: var(--accent);
+  font-size: 12px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.eclipse-demo__add:disabled {
+  border-color: var(--border);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.eclipse-demo__reset {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.eclipse-demo__view {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(32, 39, 58, 0.9), rgba(24, 30, 46, 0.95));
+}
+
+.eclipse-demo__view-label {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.eclipse-demo__blocks {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 8px;
+  padding: 0;
+}
+
+.eclipse-demo__block {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  padding: 4px 8px;
+  border: 1px dashed var(--divider);
+  border-radius: 6px;
+}
+
+.eclipse-demo__badge {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.eclipse-demo__badge--real {
+  color: #a8f0d4;
+  border: 1px solid var(--synced);
+  background: rgba(56, 211, 159, 0.14);
+}
+
+.eclipse-demo__badge--fake {
+  color: #ffb4b4;
+  border: 1px solid var(--attacker-peer);
+  background: rgba(255, 107, 107, 0.14);
+}
+
+.eclipse-demo__warning {
+  margin: 0 0 12px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--attacker-peer);
+  background: rgba(255, 107, 107, 0.12);
+  font-size: 13px;
+}
+
+.eclipse-demo__footer-note {
+  color: var(--muted);
+  font-size: 11px;
+  margin: 6px 0;
+}
+
+.eclipse-demo__footer-links {
+  display: flex;
+  gap: 10px;
+  margin: 4px 0 0;
 }
 
 /* --- ブロック詳細パネル（kind: "blockDetail"。Issue #409。
