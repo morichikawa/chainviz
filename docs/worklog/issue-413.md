@@ -821,3 +821,167 @@ collector 92ファイル1765件、e2e（プロトコル層）16ファイル185�
 範囲にも入らない残存課題であり、CSSコメントへの一言追記を推奨するに
 留め、差し戻し理由にはしない（対応するかどうかは統括の判断に委ねる）。
 統括によるコミット・push・PR作成・マージの判断に委ねる。
+
+---
+
+### 2026-07-25 Issue #413 差し戻し対応の再QA検証結果（合格）
+
+- 担当: qa
+- 対象: `origin/issue-413-attack-glossary-foundation`（先頭コミット `9ba888e`）。
+  同ブランチは別 worktree で checkout 済みだったため、専用 worktree で
+  `origin/issue-413-attack-glossary-foundation` を detached HEAD で checkout して
+  検証した。コミット・push は行っていない（統括が実施する）
+- 検証環境:
+  - `docker compose -f profiles/ethereum/docker-compose.yml up -d` を実行した。
+    直前まで稼働していたスタックが全コンテナ Recreate 扱いとなり、genesis
+    サービスの再生成判定（Issue #286 のハートビート実測ロジック）が
+    「down 直後の再起動」と判断して genesis を再生成したため、チェーンは
+    genesis から作り直された。以降ブロックは継続的に進行した
+    （ワークベンチから `cast block-number --rpc-url http://reth1:8545` が
+    0 → 2 → 39 → と進行することを確認）
+  - collector は本ブランチで `pnpm --filter @chainviz/collector build` した
+    dist を `CHAINVIZ_COLLECTOR_PORT=4300 CHAINVIZ_PROXY_PORT=4301` で起動し、
+    frontend は同ブランチのソースを `VITE_COLLECTOR_URL=ws://localhost:4300` で
+    vite dev（port 5312）起動して検証した（既に稼働していた別セッションの
+    collector(4000)・vite(5173/5199) には接続していない）
+  - WebSocket 疎通は `ws` クライアントスクリプトで直接確認した。
+    `snapshot`（node 6・workbench 2・wallet 2・block 5）を受信し、その後
+    `diff`（`entityAdded`/`entityUpdated`/`nodeLinkActivity`）が継続して
+    流れることを確認した
+  - 実ブラウザ確認は Playwright（chromium、
+    `LD_LIBRARY_PATH=/home/zoe/chrome-deps/root/usr/lib/x86_64-linux-gnu`）。
+    一時スクリプト・スクリーンショットはリポジトリ外（スクラッチパッド）に
+    置いており、リポジトリにファイルは追加していない
+
+#### 1. 前回の差し戻し理由（5-1）の解消確認
+
+前回 QA と同じ再現手順（ビューポート 1280x720）で、`.mempool-panel__header` の
+座標と `mempool` 用語アンカーのクリック可否を実測した。パネル高が最大に
+なる状態（「ノード別 txpool」欄が埋まった状態）を待ってから測定している。
+
+| ビューポート高 | `max-height` の計算値 | パネル上端 | ヘッダー y | 層フィルターバー下端 | 覆われるか | ヘッダー上の `elementFromPoint` |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1000 | 260px | 435 | 444 | 175 | 覆われない | mempool-panel |
+| 900 | 260px | 335 | 344 | 175 | 覆われない | mempool-panel |
+| 730 | 145px | 200 | 209 | 175 | 覆われない | mempool-panel |
+| 720 | 135px | 200 | 209 | 175 | 覆われない | mempool-panel |
+| 700 | 115px | 200 | 209 | 175 | 覆われない | mempool-panel |
+| 660 | 75px | 200 | 209 | 175 | 覆われない | mempool-panel |
+
+1280x720 で `mempool` 用語アンカーの `locator.click()` が成功し、用語集パネルが
+開くことを確認した（前回はここが `element intercepts pointer events` で
+タイムアウトしていた）。
+
+「直したはず」で済ませないため、同じセッション内で両方向を確認した。
+`page.addStyleTag` で `.mempool-panel { max-height: 260px !important; }` を
+注入して修正前相当に戻すと、1280x720 でヘッダー y=164 < バー下端 175 となり、
+クリックが前回とまったく同じ
+`<div class="layer-filter-bar" ...> ... intercepts pointer events` で
+タイムアウトすることを確認した。修正を効かせた状態では成功する。
+
+#### 2. 低いビューポート高での挙動（レビューで指摘された残存課題の実測）
+
+レビューが指摘した「585px 以下で `calc(100vh - 585px)` が負になる」点について、
+修正前相当（`max-height: 260px`）との比較を実測した。判定は「ヘッダー行が
+ビューポート内かつ層フィルターバーより下にあるか」。
+
+| ビューポート高 | 本ブランチ | 修正前相当（260px 固定） |
+| --- | --- | --- |
+| 720 | ヘッダー可視・クリック可 | ヘッダーがバーに覆われる |
+| 660 | ヘッダー可視・クリック可 | ヘッダーがツールバーに覆われる |
+| 600 | ヘッダー可視・クリック可（パネル実高 18px。内容はスクロールに逃げる） | ヘッダーが画面上部の見出しに覆われる |
+| 586 | ヘッダー可視・クリック可（同上） | 同上 |
+| 500 | ヘッダーがツールバーに覆われる | ヘッダーがビューポート外（y=-56） |
+
+- 585px 以下でも padding 分（実高 18px）が残るため、実際には
+  「パネルが完全に消える」のではなく、優先度の高いヘッダー行
+  （`mempool` アンカー + 件数バッジ）だけが残り、クリックも通る状態になる
+- どのビューポート高でも本ブランチが修正前相当より悪化する組み合わせは
+  無かった。500px では両方とも破綻するが、これは修正前から同様であり
+  本Issueの変更による退行ではない
+- chainviz に最小対応ビューポートの規定・レスポンシブ対応が無いこと
+  （`styles.css` に `@media` が存在しない）を踏まえ、レビューの判断どおり
+  ブロッカーとしない
+
+#### 3. 前回合格していた条件のデグレ確認
+
+`git diff debbaa2 HEAD`（前回 QA 時点のコミットから現在まで）の変更は
+`packages/frontend/src/styles.css`（`.mempool-panel` の `max-height` +
+コメント）・`packages/e2e/src/ui/mempool-panel-layout.spec.ts`（新規）・
+`packages/e2e/SCENARIOS.md`・`docs/worklog/issue-413.md` のみだが、
+利用者から見える条件は実機で再確認した。
+
+- **5箇所のアンカー**: 実際にホバー/クリックして確認した
+  - `MempoolPanel` の `frontRunning`: 0件時も常設表示。ポップオーバー・
+    用語集パネル遷移（`aria-expanded="true"`）ともOK
+  - `PeerNetworkLegend` の `eclipseAttack`: 表示・ポップオーバー・遷移OK
+  - `ChainRibbonPopover` の `longRangeAttack`: 表示・ポップオーバー・遷移OK。
+    DOM順も設計どおり（ブロック番号 → ハッシュ → 親ブロック → 関連する用語
+    → 時刻 → 取り込まれた tx → 受信したノード）
+  - `TxLifecyclePopover` の `doubleSpend`: 定型操作パネルから 0.01 ETH の
+    送金を実行して tx を作り、ウォレットカードの tx チップから
+    `TxLifecyclePopover` を開いて確認した。DOM順も設計どおり
+    （ヘッダ → 段階リスト → ダブルスペンドのヒント → 署名デモへの導線）
+  - `InfraPopover` の `fiftyOnePercentAttack` / `reorg`: フォーク検知中のみ
+    表示される条件のため、実 collector から取得したスナップショットの
+    tip に兄弟ブロックを1つ足し、reth2/beacon2 だけをその枝に向けた合成
+    スナップショットを `page.routeWebSocket` で流して再現した。4枚のカードに
+    フォーク色（fork-0 / fork-1）が付き、`InfraPopover` の「見ている tip」の
+    直後に「関連する用語 51%攻撃（多数派支配） / リオーグ（reorg）」が出て、
+    両アンカーのポップオーバーも開いた
+- **用語集パネルからの到達性**: 6語すべてが1回だけ、
+  `fiftyOnePercentAttack`/`longRangeAttack`/`eclipseAttack`/`reorg` は B層
+  グループ、`doubleSpend`/`frontRunning` は C層グループに現れる
+- **検索**: 「51%」「多数派」「リオーグ」「reorg」「eclipse」
+  「ダブルスペンド」「double-spend」「フロントランニング」「long-range」
+  「fiftyOnePercentAttack」のいずれでも対象語がヒットする
+- **MempoolPanel の0件時**: ヘッダー・フロントランニングのヒント（1件のみ）・
+  「保留中の tx はありません（滞りなく取り込まれています）」がすべてパネルの
+  可視領域内に収まっていることを座標で確認した（1280x720）
+- **英語表示**: 言語切替後も 1280x720 でヘッダー y=209 > バー下端 167 で
+  覆われず、英語のヒント文（日本語より長い）もパネル可視領域内に収まり、
+  `frontRunning` アンカーのポップオーバー・用語集パネル遷移も動作した
+- **新規E2E**: `pnpm --filter @chainviz/e2e exec playwright test
+  src/ui/mempool-panel-layout.spec.ts` が実 Docker スタック + 専用
+  collector + vite dev server 起動込みで成功した（1 passed / 51.7s）。
+  上記1で `max-height: 260px` に戻すとヘッダー y がバー下端より上に来ることを
+  実測しており、このテストの assertion（`headerBox.y >=
+  barBox.y + barBox.height`）が実際に退行を検出する内容であることも確認した
+- ブラウザの `pageerror` / console error は一連の操作を通して発生しなかった
+
+#### 4. 記録に残す指摘（差し戻しは不要）
+
+- **4-1. 5-2（P2P凡例の `eclipseAttack` ポップオーバーが画面下端で 21px
+  切れる）は未解消**。今回も 1280x720 で同じ 21px のはみ出しを実測した。
+  前回 QA で「軽微」と切り分け、frontend が `PopoverPortal` 共通変更の
+  影響範囲を理由に見送った判断は妥当。別Issueとして切り出すかは統括の判断
+  に委ねる
+- **4-2. 1280x720 では「ノード別 txpool」欄がパネル内スクロールに入る**。
+  `max-height` を絞った結果、パネルの下側にある「ノード別 txpool」欄が
+  可視領域からあふれる（`scrollHeight` 178 / `clientHeight` 133）。
+  優先度の高いヘッダー・ヒント・tx一覧（または0件メッセージ）は可視領域内に
+  残るため実用上の問題は無いと判断したが、欄の存在に気づきにくくなる面は
+  ある。将来 `.mempool-panel` のレイアウトを見直す際の観点として記録する
+- **4-3. 定義文中のバッククォートがそのまま表示される**。`reorg` /
+  `fiftyOnePercentAttack` の定義文の「フォーク（`fork`）」が、用語
+  ポップオーバー・用語集パネルでバッククォート付きのまま表示される。ただし
+  `main` 時点の既存語（`txpool` の定義文中の `mempool` 参照）にも同じ書き方が
+  あり、本Issue固有の問題ではないため差し戻し理由にはしない
+
+#### 判定
+
+**合格**。前回の差し戻し理由（5-1: 1280x720 で mempool パネルのヘッダー行と
+`mempool` 用語アンカーが層フィルターバーに覆われて操作できない）は、実機で
+解消していることを両方向（修正あり/なし）で確認した。Issue #413 の受け入れ
+条件（6語の追加・5箇所へのアンカー配置・ja/en 両方での表示・用語集パネルからの
+到達性・MempoolPanel の0件時の常設表示）はすべて満たしている。新規追加された
+UI E2E（UI-OVERLAY-01）も実環境で成功する。
+
+- `docs/PLAN.md` の #413 の行は実装担当が既にチェック済み（`[x]`）であり、
+  QA 専用のチェックボックスは無いため変更していない
+- 本追記はファイル編集のみで、commit・push・PR作成・マージ・Issueクローズは
+  行っていない（統括の判断に委ねる）
+- 検証中の副作用として、`docker compose up -d` で既存スタックが Recreate され
+  チェーンが genesis から作り直された。稼働中だった別セッションの
+  collector（port 4000）は、この再生成前のワールドステートを保持したまま
+  になっている可能性がある。必要なら再起動して確認すること
