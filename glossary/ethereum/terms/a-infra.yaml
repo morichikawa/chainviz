@@ -127,7 +127,7 @@ validator:
       client; it does not keep its own copy of the chain, so it shows
       neither sync status nor block height.
   layer: a-infra
-  relatedTerms: [cl-client, bootnode, beacon-api]
+  relatedTerms: [cl-client, bootnode, beacon-api, fiftyOnePercentAttack]
 
 attestation:
   name:
@@ -157,7 +157,7 @@ attestation:
       try EOA tx signature verification via ecrecover) also explains this
       distinction at the end, for contrast.
   layer: a-infra
-  relatedTerms: [validator, beacon-api]
+  relatedTerms: [validator, beacon-api, fiftyOnePercentAttack]
 
 visualization-layers:
   name:
