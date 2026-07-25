@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { GlossaryProvider } from "../glossary/GlossaryProvider.js";
 import { LanguageProvider } from "../i18n/LanguageProvider.js";
 import { LongRangeAttackDemoView } from "./LongRangeAttackDemoView.js";
-import { DIVERGE_AT } from "./longRangeAttackDemo.js";
+import { ATTACKER_CHAIN, CANONICAL_CHAIN, DIVERGE_AT } from "./longRangeAttackDemo.js";
 
 function renderView() {
   return render(
@@ -45,6 +45,24 @@ describe("LongRangeAttackDemoView: pristine initial state (UX設計 §4 操作�
   it("always shows the naive rule verdict as the attacker's history winning (fixed by the seed data)", () => {
     renderView();
     expect(screen.getByTestId("long-range-demo-verdict-naive").textContent).toContain("4");
+  });
+
+  it("keeps the naive verdict text and the computed naive verdict in agreement (Issue #415 テスト強化)", () => {
+    // naive ルールの結果は `data-naive-verdict` に出るが、表示文言のほうは
+    // 「攻撃者の履歴が採用される」で固定されている（疑似データ上、攻撃者が
+    // 常に1ブロック長いため）。将来ブロック数の前提が変わって計算結果が
+    // "canonical" になると文言と計算が食い違うため、その前提をここで固定する。
+    renderView();
+    expect(
+      screen.getByTestId("long-range-demo").querySelector(".long-range-demo__intro")
+        ?.getAttribute("data-naive-verdict"),
+    ).toBe("attacker");
+    expect(ATTACKER_CHAIN.length).toBeGreaterThan(CANONICAL_CHAIN.length);
+    // 表示される番号は決め打ちではなく攻撃者チェーンの先端から導かれること。
+    const attackerTip = ATTACKER_CHAIN[ATTACKER_CHAIN.length - 1]!.number;
+    expect(screen.getByTestId("long-range-demo-verdict-naive").textContent).toContain(
+      `#${attackerTip}`,
+    );
   });
 });
 
