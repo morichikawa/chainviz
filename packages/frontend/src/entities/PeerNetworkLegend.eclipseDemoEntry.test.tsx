@@ -70,3 +70,66 @@ describe("PeerNetworkLegend: eclipse attack demo entry (Issue #416)", () => {
     expect(screen.getByTestId("side-panel-view-kind").textContent).toBe("eclipseAttackDemo");
   });
 });
+
+// 以下はテスト強化（Issue #416）で追加した境界ケース。
+describe("PeerNetworkLegend: eclipse demo entry boundaries", () => {
+  it("is unreachable when there are no peer edges (the legend itself is hidden)", () => {
+    // UX設計 §4 が「許容できるトレードオフ」として明記した挙動。凡例ごと
+    // 非表示になるため入口も出ない、という前提を固定する（この前提が変わる
+    // なら設計判断の見直しが必要になる）。
+    render(
+      <LanguageProvider initialLanguage="ja">
+        <GlossaryProvider glossary={{}}>
+          <SidePanelProvider>
+            <PeerNetworkLegend edges={[]} />
+          </SidePanelProvider>
+        </GlossaryProvider>
+      </LanguageProvider>,
+    );
+    expect(screen.queryByTestId("p2p-legend")).toBeNull();
+    expect(screen.queryByTestId("p2p-legend-eclipse-demo-open")).toBeNull();
+  });
+
+  it("appears with a single peer edge (boundary: one edge is enough)", () => {
+    render(
+      <LanguageProvider initialLanguage="ja">
+        <GlossaryProvider glossary={{}}>
+          <SidePanelProvider>
+            <PeerNetworkLegend edges={[edge("e1", "chainviz-ethereum-execution")]} />
+          </SidePanelProvider>
+        </GlossaryProvider>
+      </LanguageProvider>,
+    );
+    expect(screen.getByTestId("p2p-legend-eclipse-demo-open")).toBeTruthy();
+  });
+
+  it("localizes the entry label in English", () => {
+    render(
+      <LanguageProvider initialLanguage="en">
+        <GlossaryProvider glossary={{}}>
+          <PeerNetworkLegend edges={[edge("e1", "chainviz-ethereum-execution")]} />
+        </GlossaryProvider>
+      </LanguageProvider>,
+    );
+    const button = screen.getByRole("button", { name: "Try how eclipse attacks work" });
+    expect(button.tagName).toBe("BUTTON");
+  });
+
+  it("stays on the eclipseAttackDemo view when clicked repeatedly", () => {
+    render(
+      <LanguageProvider initialLanguage="ja">
+        <GlossaryProvider glossary={{}}>
+          <SidePanelProvider>
+            <PeerNetworkLegend edges={[edge("e1", "chainviz-ethereum-execution")]} />
+            <SidePanelViewProbe />
+          </SidePanelProvider>
+        </GlossaryProvider>
+      </LanguageProvider>,
+    );
+    const button = screen.getByTestId("p2p-legend-eclipse-demo-open");
+    fireEvent.click(button);
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(screen.getByTestId("side-panel-view-kind").textContent).toBe("eclipseAttackDemo");
+  });
+});
