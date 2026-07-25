@@ -34,6 +34,27 @@ describe("translate vs pickLocale empty-string boundary (Issue #341)", () => {
   });
 });
 
+describe("the same boundary for the second intentional empty value (Issue #413)", () => {
+  // Issue #413 で追加した2つ目の意図的な空文字。上と同じ境界が新しいキーでも
+  // 成立していることを実際に確認する（一覧の突き合わせ（後述）だけでは、
+  // translate がこのキーで ja にフォールバックしても気付けない。フォール
+  // バックすると英語表示の P2P 凡例の文末に「になります」が現れる）。
+  const entry = messages["legend.eclipseHint.suffix"];
+
+  it("translate respects the intentionally empty en value", () => {
+    expect(translate("legend.eclipseHint.suffix", "en")).toBe("");
+  });
+
+  it("pickLocale still falls back to ja for the very same entry", () => {
+    expect(pickLocale(entry, "en")).toBe(entry.ja);
+  });
+
+  it("returns the ja value unchanged in Japanese", () => {
+    expect(translate("legend.eclipseHint.suffix", "ja")).toBe(entry.ja);
+    expect(translate("legend.eclipseHint.suffix", "ja")).not.toBe("");
+  });
+});
+
 describe("intentional empty-string invariant in messages.ts (Issue #341)", () => {
   // 設計メモ（docs/worklog/issue-341.md §1）の前提: messages.ts で意図的な
   // 空文字は当初 legend.hint.suffix.en の1箇所だけだった。Issue #413で
