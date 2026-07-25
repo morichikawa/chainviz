@@ -158,3 +158,134 @@ prefix/term/suffix i18nキー3つ組を追加する。
   `longRangeAttack`・`reorg`の説明文中で概念として触れるに留めた）。
   3つの砂場の実装で説明量が増えるようなら、その時点で独立エントリ化を
   再検討する
+
+---
+
+### 2026-07-25 Issue #413 テスト強化
+
+- 担当: tester
+- ブランチ: issue-413-attack-glossary-foundation
+- 内容: 実装担当が書いた6ファイルのテストを読み、異常系・境界値の観点で
+  不足していたものを追加した。実装（`glossary/`のYAML・
+  `packages/frontend/src`の5コンポーネント・`messages.ts`）は変更していない。
+
+#### 追加したテストの観点
+
+用語データ（`glossary/`）側:
+
+- **relatedTermsの導線**（`glossaryAttackTermsIntegrity.test.ts`に追加）:
+  `validator`/`attestation`から`fiftyOnePercentAttack`への導線が
+  どのテストからも見られていなかった（実装は双方向で張られている）。
+  あわせて、relatedTermsに重複が無いこと（用語ポップオーバーは
+  relatedTermsをそのまま連結表示するため重複すると同じ用語名が2回並ぶ）と、
+  `longRangeAttack`から`fiftyOnePercentAttack`/`reorg`への参照が片方向で
+  あるのは実装時の判断（設計メモ§3）であり張り忘れではないことを固定した
+- **ja/en文言の異常系**（`glossaryAttackTermsLocalization.test.ts`、新規）:
+  用語名のja/en一致（en欄に和名を残した状態）・en側への和文混入・ja定義文の
+  未翻訳・定義文が用語名の使い回し・折りたたみブロックスカラー（`>-`）の
+  取り違え（`|`にすると改行が残り、6行でクランプされる用語ポップオーバーの
+  見え方が崩れる）・定義文中のバッククォート参照の参照切れ
+- **定義ファイルの配置と層グループ**（`glossaryAttackTermsPlacement.test.ts`、
+  新規）: 既存テストはマージ後の`layer`文字列だけを見ていたため、(1)
+  `layer: b-network`の語が別ファイルに紛れ込んでいる、(2) `layer`の綴りを
+  崩すと用語集パネルがA〜D層のどのグループにも入れず「その他」へ静かに
+  落とす（`resolveGlossaryLayerGroupKey`）、(3) 同じキーを2ファイルに
+  重複定義すると`mergeGlossaries`（`Object.assign`）が後勝ちで黙って
+  上書きする、の3つを検出できなかった
+- **用語集パネルからの到達性**（`glossaryAttackTermsSearch.test.ts`、新規）:
+  アンカーを踏まずにパネルを開いて探す経路（検索窓・層グループ一覧）が
+  未検証だった。ja名/en名/生キー（大文字小文字を問わず）での一致、空クエリ
+  （空白のみを含む）で全件表示に含まれること、層グループに1度だけ現れること
+- **用語データとUI文言の整合**（`glossaryAttackTermsUiConsistency.test.ts`、
+  新規。Issue #420の`internalLinkKinds.glossaryConsistency.test.ts`と同じ
+  狙い）: アンカーの表示テキスト（3分割キーの`*.term`）が用語名と一致して
+  いること、定義文が案内しているUIの表示名が実際の文言と一致していること
+  （`reorg`→`field.headTip`、`doubleSpend`→`tx.status.included`、
+  `frontRunning`→`mempoolPanel.title`）、砂場前提の3語と既存可視化で
+  体感する2語の書き分けが逆転していないこと
+
+i18n（`messages.ts`）側:
+
+- **3分割キーの整合**（`i18n.attackHintTrios.test.ts`、新規）: prefix/term/
+  suffixは「文の途中に`GlossaryTerm`を挟む」ための実装上の分割なので、キー
+  単位で見ても壊れていることが分からない。組み立てた1文として、jaが3つとも
+  埋まっていること・enに和文が混入しないこと・アンカーの表示テキスト（term）
+  が空にならないこと（空だとホバーもクリックもできない導線になる）・連結部に
+  二重空白が出ないことを固定した
+- **意図的な空文字の境界**（`i18n.empty-string.test.ts`に追加）: 既存の
+  「意図的な空文字の一覧」テストはIssue #413で追加された
+  `legend.eclipseHint.suffix.en`を正しく含む形に更新されていたが、一覧の
+  突き合わせだけでは、このキーで`translate`がjaへフォールバックしても
+  検出できない（英語表示のP2P凡例の文末に「になります」が現れる。Issue #341
+  の再発）。`legend.hint.suffix`と同じ`translate`/`pickLocale`の対比を
+  新しいキーでも確認するケースを追加した
+
+アンカー（`packages/frontend/src/entities/`の5ファイル）側:
+
+- **配置順**: アンカー行が意図した欄の直後にあること（近傍に置くこと自体が
+  「どの欄に対する関連用語か」を伝える設計意図のため）。`InfraPopover`は
+  「見ている tip」欄の直後、`ChainRibbonPopover`は「親ブロック」行と「時刻」
+  行の間、`TxLifecyclePopover`は段階リストと署名デモボタンの間、
+  `MempoolPanel`はヘッダーとtx一覧の間、`PeerNetworkLegend`は既存ヒントの
+  次の行
+- **件数の境界**: `MempoolPanel`は0件時に空メッセージとヒントが共存する
+  こと・上限超過表示（`overflowCount > 0`）やノード別txpoolのみがある
+  組み合わせでもヒントが1つだけ出ること。`PeerNetworkLegend`は複数
+  ネットワークでもヒントは1つ、peerエッジ0本なら凡例ごと出ない
+- **データ欠損時の縮退**: 用語エントリが読み飛ばされた（`parse.ts`が
+  `{ja,en}`の揃わないエントリを落とした）場合でも行自体は消えず、
+  `GlossaryTerm`のunknownフォールバックになるだけであること。表示テキストを
+  渡している3箇所（`PeerNetworkLegend`/`TxLifecyclePopover`/`MempoolPanel`）
+  では生キーが露出せず文として成立し、渡していない2箇所
+  （`InfraPopover`/`ChainRibbonPopover`）では生キーが出ること
+- **表示条件の他の分岐**: `InfraPopover`はワークベンチカードでは出ない
+  こと、`ChainRibbonPopover`はgenesisタイル（親を持たない先頭。まさに
+  ロングレンジ攻撃の対象）でも出ること、`TxLifecyclePopover`は`failed`
+  （4段目が別文言に分岐する）でも出ること
+- **英語表示**: `InfraPopover`/`ChainRibbonPopover`の見出しと用語名が英語に
+  なること、`TxLifecyclePopover`のヒントに和文が混入しないこと
+
+#### テスト支援モジュールの追加
+
+同じ6語を見るテストファイルが5つに増えたため、用語YAMLの読み込み
+（cwdから親方向へrepoルートの`glossary/`を探す既存の流儀）と対象キーの
+一覧を`packages/frontend/src/glossary/realGlossaryFixture.ts`・
+`attackTermsFixture.ts`へ切り出し、既存の
+`glossaryAttackTermsIntegrity.test.ts`もこれに載せ替えた（検証内容は
+変更なし）。ファイル単位でパースした結果も返せるようにしている
+（「どのファイルに定義されているか」「`layer`値と定義ファイルが食い違って
+いないか」はマージ後のGlossaryでは判定できないため）。
+
+#### 追加したテストが実際に不具合を検出できることの確認
+
+CLAUDE.md「『直したはず』で済ませず、実際に再現して確認する」に従い、
+実装側を意図的に壊した12パターンを一時的に作り、対応するテストが失敗する
+ことを確認してから元に戻した（作業ツリーはクリーンな状態に戻してから
+コミットしている）。確認したパターン: `layer`の綴り崩し、en定義文への和文
+混入、定義文中のバッククォート参照の綴り崩し、`validator`→
+`fiftyOnePercentAttack`リンクの削除、relatedTermsの重複、キーの重複定義、
+`field.headTip`を改名して定義文を放置、アンカー表示テキストと用語名の不一致、
+`legend.eclipseHint.suffix.en`へのja値の混入（フォールバック相当）、
+`MempoolPanel`のヒント削除、`InfraPopover`のヒント行を「見ている tip」欄
+から引き離す、`TxLifecyclePopover`のヒント位置のずらし。
+
+#### 実装の問題として見つかったもの（差し戻しは不要と判断）
+
+- **バグは見つからなかった**。実装は設計メモどおりで、テストを追加した
+  範囲では期待どおりの挙動だった
+- 観察: 用語YAMLの定義文は折りたたみブロックスカラー（`>-`）で書かれて
+  いるため、行の折り返し位置に半角空白が入る。日本語は語間に空白を置か
+  ないので、UI上は文中に不自然な空白が現れる（例:
+  「攻撃者が用意したノードだけで 埋め尽くしてしまう」）。ただしこれは
+  Issue #413固有ではなく既存47語のうち42語が同じ状態であり（#413以前の
+  41語中36語）、repo全体の書き方の特性のため本Issueでは修正対象にせず、
+  テスト側で空白を落として比較する方針にした。気になる場合は用語データ
+  全体の整形として別Issueで扱うのが妥当
+- 観察: `legend.eclipseHint`のenは`suffix`が空で文末に句点が無い
+  （"...it becomes an eclipse attack"）。これは踏襲元の
+  `legend.hint`（Issue #341）と同じ書き方であり、既存の流儀に沿っている
+  ためテストで句点を強制していない
+- 注意点（次の担当へ）: `field.headTipAttackHint`と
+  `chainRibbon.popover.longRangeHint`はどちらも「関連する用語 / Related
+  terms」という同じ値を持つ別キー。値が同じことに依存したテストは書いて
+  いないので、片方だけ文言を変えても問題ない
