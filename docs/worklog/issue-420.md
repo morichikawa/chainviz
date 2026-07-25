@@ -949,3 +949,180 @@ worklogに記録済みだが、これは一度きりの確認であり、将来l
 `targets.ts`のdocコメント更新)を自分(reviewer)で行った。commit・pushは
 行っていない(統括が実施する)。e2eプロトコル層カバレッジの点は
 非ブロッキングの推奨事項としてchainviz-qaへ申し送る
+
+### 2026-07-25 Issue #420 QA検証結果(合格)
+
+- 担当: qa
+- 対象: `origin/issue-420-validator-activity-visualization`(コミット `f273bdf`。
+  node-env/collector/frontendの実装・testerのテスト強化・reviewerによる軽微な
+  修正2件をすべて含む状態)
+- 検証環境: QA専用のworktreeで`pnpm install`・`pnpm build`を実行したうえで、
+  `profiles/ethereum`のDockerスタック・collector(port 4000)・frontend(vite dev,
+  port 5173)を`pnpm dev:up`で起動した。起動前は`docker ps -a`が空で、既存の
+  ボリュームは残っていたが起動時にgenesisが再生成されslot 0からの新しい
+  チェーンとして始まった。実ブラウザでの確認はPlaywright(chromium)を
+  `LD_LIBRARY_PATH=/home/zoe/chrome-deps/root/usr/lib/x86_64-linux-gnu`付きで
+  起動して行った(このホストはchromiumの共有ライブラリが未導入のため。
+  docs/worklog/issue-406.md等の既存の検証と同じ手順)
+- 検証用の一時スクリプトはすべてリポジトリ外(スクラッチパッド)に置いており、
+  リポジトリにファイルを追加していない。commit・pushは行っていない(統括が実施する)
+
+#### 1. ノード環境の起動とVCメトリクスの公開(node-env)
+
+- `docker compose up -d`で7コンテナすべてが`Up`になり、beaconの
+  `GET /eth/v1/beacon/headers/head`のslotが0から進み続け、検証終了時点で
+  slot 128(EL側のブロック番号も128)まで到達した
+- `curl http://172.28.0.2:5064/metrics`(validator1)・
+  `curl http://172.28.0.4:5064/metrics`(validator2)がいずれもHTTP 200を返し、
+  `vc_signed_beacon_blocks_total{status="success"}`・
+  `vc_signed_attestations_total{status="success"}`・
+  `vc_block_signing_times_seconds_sum`/`_count`(ラベル無し)・
+  `vc_attestation_service_task_times_seconds{task="attestations_http_post"}`が
+  実際に出力されることを確認した(node-env担当・collector担当の実測記録と一致)
+- ホストからの`curl http://127.0.0.1:5064/metrics`は到達しない(HTTP 000)。
+  `docker port chainviz-ethereum-validator1-1`も空であり、設計どおり
+  `docker-compose.yml`への`ports:`追加なしでcollectorだけが到達できる状態に
+  なっている
+- 環境そのものの基本動作確認として、ワークベンチからの
+  `cast block-number --rpc-url http://reth1:8545`が`128`を返すことも確認した
+
+#### 2. collectorの配信(WebSocket疎通)
+
+`ws://127.0.0.1:4000`へ接続して`diff`メッセージを観測した(`payload`は
+DiffEventの配列で、`{"type":"nodeLinkActivity","activity":{...}}`が入る)。
+150秒間の観測でvalidator起点の`nodeLinkActivity`が18件届き、内訳は
+`vc_signed_beacon_blocks_total:success`が計12回、
+`vc_signed_attestations_total:success`が計24回だった。実際に届いたイベントの例:
+
+```
+{"fromNodeId":"chainviz-ethereum/validator1","toNodeId":"chainviz-ethereum/beacon1",
+ "calls":[{"method":"vc_signed_beacon_blocks_total:success","count":1,"latencyMs":17.93},
+          {"method":"vc_signed_attestations_total:success","count":2,"latencyMs":1.01}]}
+{"fromNodeId":"chainviz-ethereum/validator2","toNodeId":"chainviz-ethereum/beacon2",
+ "calls":[{"method":"vc_signed_beacon_blocks_total:success","count":1,"latencyMs":16.57},
+          {"method":"vc_signed_attestations_total:success","count":1,"latencyMs":1.24}]}
+```
+
+- validator1→beacon1・validator2→beacon2の対応が取り違えられていないことを
+  確認した(node群をまたいだ誤配線は観測されなかった)
+- 同じ時間帯にbeacon1→reth1・beacon2→reth2のEngine API側の配信も従来どおり
+  続いており、既存機能の退行は無い
+- 約25分の稼働を通じて、collectorのログ(`.dev-pids/collector.log`)には
+  エラー・警告が1行も出ていない
+
+#### 3. 活動パルスの描画(frontend。Issue #420の中心的な受け入れ条件)
+
+実ブラウザで`http://127.0.0.1:5173`を開き、内部リンクエッジ
+(`[data-id="internal-link-chainviz-ethereum/validator1=>chainviz-ethereum/beacon1"]`
+およびvalidator2側の同等のエッジ)について、90秒間300ms間隔で
+`.internal-link-pulse`の有無をサンプリングした。結果:
+
+| エッジ | パルスが存在したサンプル数(90秒/300ms間隔) |
+| --- | --- |
+| validator1 → beacon1 | 24 |
+| validator2 → beacon2 | 21 |
+| beacon1 → reth1(比較用の既存Engine APIエッジ) | 33 |
+
+- パルスは出現しっぱなしではなく出現と消滅を繰り返しており、周期的に
+  流れていることを確認した(サンプル数はパルス表示時間900msに対して
+  300ms間隔でサンプリングした結果であり、1パルスあたり2〜3サンプル相当)
+- パルス要素の実体は`<circle class="internal-link-pulse" r="5">`で、
+  計算済みスタイルが`fill: rgb(238, 242, 251)`・
+  `filter: drop-shadow(rgb(201, 212, 232) 0px 0px 5px) drop-shadow(... 10px)`
+  となっており、実際に光る点として描かれている。パルスが出ている瞬間の
+  スクリーンショットも取得し、エッジ上に光点が乗っていることを目視でも確認した
+- ユーザーの元々の指摘「バリデーターが何も光を出していない」は解消している
+
+#### 4. ポップオーバーの「直近の呼び出し」表示
+
+validatorの内部リンクエッジにホバーすると`.internal-link-popover`が開き、
+鮮度内(3秒以内)の観測がある場合に「直近3秒の呼び出し」セクションが
+表示される。実際の表示内容(日本語):
+
+```
+vc_signed_beacon_blocks_total:success ×1 (ブロック提案の署名) (平均 36 ms) ·
+vc_signed_attestations_total:success ×1 (証明（attestation）の署名) (平均 2 ms)
+```
+
+英語に切り替えた場合:
+
+```
+vc_signed_beacon_blocks_total:success ×1 (Sign proposed block) (avg 36 ms) ·
+vc_signed_attestations_total:success ×1 (Sign attestation) (avg 2 ms)
+```
+
+- validator1・validator2の両方、ja/enの両方で確認した
+- ポップオーバー全体は「内部リンク（Beacon API）」「D層」
+  「chainviz-ethereum-validator1-1 → chainviz-ethereum-beacon1-1」
+  「このバリデーターは、この beacon ノードに Beacon API で接続し、担当スロットでの
+  ブロック提案・証明を行います。チェーンを前に進める起点です」+ 上記の内訳
+  という構成になっており、Engine APIエッジのポップオーバーと同じ体裁で揃っている
+- 鮮度切れのタイミングでホバーした場合は既存のEngine APIエッジと同様に
+  「最近の呼び出しはありません」となる(設計どおりの挙動)
+
+#### 5. 用語集(beacon-api)の定義文とUIの整合
+
+ポップオーバー見出し「内部リンク（Beacon API）」に付いている用語アンカー
+(`glossary-term-beacon-api`)から用語解説を開き、表示された定義文が
+`glossary/ethereum/terms/d-internal.yaml`の更新後の内容になっていることを
+実画面で確認した。表示されたのは「chainviz では validator カードから beacon
+カードへ引かれる内部リンクの紐と、その上を流れるパルスとして見える（VC 自身の
+Prometheus メトリクスから観測。パルス1本は「観測間隔内に少なくとも1回、担当
+スロットでのブロック提案または証明の署名・提出があったこと」を示すハートビートで、
+内訳（提案／証明のどちらか、回数）は紐へのホバーで確認できる）」を含む文で、
+Issue #285時点の「観測経路が無いためパルスは流れない」という記述は残っていない。
+
+実際の挙動との突き合わせ:
+
+- 「パルスとして見える」→ 上記3のとおりパルスが流れている(一致)
+- 「VC 自身の Prometheus メトリクスから観測」→ 上記1のとおりVCの5064番の
+  `/metrics`をcollectorがスクレイプしている(一致)
+- 「内訳（提案／証明のどちらか、回数）は紐へのホバーで確認できる」→ 上記4の
+  とおりホバーで「ブロック提案の署名」「証明（attestation）の署名」と
+  `×1`のような回数が出る(一致)
+- 「観測間隔内に少なくとも1回」→ ポップオーバーの見出しが「直近3秒の呼び出し」
+  であり、collectorのスクレイプ間隔3秒と整合している(一致)
+
+#### 6. latencyMs の表示(reviewerの有限値チェック修正の確認)
+
+150秒間の観測で得たvalidator起点の`latencyMs`は28サンプルすべてが有限値で、
+ブロック提案側が10.8〜21.4ms、証明側が1.0〜4.0msの範囲でばらついていた。
+`null`・`Infinity`・0固定はいずれも1件も現れていない。UI上も「平均 36 ms」
+「平均 2 ms」のように観測ごとに異なる実測値が表示されており、0ms固定のような
+不自然な表示は無い。
+
+あわせて、検証に使った起動中のcollectorのビルド成果物
+(`packages/collector/dist/adapters/ethereum/vc-metrics.js`)に、reviewerが
+追加した`blockSigningTimeSumSeconds`(`Number.isFinite`チェック付き)が
+含まれていることを確認した(=修正後のコードを実際に動かした検証である)。
+`+Inf`の意図的な注入による再現はreviewerが既に実施・確認済みのため、QA側では
+通常運用で`latencyMs`が不自然な値にならないことの確認に留めた。
+
+#### 判定
+
+**合格**。GitHub Issue #420の受け入れ条件(validator→beaconの内部リンクエッジに
+活動パルスが流れる／ポップオーバーの「直近の呼び出し」に分かりやすいラベルで
+職務の種類・回数・所要時間が表示される／用語集の説明と実挙動が矛盾しない)を
+実環境で満たしていることを確認した。commit・pushは行っていない(統括が実施する)。
+
+#### 申し送り(いずれも本Issueの受け入れ条件外・非ブロッキング)
+
+1. `docs/PLAN.md`のバックログ一覧にIssue #420の項目が無い(#406/#408/#410は
+   記載されているが#409・#420は未記載)。そのためQAとしてチェックを付ける
+   対象のチェックボックスが存在せず、`docs/PLAN.md`は更新していない。
+   バックログ項目としての追記の要否は統括の判断に委ねる
+2. D層レイヤーフィルタのツールチップ文言(`packages/frontend/src/i18n/messages.ts`の
+   「ノード内部の配管。選ぶと合意（CL）と実行（EL）の内部リンクだけが通常表示に
+   なり、他は薄くなります」)が、validator→beaconの内部リンクもD層として
+   通常表示される現状と噛み合っていない。この文言はIssue #420の差分には含まれず
+   (validator→beaconの常設エッジが描かれるようになったIssue #285時点から
+   存在する記述)、今回の受け入れ条件にも関係しないため差し戻しはしていない。
+   文言見直しは別Issue候補
+3. reviewerからの申し送り(`packages/e2e`の`d-layer.test.ts`にPROTO-D-02相当の
+   validator側シナリオが無い)は、依頼どおり本QAの判定対象には含めていない
+
+#### 検証環境の後始末
+
+`pnpm dev:down`でcollector・frontendを停止し、`docker compose down`(`-v`なし)で
+コンテナ・ネットワークを削除した。検証開始前は`docker ps -a`が空だったため、
+同じ状態に戻している(ボリューム・genesisは破棄していない)。
