@@ -12,7 +12,9 @@ import { deriveReceivedOrder } from "../entities/chainRibbon.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { HashChainDemoView } from "../crypto-demo/HashChainDemoView.js";
 import { SignatureDemoView } from "../crypto-demo/SignatureDemoView.js";
+import { FiftyOnePercentAttackDemoView } from "../attack-demo/FiftyOnePercentAttackDemoView.js";
 import { LongRangeAttackDemoView } from "../attack-demo/LongRangeAttackDemoView.js";
+import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { withTermAnchor } from "../glossary/withTermAnchor.js";
 import { BlockDetailView } from "./BlockDetailView.js";
 import { CommsLogView } from "./CommsLogView.js";
@@ -121,6 +123,9 @@ export interface SidePanelHostProps {
  * signatureDemo（Issue #402）: hashChainDemo と同じ理由でダングリング
  * ガードの対象外。
  *
+ * fiftyOnePercentAttackDemo（Issue #414）: hashChainDemo/signatureDemo と
+ * 同じ理由でダングリングガードの対象外。
+ *
  * longRangeAttackDemo（Issue #415）: hashChainDemo/signatureDemo と同じ
  * 理由でダングリングガードの対象外。
  *
@@ -213,6 +218,22 @@ export function SidePanelHost({
     return (
       <SidePanel ariaLabel={t("sigDemo.title")} title={t("sigDemo.title")} onClose={close}>
         <SignatureDemoView />
+      </SidePanel>
+    );
+  }
+
+  if (view.kind === "fiftyOnePercentAttackDemo") {
+    return (
+      <SidePanel
+        ariaLabel={t("attack51Demo.title")}
+        title={
+          <GlossaryTerm termKey="fiftyOnePercentAttack">
+            {t("attack51Demo.title")}
+          </GlossaryTerm>
+        }
+        onClose={close}
+      >
+        <FiftyOnePercentAttackDemoView />
       </SidePanel>
     );
   }

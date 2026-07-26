@@ -51,6 +51,16 @@ export type SidePanelView =
     }
   | {
       /**
+       * 「51%攻撃のしくみ」デモ（Issue #414。`docs/worklog/issue-414.md`
+       * UX設計・`docs/ARCHITECTURE.md` §17.5.1）。`hashChainDemo`/
+       * `signatureDemo` と同じく実チェーンから完全に独立した学習用の
+       * 疑似データ（砂場）を扱うため、対象を指すデータは持たない。中身
+       * （`FiftyOnePercentAttackDemoView`）は開くたびに初期状態から始まる。
+       */
+      kind: "fiftyOnePercentAttackDemo";
+    }
+  | {
+      /**
        * 「ロングレンジ攻撃」デモ（Issue #415。`docs/worklog/issue-415.md`
        * UX設計）。`hashChainDemo`/`signatureDemo` と同じく実チェーンから
        * 完全に独立した学習用の疑似データ（砂場）を扱うため、対象を指す

@@ -82,6 +82,9 @@ function stageDescriptionKey(stage: TxLifecycleStage): MessageKey {
  * 描画済み（Issue #351 のパターン）なのでホバー中のクリックが成立する。
  * `useOptionalSidePanel()` を使う（`GlossaryTerm` と同じパターン。
  * `SidePanelProvider` の外でレンダーされる既存の単体テストを壊さないため）。
+ *
+ * 段階リストの直後に `doubleSpend` への用語アンカーを添える
+ * （ARCHITECTURE.md §17.4、Issue #413。攻撃手法解説の土台）。
  */
 export function TxLifecyclePopover({
   anchorRef,
@@ -135,6 +138,19 @@ export function TxLifecyclePopover({
           </li>
         ))}
       </ul>
+      {/* Issue #413（ARCHITECTURE.md §17.4）: 「確定後は覆らない」という
+          説明とtxライフサイクルの文脈が合うため、段階リストの直後に
+          ダブルスペンドへの用語アンカーを置く。 */}
+      <p
+        className="tx-lifecycle-popover__double-spend-hint"
+        data-testid={`tx-lifecycle-double-spend-hint-${tx.hash}`}
+      >
+        {t("tx.lifecycle.doubleSpendHint.prefix")}
+        <GlossaryTerm termKey="doubleSpend">
+          {t("tx.lifecycle.doubleSpendHint.term")}
+        </GlossaryTerm>
+        {t("tx.lifecycle.doubleSpendHint.suffix")}
+      </p>
       <button
         type="button"
         className="tx-lifecycle-popover__sig-demo-open nodrag"

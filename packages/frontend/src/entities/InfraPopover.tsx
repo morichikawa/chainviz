@@ -63,7 +63,9 @@ function Field({ label, value }: { label: string; value: string }) {
  * （短縮ハッシュ + 用語解説アンカー `fork`）を追加する（ARCHITECTURE.md
  * §9.3、Issue #296）。フォークが検知されていない・headBlockHash が未観測
  * （空文字列。例: validator）の間は省略する（既存の各欄と同じ
- * 「解決できなければ省略」フォールバック）。
+ * 「解決できなければ省略」フォールバック）。同じ条件のとき、その直後に
+ * `fiftyOnePercentAttack`/`reorg` への用語アンカーを添えた行も出す
+ * （ARCHITECTURE.md §17.4、Issue #413。攻撃手法解説の土台）。
  *
  * `maxElBlockHeight` はキャンバス上の全 EL ノードの blockHeight 最大値
  * （同期ステージのミニバーの分母。ARCHITECTURE.md §7.6.5。Issue #189）。
@@ -220,14 +222,33 @@ export function InfraPopover({
             </>
           )}
           {typeof forkColorIndex === "number" && entity.headBlockHash !== "" && (
-            <div className="infra-field">
-              <span className="infra-field__label">
-                <GlossaryTerm termKey="fork">{t("field.headTip")}</GlossaryTerm>
-              </span>
-              <span className="infra-field__value">
-                {shortHex(entity.headBlockHash)}
-              </span>
-            </div>
+            <>
+              <div className="infra-field">
+                <span className="infra-field__label">
+                  <GlossaryTerm termKey="fork">{t("field.headTip")}</GlossaryTerm>
+                </span>
+                <span className="infra-field__value">
+                  {shortHex(entity.headBlockHash)}
+                </span>
+              </div>
+              {/* Issue #413（ARCHITECTURE.md §17.4）: フォークが51%攻撃・
+                  リオーグの帰結として起こりうることへの用語アンカーを、
+                  既存の fork アンカー（上の「見ている tip」欄）の近傍に
+                  置く。 */}
+              <div
+                className="infra-field infra-field--attack-hint"
+                data-testid={`infra-popover-attack-hint-${entity.id}`}
+              >
+                <span className="infra-field__label">
+                  {t("field.headTipAttackHint")}
+                </span>
+                <span className="infra-field__value">
+                  <GlossaryTerm termKey="fiftyOnePercentAttack" />
+                  {" / "}
+                  <GlossaryTerm termKey="reorg" />
+                </span>
+              </div>
+            </>
           )}
           {drivesNodeContainerName && (
             <div className="infra-field">
