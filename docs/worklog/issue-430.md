@@ -99,3 +99,118 @@ Issue #415（ロングレンジ攻撃）は#414のマージ前に並行して開
 `pnpm lint && pnpm build && pnpm test`をリポジトリルートで実行し、
 全パッケージ（shared/collector/frontend/e2e）で成功することを確認した
 （frontend: 312ファイル3932ケース）。
+
+### 2026-07-26 Issue #430 テスト強化
+
+- 担当: tester
+- ブランチ: issue-430-unify-demo-menu
+
+#### 既存テストの棚卸し
+
+実装担当が更新した4ファイル（`ChainRibbonCard.demoMenu.test.tsx`・
+`.demoMenu.structure.test.tsx`・`.longRangeDemoEntry.test.tsx`・
+`messages.longRangeDemo.test.ts`）を読み、以下が未カバーだった。
+
+- 3項目それぞれの「ラベル」と「開くサイドパネルのkind」の対応付けが、
+  項目ごとに別々のファイルで確認されているだけで、横並びの表として
+  突き合わせられていない。#430はボタンを別の場所から移設した変更なので、
+  移設先で`sidePanel.open`の引数が隣の項目とずれても（testidと文言は
+  そのままなので）既存テストの組み合わせでは見つけにくい
+- メニューを開いた状態で項目をクリックしたあとメニューが閉じることは、
+  ハッシュ（`.hashDemoEntry`）・51%（`.demoMenu`）・ロングレンジ
+  （`.demoMenu`・`.longRangeDemoEntry`）とファイルが散っており、
+  「3項目とも同じ挙動である」という形では固定されていない
+- 砂場を続けて切り替えたときに前の`kind`が残らないことは、
+  ハッシュ→51%の1方向しか見ていない
+- キーボード操作は「本物の`<button>`である」ところまでで、実際にTabで
+  フォーカスが移ること・Enter/Spaceで起動できることは見ていない
+- 削除した専用行のCSSクラス・i18nキーが消えていることを機械的に
+  確かめる手段が無い（消し忘れはlintでもビルドでも検出されない）
+- タイルが0件のときしかメニューを操作していない
+
+#### 追加したテスト（3ファイル47ケース）
+
+- `ChainRibbonCard.demoMenu.entryRouting.test.tsx`（21ケース）:
+  3項目を1つの表（testid・kind・ja/enラベル）にまとめ、
+  - メニュー内のボタンが表と完全に一致すること（並び順込み。項目の
+    追加・改名にテストが追随していない状態を検出する）
+  - 各項目がラベルどおりのkindを開き、かつメニューが閉じること
+  - 3項目を順に押したとき観測されるkindが3種類とも異なること
+    （隣の項目のkindをコピペした事故の検出）
+  - 6通りの順序対すべてで砂場を切り替えても前のkindが残らないこと
+  - タイル0件・1件・12件のいずれでも正しく動き、カード側の入口が
+    それぞれ1つだけであること（境界値。専用行の復活で二重になれば落ちる）
+  - `SidePanelProvider`が無い状態でも例外にならず、かつメニューは
+    閉じること（`sidePanel?.open()`の後の`closeDemoMenu()`まで到達
+    していることの確認。3項目とも）
+  - 英語UIでも英語ラベルとkindの対応が保たれること
+- `ChainRibbonCard.demoMenu.keyboard.test.tsx`（13ケース）:
+  `@testing-library/user-event`で実際にTab・Enter・Spaceを送り、
+  - summaryがフォーカス可能であること
+  - Tabが3項目を並び順どおりに移動し、最後の項目の次でメニューの外へ
+    抜けること（フォーカストラップが無いこと）
+  - 3項目とも`disabled`・`tabindex="-1"`・`aria-hidden`でタブ順から
+    外れていないこと
+  - 3項目ともEnter・Spaceで起動でき、起動後にメニューが閉じること
+  - キーボードだけでメニューを2周操作できること（`details.open`を
+    ref経由で直接書き換えているため、2周目に開き直せるかを確認）
+- `ChainRibbonCard.demoMenu.legacyRowRemoval.test.tsx`（13ケース）:
+  削除した専用行の痕跡をDOM・CSS・i18nの3層で確認する。
+  - 専用行の3クラスがDOMに現れないこと、ロングレンジの入口が1つだけで
+    メニュー内にあり他2項目と同じクラスを持つこと、カード直下の行構成が
+    header/subtitle-row/本文だけであること
+  - `styles.css`から3クラスのルールが消えていること、逆に
+    `.chain-ribbon-card__demo-menu-item`と
+    `.chain-ribbon-popover__long-range-demo-open`は残っていること
+  - `messages.ts`に`chainRibbon.attackDemoRowLabel`が無いこと、
+    `longRangeDemo.open`（メニューとポップオーバーの共用）は残っていること
+
+#### 検出力の確認（ミューテーション）
+
+意図的に実装を壊し、追加したテストが実際に落ちることを確認してから
+元に戻した。
+
+1. ロングレンジの`onClick`のkindを`fiftyOnePercentAttackDemo`に変更
+   → 15ケース失敗（うち新規11）
+2. ロングレンジの`onClick`から`closeDemoMenu()`を削除 → 9ケース失敗
+3. 専用行を復活（メニュー外にボタンを再追加）→ 6ケース失敗。同じ
+   testidも付けた場合は28ケース失敗
+4. `styles.css`に専用行のルールを復活・`messages.ts`にi18nキーを復活・
+   ロングレンジのボタンに`tabIndex={-1}`を付与 → 5ケース失敗
+
+なお、CSSクラスの残存確認は最初`toContain`で書いたところ
+`.chain-ribbon-card__demo-menu-item`を`…-itemX`にリネームしても
+部分一致で通ってしまったため、単語境界付きの正規表現に直した
+（この改善自体もミューテーションで確認済み）。
+
+#### 横断確認・所見
+
+- 削除されたクラス（`chain-ribbon-card__attack-demo-row`・
+  `chain-ribbon-card__attack-demo-label`・
+  `chain-ribbon-card__long-range-demo-open`）とi18nキー
+  （`chainRibbon.attackDemoRowLabel`）をリポジトリ全体にgrepし、
+  `packages/`配下（`ChainRibbonPopover.tsx`を含む）・`glossary/`・
+  `packages/e2e`のいずれにも参照が残っていないことを確認した。
+  ヒットするのは`docs/WORKLOG.md`と`docs/worklog/issue-415.md`・
+  `issue-430.md`の経緯の記述のみ（履歴なのでそのままでよい）
+- 実装のバグは見つからなかった。`SidePanelProvider`不在時にメニューが
+  閉じないのではないかという懸念も、実際に確認したところ問題なかった
+- jsdomの制約として、`<summary>`にEnter/Spaceを送っても`<details>`は
+  開閉しない（ネイティブのactivation behaviorが未実装）。また閉じた
+  `<details>`の中身もレイアウトが無いためTabで到達できてしまう。
+  そのため「summary自体のキーボード開閉」「閉じている間は到達しない」は
+  ユニットテストでは固定できず、キーボードテストのファイル冒頭に
+  その旨をコメントで明記した（実ブラウザ側の挙動であり、
+  `<details>`/`<summary>`を使っていること自体は
+  `.demoMenu.structure.test.tsx`が固定している）
+- 新しいテストは`@testing-library/user-event`を初めて使う（依存には
+  既に入っていたが`packages/frontend/src`での利用例は無かった）。
+  `userEvent.tab()`は`<summary>`をタブ順に含めないため、Tabの検証は
+  「3項目の相対的な順序」で行っている（絶対的なタブ順を固定すると
+  この環境依存の挙動を仕様として固めてしまうため）
+
+#### テスト・ビルド
+
+`pnpm lint && pnpm build && pnpm test`をリポジトリルートで実行し、
+全パッケージで成功することを確認した（frontend: 315ファイル3979ケース。
+テスト強化前は312ファイル3932ケース）。
