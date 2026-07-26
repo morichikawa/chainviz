@@ -3248,32 +3248,6 @@ button.mempool-panel__row:hover {
   background: rgba(79, 157, 255, 0.16);
 }
 
-/* Issue #415: 「攻撃を学ぶ」入口行。subtitle-row とは別の行にすることで
-   幅の混雑を避ける（UX設計 §6）。`flex-wrap: wrap` にしておき、将来ボタンが
-   増えても折り返すだけで既存ボタンの表示を壊さない。 */
-.chain-ribbon-card__attack-demo-row {
-  margin-top: 4px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.chain-ribbon-card__attack-demo-label {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.chain-ribbon-card__long-range-demo-open {
-  flex: none;
-  background: none;
-  border: none;
-  padding: 0;
-  color: var(--accent);
-  font-size: 11px;
-  text-decoration: underline;
-  cursor: pointer;
-}
 /* Issue #409: ポップオーバー末尾のブロック詳細パネルへの導線。「受信した
    ノード」欄との区切りとして上ボーダーを持つ（このボタンが先頭）。 */
 .chain-ribbon-popover__block-detail-open {

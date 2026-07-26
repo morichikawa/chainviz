@@ -259,13 +259,14 @@ export function ChainRibbonCard({ data }: NodeProps<ChainRibbonFlowNode>) {
       </div>
       <div className="chain-ribbon-card__subtitle-row">
         <span className="chain-ribbon-card__subtitle">{t("chainRibbon.subtitle")}</span>
-        {/* Issue #401→#414: 常設入口(発見性のため)。ポップオーバー側にも
+        {/* Issue #401→#414→#430: 常設入口(発見性のため)。ポップオーバー側にも
             文脈導線(ChainRibbonPopover)を別途持つ。カード幅に対して入口
-            ボタンが複数（ハッシュのしくみ・51%攻撃…）になると1行のテキスト
-            リンクでは手狭になるため、`<details>`/`<summary>` の開閉式
-            メニューへ統合した（`docs/worklog/issue-414.md` UX設計 §4。
+            ボタンが複数（ハッシュのしくみ・51%攻撃・ロングレンジ攻撃）になると
+            1行のテキストリンクでは手狭になるため、`<details>`/`<summary>` の
+            開閉式メニューへ統合した（`docs/worklog/issue-414.md` UX設計 §4。
             ブラウザ標準の開閉状態管理・キーボード操作・スクリーンリーダー
-            通知をそのまま使う）。 */}
+            通知をそのまま使う）。すべての砂場デモの入口をこの単一メニューに
+            統合する方針（`docs/worklog/issue-430.md`）。 */}
         <details className="chain-ribbon-card__demo-menu nodrag" ref={demoMenuRef}>
           <summary
             className="chain-ribbon-card__demo-menu-summary"
@@ -296,27 +297,25 @@ export function ChainRibbonCard({ data }: NodeProps<ChainRibbonFlowNode>) {
             >
               {t("attack51Demo.open")}
             </button>
+            {/* Issue #430: #415（ロングレンジ攻撃）は #414 のマージ前に並行して
+                実装が進んでいたため、専用行という独自の設計のまま入った
+                （`docs/worklog/issue-415.md` UX設計 §6）。マージ時に両者が
+                別々のUI要素として共存する形で残ってしまったのをここで解消し、
+                他の2項目と同じ `chain-ribbon-card__demo-menu-item` パターンへ
+                統合する（`docs/worklog/issue-430.md`）。 */}
+            <button
+              type="button"
+              className="chain-ribbon-card__demo-menu-item nodrag"
+              onClick={() => {
+                sidePanel?.open({ kind: "longRangeAttackDemo" });
+                closeDemoMenu();
+              }}
+              data-testid="chain-ribbon-long-range-demo-open"
+            >
+              {t("longRangeDemo.open")}
+            </button>
           </div>
         </details>
-      </div>
-      {/* Issue #415: 攻撃デモへの常設入口をまとめる専用行（subtitle-row とは
-          別）。UX設計 §6: subtitle-row は既にほぼ余白なく1ボタン分の幅しか
-          無いことを実機確認した上で、行そのものを分けた。`flex-wrap: wrap`
-          にしてあるため、将来 #414（51%攻撃）が同種の入口を必要とした場合は
-          この行にボタンを1つ追加するだけで済む想定（`docs/worklog/issue-415.md`
-          §6）。 */}
-      <div className="chain-ribbon-card__attack-demo-row">
-        <span className="chain-ribbon-card__attack-demo-label">
-          {t("chainRibbon.attackDemoRowLabel")}
-        </span>
-        <button
-          type="button"
-          className="chain-ribbon-card__long-range-demo-open nodrag"
-          onClick={() => sidePanel?.open({ kind: "longRangeAttackDemo" })}
-          data-testid="chain-ribbon-long-range-demo-open"
-        >
-          {t("longRangeDemo.open")}
-        </button>
       </div>
       {tiles.length === 0 ? (
         <div className="chain-ribbon-card__empty" data-testid="chain-ribbon-empty">
