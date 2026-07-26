@@ -170,6 +170,21 @@ Docker 上の Ethereum ノード群を Miro 風の無限キャンバスでリア
   ブランチへ`git checkout`するなど並行して手を入れない（レビュー対象が
   レビュー中に書き換わる事故につながる。並行作業させたい場合は
   `isolation: "worktree"` で別ディレクトリを割り当てる）
+- **worktreeは`git worktree remove`で片付け、`rm -rf`で直接消さない**。
+  過去に`/home/zoe/workspace/`直下（`chainviz`のクローンと同階層）に
+  `chainviz-wt-*`という名前の空の残骸ディレクトリが複数個放置されていた
+  事故があった。`git worktree add`で作成したworktreeの中身だけを
+  `rm -rf`等で消すと、gitのworktree管理台帳（`.git/worktrees/`）には
+  参照が残り続け、実体だけが空の骨組みとして残る。後片付けは必ず
+  `git worktree remove <path>`（登録ごと解除）を使う。誤って中身だけ
+  消してしまった場合は`git worktree remove --force <path>`または
+  `git worktree prune`で台帳側を掃除する。`isolation: "worktree"`で
+  Agentツールが自動作成する`.claude/worktrees/agent-*`についても同様で、
+  そのIssueがマージ完了し当該worktreeが不要になった時点（都度である
+  必要はないが、`docs/PLAN.md`のステップ区切りや作業の節目）で統括が
+  `git worktree remove`を実行し、`git worktree list`に孤立した参照が
+  溜まっていないか随時確認する
+
 ## 開発体制
 
 chainviz の開発は「秘書 → 統括 → チーム」の3段構えで進む。
