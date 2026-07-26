@@ -52,7 +52,7 @@ block:
       the canvas — a "Chain" card (the chain ribbon) where this chain of
       links visibly stacks up as tiles.
   layer: c-transaction
-  relatedTerms: [transaction, mempool, gossip, hash]
+  relatedTerms: [transaction, mempool, gossip, hash, longRangeAttack]
 
 hash:
   name:
@@ -136,7 +136,7 @@ transaction:
       final once included in a block. chainviz animates the change from pending to
       included on the wallet card.
   layer: c-transaction
-  relatedTerms: [mempool, nonce, gas, eoa]
+  relatedTerms: [mempool, nonce, gas, eoa, doubleSpend, frontRunning]
 
 mempool:
   name:
@@ -152,7 +152,7 @@ mempool:
       block. A submitted tx lands here and is picked up when a proposer builds a
       block. The "pending" state lingers here until inclusion.
   layer: c-transaction
-  relatedTerms: [transaction, gas, txpool]
+  relatedTerms: [transaction, gas, txpool, frontRunning]
 
 nonce:
   name:
@@ -169,7 +169,7 @@ nonce:
       fixing a unique execution order. The sender's nonce increases by one each
       time one of its transactions is finalized.
   layer: c-transaction
-  relatedTerms: [transaction, eoa]
+  relatedTerms: [transaction, eoa, doubleSpend]
 
 eoa:
   name:
@@ -235,7 +235,7 @@ gas:
       sender pays a fee in wei proportional to gas used. Transactions offering
       higher fees tend to be picked from the mempool into a block sooner.
   layer: c-transaction
-  relatedTerms: [transaction, mempool, wei]
+  relatedTerms: [transaction, mempool, wei, frontRunning]
 
 contract:
   name:
@@ -399,3 +399,79 @@ nft:
       a wallet's private key).
   layer: c-transaction
   relatedTerms: [token, contract, transaction]
+
+doubleSpend:
+  name:
+    ja: ダブルスペンド（二重支払い）
+    en: Double-spend
+  definition:
+    ja: >-
+      同じ残高・同じ資産を2回以上使おうとする試み。例えば同じ送金元が
+      同じ資金を指す2件の矛盾するtxをほぼ同時に送り、片方が確定した後で
+      もう片方が別の受取先で先に確定していたことにしようとする、といった
+      形を取る。PoS Ethereumではブロックがfinality（一定数のattestationが
+      集まり以後絶対に覆らないと確定する仕組み）を経て確定するため、
+      いったんfinalizeされたtxを含むブロックを後から置き換えることは
+      原理的にできず、確定後のダブルスペンドは成立しない。成立しうるのは
+      あくまでfinality前（提案されたばかりの浅いブロックがリオーグ
+      `reorg`で置き換わる）ごく短い間だけであり、これは通常のリオーグと
+      地続きの現象であって、確定を覆す特殊な攻撃ではない。chainvizでは
+      tx確定までの段階を示すtxライフサイクル表示（`transaction`）で
+      「取り込み済み」に達したtxがそれ以上覆らないことを常設で確認でき、
+      実際に「成功する二重支払い」を再現する砂場は用意しない（正しさが
+      核心のPoSの学習として誤った内容になるため）。
+    en: >-
+      An attempt to spend the same balance or asset more than once — for
+      example, sending two conflicting transactions that both draw on the
+      same funds at nearly the same time, hoping one gets finalized while
+      the other is made to look finalized to a different recipient.
+      Because PoS Ethereum blocks become final through finality (once
+      enough attestations accumulate, a block is settled as permanently
+      irreversible), a block containing an already-finalized tx cannot be
+      replaced afterward, so double-spending a finalized transaction is not
+      possible in principle. The only window where something like it could
+      occur is the brief period before finality, when a freshly proposed,
+      shallow block gets replaced by a reorg (`reorg`) — that is simply an
+      ordinary reorg, not a special attack that overturns something
+      already final. chainviz lets you confirm, as a standing feature, that
+      a tx which has reached "included" in the tx lifecycle popover
+      (`transaction`) never gets undone. It deliberately does not offer a
+      sandbox that reproduces a "successful" double-spend, since that would
+      teach the wrong lesson about a system whose whole point is finality.
+  layer: c-transaction
+  relatedTerms: [transaction, nonce]
+
+frontRunning:
+  name:
+    ja: フロントランニング
+    en: Front-running
+  definition:
+    ja: >-
+      mempoolでまだブロックに取り込まれていないtxの中身を見て、その結果を
+      見越して自分のtxを先に割り込ませる行為。mempool内のtxは提案者が
+      ブロックを作るまで誰からでも見え、通常はガス代の高いtxほど先に
+      取り込まれやすいため、他人の未確定txを見てから自分がより高いガス代の
+      txを送り、意図的に先を越すことができてしまう（前後を挟み込む
+      sandwich攻撃はこの変種）。chainvizではmempoolパネル（`mempool`。§11）
+      で全ノードのpending tx一覧を俯瞰でき、複数のワークベンチから競合する
+      txをほぼ同時に送信すれば、ガス代と取り込み順の関係をその場で観察
+      できる。ただし今回は既存の可視化組み合わせでの体感に留め、実際に
+      有利な取り込み順を強制する専用シナリオは用意しない。
+    en: >-
+      Watching the contents of a transaction that is still sitting in the
+      mempool, unconfirmed, and inserting your own transaction ahead of it
+      based on the expected outcome. Anyone can see mempool transactions
+      before the proposer builds a block, and transactions offering higher
+      gas fees tend to be picked first, so seeing someone else's pending tx
+      and submitting your own with a higher fee lets you deliberately jump
+      the queue (a sandwich attack, which wraps a victim's tx front and
+      back, is a variant of this). chainviz lets you observe the
+      relationship between gas fees and inclusion order firsthand: the
+      mempool panel (`mempool`, §11) gives an overview of every node's
+      pending transactions, and sending competing transactions from
+      multiple workbenches at nearly the same time makes the effect
+      visible on the spot. For now this stays at the level of combining
+      existing visualizations to get a feel for it; no dedicated scenario
+      is provided that forces a particular, advantageous inclusion order.
+  layer: c-transaction
+  relatedTerms: [mempool, transaction, gas]

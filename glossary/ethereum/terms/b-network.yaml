@@ -17,7 +17,7 @@ p2p:
       server. Blocks and transactions spread across the whole chain through this
       mesh. chainviz draws it as cords between node cards.
   layer: b-network
-  relatedTerms: [peer, discovery, gossip]
+  relatedTerms: [peer, discovery, gossip, eclipseAttack]
 
 peer:
   name:
@@ -33,7 +33,7 @@ peer:
       Each node keeps several peers and relays the blocks and transactions it
       receives to them, sharing the chain's state.
   layer: b-network
-  relatedTerms: [p2p, discovery, gossip]
+  relatedTerms: [p2p, discovery, gossip, eclipseAttack]
 
 discovery:
   name:
@@ -49,7 +49,7 @@ discovery:
       Ethereum uses discv5, a distributed discovery protocol, gathering
       information about other nodes from known ones to grow its connections.
   layer: b-network
-  relatedTerms: [peer, p2p, bootnode]
+  relatedTerms: [peer, p2p, bootnode, eclipseAttack]
 
 bootnode:
   name:
@@ -147,4 +147,150 @@ fork:
       it is currently following; once every card's color matches, the branches
       have converged.
   layer: b-network
-  relatedTerms: [peer, gossip, p2p]
+  relatedTerms: [peer, gossip, p2p, fiftyOnePercentAttack, reorg]
+
+fiftyOnePercentAttack:
+  name:
+    ja: 51%攻撃（多数派支配）
+    en: 51% attack (majority attack)
+  definition:
+    ja: >-
+      ブロックの提案・投票（attestation）の力を、単独または結託した勢力が
+      バリデーター集合の過半数まで握ってしまうこと。PoS の合意は
+      attestation の多数決でどの枝が正しいチェーンの先端（canonical）かを
+      決めるため（fork choice）、過半数を握った勢力は自分たちに都合の良い
+      枝を押し通し、少数派が見ている枝を覆すことができてしまう——特定の
+      誰かを信頼せずに合意する、という PoS の前提そのものが崩れる状態。
+      chainviz の開発用ネットワークはバリデーター数が少なく、意図的に
+      過半数を再現するとネットワークの構成そのものを壊してしまうため実
+      チェーン上では再現しない。フォーク（`fork`）が1本の枝に収束する
+      様子はフォーク色分け・チェーンリボンで日常的に見られるが、
+      「投票の重みでどちらの枝が勝つか」という力学そのものは、独立
+      シミュレーション砂場で実際に投票を動かして確かめられる。
+    en: >-
+      A state in which a single actor or a colluding group controls a
+      majority of block proposal and voting (attestation) power across the
+      validator set. Because PoS consensus decides which branch is the
+      canonical chain head by a majority vote of attestations (fork
+      choice), a majority holder can force through whichever branch favors
+      them and override the branch the minority is following — undermining
+      the very premise of PoS consensus, which is supposed to need no
+      single trusted party. chainviz's development networks have too few
+      validators to meaningfully reproduce a majority takeover without
+      breaking the network's own setup, so this is not reproduced on the
+      live chain. Forks (`fork`) converging onto a single branch is visible
+      day to day through fork-color outlines and the chain ribbon, but the
+      mechanics of why one branch wins the vote can be explored hands-on in
+      a standalone simulation sandbox.
+  layer: b-network
+  relatedTerms: [fork, reorg, validator, attestation]
+
+longRangeAttack:
+  name:
+    ja: ロングレンジ攻撃
+    en: Long-range attack
+  definition:
+    ja: >-
+      genesis（チェーンの起点）まで遡り、そこから現在とは別の履歴を丸ごと
+      作り直そうとする攻撃。PoW と違って PoS はブロックを作るのに計算資源を
+      消費しないため、古い秘密鍵さえ手に入れば過去の時点から偽の枝を
+      いくらでも速く伸ばせてしまう——「一番長い/新しい履歴を正とする」
+      という素朴な規則だけでは、本物の履歴と後から作られた偽の履歴を
+      区別できない。これを防ぐのが finality（一定数の attestation が
+      集まったブロックは以後絶対に覆らないと確定させる仕組み）と weak
+      subjectivity（新しく参加する・長期間離れていたノードは、直近の
+      信頼できる finalized ブロックを起点として同期し、genesis からの
+      再検証だけに頼らない）。chainviz ではこの攻撃自体を実チェーン上で
+      再現できないため、チェーンリボンのブロックタイル表現を流用した
+      独立シミュレーション砂場で、finality checkpoint の位置を動かしながら
+      「なぜ過去の書き換えが弾かれるか」を確かめられる。
+    en: >-
+      An attack that rewinds all the way to genesis (the chain's starting
+      point) and tries to construct an entirely different history from
+      there. Unlike PoW, PoS does not spend computational work to produce
+      blocks, so anyone who obtains old private keys can grow a fake branch
+      from a past point arbitrarily fast — a naive "longest/newest history
+      wins" rule alone cannot tell a genuine history apart from one
+      fabricated after the fact. What prevents this is finality (once
+      enough attestations accumulate on a block, it is settled as
+      permanently irreversible) together with weak subjectivity (a node
+      that is new or has been offline for a long time syncs from a recent,
+      trusted finalized block rather than relying solely on re-verifying
+      everything from genesis). chainviz cannot reproduce this attack on
+      the live chain, so a standalone simulation sandbox — reusing the
+      chain ribbon's block-tile look — lets you move a finality checkpoint
+      and see for yourself why rewriting the past gets rejected.
+  layer: b-network
+  relatedTerms: [block, fiftyOnePercentAttack, reorg]
+
+eclipseAttack:
+  name:
+    ja: Eclipse攻撃
+    en: Eclipse attack
+  definition:
+    ja: >-
+      特定のノードが接続しているピアを、攻撃者が用意したノードだけで
+      埋め尽くしてしまう攻撃。ノードは自分のピアから聞いた情報だけを
+      「ネットワークの現在」として信じるため、接続スロットを攻撃者が
+      独占すると、そのノードには攻撃者が見せたい偽のブロックやtxだけが
+      届き、本物のネットワークで何が起きているかを正しく知れなくなる
+      （ゴシップ伝播の入口そのものを乗っ取られる）。chainviz のP2P凡例
+      （画面隅）で見えている「ピア接続が時間とともに自動で増えていく」
+      仕組みは、逆に言えば接続先の選び方次第でこの弱点になり得ることを
+      示している。実ネットワーク上での再現は本物の被害ノードを危険に
+      晒すことになるため行わず、被害ノードと接続スロットを模した独立
+      シミュレーション砂場で、攻撃者ピアがスロットを占有していく様子を
+      実際に動かして確かめられる。
+    en: >-
+      An attack in which an attacker fills every one of a target node's
+      peer slots with nodes they control. A node treats whatever its peers
+      tell it as "the current state of the network," so once an attacker
+      monopolizes the connection slots, only the fake blocks and
+      transactions the attacker wants to show ever reach that node — the
+      very entry point of gossip propagation gets hijacked. The P2P legend
+      in the corner of the chainviz screen shows peer connections growing
+      automatically over time; the flip side of that same mechanism is
+      that how peers get chosen can become exactly this weakness.
+      Reproducing this on the live network would put a real node at
+      genuine risk, so it is not attempted there; instead, a standalone
+      simulation sandbox with a mock victim node and peer slots lets you
+      watch attacker peers take over the slots step by step.
+  layer: b-network
+  relatedTerms: [peer, p2p, discovery]
+
+reorg:
+  name:
+    ja: リオーグ（reorg）
+    en: Reorg (chain reorganization)
+  definition:
+    ja: >-
+      複数に分かれていたフォーク（`fork`）が、合意ルールに従っていずれか
+      1本の枝だけを正準（canonical）として残し、他の枝を切り捨てる現象。
+      ほぼ同時刻の提案やネットワークの一時的な分断で起きるフォークは
+      通常あっという間に収束する健全な動きだが、リオーグそのものは中立の
+      仕組みであり、51%攻撃やロングレンジ攻撃が「成功」した瞬間も、外から
+      見れば同じ形（あるチェーンが別のチェーンに置き換わる）で観測される
+      ——だからこそ、finality によって「一定より前のブロックはもう
+      リオーグの対象にしない」という線を引くことが重要になる。chainviz
+      では、ノードごとに見ている枝（tip）を色分けするフォーク色分け
+      （§9、InfraPopover の「見ている tip」欄）と、全ノードの色が揃って
+      1本に収束するチェーンリボン（§10）の両方で、この現象を常設で
+      観察できる。
+    en: >-
+      The event in which a fork (`fork`) that had temporarily split into
+      multiple branches settles, under consensus rules, onto a single
+      canonical branch, dropping the rest. A reorg caused by
+      near-simultaneous proposals or a brief network partition is a
+      routine, healthy event that usually resolves in moments — but reorg
+      is a neutral mechanism, and the moment a 51% attack or long-range
+      attack "succeeds," it is observed from the outside as exactly the
+      same shape (one chain getting replaced by another). That is
+      precisely why finality matters: it draws a line saying blocks before
+      a certain point are no longer subject to reorg at all. chainviz lets
+      you observe this as a standing feature in two places: the fork-color
+      outlines that show which tip each node is following (§9, the
+      "Following tip" row in InfraPopover), and the chain ribbon (§10),
+      where every node's color converging onto one is exactly this
+      convergence happening.
+  layer: b-network
+  relatedTerms: [fork, fiftyOnePercentAttack]

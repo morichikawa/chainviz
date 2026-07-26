@@ -71,6 +71,9 @@ export const messages = {
   "sync.syncing": { ja: "同期中", en: "Syncing" },
   // B層拡張: フォーク（一時的な分岐）の色分け（ARCHITECTURE.md §9。Issue #296）。
   "field.headTip": { ja: "見ている tip", en: "Following tip" },
+  // 攻撃手法解説の土台（ARCHITECTURE.md §17.4。Issue #413）: 「見ている
+  // tip」欄の近傍に51%攻撃・リオーグへの用語アンカーを添える見出し。
+  "field.headTipAttackHint": { ja: "関連する用語", en: "Related terms" },
   "ghost.status": { ja: "起動中…", en: "Starting…" },
   "canvas.empty": {
     ja: "表示するコンテナがありません",
@@ -130,6 +133,21 @@ export const messages = {
   // 文構造ではprefixで文が完結するため）。
   "legend.hint.suffix": {
     ja: "により時間とともに自動で増えます",
+    en: "",
+  },
+  // 攻撃手法解説の土台（ARCHITECTURE.md §17.4。Issue #413）: P2P凡例に
+  // Eclipse攻撃への用語アンカーを添える2行目のヒント。3分割の理由は
+  // legend.hint.prefix/term/suffix と同じ。
+  "legend.eclipseHint.prefix": {
+    ja: "接続先ピアが攻撃者だけで埋め尽くされると",
+    en: "If every connected peer ends up controlled by an attacker, it becomes an ",
+  },
+  "legend.eclipseHint.term": {
+    ja: "Eclipse攻撃",
+    en: "eclipse attack",
+  },
+  "legend.eclipseHint.suffix": {
+    ja: "になります",
     en: "",
   },
   "peerEdge.hint": {
@@ -258,6 +276,21 @@ export const messages = {
     ja: "実行が失敗として記録されました（ブロックには取り込まれています）",
     en: "Recorded as failed (still included in a block).",
   },
+  // 攻撃手法解説の土台（ARCHITECTURE.md §17.4。Issue #413）: 「確定後は
+  // 覆らない」という説明とtxライフサイクルの文脈が合うため、段階リストの
+  // 末尾にダブルスペンドへの用語アンカーを添える。
+  "tx.lifecycle.doubleSpendHint.prefix": {
+    ja: "取り込み済みのtxが確定後に覆ることはなく、",
+    en: "An included tx never gets undone once final, which is exactly why a ",
+  },
+  "tx.lifecycle.doubleSpendHint.term": {
+    ja: "ダブルスペンド（二重支払い）",
+    en: "double-spend",
+  },
+  "tx.lifecycle.doubleSpendHint.suffix": {
+    ja: "は原理的に成立しません",
+    en: " cannot succeed once it has reached this stage.",
+  },
   // --- C層拡張: 定型操作パネル（送金・デプロイ・コントラクト呼び出し。
   // ARCHITECTURE.md §6.5/§6.8） ---
   "action.workbenchOperations": { ja: "操作を実行…", en: "Run operation…" },
@@ -355,6 +388,21 @@ export const messages = {
     en: "Click to jump to the sender wallet's card",
   },
   "mempoolPanel.overflow": { ja: "他 {count} 件", en: "+{count} more" },
+  // 攻撃手法解説の土台（ARCHITECTURE.md §17.4。Issue #413）: tx順序への
+  // 言及とmempool俯瞰の文脈が合うため、フロントランニングへの用語アンカーを
+  // 添える。
+  "mempoolPanel.frontRunningHint.prefix": {
+    ja: "ここに並ぶ未承認txの中身を見て自分のtxを先に割り込ませる行為が",
+    en: "Watching the pending transactions listed here and slipping your own tx ahead of one of them is called ",
+  },
+  "mempoolPanel.frontRunningHint.term": {
+    ja: "フロントランニング",
+    en: "front-running",
+  },
+  "mempoolPanel.frontRunningHint.suffix": {
+    ja: "です",
+    en: ".",
+  },
   "mempoolPanel.nodesTitle": { ja: "ノード別 txpool", en: "Txpool by node" },
   // Issue #408: ノード別 txpool 行のクリックヒント（tx 行の jumpHint と対）。
   "mempoolPanel.nodeJumpHint": {
@@ -442,6 +490,9 @@ export const messages = {
     ja: "新しいブロックが右端に積まれていきます",
     en: "New blocks stack up on the right",
   },
+  // Issue #414: subtitle-row の学習用砂場入口を単一メニューへ統合する
+  // `<summary>` ラベル（`docs/worklog/issue-414.md` UX設計 §4）。
+  "chainRibbon.demoMenu.open": { ja: "学習用の砂場", en: "Learning sandboxes" },
   "chainRibbon.latest": { ja: "#{number}", en: "#{number}" },
   "chainRibbon.older.tooltip": {
     ja: "これより前のブロックは表示していません",
@@ -464,6 +515,12 @@ export const messages = {
     en: "No receipt times observed yet",
   },
   "chainRibbon.popover.receivedByOffset": { ja: "+{ms}ms", en: "+{ms}ms" },
+  // 攻撃手法解説の土台（ARCHITECTURE.md §17.4。Issue #413）: 「親ブロック」
+  // 行の近傍にロングレンジ攻撃への用語アンカーを添える見出し。
+  "chainRibbon.popover.longRangeHint": {
+    ja: "関連する用語",
+    en: "Related terms",
+  },
   // --- ブロック詳細パネル（kind: "blockDetail"。Issue #409。
   // ARCHITECTURE.md §17） ---
   "blockDetail.title": { ja: "ブロック詳細", en: "Block detail" },
@@ -767,6 +824,139 @@ export const messages = {
   "sigDemo.simplifiedNote": {
     ja: "実際の tx はここに出した項目のほかにも多くの情報（nonce・gas など）を含み、決められた形式（RLP）で並べてから署名します。この砂場では「内容と署名が結びついている」ことに絞って簡略化しています。",
     en: "A real tx contains many more fields than shown here (such as nonce and gas) and is encoded in a fixed format (RLP) before signing. This sandbox is simplified down to the single idea that the content and the signature are bound together.",
+  },
+  // --- 「51%攻撃のしくみ」デモ（kind: "fiftyOnePercentAttackDemo"。Issue #414。
+  // docs/worklog/issue-414.md UX設計 §5。英語版は初稿で、
+  // chainviz-i18n のレビュー対象） ---
+  "attack51Demo.open": { ja: "51%攻撃のしくみを試す", en: "Try how a 51% attack works" },
+  "attack51Demo.title": { ja: "51%攻撃のしくみ", en: "How a 51% attack works" },
+  "attack51Demo.intro": {
+    ja: "ここは学習用の砂場です。実際のチェーンには影響しません。7人の疑似バリデーターが、分岐した2つの候補（枝A・枝B）のどちらを正しいチェーンとして見ているかを表しています。バリデーターのボタンをクリックすると、そのバリデーターを攻撃者が支配している状態に切り替えられます。",
+    en: "This is a learning sandbox. It doesn't affect the real chain. 7 pseudo-validators each regard one of two candidate branches (Branch A / Branch B) as the chain they follow. Click a validator's button to toggle whether the attacker controls it.",
+  },
+  "attack51Demo.summaryLabel": {
+    ja: "攻撃者が支配するバリデーター",
+    en: "Validators controlled by the attacker",
+  },
+  "attack51Demo.summaryValue": {
+    ja: "{attacker} / {total}人（{percent}%）",
+    en: "{attacker} / {total} ({percent}%)",
+  },
+  "attack51Demo.commonParent": { ja: "共通の親ブロック", en: "Common parent block" },
+  "attack51Demo.branchA": { ja: "枝A", en: "Branch A" },
+  "attack51Demo.branchB": { ja: "枝B", en: "Branch B" },
+  "attack51Demo.weight": { ja: "重み", en: "Weight" },
+  "attack51Demo.badge.canonical": { ja: "正準", en: "Canonical" },
+  "attack51Demo.badge.notCanonical": {
+    ja: "非正準（捨てられる枝）",
+    en: "Not canonical (discarded)",
+  },
+  "attack51Demo.branchEmpty": {
+    ja: "まだ誰もこの枝を支持していません",
+    en: "No validator is backing this branch yet",
+  },
+  "attack51Demo.validator.honest": {
+    ja: "バリデーター{n}: 誠実（クリックで攻撃者が支配する状態に切り替え）",
+    en: "Validator {n}: honest (click to make attacker-controlled)",
+  },
+  "attack51Demo.validator.attacker": {
+    ja: "バリデーター{n}: 攻撃者が支配（クリックで誠実な状態に戻す）",
+    en: "Validator {n}: attacker-controlled (click to make honest)",
+  },
+  "attack51Demo.forkChoiceRule": {
+    ja: "fork choiceルール（簡略化）: 重みの合計が大きい枝が正準になります。",
+    en: "Simplified fork-choice rule: the branch with the larger total weight becomes canonical.",
+  },
+  "attack51Demo.marginToFlip": {
+    ja: "枝Bが逆転するまであと{count}人",
+    en: "{count} more attacker-controlled validators would flip Branch B to canonical",
+  },
+  "attack51Demo.alreadyFlipped": {
+    ja: "攻撃者はすでに枝Bを正準にしています",
+    en: "The attacker has already made Branch B canonical",
+  },
+  "attack51Demo.thresholdNote": {
+    ja: "「51%攻撃」という名前ですが、実際に必要な割合はバリデーター総数によって変わります（この砂場では7人中4人、約57%で逆転します）。",
+    en: 'Despite the name "51% attack," the share actually needed depends on the total validator count (in this sandbox, 4 of 7 — about 57% — flips the outcome).',
+  },
+  "attack51Demo.reset": { ja: "最初に戻す", en: "Reset" },
+  "attack51Demo.simplifiedNote": {
+    ja: "実際のfork choice（LMD-GHOST）は、各バリデーターの証明（attestation）が指すブロックや経過時間なども考慮する、より複雑なルールです。ここでは学習のため「重みの合計が大きい枝が勝つ」という単純化したルールだけを使っています。",
+    en: "The real fork-choice rule (LMD-GHOST) is more complex — it also weighs which block each validator's attestation points to, how much time has passed, and more. This sandbox uses a simplified rule: the branch with more total weight wins.",
+  },
+  "attack51Demo.whoDecides": {
+    ja: "実際のネットワークでは、1人の攻撃者がバリデーターの半数以上を握るには莫大なステーク（担保資産）を用意する必要があり、経済的コストが非常に高くなります。バリデーターが少数に集中していないことこそが、この仕組みの安全性の土台です。",
+    en: "In a real network, an attacker would need an enormous amount of stake to control more than half the validators — an extremely costly undertaking. Keeping validators from concentrating in a few hands is exactly what makes this mechanism secure.",
+  },
+  // --- チェーンリボンカードの「攻撃を学ぶ」入口行（Issue #415。
+  // `docs/worklog/issue-415.md` UX設計 §6。既存 subtitle-row とは別の
+  // 新規行。将来 #414（51%攻撃）が同種の入口を必要とした場合、この行に
+  // ボタンを1つ追加するだけで済む想定） ---
+  "chainRibbon.attackDemoRowLabel": { ja: "攻撃を学ぶ", en: "Learn about attacks" },
+  // --- 「ロングレンジ攻撃」デモ（kind: "longRangeAttackDemo"。Issue #415。
+  // docs/worklog/issue-415.md UX設計 §8。英語版は初稿で、
+  // chainviz-i18n のレビュー対象） ---
+  "longRangeDemo.open": { ja: "ロングレンジ攻撃を体験する", en: "Try a long-range attack" },
+  "longRangeDemo.title": { ja: "ロングレンジ攻撃のしくみ", en: "How long-range attacks work" },
+  "longRangeDemo.intro": {
+    ja: "ここは学習用の砂場です。実際のチェーンには影響しません。同じ genesis から始まっていても、攻撃者は後から別の履歴を作り直すことができます。下の2本の履歴を見比べ、『確定(finality)をどこまで進めるか』を動かして、どちらの履歴が正しいと判定されるか確かめてください。",
+    en: "This is a learning sandbox. It doesn't affect the real chain. Even though both histories start from the same genesis, an attacker can later rebuild a different one. Compare the two chains below, and try moving how far finality has progressed to see which history gets accepted.",
+  },
+  "longRangeDemo.canonicalLabel": { ja: "正規のチェーン", en: "Canonical chain" },
+  "longRangeDemo.attackerLabel": {
+    ja: "攻撃者が作り直した履歴",
+    en: "Attacker's rewritten history",
+  },
+  "longRangeDemo.rivalNote": {
+    ja: "同じ番号でも中身が違う、ライバルのブロックです",
+    en: "Same number, different contents — these blocks are rivals",
+  },
+  // QAレビュー申し送り（差し戻し時に併せて対応、任意改善）:
+  // 共有区間（#0〜{lastShared}）を明示する手がかりが無かった点への対応。
+  "longRangeDemo.sharedNote": {
+    ja: "#0〜#{lastShared}は正規のチェーンと攻撃者の履歴で共有されている区間です（ここまでは同じ内容）。",
+    en: "Blocks #0–#{lastShared} are shared between the canonical chain and the attacker's history (identical up to this point).",
+  },
+  // QAレビュー申し送り（差し戻し時に併せて対応、任意改善）:
+  // 破線コネクタが実際のリンク切れではないことを説明する要素が無かった点への対応。
+  "longRangeDemo.forkLinkNote": {
+    ja: "破線は実際にハッシュの連結が切れていることを意味しません。ここから履歴が分かれたことを示す目印です。",
+    en: "The dashed line doesn't mean the hash chain is actually broken — it just marks where the history diverges.",
+  },
+  "longRangeDemo.checkpointHeading": {
+    ja: "確定(finality)はどこまで進んでいますか？",
+    en: "How far has finality progressed?",
+  },
+  "longRangeDemo.checkpointOption": { ja: "#{number}まで確定", en: "Finalized through #{number}" },
+  "longRangeDemo.finalizedBadge": { ja: "確定済み", en: "Finalized" },
+  "longRangeDemo.verdict.naiveHeading": {
+    ja: "単純な『長い方を正しいとする』ルールなら",
+    en: "Under a naive 'longest chain wins' rule",
+  },
+  "longRangeDemo.verdict.naiveResult": {
+    ja: "攻撃者の履歴（#{attackerMax}まで）が採用されてしまいます",
+    en: "The attacker's history (through #{attackerMax}) would be accepted",
+  },
+  "longRangeDemo.verdict.finalityHeading": {
+    ja: "確定(finality)を考慮すると",
+    en: "Once finality is taken into account",
+  },
+  "longRangeDemo.verdict.protected": {
+    ja: "正規のチェーンを維持できます（#{divergeAt}はすでに確定済みのため、攻撃者の履歴は拒否されます）",
+    en: "The canonical chain holds (#{divergeAt} is already finalized, so the attacker's history is rejected)",
+  },
+  "longRangeDemo.verdict.vulnerable": {
+    ja: "まだ#{divergeAt}が確定していないため、この攻撃を防げません",
+    en: "#{divergeAt} isn't finalized yet, so this attack can't be stopped",
+  },
+  "longRangeDemo.reset": { ja: "最初に戻す", en: "Reset" },
+  "longRangeDemo.whoDecides": {
+    ja: "実際のPoS Ethereumでは、バリデーターの投票（attestation）の積み重ねによってブロックが確定します。一度確定したブロックより前を書き換える提案は、たとえ長くても採用されません。",
+    en: "In real PoS Ethereum, blocks become finalized as validator votes (attestations) accumulate. Once a block is finalized, no proposal that rewrites anything before it will be accepted, no matter how long it is.",
+  },
+  "longRangeDemo.simplifiedNote": {
+    ja: "この砂場は考え方を確かめるための簡略化したモデルです。実際のfinalityの仕組み（2/3以上の投票、epoch単位の確定など）はもっと複雑です。",
+    en: "This sandbox is a simplified model for exploring the idea. Real finality (two-thirds-plus voting, epoch-based finalization, etc.) is more involved.",
   },
   // --- 「eclipse攻撃のしくみ」デモ（kind: "eclipseAttackDemo"。Issue #416。
   // docs/worklog/issue-416.md UX設計 §5。英語版は初稿で、

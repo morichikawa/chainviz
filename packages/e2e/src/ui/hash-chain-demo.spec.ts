@@ -4,11 +4,16 @@
 //
 // このデモは実チェーンから完全に独立した学習用の砂場（`kind:
 // "hashChainDemo"`）で、チェーンリボンカードは常に描画される（タイルが
-// 0件でも subtitle 行の常設入口ボタンは表示される）ため、チェーンの進行を
-// 一切待たずに開始できる。操作フロー・状態遷移の細部は
+// 0件でも subtitle 行の常設入口は表示される）ため、チェーンの進行を一切
+// 待たずに開始できる。操作フロー・状態遷移の細部は
 // `packages/frontend/src/crypto-demo/HashChainDemoView.test.tsx`
 // （コンポーネントテスト）で検証済みのため、ここでは実ブラウザで入口から
 // 最後まで一連の操作が通ることの一度きりの通し確認に絞る。
+//
+// Issue #414: subtitle 行の入口は「学習用の砂場」メニュー
+// （`<details>`/`<summary>`）へ統合された。実ブラウザでは閉じた
+// `<details>` の中身は非表示になるため、先にメニューを開いてから
+// 個々の入口ボタンを押す。
 
 import { expect, test } from "@playwright/test";
 
@@ -17,8 +22,9 @@ test("UI-HASH-01: チェーンリボンの入口から砂場を開き、改ざ�
 }) => {
   await page.goto("/");
 
-  await test.step("frontend を開き、チェーンリボンカードの「ハッシュのしくみを試す」ボタンを押す", async () => {
+  await test.step("frontend を開き、「学習用の砂場」メニューを開いて「ハッシュのしくみを試す」ボタンを押す", async () => {
     await expect(page.getByTestId("chain-ribbon-card")).toBeVisible();
+    await page.getByTestId("chain-ribbon-demo-menu-open").click();
     await page.getByTestId("chain-ribbon-hash-demo-open").click();
   });
 

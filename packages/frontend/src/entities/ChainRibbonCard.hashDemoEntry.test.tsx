@@ -1,7 +1,9 @@
-// チェーンリボンカードの常設入口(subtitle 行末の「ハッシュのしくみを試す」
-// ボタン。Issue #401)が SidePanel を開くこと・SidePanelProvider が無い
-// 単体レンダーでも壊れないことの確認。カード自体の他の挙動は
-// ChainRibbonCard.test.tsx が扱う(CLAUDE.md の1ファイル1責務)。
+// チェーンリボンカードの「ハッシュのしくみを試す」入口(Issue #401)が
+// 学習用の砂場メニュー(Issue #414。`<details>`/`<summary>`)へ移動した後も
+// 同じ data-testid・同じクリック挙動で SidePanel を開くこと・
+// SidePanelProvider が無い単体レンダーでも壊れないことの確認。メニュー
+// 自体の開閉挙動は ChainRibbonCard.demoMenu.test.tsx が扱う(CLAUDE.md の
+// 1ファイル1責務)。
 import { ReactFlowProvider } from "@xyflow/react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -34,7 +36,7 @@ function SidePanelViewProbe() {
   return <span data-testid="side-panel-view-kind">{view?.kind ?? "none"}</span>;
 }
 
-describe("ChainRibbonCard: hash chain demo entry point (Issue #401)", () => {
+describe("ChainRibbonCard: hash chain demo entry point (Issue #401 → #414 menu)", () => {
   it("renders without a SidePanelProvider (no-op click, matching GlossaryTerm's optional pattern)", () => {
     render(
       <ReactFlowProvider>
@@ -47,11 +49,12 @@ describe("ChainRibbonCard: hash chain demo entry point (Issue #401)", () => {
         </LanguageProvider>
       </ReactFlowProvider>,
     );
+    fireEvent.click(screen.getByTestId("chain-ribbon-demo-menu-open"));
     const button = screen.getByTestId("chain-ribbon-hash-demo-open");
     expect(() => fireEvent.click(button)).not.toThrow();
   });
 
-  it("exposes the entry as a real <button> with an accessible name (keyboard reachable)", () => {
+  it("exposes the entry as a real <button> with an accessible name (keyboard reachable) once the menu is open", () => {
     render(
       <ReactFlowProvider>
         <LanguageProvider initialLanguage="ja">
@@ -63,6 +66,7 @@ describe("ChainRibbonCard: hash chain demo entry point (Issue #401)", () => {
         </LanguageProvider>
       </ReactFlowProvider>,
     );
+    fireEvent.click(screen.getByTestId("chain-ribbon-demo-menu-open"));
     // アクセシブル名（見出しテキスト）を持つ <button> = Tab で到達し
     // Enter/Space で起動できる。専用の aria-label は不要（テキストが名になる）。
     const button = screen.getByRole("button", { name: "ハッシュのしくみを試す" });
@@ -70,7 +74,7 @@ describe("ChainRibbonCard: hash chain demo entry point (Issue #401)", () => {
     expect((button as HTMLButtonElement).type).toBe("button");
   });
 
-  it("opens the hashChainDemo side panel view when clicked", () => {
+  it("opens the hashChainDemo side panel view when clicked, and closes the menu", () => {
     render(
       <ReactFlowProvider>
         <LanguageProvider initialLanguage="ja">
@@ -86,7 +90,11 @@ describe("ChainRibbonCard: hash chain demo entry point (Issue #401)", () => {
       </ReactFlowProvider>,
     );
     expect(screen.getByTestId("side-panel-view-kind").textContent).toBe("none");
+    fireEvent.click(screen.getByTestId("chain-ribbon-demo-menu-open"));
     fireEvent.click(screen.getByTestId("chain-ribbon-hash-demo-open"));
     expect(screen.getByTestId("side-panel-view-kind").textContent).toBe("hashChainDemo");
+    expect(
+      screen.getByTestId("chain-ribbon-demo-menu-open").closest("details")?.hasAttribute("open"),
+    ).toBe(false);
   });
 });

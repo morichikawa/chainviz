@@ -13,6 +13,10 @@ import { useLanguage } from "../i18n/LanguageProvider.js";
 import { HashChainDemoView } from "../crypto-demo/HashChainDemoView.js";
 import { SignatureDemoView } from "../crypto-demo/SignatureDemoView.js";
 import { EclipseAttackDemoView } from "../attack-demo/EclipseAttackDemoView.js";
+import { FiftyOnePercentAttackDemoView } from "../attack-demo/FiftyOnePercentAttackDemoView.js";
+import { LongRangeAttackDemoView } from "../attack-demo/LongRangeAttackDemoView.js";
+import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
+import { withTermAnchor } from "../glossary/withTermAnchor.js";
 import { BlockDetailView } from "./BlockDetailView.js";
 import { CommsLogView } from "./CommsLogView.js";
 import type { CommsLogNodeOption } from "./CommsLogFilterBar.js";
@@ -120,6 +124,12 @@ export interface SidePanelHostProps {
  * signatureDemo（Issue #402）: hashChainDemo と同じ理由でダングリング
  * ガードの対象外。
  *
+ * fiftyOnePercentAttackDemo（Issue #414）: hashChainDemo/signatureDemo と
+ * 同じ理由でダングリングガードの対象外。
+ *
+ * longRangeAttackDemo（Issue #415）: hashChainDemo/signatureDemo と同じ
+ * 理由でダングリングガードの対象外。
+ *
  * eclipseAttackDemo（Issue #416）: hashChainDemo/signatureDemo と同じ理由で
  * ダングリングガードの対象外。
  *
@@ -141,7 +151,7 @@ export function SidePanelHost({
   latestBlockHash,
   transactions = EMPTY_TRANSACTIONS,
 }: SidePanelHostProps) {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const { view, open, close } = useSidePanel();
   const contract =
     view?.kind === "contractSource"
@@ -212,6 +222,42 @@ export function SidePanelHost({
     return (
       <SidePanel ariaLabel={t("sigDemo.title")} title={t("sigDemo.title")} onClose={close}>
         <SignatureDemoView />
+      </SidePanel>
+    );
+  }
+
+  if (view.kind === "fiftyOnePercentAttackDemo") {
+    return (
+      <SidePanel
+        ariaLabel={t("attack51Demo.title")}
+        title={
+          <GlossaryTerm termKey="fiftyOnePercentAttack">
+            {t("attack51Demo.title")}
+          </GlossaryTerm>
+        }
+        onClose={close}
+      >
+        <FiftyOnePercentAttackDemoView />
+      </SidePanel>
+    );
+  }
+
+  if (view.kind === "longRangeAttackDemo") {
+    return (
+      <SidePanel
+        ariaLabel={t("longRangeDemo.title")}
+        // Issue #415 UX設計 §7: パネルタイトル中の「ロングレンジ攻撃」
+        // （en: "long-range attacks"）へ用語集アンカーを付ける。ariaLabel は
+        // スクリーンリーダー向けのプレーンテキストを維持するため、この
+        // アンカーは見た目の title（ReactNode 許容）にのみ適用する。
+        title={withTermAnchor(
+          t("longRangeDemo.title"),
+          lang === "ja" ? "ロングレンジ攻撃" : "long-range attacks",
+          "longRangeAttack",
+        )}
+        onClose={close}
+      >
+        <LongRangeAttackDemoView />
       </SidePanel>
     );
   }

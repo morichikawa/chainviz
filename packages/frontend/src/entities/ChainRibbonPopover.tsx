@@ -37,6 +37,9 @@ function Field({ label, value }: { label: ReactNode; value: string }) {
  *
  * `anchorRef` はこのポップオーバーを開いたタイルへの ref（Issue #245 の
  * 既存ポップオーバー群と同じ、body 直下への portal 描画のための基準位置）。
+ *
+ * 「親ブロック」行の直後に `longRangeAttack` への用語アンカーを添える
+ * （ARCHITECTURE.md §17.4、Issue #413。攻撃手法解説の土台）。
  */
 export function ChainRibbonPopover({
   anchorRef,
@@ -108,6 +111,20 @@ export function ChainRibbonPopover({
         </span>
         <span className="infra-field__value">{shortHex(block.parentHash)}</span>
       </div>
+      {/* Issue #413（ARCHITECTURE.md §17.4）: 「親ブロック」行がまさに
+          チェーンを遡る先を示しているため、その近傍にロングレンジ攻撃
+          （genesisまで遡って別履歴を作り直す攻撃）への用語アンカーを置く。 */}
+      <div
+        className="infra-field chain-ribbon-popover__long-range-hint"
+        data-testid={`chain-ribbon-popover-long-range-hint-${block.hash}`}
+      >
+        <span className="infra-field__label">
+          {t("chainRibbon.popover.longRangeHint")}
+        </span>
+        <span className="infra-field__value">
+          <GlossaryTerm termKey="longRangeAttack" />
+        </span>
+      </div>
       <Field
         label={t("chainRibbon.popover.time")}
         value={formatBlockTimestamp(block.timestamp)}
@@ -174,6 +191,20 @@ export function ChainRibbonPopover({
         data-testid={`chain-ribbon-popover-hash-demo-open-${block.hash}`}
       >
         {t("hashDemo.open")}
+      </button>
+      {/* Issue #415: ハッシュのしくみデモと同じ文脈導線パターンで、ロング
+          レンジ攻撃デモへも直接飛べるようにする（縦積みのため幅の制約は
+          無い。`docs/worklog/issue-415.md` UX設計 §6）。 */}
+      <button
+        type="button"
+        className="chain-ribbon-popover__long-range-demo-open nodrag"
+        onClick={(event) => {
+          event.stopPropagation();
+          sidePanel?.open({ kind: "longRangeAttackDemo" });
+        }}
+        data-testid={`chain-ribbon-popover-long-range-demo-open-${block.hash}`}
+      >
+        {t("longRangeDemo.open")}
       </button>
     </PopoverPortal>
   );

@@ -1098,11 +1098,11 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       統括が以下4Issueに分割し、本Issueは親issueとして残した。詳細は
       docs/worklog/issue-412.md参照)
       [#412](https://github.com/morichikawa/chainviz/issues/412)
-  - [ ] 攻撃手法解説の土台(glossary + 既存可視化アンカー)
+  - [x] 攻撃手法解説の土台(glossary + 既存可視化アンカー)
         [#413](https://github.com/morichikawa/chainviz/issues/413)
-  - [ ] 51%攻撃のシミュレーション砂場
+  - [x] 51%攻撃のシミュレーション砂場
         [#414](https://github.com/morichikawa/chainviz/issues/414)
-  - [ ] ロングレンジ攻撃のシミュレーション砂場
+  - [x] ロングレンジ攻撃のシミュレーション砂場
         [#415](https://github.com/morichikawa/chainviz/issues/415)
   - [x] eclipse攻撃のシミュレーション砂場
         [#416](https://github.com/morichikawa/chainviz/issues/416)

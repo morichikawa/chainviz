@@ -1375,7 +1375,20 @@ body {
    隙間(15)」で固定し、ContractListPanel がどこまで伸びても重ならないように
    する。
    Issue #327 追補: 浮遊オーバーレイパネルとして contract-list-panel と
-   同じすりガラス化。 */
+   同じすりガラス化。
+   Issue #413 差し戻し対応: `bottom` 固定 + 内容量に応じて上方向へ伸びる
+   このパネルは、ビューポート高が低いとき左上の `.canvas-overlay-top`
+   （ツールバー + レイヤーフィルターバー）に重なりうる（Issue #413 の
+   frontRunning ヒント行追加で、mempool が0件のアイドル状態でも
+   1280x720（Playwright 標準ビューポート）で重なるようになった。
+   `docs/worklog/issue-413.md` QA検証結果 5-1 参照）。`max-height` を
+   `100vh` 基準の上限でも制限し、低いビューポートでは内容を内部スクロール
+   （既存の `overflow-y: auto`）に逃がして、パネル上端が
+   `.canvas-overlay-top` の下端（1280 幅で実測 175px 前後）より上に出ない
+   ようにする。`585px` は「このパネルの bottom オフセット(385px) +
+   `.canvas-overlay-top` の下端に対する安全マージン込みの予約領域
+   (200px)」。ツールバー/チップバーの行数が増えて実際の下端がこの
+   200px を超えるようになったら、この値も見直すこと。 */
 .mempool-panel {
   position: absolute;
   left: 15px;
@@ -1383,7 +1396,7 @@ body {
   z-index: 6;
   min-width: 220px;
   max-width: 280px;
-  max-height: 260px;
+  max-height: min(260px, calc(100vh - 585px));
   overflow-y: auto;
   padding: 8px 10px;
   border-radius: 10px;
@@ -1411,6 +1424,14 @@ body {
 
 .mempool-panel__empty {
   margin: 4px 0 0;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+/* 攻撃手法解説の土台（ARCHITECTURE.md §17.4。Issue #413）:
+   フロントランニングへの用語アンカー。 */
+.mempool-panel__hint {
+  margin: 4px 0 8px;
   color: var(--muted);
   line-height: 1.4;
 }
@@ -2661,6 +2682,16 @@ button.mempool-panel__row:hover {
   opacity: 0.6;
 }
 
+/* 攻撃手法解説の土台（ARCHITECTURE.md §17.4。Issue #413）:
+   ダブルスペンドへの用語アンカー。 */
+.tx-lifecycle-popover__double-spend-hint {
+  margin: 6px 0 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--divider);
+  color: var(--muted);
+  line-height: 1.4;
+}
+
 /* --- トースト通知（コマンド失敗のエラー表示など） --- */
 .toast-stack {
   position: absolute;
@@ -3162,7 +3193,78 @@ button.mempool-panel__row:hover {
   gap: 8px;
 }
 
-.chain-ribbon-card__hash-demo-open {
+/* Issue #414: subtitle-row の常設入口を単一メニューへ統合
+   (`<details>`/`<summary>`。docs/worklog/issue-414.md UX設計 §4)。 */
+.chain-ribbon-card__demo-menu {
+  position: relative;
+  flex: none;
+}
+
+.chain-ribbon-card__demo-menu-summary {
+  list-style: none;
+  color: var(--accent);
+  font-size: 11px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.chain-ribbon-card__demo-menu-summary::-webkit-details-marker {
+  display: none;
+}
+
+.chain-ribbon-card__demo-menu-list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 200px;
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--glass-popover-bg);
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
+  border: 1px solid var(--glass-border);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 var(--glass-highlight);
+}
+
+.chain-ribbon-card__demo-menu-item {
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+
+.chain-ribbon-card__demo-menu-item:hover,
+.chain-ribbon-card__demo-menu-item:focus-visible {
+  background: rgba(79, 157, 255, 0.16);
+}
+
+/* Issue #415: 「攻撃を学ぶ」入口行。subtitle-row とは別の行にすることで
+   幅の混雑を避ける（UX設計 §6）。`flex-wrap: wrap` にしておき、将来ボタンが
+   増えても折り返すだけで既存ボタンの表示を壊さない。 */
+.chain-ribbon-card__attack-demo-row {
+  margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.chain-ribbon-card__attack-demo-label {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.chain-ribbon-card__long-range-demo-open {
   flex: none;
   background: none;
   border: none;
@@ -3172,7 +3274,6 @@ button.mempool-panel__row:hover {
   text-decoration: underline;
   cursor: pointer;
 }
-
 /* Issue #409: ポップオーバー末尾のブロック詳細パネルへの導線。「受信した
    ノード」欄との区切りとして上ボーダーを持つ（このボタンが先頭）。 */
 .chain-ribbon-popover__block-detail-open {
@@ -3195,6 +3296,19 @@ button.mempool-panel__row:hover {
    導線を追加したため、上の区切り線は block-detail-open 側が受け持ち、
    こちらは詰めて並ぶ2番目のボタンとして小さい上マージンのみ持つ。 */
 .chain-ribbon-popover__hash-demo-open {
+  margin-top: 2px;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+/* Issue #415: hash-demo-open のすぐ下に積む3番目のボタン。見た目は同一。 */
+.chain-ribbon-popover__long-range-demo-open {
   margin-top: 2px;
   background: none;
   border: none;
@@ -4006,6 +4120,469 @@ button.mempool-panel__row:hover {
   font-size: 11px;
 }
 
+/* --- Issue #414: 「51%攻撃のしくみ」デモ(kind: fiftyOnePercentAttackDemo) ---
+   共通の親ブロック → 分岐ツリー(枝A/枝B) → ヒント文、という縦構成
+   (docs/worklog/issue-414.md UX設計 §3レイアウト)。枝の配色は既存の
+   フォークパレット(--fork-color-a/--fork-color-b。ARCHITECTURE.md §9.3)を
+   流用する。 */
+.attack51-demo__intro {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+
+/* --- Issue #415: 「ロングレンジ攻撃」デモ(kind: longRangeAttackDemo) ---
+   正規/checkpoint/攻撃者の3段を、共有した1つの CSS Grid（列 = ブロック
+   番号）で表現する（UX設計 `docs/worklog/issue-415.md` §3）。各セルの
+   `grid-row`/`grid-column` は JSX 側（`LongRangeChainRow.tsx`・
+   `LongRangeAttackDemoView.tsx`）がインラインスタイルで明示的に指定して
+   おり、ここでは列幅・見た目だけを定義する。列1はラベル列、列2以降は
+   「タイル列・コネクタ列」の繰り返し（`tileGridColumn`/
+   `connectorGridColumnAfter`。`longRangeAttackDemo.ts` 参照）。 */
+.long-range-demo__intro {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+
+.long-range-demo__diagram {
+  margin: 4px 0 14px;
+}
+
+/* 共有区間・破線コネクタの意味を説明する注記（QAレビュー申し送りの任意
+   改善）。既存の `.long-range-demo__footer-note` と同系統の控えめな見た目。 */
+.long-range-demo__diagram-note {
+  color: var(--muted);
+  font-size: 11px;
+  margin: 4px 0 0;
+}
+
+/* 3段まとめて1つの overflow-x コンテナで横スクロールさせる（別々に
+   スクロールさせると列がずれるため。UX設計 §3）。 */
+.long-range-demo__scroll {
+  overflow-x: auto;
+}
+
+/* `width: max-content` にしないと、パネル幅が足りない場合に各列が
+   `minmax()` の最小値（62px）へ強制的に縮められ、英語版の
+   checkpointチップ（幅約122px）のようにセルの最小値より広いコンテンツが
+   隣のセルへはみ出して重なる（Issue #415 QA差し戻し）。グリッド自身の
+   幅を「各列のmax-contentの合計」に固定することで、パネル幅が足りない
+   ときは列を縮めるのではなく `.long-range-demo__scroll` の
+   `overflow-x: auto` で横スクロールさせる（既存の「はみ出したら
+   横スクロール」パターンをそのまま機能させる）。 */
+.long-range-demo__grid {
+  display: grid;
+  grid-template-columns:
+    minmax(150px, auto)
+    minmax(62px, max-content) 14px
+    minmax(62px, max-content) 14px
+    minmax(62px, max-content) 14px
+    minmax(62px, max-content) 14px
+    minmax(62px, max-content);
+  column-gap: 6px;
+  row-gap: 10px;
+  align-items: start;
+  padding: 4px 2px;
+  width: max-content;
+}
+
+.long-range-demo__row-label {
+  align-self: center;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.long-range-demo__tile-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+}
+
+/* タイル自体の基本の見た目は `.chain-ribbon-tile`（Issue #327）に準じる。
+   ホバー状態を持つ chain-ribbon 専用のクラスとは結合せず、この砂場専用の
+   軽量な提示専用クラスとして新設する（UX設計 §3）。 */
+.long-range-demo__tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 62px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(32, 39, 58, 0.9), rgba(24, 30, 46, 0.95));
+  border: 1px solid var(--border);
+}
+
+/* 正規チェーンの checkpoint 以下（確定済み）区間。hashDemo の有効バッジと
+   同系統の緑（--synced）。 */
+.long-range-demo__tile--finalized {
+  border-color: var(--synced);
+  box-shadow: 0 0 0 1px rgba(56, 211, 159, 0.35);
+}
+
+/* 攻撃者チェーンの分岐後区間。既存のフォーク色パレット（--fork-color-a）を
+   再利用する。hashDemo の invalid（赤）とは意図的に色を分ける（UX設計 §3:
+   ハッシュ連結自体は矛盾なく繋がっており、問題は「どちらを正史とするか」
+   という別の軸のため）。 */
+.long-range-demo__tile--fork {
+  border-color: var(--fork-color-a);
+  box-shadow: 0 0 0 1px rgba(255, 204, 0, 0.35);
+}
+
+.long-range-demo__tile-number {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+.long-range-demo__tile-hash {
+  color: var(--muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  cursor: help;
+}
+
+.long-range-demo__tile-badge {
+  margin-top: 2px;
+  font-size: 9px;
+  padding: 0 5px;
+  border-radius: 999px;
+  color: #a8f0d4;
+  border: 1px solid var(--synced);
+  background: rgba(56, 211, 159, 0.14);
+}
+
+.long-range-demo__rival-note {
+  margin: 0;
+  max-width: 100px;
+  color: var(--muted);
+  font-size: 10px;
+  text-align: center;
+}
+
+/* ブロック間の連結線。`.chain-ribbon-card__link`（Issue #298）と同じ見た目。 */
+.long-range-demo__link {
+  align-self: center;
+  width: 14px;
+  height: 0;
+  border-top: 2px solid var(--muted);
+}
+
+/* 攻撃者チェーンの分岐直前の連結線だけ破線にする（「ここで枝分かれした」
+   ことを示す。それ以外の連結線はすべて実線）。 */
+.long-range-demo__link--broken {
+  border-top-style: dashed;
+  opacity: 0.5;
+}
+
+.long-range-demo__checkpoint-heading {
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.long-range-demo__checkpoint-cell {
+  display: flex;
+  justify-content: center;
+}
+
+.long-range-demo__checkpoint-chip {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  font-size: 10px;
+  padding: 3px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.long-range-demo__checkpoint-chip--active {
+  border-color: var(--accent);
+  background: rgba(79, 157, 255, 0.16);
+  color: var(--accent);
+}
+
+.long-range-demo__verdict {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0 14px;
+}
+
+.long-range-demo__verdict-line {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.long-range-demo__verdict-heading {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.long-range-demo__verdict-badge {
+  display: inline-block;
+  align-self: flex-start;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.long-range-demo__verdict-badge--warning {
+  color: #ffe1a8;
+  border: 1px solid var(--syncing);
+  background: rgba(245, 181, 68, 0.14);
+}
+
+.long-range-demo__verdict-badge--safe {
+  color: #a8f0d4;
+  border: 1px solid var(--synced);
+  background: rgba(56, 211, 159, 0.14);
+}
+
+.long-range-demo__verdict-badge--danger {
+  color: #ffb4b4;
+  border: 1px solid #ff6b6b;
+  background: rgba(255, 107, 107, 0.14);
+}
+
+.long-range-demo__reset {
+  display: block;
+  margin: 14px 0;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.attack51-demo__summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+
+.attack51-demo__summary-label {
+  color: var(--muted);
+}
+
+.attack51-demo__summary-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.attack51-demo__tree {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.attack51-demo__common-parent {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--muted);
+  background: linear-gradient(180deg, rgba(32, 39, 58, 0.9), rgba(24, 30, 46, 0.95));
+}
+
+/* 共通の親ブロックから2本の線が分かれて2つの枝ボックスへ繋がる、
+   border を使った簡易な折れ線（UX設計 §3「SVG または border を使った
+   折れ線で十分」）。 */
+.attack51-demo__connectors {
+  position: relative;
+  width: 100%;
+  height: 20px;
+}
+
+.attack51-demo__connector {
+  position: absolute;
+  top: 0;
+  width: 42%;
+  height: 100%;
+  border-top: 2px solid var(--border);
+}
+
+.attack51-demo__connector--a {
+  left: 8%;
+  border-right: 2px solid var(--border);
+  border-top-right-radius: 8px;
+}
+
+.attack51-demo__connector--b {
+  right: 8%;
+  border-left: 2px solid var(--border);
+  border-top-left-radius: 8px;
+}
+
+.attack51-demo__branches {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+
+.attack51-demo__branch {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: linear-gradient(180deg, rgba(32, 39, 58, 0.9), rgba(24, 30, 46, 0.95));
+}
+
+.attack51-demo__branch--a {
+  border-color: var(--fork-color-a);
+}
+
+.attack51-demo__branch--b {
+  border-color: var(--fork-color-b);
+}
+
+/* canonical な枝は実線の縁取り + 発光（.infra-card--fork-0/1 と同系）、
+   非canonicalな枝は淡い縁取りにする（色だけに頼らずバッジ文言でも
+   伝える。a11y。UX設計 §3）。 */
+.attack51-demo__branch--canonical.attack51-demo__branch--a {
+  box-shadow: 0 0 10px rgba(255, 204, 0, 0.4);
+}
+
+.attack51-demo__branch--canonical.attack51-demo__branch--b {
+  box-shadow: 0 0 10px rgba(0, 224, 255, 0.4);
+}
+
+.attack51-demo__branch--not-canonical {
+  opacity: 0.75;
+}
+
+.attack51-demo__branch-heading {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.attack51-demo__branch-validators {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 24px;
+  margin-bottom: 8px;
+}
+
+.attack51-demo__branch-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: italic;
+}
+
+.attack51-demo__validator {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  padding: 3px 7px;
+  cursor: pointer;
+}
+
+.attack51-demo__validator:hover {
+  border-color: var(--accent);
+}
+
+/* Issue #414: バリデーターをトグルした直後の短いフラッシュ（既存の新着
+   ハイライトの流儀 `chainviz-new-arrival` を再利用）。 */
+.attack51-demo__validator--flash {
+  animation: chainviz-new-arrival 1.4s ease-in-out infinite;
+}
+
+.attack51-demo__branch-weight {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.attack51-demo__branch-weight-label {
+  color: var(--muted);
+}
+
+.attack51-demo__branch-weight-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.attack51-demo__branch-badge {
+  margin-top: 6px;
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.attack51-demo__branch--canonical .attack51-demo__branch-badge {
+  color: #a8f0d4;
+  border-color: var(--synced);
+  background: rgba(56, 211, 159, 0.14);
+}
+
+.attack51-demo__branch-badge--flash {
+  animation: chainviz-new-arrival 1.4s ease-in-out infinite;
+}
+
+.attack51-demo__margin-hint {
+  margin: 12px 0;
+  font-size: 13px;
+}
+
+.attack51-demo__fork-choice-rule {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 6px 0;
+}
+
+.attack51-demo__threshold-note {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: italic;
+  margin: 6px 0 12px;
+}
+
+.attack51-demo__reset {
+  display: block;
+  margin: 14px 0;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.long-range-demo__footer-note {
+  color: var(--muted);
+  font-size: 11px;
+  margin: 6px 0;
+}
+
+.attack51-demo__footer-note {
+  color: var(--muted);
+  font-size: 11px;
+  margin: 6px 0;
+}
+
 /* --- Issue #327 フォールバック ---
    backdrop-filter 非対応環境では var(--glass-bg)/var(--glass-popover-bg) の
    半透明地だけが残り、ぼかしが効かない分ちらつき・可読性低下につながる
@@ -4035,7 +4612,8 @@ button.mempool-panel__row:hover {
   .glossary-popover,
   .tx-lifecycle-popover,
   .operation-panel,
-  .side-panel {
+  .side-panel,
+  .chain-ribbon-card__demo-menu-list {
     background: #0c1119;
   }
 }
