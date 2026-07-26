@@ -95,3 +95,55 @@
     という現在のレイアウト構成に依存している。枝の数を増やす・
     `flex` の比率を変える等のレイアウト変更をする場合は、この calc() も
     合わせて見直す必要がある
+
+### 2026-07-26 Issue #429 レビュー(reviewer)
+
+- 担当: reviewer
+- 判定: 合格
+- 確認したブランチ: `issue-429-attack51-connector-fix`(コミット
+  `5d18a48` fix、`6bfb8a5` docs。2コミットとも1変更=1コミットの原則に
+  沿っており、混在なし)
+- 確認内容:
+  1. 差分は `packages/frontend/src/styles.css` のみ(38行の変更)。
+     マークアップ(`FiftyOnePercentAttackDemoView.tsx`)・ロジックは
+     無変更であることを diff で確認した
+  2. `.attack51-demo__connector--a`/`--b` の `calc()` 式を手計算で
+     再検証した。`.attack51-demo__branches` は `flex: 1` の2要素+
+     `gap` の等分割で、枝1個の中心x座標はコンテナ幅を `w`・gapを `g`
+     とすると `(w - g) / 4`(枝A側)。`calc(25% - g/4)` は「コンテナ幅の
+     25%(px換算)から `g/4`(絶対px)を引く」という計算になり、
+     `0.25w - g/4` と一致するため、この式は正確に成立する。全要素に
+     `* { box-sizing: border-box; }` が効いているため、`border-right`/
+     `border-left` を追加してもボックスの外形(left/width で計算した
+     座標)はずれない。トランク側の縦線(`border-right`/`border-left`)が
+     x=50%上で重なり1本の幹に見える設計、横線(`border-bottom`)が
+     枝の直上に来る設計も、実際の要素の親子構造(`.attack51-demo__tree`
+     直下に `.attack51-demo__connectors`・`.attack51-demo__branches`が
+     並ぶ)と整合していることをマークアップで確認した
+  3. `--attack51-branch-gap` は `.attack51-demo__tree` にのみ定義され、
+     CSSカスタムプロパティのスコープは子孫要素に継承されるため
+     `.attack51-demo__connectors`・`.attack51-demo__branches`(いずれも
+     `.attack51-demo__tree` の直接の子)から参照できる。`styles.css`
+     全体を検索し、この変数名が他のセレクタと衝突していないことも
+     確認した
+  4. `pnpm lint` / `pnpm build`(全パッケージ)/ `pnpm test`(shared 75件・
+     collector 1765件・e2e 185件・frontend 3932件)がすべて成功する
+     ことを確認した
+  5. 新規ユニットテストを追加していない判断は妥当と判断した。変更が
+     `styles.css` のみで、対応するReactコンポーネント・純粋ロジックの
+     変更を伴わないため、CLAUDE.mdの「純粋なUIの見た目調整や設定ファイルの
+     変更など、ロジックを伴わない変更は対象外」の例外規定に該当する
+  6. 実機でのブラウザ・Playwright確認を試みたが、本レビュー環境には
+     Playwrightのheadless chromiumの実行に必要なシステム共有ライブラリ
+     (`libnspr4.so`等)が入っておらず起動できなかった。その代替として、
+     `.attack51-demo__connector--a`/`--b` の `calc()` 式が実際のflex
+     レイアウトの中心座標と数学的に一致することを手計算で検証した
+     (上記2.)。実装担当の報告に記載されたPlaywright実測値(修正前の
+     ズレ・修正後の一致)は実装担当の設計メモ・対応内容の記述と整合して
+     おり、この手計算による裏付けと合わせて妥当と判断した
+  7. Issue本文の完了条件(「実際にブラウザで見て分かりやすい形になって
+     いる」「修正前後の見た目をPlaywright等で確認する」)について、
+     後者は実装担当が実施済みの記録がある。前者は見た目の主観評価を
+     伴うため、静的レビューでの数学的検証に加えて実機での最終確認は
+     QA(chainviz-qa)に委ねる
+- 指摘事項: なし
