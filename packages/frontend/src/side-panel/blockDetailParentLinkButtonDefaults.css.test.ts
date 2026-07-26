@@ -116,19 +116,16 @@ describe("block-detail parent link: button default styles (Issue #427 boundary c
     expect(ruleBodyFor("block-detail-view__parent-link")).toMatch(/color:\s*inherit\s*;/);
   });
 
-  it("keeps .infra-field__value unbreakable so the UA `text-align: center` stays invisible", () => {
-    // `.block-detail-view__parent-link` は `text-align` をリセットしていない
-    // ため、`<button>` の UA 既定の `text-align: center` が残る（実測でも
-    // div 側 `start` に対し button 側 `center`）。hash は空白を含まない
-    // 1トークンなので今は折り返しが起きず、flex item が内容幅に縮むため
-    // 見た目には出ない。ここに `overflow-wrap: anywhere` 等を足して
-    // 折り返しを許すと、button 側だけ最終行が中央寄せになる（実測で
-    // 34px ずれた）。折り返しを導入する際は同時に
-    // `text-align: left`（他のボタン化リセット `.contract-list-panel__row`
-    // 等と同じ）を足す必要がある、という前提条件を固定する。
-    const body = ruleBodyFor("infra-field__value");
-    expect(body).not.toMatch(/overflow-wrap|word-break|word-wrap/);
-    expect(ruleBodyFor("infra-field")).not.toMatch(/overflow-wrap|word-break|word-wrap/);
+  it("resets the UA `text-align: center` to left, matching the other button-ized rows", () => {
+    // `<button>` の UA 既定は `text-align: center`（div 側は既定の
+    // `start`/左寄せ）。他のボタン化リセット（`.contract-list-panel__row` /
+    // `.mempool-panel__row` / `.mempool-panel__node-row`）はいずれも
+    // `text-align: left` を明示しており、ここでも揃える。hash は空白を
+    // 含まない1トークンなので今は折り返しが起きず見た目には出ないが、
+    // 明示しておくことで将来 `.infra-field__value` に `overflow-wrap` 等を
+    // 足して折り返しを許すようになっても、button 側だけ最終行が中央寄せに
+    // ズレる（実測で34pxのズレを確認済み）事態を防げる。
+    expect(ruleBodyFor("block-detail-view__parent-link")).toMatch(/text-align:\s*left\s*;/);
   });
 });
 

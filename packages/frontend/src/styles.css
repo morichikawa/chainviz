@@ -3976,13 +3976,19 @@ button.mempool-panel__row:hover {
    `.infra-field` の `font-size: 12px` を上書きしてしまう（同じ詳細度の
    クラスセレクタなので後勝ち）。button のデフォルトフォントファミリーだけ
    リセットしたいので `font-family: inherit` に限定し、`.infra-field` の
-   font-size を上書きしないようにする。 */
+   font-size を上書きしないようにする。`text-align: left`
+   は他のボタン化リセット（`.contract-list-panel__row` /
+   `.mempool-panel__row` / `.mempool-panel__node-row`）と流儀を揃えるため
+   明示する（button の UA既定は `text-align: center`。値が折り返さない
+   現状は見た目に影響しないが、将来 `.infra-field__value` に
+   `overflow-wrap` 等を足して折り返しを許すときのため）。 */
 .block-detail-view__parent-link {
   width: 100%;
   border: none;
   background: none;
   color: inherit;
   font-family: inherit;
+  text-align: left;
   cursor: pointer;
   border-radius: 4px;
 }
