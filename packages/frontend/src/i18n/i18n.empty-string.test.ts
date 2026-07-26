@@ -34,13 +34,37 @@ describe("translate vs pickLocale empty-string boundary (Issue #341)", () => {
   });
 });
 
+describe("the same boundary for the second intentional empty value (Issue #413)", () => {
+  // Issue #413 で追加した2つ目の意図的な空文字。上と同じ境界が新しいキーでも
+  // 成立していることを実際に確認する（一覧の突き合わせ（後述）だけでは、
+  // translate がこのキーで ja にフォールバックしても気付けない。フォール
+  // バックすると英語表示の P2P 凡例の文末に「になります」が現れる）。
+  const entry = messages["legend.eclipseHint.suffix"];
+
+  it("translate respects the intentionally empty en value", () => {
+    expect(translate("legend.eclipseHint.suffix", "en")).toBe("");
+  });
+
+  it("pickLocale still falls back to ja for the very same entry", () => {
+    expect(pickLocale(entry, "en")).toBe(entry.ja);
+  });
+
+  it("returns the ja value unchanged in Japanese", () => {
+    expect(translate("legend.eclipseHint.suffix", "ja")).toBe(entry.ja);
+    expect(translate("legend.eclipseHint.suffix", "ja")).not.toBe("");
+  });
+});
+
 describe("intentional empty-string invariant in messages.ts (Issue #341)", () => {
   // 設計メモ（docs/worklog/issue-341.md §1）の前提: messages.ts で意図的な
-  // 空文字は legend.hint.suffix.en の1箇所だけ。ここが崩れる（別のキーで
+  // 空文字は当初 legend.hint.suffix.en の1箇所だけだった。Issue #413で
+  // 同じ3分割パターン（prefix/term/suffix、英語は語順の都合でprefixに
+  // 文を集約しsuffixを空にする）を踏襲した legend.eclipseHint.suffix.en が
+  // 2つ目の意図的な空文字として加わった。ここが崩れる（別のキーで意図せず
   // 空文字を足す）と translate の「空文字を尊重する」挙動が新しいキーに
   // 波及する。追加時にこのガードを踏むことで、意図的な追加かをレビューで
   // 確認でき、必要なら対応する回帰テストの追加を促せる。
-  it("has an empty value only at legend.hint.suffix.en", () => {
+  it("has empty values only at the known intentional pairs", () => {
     const emptyPairs: Array<[string, Language]> = [];
     for (const [key, entry] of Object.entries(messages)) {
       for (const lang of LANGUAGES) {
@@ -49,12 +73,20 @@ describe("intentional empty-string invariant in messages.ts (Issue #341)", () =>
         }
       }
     }
-    expect(emptyPairs).toEqual([["legend.hint.suffix", "en"]]);
+    expect(emptyPairs).toEqual([
+      ["legend.hint.suffix", "en"],
+      ["legend.eclipseHint.suffix", "en"],
+    ]);
   });
 
   it("keeps ja non-empty while only en is intentionally empty for legend.hint.suffix", () => {
     expect(messages["legend.hint.suffix"].ja).not.toBe("");
     expect(messages["legend.hint.suffix"].en).toBe("");
+  });
+
+  it("keeps ja non-empty while only en is intentionally empty for legend.eclipseHint.suffix (Issue #413)", () => {
+    expect(messages["legend.eclipseHint.suffix"].ja).not.toBe("");
+    expect(messages["legend.eclipseHint.suffix"].en).toBe("");
   });
 });
 

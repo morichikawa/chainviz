@@ -26,6 +26,10 @@ import { shortHex } from "./transaction.js";
  * インフラカードから直接作るため、`walletCardId` のような「存在しない」
  * ケースの解決は不要（常にクリック可能。パン先が消えた場合の防御は
  * `Canvas.tsx` 側のハンドラが `handleJumpToContract` と同じ流儀で持つ）。
+ *
+ * ヘッダー直下に `frontRunning` への用語アンカーを常設で添える
+ * （ARCHITECTURE.md §17.4、Issue #413。攻撃手法解説の土台。0件でも常に
+ * 描画するこのパネルの方針（§11.3）にあわせ、ヒントも常に表示する）。
  */
 export function MempoolPanel({
   txEntries,
@@ -55,6 +59,15 @@ export function MempoolPanel({
         <GlossaryTerm termKey="mempool">{t("mempoolPanel.title")}</GlossaryTerm>
         <span className="mempool-panel__count">{totalPendingCount}</span>
       </div>
+      {/* Issue #413（ARCHITECTURE.md §17.4）: tx順序への言及とmempool俯瞰の
+          文脈が合うため、フロントランニングへの用語アンカーを添える。 */}
+      <p className="mempool-panel__hint" data-testid="mempool-panel-front-running-hint">
+        {t("mempoolPanel.frontRunningHint.prefix")}
+        <GlossaryTerm termKey="frontRunning">
+          {t("mempoolPanel.frontRunningHint.term")}
+        </GlossaryTerm>
+        {t("mempoolPanel.frontRunningHint.suffix")}
+      </p>
       {txEntries.length === 0 ? (
         <p className="mempool-panel__empty">{t("mempoolPanel.empty")}</p>
       ) : (
