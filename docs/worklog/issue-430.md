@@ -214,3 +214,69 @@ Issue #415（ロングレンジ攻撃）は#414のマージ前に並行して開
 `pnpm lint && pnpm build && pnpm test`をリポジトリルートで実行し、
 全パッケージで成功することを確認した（frontend: 315ファイル3979ケース。
 テスト強化前は312ファイル3932ケース）。
+
+### 2026-07-26 Issue #430 レビュー
+
+- 担当: reviewer
+- 対象コミット: `e243706`（`origin/issue-430-unify-demo-menu` の先頭。
+  `main..HEAD` で8コミット）
+
+#### 確認した観点と結果
+
+- **境界の遵守**: 変更は `packages/frontend` の UI のみ。Docker/ノードAPI
+  への直接アクセスや、`eth_getLogs` 等チェーン固有語彙の混入は無い
+- **チェーンプロファイルの独立性**: 本Issueはチェーンプロファイルに関わる
+  変更を含まない（UIの入口統合のみ）ため該当なし
+- **`packages/shared` の型整合**: `packages/shared` への変更は無い
+  （設計メモどおり）。ビルドへの影響なし
+- **`ChainRibbonPopover.tsx`の文脈導線クラス
+  (`chain-ribbon-popover__long-range-demo-open`)**: `git diff main..HEAD --
+  packages/frontend/src/entities/ChainRibbonPopover.tsx` で差分ゼロを確認。
+  `styles.css`・`ChainRibbonPopover.tsx`双方にクラスが残っており、削除の
+  巻き込みは無い。実装担当の判断（対象外・維持）は妥当
+- **削除物の痕跡**: `chain-ribbon-card__attack-demo-row` /
+  `__attack-demo-label` / `__long-range-demo-open`（カード側）と
+  `chainRibbon.attackDemoRowLabel` を `packages/` 全体・`docs/`（worklogの
+  経緯記述を除く）にgrepし、他に参照が残っていないことを確認
+- **ビルド・lint・テスト**: リポジトリルートで
+  `pnpm lint && pnpm build && pnpm test` を実行し、全パッケージ
+  （shared/collector/frontend/e2e）が成功することを確認
+  （frontend: 315ファイル3979ケース、他パッケージも全件成功）
+- **テストコードの質**: 追加された3ファイル（`entryRouting`・
+  `keyboard`・`legacyRowRemoval`）を読んだ。表形式で3項目のラベル・
+  kindを突き合わせて取り違えを検出する設計、6通りの切替順序、タイル
+  0/1/12件の境界値、`SidePanelProvider`不在時の異常系、jsdomの
+  `<details>`activation behavior未実装という制約を回避しつつキーボード
+  到達性・起動を実機同等に確認する設計、CSS/i18nの消し忘れを単語境界付き
+  正規表現で検出する設計など、いずれも実装の詳細をなぞるだけの空虚な
+  テストではなく、意図的な破壊（ミューテーション）で検出できることを
+  worklogに残したうえで書かれている。既存テストの更新も含め、無意味な
+  テストは見当たらなかった
+- **エラーの握りつぶし**: 新規・変更コードに catch 節や汎用エラー
+  メッセージへのすり替えは無い（純粋なUI移設のため該当箇所自体が無い）
+- **現在の環境状態への依存**: タイムアウト・件数上限等の決め打ち定数は
+  本変更に含まれない
+- **docsとの齟齬**: `docs/ARCHITECTURE.md`・`docs/CONCEPT.md`に
+  `chain-ribbon-card__attack-demo-row`等への直接言及は無く、齟齬は生じて
+  いない。`docs/PLAN.md`・`docs/WORKLOG.md`への追記も内容と一致
+- **コミットの粒度**: `main..HEAD`の8コミットを確認。実装1コミット
+  （プロダクションコード変更＋その変更に伴う既存テストの更新をまとめて
+  1つ、これは同じ関心事のため妥当）、テスト強化3コミット（ファイルごとに
+  分離）、docs更新3コミット（作業記録追加・PLAN.mdチェック更新・テスト
+  強化記録追記）で、異なる関心事が1コミットに混在している箇所は無かった
+
+#### Issue本文の完了条件との照合
+
+- チェーンリボンカードに「学習用の砂場」メニューが1つだけあり、ハッシュの
+  しくみ・51%攻撃・ロングレンジ攻撃の3項目が入っている → 確認済み
+  （`ChainRibbonCard.tsx`の差分、`demoMenu.entryRouting.test.tsx`等のテスト）
+- 専用行が無くなっている → 確認済み（`chain-ribbon-card__attack-demo-row`
+  のDOM/CSS/i18nすべてからの削除をテストで固定）
+- 既存の各デモの動作にデグレが無い → 確認済み（既存テストの更新版が全件
+  成功、`ChainRibbonPopover.tsx`側は無変更）
+
+#### 判定
+
+合格。修正指示なし。実装担当への差し戻しは無い。
+
+`chainviz-qa`による実機検証に進めることを推奨する。
