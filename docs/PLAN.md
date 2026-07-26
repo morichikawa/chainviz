@@ -1102,7 +1102,7 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
         [#413](https://github.com/morichikawa/chainviz/issues/413)
   - [x] 51%攻撃のシミュレーション砂場
         [#414](https://github.com/morichikawa/chainviz/issues/414)
-  - [ ] ロングレンジ攻撃のシミュレーション砂場
+  - [x] ロングレンジ攻撃のシミュレーション砂場
         [#415](https://github.com/morichikawa/chainviz/issues/415)
   - [ ] eclipse攻撃のシミュレーション砂場
         [#416](https://github.com/morichikawa/chainviz/issues/416)

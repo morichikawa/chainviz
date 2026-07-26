@@ -61,6 +61,16 @@ export type SidePanelView =
     }
   | {
       /**
+       * 「ロングレンジ攻撃」デモ（Issue #415。`docs/worklog/issue-415.md`
+       * UX設計）。`hashChainDemo`/`signatureDemo` と同じく実チェーンから
+       * 完全に独立した学習用の疑似データ（砂場）を扱うため、対象を指す
+       * データは持たない。中身（`LongRangeAttackDemoView`）は開くたびに
+       * 初期状態（finality checkpoint = 0）から始まる。
+       */
+      kind: "longRangeAttackDemo";
+    }
+  | {
+      /**
        * ブロック詳細パネル（Issue #409。`docs/ARCHITECTURE.md` §17）。
        * collector が現在保持している範囲（`BLOCK_RETENTION`）内で、任意の
        * ブロックの詳細と前後ナビゲーションを見られる。エンティティ本体では
