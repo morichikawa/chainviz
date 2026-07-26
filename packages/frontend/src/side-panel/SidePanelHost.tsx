@@ -12,6 +12,7 @@ import { deriveReceivedOrder } from "../entities/chainRibbon.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
 import { HashChainDemoView } from "../crypto-demo/HashChainDemoView.js";
 import { SignatureDemoView } from "../crypto-demo/SignatureDemoView.js";
+import { EclipseAttackDemoView } from "../attack-demo/EclipseAttackDemoView.js";
 import { FiftyOnePercentAttackDemoView } from "../attack-demo/FiftyOnePercentAttackDemoView.js";
 import { LongRangeAttackDemoView } from "../attack-demo/LongRangeAttackDemoView.js";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
@@ -128,6 +129,9 @@ export interface SidePanelHostProps {
  *
  * longRangeAttackDemo（Issue #415）: hashChainDemo/signatureDemo と同じ
  * 理由でダングリングガードの対象外。
+ *
+ * eclipseAttackDemo（Issue #416）: hashChainDemo/signatureDemo と同じ理由で
+ * ダングリングガードの対象外。
  *
  * blockDetail（Issue #409）: 対象 hash の `BlockEntity` を `blocksByHash` から
  * 引く（保持するのは hash のみ。contractSource と同じ「未知→既知の昇格」
@@ -254,6 +258,18 @@ export function SidePanelHost({
         onClose={close}
       >
         <LongRangeAttackDemoView />
+      </SidePanel>
+    );
+  }
+
+  if (view.kind === "eclipseAttackDemo") {
+    return (
+      <SidePanel
+        ariaLabel={t("eclipseDemo.title")}
+        title={t("eclipseDemo.title")}
+        onClose={close}
+      >
+        <EclipseAttackDemoView />
       </SidePanel>
     );
   }

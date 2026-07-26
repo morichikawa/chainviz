@@ -958,6 +958,61 @@ export const messages = {
     ja: "この砂場は考え方を確かめるための簡略化したモデルです。実際のfinalityの仕組み（2/3以上の投票、epoch単位の確定など）はもっと複雑です。",
     en: "This sandbox is a simplified model for exploring the idea. Real finality (two-thirds-plus voting, epoch-based finalization, etc.) is more involved.",
   },
+  // --- 「eclipse攻撃のしくみ」デモ（kind: "eclipseAttackDemo"。Issue #416。
+  // docs/worklog/issue-416.md UX設計 §5。英語版は初稿で、
+  // chainviz-i18n のレビュー対象） ---
+  "eclipseDemo.open": { ja: "eclipse攻撃のしくみを試す", en: "Try how eclipse attacks work" },
+  "eclipseDemo.title": { ja: "eclipse攻撃のしくみ", en: "How eclipse attacks work" },
+  "eclipseDemo.intro": {
+    ja: "ここは学習用の砂場です。実際のピア接続には影響しません。中央の「被害ノード」は8個の接続スロットを持ち、はじめは全スロットが正規ピアで満たされています。下の「攻撃者ピアを追加」を押すと、攻撃者が1つずつスロットを奪っていきます。",
+    en: "This is a learning sandbox. It doesn't affect real peer connections. The \"victim node\" in the center has 8 connection slots, all initially filled with honest peers. Press \"Add attacker peer\" below to watch the attacker take over slots one by one.",
+  },
+  "eclipseDemo.victimNode": { ja: "被害ノード", en: "Victim node" },
+  "eclipseDemo.slot.honest": { ja: "正規ピア", en: "Honest peer" },
+  "eclipseDemo.slot.attacker": { ja: "攻撃者ピア", en: "Attacker peer" },
+  "eclipseDemo.occupancy": {
+    ja: "攻撃者ピア: {count} / {total}（{percent}%）",
+    en: "Attacker peers: {count} / {total} ({percent}%)",
+  },
+  "eclipseDemo.addAttacker": { ja: "攻撃者ピアを追加", en: "Add attacker peer" },
+  "eclipseDemo.allSlotsOccupied": {
+    ja: "すべてのスロットが攻撃者に占められました",
+    en: "All slots are occupied by the attacker",
+  },
+  "eclipseDemo.reset": { ja: "リセット", en: "Reset" },
+  "eclipseDemo.viewLabel": { ja: "被害ノードが見ているチェーン", en: "What the victim node sees" },
+  "eclipseDemo.badge.real": { ja: "ネットワーク全体と一致しています", en: "Matches the real network" },
+  "eclipseDemo.badge.fake": {
+    ja: "攻撃者だけが見せている内容です",
+    en: "Only the attacker is showing you this",
+  },
+  "eclipseDemo.eclipsedWarning": {
+    ja: "被害ノードの接続スロットがすべて攻撃者に占められました。今、この被害ノードは攻撃者だけが作る偽のネットワークの中にいます。",
+    en: "All of the victim node's connection slots are now occupied by the attacker. This node is currently trapped inside a fake network made entirely by the attacker.",
+  },
+  "eclipseDemo.simplifiedNote": {
+    ja: "実際のeclipse攻撃では、攻撃者は多数の異なる身元（Sybil）を用意し、ノード発見の仕組み自体を操作して接続を乗っ取ります。この砂場では「スロットが1つずつ攻撃者に置き換わる」という部分だけに絞って簡略化しています。",
+    en: "In a real eclipse attack, the attacker prepares many different identities (a Sybil attack) and manipulates the node discovery mechanism itself to take over connections. This sandbox is simplified down to the single idea that slots are replaced by the attacker one at a time.",
+  },
+  "eclipseDemo.defenseNote": {
+    ja: "実際のノードは、最初の接続先（ブートノード）だけでなくノード発見の仕組みを通じて多様な相手から接続先を集めるほか、信頼できる固定ピアを明示的に指定することで、すべての接続を攻撃者に握られるリスクを減らしています。",
+    en: "Real nodes reduce the risk of every connection being taken over by an attacker by gathering peers from a variety of sources through node discovery (not just the initial bootnode), and by explicitly designating trusted static peers.",
+  },
+  "eclipseDemo.block.real.1": { ja: "#1 Alice → Bob: 3 ETH", en: "#1 Alice → Bob: 3 ETH" },
+  "eclipseDemo.block.real.2": { ja: "#2 Bob → Carol: 1 ETH", en: "#2 Bob → Carol: 1 ETH" },
+  "eclipseDemo.block.real.3": { ja: "#3 Carol → Dave: 2 ETH", en: "#3 Carol → Dave: 2 ETH" },
+  "eclipseDemo.block.fake.1": {
+    ja: "#1 Alice → 攻撃者: 50 ETH",
+    en: "#1 Alice → Attacker: 50 ETH",
+  },
+  "eclipseDemo.block.fake.2": {
+    ja: "#2 攻撃者 → 攻撃者: 999 ETH",
+    en: "#2 Attacker → Attacker: 999 ETH",
+  },
+  "eclipseDemo.block.fake.3": {
+    ja: "#3 Carol → 攻撃者: 50 ETH",
+    en: "#3 Carol → Attacker: 50 ETH",
+  },
 } as const satisfies Record<string, Localized>;
 
 export type MessageKey = keyof typeof messages;

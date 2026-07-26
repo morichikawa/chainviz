@@ -1,5 +1,6 @@
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
+import { useOptionalSidePanel } from "../side-panel/SidePanelContext.js";
 import { NetworkLabel } from "./NetworkLabel.js";
 import { groupEdgesByNetwork, type PeerFlowEdge } from "./peerEdge.js";
 
@@ -16,9 +17,16 @@ import { groupEdgesByNetwork, type PeerFlowEdge } from "./peerEdge.js";
  *
  * 固定ヒントの2行目に `eclipseAttack`（Eclipse攻撃）への用語アンカーを
  * 添える（ARCHITECTURE.md §17.4、Issue #413。攻撃手法解説の土台）。
+ *
+ * Issue #416: ヒント文の下に「eclipse攻撃のしくみ」デモの入口ボタンを
+ * 追加する（`docs/worklog/issue-416.md` UX設計 §4）。「ノードの接続ピア」
+ * という主題がこの凡例と直接対応するため、この砂場の単一の入口として
+ * ここに置く（チェーンリボンカード・ノードカード・ピアエッジホバー
+ * ポップオーバーへの配置は文脈のズレ等の理由で不採用と判断済み）。
  */
 export function PeerNetworkLegend({ edges }: { edges: PeerFlowEdge[] }) {
   const { t } = useLanguage();
+  const sidePanel = useOptionalSidePanel();
 
   if (edges.length === 0) return null;
 
@@ -47,6 +55,14 @@ export function PeerNetworkLegend({ edges }: { edges: PeerFlowEdge[] }) {
         <GlossaryTerm termKey="eclipseAttack">{t("legend.eclipseHint.term")}</GlossaryTerm>
         {t("legend.eclipseHint.suffix")}
       </p>
+      <button
+        type="button"
+        className="p2p-legend__eclipse-demo-open nodrag"
+        onClick={() => sidePanel?.open({ kind: "eclipseAttackDemo" })}
+        data-testid="p2p-legend-eclipse-demo-open"
+      >
+        {t("eclipseDemo.open")}
+      </button>
     </div>
   );
 }

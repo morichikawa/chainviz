@@ -138,6 +138,14 @@ describe("PeerNetworkLegend", () => {
     expect(legend.textContent).not.toContain("により時間とともに自動で増えます");
   });
 
+  it("renders the eclipse attack demo entry button below the hint (Issue #416)", () => {
+    // クリック挙動・SidePanel連携は PeerNetworkLegend.eclipseDemoEntry.test.tsx
+    // が扱う(CLAUDE.md の1ファイル1責務)。ここでは表示のみを確認する。
+    wrap([edge("e1", "chainviz-ethereum-execution")]);
+    const button = screen.getByTestId("p2p-legend-eclipse-demo-open");
+    expect(button.textContent).toBe("eclipse攻撃のしくみを試す");
+  });
+
   it("does not leak any Japanese characters into the English hint (Issue #341)", () => {
     // 特定の語句ではなく文字種（ひらがな・カタカナ・漢字）で検出する広い
     // 回帰ガード。suffix の空文字が ja へフォールバックする不具合を、
