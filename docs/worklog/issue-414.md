@@ -1,0 +1,807 @@
+# Issue #414 51%攻撃のシミュレーション砂場を実装する
+
+### 2026-07-25 Issue #414 UX設計メモ（51%攻撃デモ「51%攻撃のしくみ」）
+
+- 担当: ux
+- ブランチ: issue-414-fifty-one-percent-attack-demo
+- 前提: Issue #412 の設計フェーズで概念モデル・判定ロジックの原則が
+  決定済み（`docs/ARCHITECTURE.md` §17.5.1・§17.6、`docs/worklog/issue-412.md`）。
+  本メモはその実装着手前の詳細UX設計。実装（`packages/frontend`）は
+  行っていない
+- 確認方法: `pnpm --filter @chainviz/frontend dev`（モックデータ）で実機を
+  起動し、Playwright（`@playwright/test`。E2Eパッケージの devDependency を
+  流用）でスクリーンショットを取得しながら、既存の暗号デモ砂場
+  （`hashChainDemo`、Issue #401）の操作感・図解表現・チェーンリボンカードの
+  実測サイズを確認した
+
+#### 1. 何が伝わっていないか（実際に触って確認した課題）
+
+- 既存のフォーク色分け（ARCHITECTURE.md §9）は「ノードがどちらの tip を
+  見ているか」を色で示すが、**なぜ最終的にどちらか1本に収束するのか**
+  （合意ルール・多数決の力学）はどこにも説明がない。フォーク自体も
+  自然発生をほぼ観測できない環境のため、実チェーン上で仕組みを体験する
+  手段がない
+- 「51%攻撃」という名前から連想される「バリデーターの半分以上を握れば
+  何でもできる」という漠然とした理解はあっても、**なぜ多数決なのか・
+  具体的に何票差で結果が変わるのか**という因果を手を動かして確認する
+  場所がない
+- チェーンリボンカード（`ChainRibbonCard.tsx`）を実測したところ、
+  カード幅は約315px、subtitle-row の余白は約298pxしかなく、既存の
+  `hashDemo.open` ボタン1つ（日本語54px・英語69px）だけでほぼ埋まって
+  いる（英語版はサブタイトル文と合わせるとほぼ折り返し寸前）。ここへ
+  `fiftyOnePercentAttackDemo`・`longRangeAttackDemo`（Issue #415）の
+  入口ボタンを機械的に追加すると、3つ目のテキストリンクで確実に折り返す
+  かはみ出す。「手狭になる懸念」（Issue #412 設計側の申し送り）は実測で
+  裏付けが取れた
+
+#### 2. 概念モデルの具体化（Issue #412 で決定済みの範囲を実装可能な粒度に）
+
+Issue #412 の設計（§17.5.1）が固定しているのは「5〜7個程度の疑似
+バリデーター」「等しい重み1票」「攻撃者が支配するバリデーター数を
+スライダー等で増減」「重みの合計が大きい枝が canonical になる簡略化
+fork choice」「フォーク色パレットの流用」まで。以下は今回のUX設計で
+具体化した点:
+
+- **バリデーター数は7人に固定**する（「5〜7個程度」の上限を採用）。
+  奇数にすることで多数決に厳密な同数（引き分け）が発生せず、判定ロジックの
+  分岐が単純になる。7人なら「4人（約57%）」が逆転ラインになり、
+  「51%という名前だが実際に必要な割合は総数次第」という学習ポイントを
+  自然に持たせられる
+- **各バリデーターは「誠実（枝Aを支持）」か「攻撃者が支配（枝Bを支持）」の
+  どちらか**とし、誠実なバリデーターは常に枝A、攻撃者配下は常に枝Bを
+  支持する単純化を採用する（枝Aを「もとの正しいチェーン」、枝Bを
+  「攻撃者が押し通したいチェーン」と位置付ける、最も直接的な51%攻撃の
+  シナリオ）。初期状態は攻撃者0人（7人全員が枝Aを支持、枝Bは0票）
+- **操作方法はスライダーではなく、7人分のバリデーター個別トグルボタンに
+  した**（Issue #412 の「スライダー等」の「等」の範囲内の判断として明記）。
+  理由:
+  - 対象は0〜7の8段階の離散値のみで、ドラッグで連続値を選ぶスライダーの
+    利点（細かい値を素早く選べる）がそもそも活きない
+  - 個々のバリデーターをクリックしてON/OFFする方が「このバリデーターが
+    寝返った」という**個体の同一性**が視覚的に保たれる（V3をクリックしたら
+    V3が枝Bへ移動する。スライダーで「攻撃者3人」と数値だけ動かすより、
+    「誰が」という主語が残る）
+  - 実装コストが低い（`<input type="range">` は本アプリで前例が無い新規
+    UIパーツだが、トグルボタンは既存の `<button>` パターン（relink・
+    reset 等）の延長で実装できる）
+  - キーボード操作・スクリーンリーダーでの読み上げも、個別の
+    `<button aria-pressed>` の方がレンジ入力よりアクセシブルにしやすい
+    （状態が「誠実/攻撃者」の二値であることをそのままボタンの押下状態で
+    表現できる）
+  - この判断はUX側の裁量だが、chainviz-designer の意図（「ユーザーが
+    攻撃者支配数を増減できる」という操作結果）は損なわない。実装時に
+    レンジスライダーの方が適切と判断される場合は変更してよいが、その
+    場合も「個体の同一性を保つ」（同じV1〜V7が両陣営間を移動する見た目）
+    は維持すること
+
+#### 3. 図解のレイアウト（分岐ツリー。§17.5.1「新しい図解要素」の具体化）
+
+チェーンリボンのタイル表現は使わず、以下の構成にする（上から下へ）:
+
+1. **導入文**（`attack51Demo.intro`。学習用砂場であること・実チェーンに
+   影響しないことを明記。既存デモと同じ冒頭文の流儀）
+2. **サマリ行**: 「攻撃者が支配するバリデーター: {attacker} / {total}人
+   （{percent}%）」（`attack51Demo.summaryLabel` + 値。常時表示、
+   バリデーターをトグルするたびに即座に更新）
+3. **分岐ツリー本体**（このデモの中核）:
+   - 最上段に小さな「共通の親ブロック」ノード（`attack51Demo.commonParent`）。
+     フォーク発生前は1本の同じチェーンだったことを示す
+   - そこから2本の線が下に分かれ、左に「枝A」ボックス、右に「枝B」
+     ボックスへ接続する（単純なV字/Y字のコネクタ線。SVG または border
+     を使った折れ線で十分、複雑なグラフ描画ライブラリは不要）
+   - 各枝ボックスの中身:
+     - 見出し「枝A」/「枝B」（`attack51Demo.branchA`/`branchB`）
+     - 現在その枝を支持しているバリデーターのトグルボタン群
+       （V1〜V7のうち、その枝に属するものだけがそのボックス内に描画
+       される。**トグルボタン自体がそのバリデーターの現在の投票先を
+       表す配置**であり、コントロールと可視化が同一の要素になる。
+       ボタンをクリックすると、そのバリデーターは反対側の枝ボックスへ
+       移動する）
+     - 誰も支持していない場合は空状態の文言（`attack51Demo.branchEmpty`
+       「まだ誰もこの枝を支持していません」）を出す（他画面の「発行済み
+       NFTがまだ無い」等と同じ「省略せず空であることを明示する」流儀）
+     - 「重み: {n}」（`attack51Demo.weight` + 数値。バリデーター数の
+       単純合計）
+     - 状態バッジ: 現在 canonical な枝には
+       `attack51Demo.badge.canonical`（「正準」。既存の `fork` 用語集
+       エントリが既に使っている「正準（canonical）」という訳語に合わせる。
+       「正史」等の別訳は使わない）、そうでない枝には
+       `attack51Demo.badge.notCanonical`（「非正準（捨てられる枝）」）
+   - **色**: 枝Aは `--fork-color-a`（#ffcc00 amber）、枝Bは
+     `--fork-color-b`（#00e0ff cyan）を境界線・バッジに使う（§9.3の
+     フォーク色パレットをそのまま流用。ARCHITECTURE §17.5.1 の指定通り）。
+     canonical な枝は実線の縁取り + 発光（`.infra-card--fork-0/1` と
+     同系）、非canonicalな枝は細い/淡い縁取りにし、**色だけでなくバッジの
+     文言でも正準/非正準を伝える**（a11y。既存の hashDemo バッジ
+     「有効/無効」と同じ「色に依存しない」原則）
+4. **逆転ラインのヒント文**（`attack51Demo.marginToFlip` /
+   `attack51Demo.alreadyFlipped`。動的テキストで「枝Bが逆転するまであと
+   {n}人」または「攻撃者はすでに枝Bを正準にしています」を出す。
+   `aria-live="polite"` を付け、バリデーターをトグルして状態が変わった
+   ときにスクリーンリーダーでも変化が伝わるようにする）
+5. **fork choice ルールの説明**（`attack51Demo.forkChoiceRule`。
+   「重みの合計が大きい枝が正準になる」という簡略化ルールを明示。
+   `GlossaryTerm termKey="fiftyOnePercentAttack"` でこの行の中の
+   語（または見出し）をラップし、パネル内からも用語集へ飛べるようにする）
+6. **閾値の注記**（`attack51Demo.thresholdNote`。「51%」という名前と
+   実際の必要割合（7人中4人=約57%）のズレを明記。誤解の予防）
+7. **リセットボタン**（`attack51Demo.reset`。既存デモと同じ「最初に戻す」。
+   全バリデーターを枝Aに戻す）
+8. **フッター注記2つ**（既存デモの `whoComputes`/`simplifiedNote` と同型）:
+   - `attack51Demo.simplifiedNote`: 実際の fork choice（LMD-GHOST）は
+     attestation の指す対象や経過時間なども考慮するより複雑なルールで
+     あり、ここでは「重みの合計」だけを見る単純化であることの注記
+   - `attack51Demo.whoDecides`: 実際のネットワークでは攻撃者が過半数の
+     バリデーターを握るには莫大なステークと経済的コストが必要であり、
+     「バリデーターが少数に集中していないこと」自体が安全性の土台である
+     ことを伝える（Issue本文の「合意の仕組みが少数のバリデーターに
+     集中する怖さを伝えるトイモデル」という位置づけに対応する結び）
+
+**アニメーション**: バリデーターをトグルした直後、そのバリデーターの
+ボタンと、状態が変わった枝ボックスのバッジ・ヒント文を短時間フラッシュ
+させる（`HashChainDemoView` が使っている `NEW_ARRIVAL_HIGHLIGHT_DURATION_MS`
+と同じ「変化箇所を短く光らせる」パターンを再利用。新しいアニメーション
+機構は作らない）。バリデーターアイコンを枝間で物理的に滑らせて移動させる
+演出は、実装コストの割に学習効果への寄与が薄いため**採用しない**
+（先回りしない。フラッシュ + DOM上の再配置で十分に「動いた」ことが伝わる）。
+
+#### 4. 導線（入口）の設計: チェーンリボンカードの入口を単一メニューへ統合する
+
+Issue #412 の設計担当から「チェーンリボンカードの subtitle-row に3つの
+砂場の入口ボタンを機械的に追加すると手狭になる懸念があり、単一入口
+（メニュー/ドロワー等）への統合をUX側で判断してほしい」という申し送りが
+あった（`eclipseAttackDemo` は §17.4 の通り自然な置き場所が
+`PeerNetworkLegend` 側になる見込みのため、この「3つ」は
+`hashChainDemo`・`fiftyOnePercentAttackDemo`・`longRangeAttackDemo` の3つ
+を指す）。上記1節の実測（カード幅約315px、subtitle-row余白約298px、
+ボタン1つで既にほぼ埋まる）を踏まえ、**単一メニューへ統合する**と判断した。
+
+- チェーンリボンカードの subtitle-row にある既存の「ハッシュのしくみを
+  試す」ボタン（`chain-ribbon-card__hash-demo-open`、Issue #401）を、
+  **`<details>`/`<summary>` による開閉式メニュー**に置き換える
+  - `<summary>` のラベルは `chainRibbon.demoMenu.open`
+    （「学習用の砂場」/ "Learning sandboxes"）。閉じているときは
+    既存ボタンと同じ見た目（アンダーライン付きテキストリンク）にする
+  - 展開すると、カードの手前に浮かぶ小さな縦並びメニューが現れ、
+    利用可能な砂場の入口ボタンを1行ずつ列挙する:
+    - 「ハッシュのしくみを試す」（既存の `hashDemo.open`。**テキスト・
+      挙動・`data-testid="chain-ribbon-hash-demo-open"` は変更しない**。
+      メニュー内へ移動するだけ）
+    - 「51%攻撃のしくみを試す」（新規 `attack51Demo.open`。
+      `data-testid="chain-ribbon-fifty-one-percent-demo-open"` を新設）
+    - （Issue #415 が着手されたら「ロングレンジ攻撃のしくみを試す」を
+      同じ並びに追加する。今回はそのための特別な拡張ポイントを
+      先回りして作り込まない。ただの3項目目の追加として実装できる
+      構造にしておけば十分）
+  - いずれかの項目を選ぶと、対象の `sidePanel.open({ kind: ... })` を
+    呼ぶと同時に `<details>` を閉じる（開いたままサイドパネルが表示
+    されると見た目が窮屈なため）
+  - `<details>`/`<summary>` を選んだ理由: ブラウザ標準の開閉状態管理・
+    キーボード操作（Enter/Space で開閉）・スクリーンリーダーへの
+    expanded/collapsed 通知を無償で得られる。独自の state 管理・
+    aria 属性の手動付与・外側クリックでの close 処理を新設するより
+    実装コストが低く、CLAUDE.mdの「先回りしない」「過剰に作り込まない」
+    に整合する
+  - 既知の制約（意図的に対応しない）: `<details>` は外側クリックで
+    自動的には閉じない。メニューを開いたまま無関係な場所をクリックしても
+    開いたままになるが、再度 `summary` をクリックすれば閉じられるため
+    致命的な問題ではないと判断した。実装時に余裕があれば改善してよいが
+    必須要件にはしない
+  - 配置・見た目（z-index、背景等）は、既存のホバー用ポップオーバー
+    （`PopoverPortal`）と同じ「他カードより手前に浮かぶガラス質感パネル」
+    の流儀に合わせる。`PopoverPortal` をそのまま再利用できるかは
+    実装判断に委ねる（クリックトリガーへの転用が容易ならそれでよいし、
+    `.chain-ribbon-card` が既に `position: relative` を持つため、
+    カード内で完結する単純な `position: absolute` でも成立する）
+- **`ChainRibbonPopover`（タイルホバー時の文脈導線）は変更しない**。
+  51%攻撃デモは「特定の1ブロック」ではなく「バリデーター集団の投票」
+  という、ブロックそのものより一段抽象的な題材のため、hashChainDemo
+  のような「このタイルのハッシュの裏側」という文脈的な結びつきが弱い。
+  タイル単位の文脈導線は追加せず、カード単位の常設入口（今回のメニュー）
+  だけで足りると判断した
+- **`InfraPopover`（ノードカードの「見ている tip」行）への追加導線は
+  任意（実装しなくてよい）とする**。§17.4 で決定済みの
+  `fiftyOnePercentAttack`/`reorg` の用語集アンカーはこの行に既に
+  乗る予定であり、それとは別に「このデモを開く」ボタンまで追加するのは
+  過剰と判断した。もし実装時に「フォーク発生中のノードから直接デモへ
+  跳べると良い」と判断すれば追加してよいが、必須要件にはしない
+
+#### 5. 新設する i18n 文言（初稿。`attack51Demo.*` / `chainRibbon.demoMenu.*` 名前空間）
+
+| キー | ja | en |
+| --- | --- | --- |
+| `chainRibbon.demoMenu.open` | 学習用の砂場 | Learning sandboxes |
+| `attack51Demo.open` | 51%攻撃のしくみを試す | Try how a 51% attack works |
+| `attack51Demo.title` | 51%攻撃のしくみ | How a 51% attack works |
+| `attack51Demo.intro` | ここは学習用の砂場です。実際のチェーンには影響しません。7人の疑似バリデーターが、分岐した2つの候補（枝A・枝B）のどちらを正しいチェーンとして見ているかを表しています。バリデーターのボタンをクリックすると、そのバリデーターを攻撃者が支配している状態に切り替えられます。 | This is a learning sandbox. It doesn't affect the real chain. 7 pseudo-validators each regard one of two candidate branches (Branch A / Branch B) as the chain they follow. Click a validator's button to toggle whether the attacker controls it. |
+| `attack51Demo.summaryLabel` | 攻撃者が支配するバリデーター | Validators controlled by the attacker |
+| `attack51Demo.summaryValue` | {attacker} / {total}人（{percent}%） | {attacker} / {total} ({percent}%) |
+| `attack51Demo.commonParent` | 共通の親ブロック | Common parent block |
+| `attack51Demo.branchA` | 枝A | Branch A |
+| `attack51Demo.branchB` | 枝B | Branch B |
+| `attack51Demo.weight` | 重み | Weight |
+| `attack51Demo.badge.canonical` | 正準 | Canonical |
+| `attack51Demo.badge.notCanonical` | 非正準（捨てられる枝） | Not canonical (discarded) |
+| `attack51Demo.branchEmpty` | まだ誰もこの枝を支持していません | No validator is backing this branch yet |
+| `attack51Demo.validator.honest` | バリデーター{n}: 誠実（クリックで攻撃者が支配する状態に切り替え） | Validator {n}: honest (click to make attacker-controlled) |
+| `attack51Demo.validator.attacker` | バリデーター{n}: 攻撃者が支配（クリックで誠実な状態に戻す） | Validator {n}: attacker-controlled (click to make honest) |
+| `attack51Demo.forkChoiceRule` | fork choiceルール（簡略化）: 重みの合計が大きい枝が正準になります。 | Simplified fork-choice rule: the branch with the larger total weight becomes canonical. |
+| `attack51Demo.marginToFlip` | 枝Bが逆転するまであと{count}人 | {count} more attacker-controlled validators would flip Branch B to canonical |
+| `attack51Demo.alreadyFlipped` | 攻撃者はすでに枝Bを正準にしています | The attacker has already made Branch B canonical |
+| `attack51Demo.thresholdNote` | 「51%攻撃」という名前ですが、実際に必要な割合はバリデーター総数によって変わります（この砂場では7人中4人、約57%で逆転します）。 | Despite the name "51% attack," the share actually needed depends on the total validator count (in this sandbox, 4 of 7 — about 57% — flips the outcome). |
+| `attack51Demo.reset` | 最初に戻す | Reset |
+| `attack51Demo.simplifiedNote` | 実際のfork choice（LMD-GHOST）は、各バリデーターの証明（attestation）が指すブロックや経過時間なども考慮する、より複雑なルールです。ここでは学習のため「重みの合計が大きい枝が勝つ」という単純化したルールだけを使っています。 | The real fork-choice rule (LMD-GHOST) is more complex — it also weighs which block each validator's attestation points to, how much time has passed, and more. This sandbox uses a simplified rule: the branch with more total weight wins. |
+| `attack51Demo.whoDecides` | 実際のネットワークでは、1人の攻撃者がバリデーターの半数以上を握るには莫大なステーク（担保資産）を用意する必要があり、経済的コストが非常に高くなります。バリデーターが少数に集中していないことこそが、この仕組みの安全性の土台です。 | In a real network, an attacker would need an enormous amount of stake to control more than half the validators — an extremely costly undertaking. Keeping validators from concentrating in a few hands is exactly what makes this mechanism secure. |
+
+`attack51Demo.summaryValue`/`marginToFlip`/`validator.honest`/`validator.attacker`
+は既存の `format()` ヘルパー（`ChainRibbonCard.tsx` の `cadence` 表示等で
+使用中）で `{placeholder}` を埋め込む想定。
+
+#### 6. 状態モデル（実装への申し送り。`packages/frontend/src/attack-demo/` 想定）
+
+- 純粋ロジック（`fiftyOnePercentAttackDemo.ts` 想定）:
+  - `TOTAL_VALIDATORS = 7`（固定値。CLAUDE.mdの固定値ルールに従い、
+    「実チェーンの観測値ではなく学習用砂場の疑似データの人数」という
+    前提をコード上のコメントに明記すること。§17.5冒頭でレビュー担当も
+    同種の固定値（疑似ブロック3個等）を問題視しない旨を確認済み）
+  - state: 7人ぶんの `{ id: number; controlledByAttacker: boolean }`
+    配列、または単純に `attackerValidatorIds: ReadonlySet<number>` の
+    どちらでも良い（実装判断）。**「どのバリデーターか」という識別子を
+    捨てて人数だけを state に持つ設計にはしない**こと（3節の「個体の
+    同一性」要件のため）
+  - 導出関数: `weightOfBranchA(state)` / `weightOfBranchB(state)`
+    （それぞれ誠実勢・攻撃者勢の人数）、`canonicalBranch(state)`
+    （weight の大小比較。同数は7人固定なら理論上発生しないが、念のため
+    「同数なら枝Aを優先」等の決定的な規則をコードに明記しておく）、
+    `marginToFlip(state)`（Bが逆転するまでの必要人数。既に逆転していれば
+    0または負値ではなく「既に逆転済み」を表す別の戻り値にする）
+  - `toggleValidator(state, id)`: 指定バリデーターの
+    `controlledByAttacker` を反転する
+  - `createInitialFiftyOnePercentAttackDemoState()`:
+    全員 `controlledByAttacker: false`
+  - パネルを閉じて開き直すと初期状態に戻る（既存2デモ・§17.5「パネルは
+    開くたびに初期状態から始まる」の方針を踏襲。state はコンポーネント
+    ローカルの `useState` に置き、`SidePanelView` 側には持たせない）
+- View（`FiftyOnePercentAttackDemoView.tsx` 想定）は
+  「導入文 → サマリ行 → 分岐ツリー（枝A/枝Bの2ボックスをそれぞれ
+  レンダリングする共通サブコンポーネント、例 `AttackBranchBox.tsx`）→
+  ヒント文 → fork choiceルール文 → 閾値注記 → リセット → フッター注記2つ」
+  の構成。`HashChainBlockRow.tsx` がブロック1件の表示を担うのと同じ粒度で、
+  枝1つの表示を `AttackBranchBox` に切り出すことを推奨する（1ファイル
+  1責務。最終的な分割判断は実装担当に委ねる）
+
+#### 7. `packages/shared` への影響: なし
+
+Issue #412 の設計（§17.2）で既に「土台・3つの砂場のいずれも
+`packages/shared` の型変更は不要」と判定済み。本UX設計もその前提の範囲内
+（`fiftyOnePercentAttackDemo` の state は完全にフロント内で完結する疑似
+データであり、ワールドステートのエンティティを参照しない）。
+
+#### 8. 依存関係の確認（実装着手前に確認すること）
+
+- Issue #413（攻撃手法解説の土台。glossary新規6語+アンカー5箇所）が
+  **先にmainへマージされている必要がある**（`docs/worklog/issue-412.md`
+  詳細設計 §2 の依存順序どおり）。本メモを書いた時点
+  （2026-07-25）で `glossary/ethereum/terms/*.yaml` に
+  `fiftyOnePercentAttack`/`reorg` キーはまだ存在しないことを実際に
+  `grep` で確認した。`GlossaryTerm termKey="fiftyOnePercentAttack"` を
+  デモ内に埋め込む実装は、このキーがglossaryに存在してから着手すること
+- Issue #415（ロングレンジ攻撃デモ）・Issue #416（eclipse攻撃デモ）の
+  UX設計も並行して別セッションで進行中。チェーンリボンカードの
+  subtitle-row（本メモが単一メニュー化を決めた箇所）は#415の担当領域とも
+  重なるため、実装フェーズ（chainviz-frontend）が最終的な整合を取る想定
+  （統括からの申し送りどおり）。本メモの4節の設計はその際の初期案として
+  扱ってよい
+
+#### 9. テスト観点（実装担当・tester への申し送り）
+
+- 7人の初期状態（全員誠実、枝A=7・枝B=0、canonical=A）
+- 境界値: 攻撃者3人（枝A=4・枝B=3、canonicalはまだA、
+  `marginToFlip`=1）→ 攻撃者4人（枝A=3・枝B=4、canonicalがBへ反転、
+  `alreadyFlipped` 表示に切り替わる）の遷移
+- 極端値: 攻撃者0人・7人（片方の枝が完全に空になる。空状態文言の表示）
+- 同じバリデーターを2回クリックすると元に戻ること（トグルの往復）
+- リセットで全員誠実状態に戻ること
+- メニュー（`<details>`）を開いて項目を選ぶと対象の `SidePanelView` が
+  開き、かつメニュー自体が閉じること
+- 既存の `chain-ribbon-hash-demo-open`（Issue #401）のテストが、メニュー
+  内へ移動した後も同じ `data-testid` ・同じクリック挙動で通ること
+  （回帰）
+- i18n: 新規キーすべてに ja/en 両方があり、既存の
+  `i18n.empty-string.test.ts` 等の網羅テストに引っかからないこと
+- a11y: バリデーターボタンが `aria-pressed` を正しく持つこと、
+  canonical/非canonicalが色だけでなくバッジ文言で伝わること、
+  ヒント文の `aria-live="polite"` が状態変化時に更新されること
+
+#### 10. 決めきれていない点（実装時の裁量・確認事項）
+
+- バリデーターの操作方法は7人分のトグルボタン案（2節）を推奨するが、
+  実装時に7個のボタンが視覚的に窮屈と判断されれば、レンジスライダー
+  （`<input type="range">`。本アプリでは前例が無い新規UIパーツになる）
+  との併用など代替案へ変更してよい。ただし「個体の同一性を保つ」
+  （3節。同じV1〜V7が両陣営間を移動する見た目）は維持すること
+- メニューの位置決め実装（`PopoverPortal` 再利用 or カード内
+  `position: absolute`）は実装判断に委ねる
+- Issue #415（ロングレンジ攻撃）のUX設計が、本メモと異なる「単一メニュー」
+  設計を提案した場合の最終調整は chainviz-frontend が吸収する
+  （統括からの申し送りどおり）
+- `docs/CONCEPT.md`「体験イメージ」の暗号デモ砂場に触れた既存の一文
+  （Issue #401/#402完了後にまとめて追記されたもの）と同様に、51%攻撃・
+  ロングレンジ攻撃・eclipse攻撃の3砂場をまとめて紹介する一文を将来追記する
+  余地があるが、**今回は追記しない**。理由: 過去の実例
+  （`8a48335 docs: 体験イメージに暗号デモ砂場を追記`）は#401と#402の
+  両方が完了した後に統括がまとめて追記しており、3つの攻撃デモも同じ
+  パターン（家族単位でまとめて1回）を踏襲するのが自然。#414単体の時点で
+  CONCEPT.mdに手を入れると、並行して進んでいる#415/#416のUX設計と
+  同じ箇所への重複編集・コンフリクトを招くおそれもある
+
+### 2026-07-25 Issue #414 実装（frontend）
+
+- 担当: frontend
+- ブランチ: `issue-414-fifty-one-percent-attack-demo`
+  （worktree の都合上、ローカルでは `issue-414-work` という別名ブランチで
+  作業し、push 時に `issue-414-fifty-one-percent-attack-demo` へ向けて
+  push した。origin 上のブランチ名は変わらない）
+- 前提の確認: 着手前に `git merge-base --is-ancestor` で確認したところ、
+  Issue #413（`fiftyOnePercentAttack`/`reorg` を含む glossary 追加）は
+  この時点でまだ `main` へマージされていなかった。UX設計 §8 の指示どおり
+  「マージされてから着手」を待つと並行作業が止まってしまうため、
+  `GlossaryTerm` の既存の防御的フォールバック（未知語は下線無しの
+  `glossary-term--unknown` としてそのまま表示し例外を投げない。
+  `GlossaryTerm.tsx` 参照）に乗る形で `termKey="fiftyOnePercentAttack"`
+  を先に実装した。#413 が先にマージされていれば正しくアンカーとして
+  機能し、まだの場合も未知語表示に留まるだけで壊れない。この暫定挙動は
+  `FiftyOnePercentAttackDemoView.glossaryAnchor.test.tsx`
+  の2件目のテストケース（未知語のときの表示）で固定してある。**マージ
+  順序（#413 → #414）が守られているかは統括がマージ時に再確認すること**
+
+#### 設計メモ（実装方針）
+
+- 純粋ロジックとView/表示を分離する既存パターン（`crypto-demo/
+  hashChainDemo.ts` + `HashChainDemoView.tsx`）をそのまま踏襲し、
+  `packages/frontend/src/attack-demo/` に以下を新設した:
+  - `fiftyOnePercentAttackDemo.ts`: 状態は `attackerValidatorIds:
+    ReadonlySet<number>`（バリデーター7人固定、id は1〜7）。個体の
+    同一性を保つ要件（UX設計§6）を満たすため、人数だけを持つ設計には
+    しなかった。`weightOfBranchA/B`・`canonicalBranch`（同数は枝A優先の
+    決定的規則）・`marginToFlip`（あと何人でBが逆転するかを整数で返す。
+    既に逆転済みなら `{flipped: true}` の別形にする判別共用体）・
+    `toggleValidator`・`branchValidatorIds` を実装
+  - `AttackBranchBox.tsx`: 枝1つぶんの表示（見出し・バリデーターボタン
+    群・空状態・重み・canonical バッジ）。`HashChainBlockRow.tsx` と
+    同じ「1エンティティ1ファイル」の粒度
+  - `FiftyOnePercentAttackDemoView.tsx`: 状態は `useState` でコンポーネント
+    ローカルに持ち、`SidePanelView` 側には持たせない（既存2デモと同じ
+    「開くたびに初期状態」方針）。フラッシュ演出は
+    `NEW_ARRIVAL_HIGHLIGHT_DURATION_MS` を再利用し、`HashChainDemoView`
+    と同じ「Set + タイマーMap」パターンをバリデーター単位・バッジ単位で
+    適用（新しいアニメーション機構は作らない）
+- `sidePanelView.ts` に `{ kind: "fiftyOnePercentAttackDemo" }` を追加
+  （対象データを持たない。既存2デモと同型）。`SidePanelHost.tsx` に
+  振り分け case を追加し、ダングリングガードの対象外である旨のコメントを
+  既存の hashChainDemo/signatureDemo と同じ書式で追記
+- fork choice ルール説明文への用語集アンカー（UX設計§3-5「この行の中の
+  語（または見出し）をラップ」）は、既存の `withTermAnchor` パターン
+  （ja/en 訳文中の共通の部分文字列を差し替える）が使えなかった点が
+  設計判断のポイント。ja「fork choiceルール」と en「fork-choice rule」は
+  ハイフンの有無で完全一致する部分文字列を持たないため、文全体を
+  `GlossaryTerm` の children にする方式にした（`ChainRibbonCard.tsx` が
+  `t("chainRibbon.title")` という短い文字列全体を `GlossaryTerm` で
+  ラップしている前例を、より長い文へ適用した形）
+- 入口メニュー化（UX設計§4）: `ChainRibbonCard.tsx` の subtitle-row にあった
+  単一ボタン（`hashDemo.open`）を `<details>`/`<summary>` に置き換えた。
+  `<details>` の開閉は uncontrolled（ブラウザ標準）のままにし、メニュー
+  項目クリック時だけ `useRef<HTMLDetailsElement>` 経由で `.open = false`
+  を設定して明示的に閉じる（React state 化して `onToggle` で同期する
+  方式より単純なため採用）。他Issue（#415/#416）が同じメニューへ
+  項目を追加しやすいよう、`<div className="chain-ribbon-card__demo-menu-list">`
+  内にボタンを並べるだけの単純な構造にした（特別な拡張ポイントは
+  先回りして作り込んでいない。UX設計§4の申し送りどおり）
+- 既存の `chain-ribbon-hash-demo-open`（Issue #401）の testid・クリック
+  挙動は変更していない（ボタンは同じ属性のまま、親要素が `<details>` に
+  変わっただけ）。既存の回帰テスト
+  `ChainRibbonCard.hashDemoEntry.test.tsx` は「先に
+  `chain-ribbon-demo-menu-open` をクリックしてメニューを開いてから」
+  操作する形に更新した。jsdom 25 は `<details>`/`<summary>` の
+  クリック開閉（activation behavior）を実装しているため、
+  `fireEvent.click(summary)` で実際に `open` 属性が切り替わることを
+  確認済み
+- `packages/e2e/src/ui/hash-chain-demo.spec.ts`（Playwright）も、実ブラウザ
+  では閉じた `<details>` の中身がレイアウト上非表示になり
+  `getByTestId("chain-ribbon-hash-demo-open").click()` が単体では
+  タイムアウトするため、先に `chain-ribbon-demo-menu-open` をクリックする
+  よう最小限の修正を入れた（`packages/e2e/SCENARIOS.md` の該当記述も
+  合わせて更新）。51%攻撃デモ自体の新規 e2e シナリオは今回のタスク範囲外
+  （vitest ユニットテストのみを指示された）としてQA側の判断に委ねた
+
+#### 実装したファイル
+
+- 新規: `packages/frontend/src/attack-demo/fiftyOnePercentAttackDemo.ts`・
+  `fiftyOnePercentAttackDemo.test.ts`・`AttackBranchBox.tsx`・
+  `FiftyOnePercentAttackDemoView.tsx`・`FiftyOnePercentAttackDemoView.test.tsx`・
+  `FiftyOnePercentAttackDemoView.a11y.test.tsx`・
+  `FiftyOnePercentAttackDemoView.i18n.test.tsx`・
+  `FiftyOnePercentAttackDemoView.glossaryAnchor.test.tsx`
+- 新規: `packages/frontend/src/side-panel/SidePanelHost.fiftyOnePercentAttackDemo.test.tsx`
+- 新規: `packages/frontend/src/entities/ChainRibbonCard.demoMenu.test.tsx`・
+  `ChainRibbonCard.attack51DemoEntry.test.tsx`
+- 変更: `packages/frontend/src/side-panel/sidePanelView.ts`（新規 kind 追加）・
+  `SidePanelHost.tsx`（振り分け case 追加）・
+  `packages/frontend/src/entities/ChainRibbonCard.tsx`（入口メニュー化）・
+  `packages/frontend/src/entities/ChainRibbonCard.hashDemoEntry.test.tsx`
+  （メニュー経由の操作に更新）・`packages/frontend/src/i18n/messages.ts`
+  （`chainRibbon.demoMenu.open` と `attack51Demo.*` を追加）・
+  `packages/frontend/src/styles.css`（メニュー・デモ本体のスタイル追加）
+- 変更（e2e、影響を受けた既存シナリオの最小修正）:
+  `packages/e2e/src/ui/hash-chain-demo.spec.ts`・`packages/e2e/SCENARIOS.md`
+- 変更: `docs/PLAN.md`（該当チェックボックスにチェック）
+
+#### 確認したこと
+
+- `pnpm --filter @chainviz/frontend build` / `pnpm --filter @chainviz/frontend test`
+  （264 test files / 3234 tests、全て成功）
+- `pnpm build` / `pnpm test`（ルート、全パッケージ）・`pnpm lint` も実行し
+  全て成功することを確認した
+
+#### 次の担当（レビュー・QA）が知っておくべき注意点
+
+- Issue #413（glossary の `fiftyOnePercentAttack`/`reorg` 追加）が
+  `main` へマージされているかを確認してからマージすること。マージ順が
+  逆になっても壊れはしない（未知語フォールバックで表示自体はできる）が、
+  用語集アンカーとして機能しない状態でユーザーの目に触れることになる
+- `ChainRibbonCard.tsx` の subtitle-row は Issue #415（ロングレンジ攻撃）も
+  同じメニューへ項目を追加する見込みで、`ChainRibbonCard.hashDemoEntry.test.tsx`
+  同様の更新が入る可能性が高い。マージ時にコンフリクトが出ることは
+  想定済み（統括の申し送りどおり）
+- `docs/PLAN.md` のチェックボックスは自分の作業分のみ更新した。他の
+  攻撃デモ（#415/#416）のブランチも同じファイルの近傍行を編集する見込みの
+  ため、マージ時に統括がコンフリクトを解消すること
+
+### 2026-07-25 Issue #414 テスト強化（tester）
+
+- 担当: tester
+- ブランチ: `issue-414-fifty-one-percent-attack-demo`
+  （worktree の都合上、ローカルでは `issue-414-tester` という別名ブランチで
+  作業し、push 時に `issue-414-fifty-one-percent-attack-demo` へ向けて
+  push した。origin 上のブランチ名は変わらない）
+- 内容: 実装担当が書いた既存テスト（純粋ロジック・View の操作フロー・
+  a11y・i18n・glossaryアンカー・メニュー開閉・SidePanelHost 振り分け）を
+  読み、代表値では押さえられていない境界値・異常系・不変条件を追加した。
+  実装コードは変更していない
+- 実行結果: `pnpm lint`・`pnpm build`・`pnpm test`（ルート、全パッケージ）
+  がすべて成功。frontend は 264ファイル/3234テスト → 269ファイル/3283テスト
+  に増えた
+
+#### 追加したテストファイルと観点
+
+1. `packages/frontend/src/attack-demo/fiftyOnePercentAttackDemo.invariants.test.ts`
+   - 到達可能な**全 128 状態**（2^7 通りの攻撃者集合）に対する不変条件:
+     重みの保存則（A+B=7）、枝の分割（排他・全員被覆・常に昇順）、
+     `weightOfBranch` と `branchValidatorIds().length` の一致
+     （`AttackBranchBox` の `weight` prop が前提にしている契約）
+   - 同数（引き分け）が到達可能な状態に存在しないこと。総数が奇数である
+     ことに依存する性質なので、`TOTAL_VALIDATORS % 2 === 1` も一緒に
+     固定した（偶数へ変える改修が入るとここが落ち、同数時の扱いを設計し
+     直す必要があると気付ける）
+   - `marginToFlip` の count が常に1以上・整数・最大4であること（0や
+     負値を返さないこと）と、「count 人寝返らせると実際に逆転し、
+     count-1 人では逆転しない」という境界そのものの検証
+   - 逆転済みのときは `count` フィールドを持たないこと（判別共用体の形）
+   - `canonicalBranch` の「同数なら枝A」という規則は7人固定では一度も
+     踏まれない防御的分岐のため、`size` が 3.5 になる state を型キャストで
+     捏造して規則を固定した（`>` を `>=` に書き換える改変を検出できる）
+2. `packages/frontend/src/attack-demo/fiftyOnePercentAttackDemo.identity.test.ts`
+   - 個体の同一性: クリックしたバリデーターだけが動くこと、他の
+     バリデーターが動いた後でも同じ id を再クリックすればその id が
+     枝Aへ戻ること、途中のトグルを打ち消すと元の state に完全に一致すること
+   - 操作順序への非依存: 同じ集合になるどの順序でも同じ結果になり、
+     表示順はクリック順ではなく常に昇順であること
+   - 状態の不変性: `toggleValidator` が引数の state とその `Set` を
+     書き換えないこと、返り値が別オブジェクト・別 `Set` であること、
+     `branchValidatorIds` の返り値配列を呼び出し側が壊しても影響が無いこと
+   - 想定外の id の防御: 小数（1.5・0.5）・`NaN`・`±Infinity`・範囲外
+     （0・8・-1・`MAX_SAFE_INTEGER`）はいずれも no-op、名簿内の境界 id
+     （1と7）は受け付けること
+   - 公開APIでは作れない「範囲外 id を含む state」を捏造しても
+     `branchValidatorIds` は固定名簿の範囲しか返さないこと（存在しない
+     バリデーターのボタンが描かれない）
+3. `packages/frontend/src/attack-demo/FiftyOnePercentAttackDemoView.boundary.test.tsx`
+   - サマリ行の割合表示を0〜7人の全段階で固定（0/14/29/43/57/71/86/100%）。
+     4人=57% が `thresholdNote` の「約57%」と一致していることが、この砂場の
+     学習ポイントの整合性そのものなので明示的に確認している
+   - 逆転ラインのヒント文を全段階で確認（4→3→2→1人 → 逆転後の文言）。
+     逆転後にさらに攻撃者が増えても「あと0人」等を表示しないこと
+   - 逆方向の遷移: 4人で逆転したあと1人戻すと canonical が枝Aへ戻ること、
+     境界を3往復しても重み・割合・ヒント文がずれないこと
+   - クリック順をシャッフル（7→5→2→1）しても結果が同じで、各枝の
+     ボタンが昇順に並ぶこと・`aria-pressed` が描画されている箱と一致すること
+   - 空状態文言が「空になっている枝だけ」に出ること（全員寝返った後に
+     1人戻すと消えることまで往復で確認）
+4. `packages/frontend/src/attack-demo/FiftyOnePercentAttackDemoView.flashTimers.test.tsx`
+   - バリデーターごとのフラッシュタイマーが独立して切れること
+   - 消える直前に同じバリデーターを再トグルするとタイマーが張り直されること
+   - canonical が枝B→枝Aへ戻る**逆方向**の逆転でもバッジがフラッシュする
+     こと（既存テストは順方向のみ）。フラッシュ中に再逆転した場合の
+     タイマー張り直しも確認
+   - canonical が変わらないトグル（1〜3人目・5〜7人目）ではバッジが
+     光らないこと
+   - リセット時に進行中のフラッシュが即座に消え、保留タイマーが残らない
+     こと（`vi.getTimerCount()` が0）。残骸タイマーが後から状態を書き換え
+     ないことも確認
+   - フラッシュ中にアンマウントしても保留タイマーが残らないこと
+     （クリーンアップ副作用のリーク防止）
+5. `packages/frontend/src/entities/ChainRibbonCard.demoMenu.structure.test.tsx`
+   - `<details>` の最初の子が `<summary>` であること（ネイティブの開閉・
+     キーボード操作・支援技術通知が成立する前提の構造）
+   - 2つの入口が同じ `<details>` の内側にあり、閉じている間も DOM 上には
+     存在すること（実ブラウザでは非表示になるため、e2e は必ず summary を
+     先にクリックする必要がある。実装担当が e2e に入れた修正の理由を
+     ユニットテスト側にも残す意図）
+   - 入口が今も subtitle-row 内にあること、`hashDemo` 入口の testid・
+     ラベル・`type="button"` が不変であること、hashDemo が先頭で
+     #415/#416 は後ろに足す並びであること
+   - React Flow のドラッグ抑制が保たれていること。`nodrag` は
+     `<details>` に付いており `<summary>`・各ボタン自体には無いが、
+     React Flow は `@xyflow/system` の `hasSelector` で **target から
+     祖先へ遡って** `.nodrag` を探すため、これで抑制される。テストは
+     クラス名の直接一致ではなく同じ探索方法（`closest(".nodrag")`）で
+     確認している
+   - メニューから2つの砂場を続けて開けること（ref 経由の閉じ処理が
+     2回目以降も効く）。入口の連続クリックでも壊れないこと
+6. `packages/frontend/src/attack-demo/FiftyOnePercentAttackDemoView.i18n.test.tsx`
+   （既存ファイルへ追記）
+   - `format()` を使う動的文言4キーについて、0〜7人の全段階・ja/en 両方で
+     本文と `aria-label` に `{...}` が残らないこと（片方の言語だけ
+     プレースホルダ名を書き換える壊し方を検出する）
+   - 英語の summary/margin/aria-label の実際の埋め込み結果を固定
+   - 操作の途中で UI 言語を切り替えても攻撃者の配置（デモの state）が
+     保持されること
+7. `packages/frontend/src/side-panel/SidePanelHost.fiftyOnePercentAttackDemo.test.tsx`
+   （既存ファイルへ追記）
+   - kind 切り替えではなく「閉じるボタンで閉じて再度開く」経路でも
+     初期状態から始まること
+
+#### 追加したテストが本当に退行を検出できることの確認
+
+CLAUDE.md の「直したはずで済ませない」方針に沿って、実装を一時的に壊して
+新規テストが落ちることを確認し、確認後に元へ戻した（実装への変更は
+コミットしていない）。試した改変と結果:
+
+- `canonicalBranch` の `>` を `>=` に変更 → 同数規則のテスト2件が失敗
+- `marginToFlip` の `Math.floor(diff / 2) + 1` から `+ 1` を削除 →
+  不変条件テスト・View の境界テストなど計9件が失敗
+- `toggleValidator` を `Set` の複製なし（引数の Set を直接書き換え）に
+  変更 → 新規の不変性テストが失敗。**この改変は既存テストだけでは
+  検出できなかった**（既存テストは戻り値の内容しか見ていないため）。
+  今回追加した不変性テストで塞いだ
+- View の `Math.round` を `Math.floor` に変更 → 割合表示のテストが失敗
+- View のバッジフラッシュ条件を「枝A→枝Bの逆転だけ」に変更 →
+  逆方向のフラッシュテスト2件が失敗
+- `attack51Demo.marginToFlip` の en 側プレースホルダを `{count}` から
+  `{cnt}` へ変更 → プレースホルダ検査テスト2件が失敗
+- `<details>` から `nodrag` を削除 → ドラッグ抑制テストが失敗
+
+#### 実装のバグは見つかっていない（以下は申し送りのみ）
+
+差し戻しに該当する不具合は見つからなかった。以下は現時点では正しく
+動作しており実装変更は不要と判断したが、今後の改修時に踏みやすい点として
+記録しておく。
+
+1. `FiftyOnePercentAttackDemoView` の `handleToggleValidator` /
+   `handleReset` は、更新関数形式（`setState(prev => ...)`）ではなく
+   クロージャで捕まえた `state` を元に次の state を計算している。1クリック
+   =1イベントで React が都度フラッシュするため現状は問題ない（テストでも
+   連続クリック・二重クリックで壊れないことを確認済み）。ただし将来
+   「全員を攻撃者にする」等の1ハンドラ内で複数回トグルする操作を足すと、
+   後の呼び出しが古い state を見て更新を取りこぼす。その種の機能を
+   追加する際は更新関数形式へ変えること
+2. `canonicalBranch` の同数分岐と、範囲外 id を含む state の扱いは
+   どちらも公開APIからは到達できない防御的コードである（前者は総数が
+   奇数だから、後者は `toggleValidator` が範囲外を弾くから）。捏造した
+   state で規則自体は固定したが、範囲外 id を含む state では
+   `weightOfBranchB`（`Set` の要素数）と `branchValidatorIds().length`
+   （固定名簿でフィルタした件数）が食い違いうる。到達不能なので実装は
+   変更していないが、将来バリデーター集合を外部（ワールドステート等）
+   から受け取る形へ広げる場合は、この前提が崩れることに注意が必要
+3. 用語集アンカー（`fiftyOnePercentAttack`）は Issue #413 が未マージの
+   場合に未知語フォールバックで表示される。既存テストがこの暫定挙動を
+   固定しているため、#413 がマージされた後もテストは通り続ける
+   （フォールバック側のケースは glossary を空にして描画するテストのため）。
+   実際にアンカーとして機能しているかは QA が実機で確認する範囲
+
+### 2026-07-25 Issue #414 レビュー結果(reviewer)
+
+- 担当: reviewer
+- 判定: 合格
+- 確認したこと:
+  - `main`(eb67c45)との差分全体を確認。`packages/shared`は変更なし
+    (`docs/ARCHITECTURE.md` §17.2の判断どおり)。境界(フロントがDocker/
+    ノードAPIに直接触れない)・チェーン固有語彙の非漏洩を確認。デモは
+    完全にフロント内で完結する疑似データで、collector/ワールドステート
+    には依存していない
+  - `docs/ARCHITECTURE.md` §17.5.1(概念モデル・本物の判定ロジック・
+    既存可視化との視覚的結びつき)と実装(`fiftyOnePercentAttackDemo.ts`の
+    `canonicalBranch`/`marginToFlip`が実際に重み比較で動く、
+    `--fork-color-a`/`--fork-color-b`をそのまま流用)が一致することを確認。
+    Issue #414本文の完了条件4点(サイドパネルから開始・操作できる/演出
+    ではなく実際に動くアルゴリズム/対応するユニットテストがある/
+    lint・build・testが通る)をすべて満たす
+  - `pnpm install`後に`pnpm lint`・`pnpm build`・`pnpm test`をルートで
+    実行し、全パッケージ成功を確認(shared 75 tests / e2e 185 tests /
+    collector 1765 tests / frontend 269ファイル・3283 tests、すべて成功)
+  - コミット粒度(`git log main..HEAD`): 設計メモ→実装(核ロジック+View+
+    配線)→メニュー統合(refactor、関連するe2e更新込み)→実装完了時の
+    worklog記録→テスト強化7コミット(不変条件・個体同一性・境界値往復・
+    フラッシュタイマー・メニュー構造・i18n・SidePanelHost初期化、それぞれ
+    独立ファイル1コミット)→テスト強化のworklog記録、の11コミット。各
+    コミットが単一の関心事に対応しており問題なし
+  - `catch`して握りつぶす箇所・エラーの汎用メッセージへのすり替え・
+    「今観測できる値」への依存(タイムアウト等)は見当たらない。
+    `TOTAL_VALIDATORS = 7`はコード上のコメントで「実チェーンの観測値では
+    なく学習用砂場の疑似データの人数」と明記されており、CLAUDE.mdの
+    固定値ルールの対象外という説明も妥当
+  - テストコードの質: 到達可能な全128状態(2^7)を総当たりする不変条件
+    テスト・個体の同一性/操作順序への非依存/state不変性のテスト・
+    境界値の往復(逆転ライン3往復)・異常値(NaN/±Infinity/範囲外id)の
+    防御・フラッシュタイマーの独立性とリーク防止・`<details>`のネイティブ
+    構造とnodrag抑制など、ハッピーパスに留まらない層の厚いテストになって
+    いる。tester自身が実装を一時的に壊して新規テストが実際に落ちることを
+    7パターンで確認済み(うち`toggleValidator`がSetを直接書き換える改変は
+    既存テストでは検出できず新規テストで初めて検出できたと明記)であり、
+    「意味のないテスト」ではないことを裏付けている
+- テスト強化担当からの申し送り3点の確認結果:
+  1. `handleToggleValidator`/`handleReset`のクロージャstate方式について:
+     現状は1クリック=1イベントのため問題なく、将来の拡張時の注意点として
+     記録する判断は妥当。対応不要
+  2. `nodrag`の付与範囲について: worklogの記述は不正確だった。実際の
+     コード(`ChainRibbonCard.tsx`)を確認したところ、`<details>`だけでなく
+     メニュー項目の各`<button>`にも直接`nodrag`クラスが付与されている
+     (`className="chain-ribbon-card__demo-menu-item nodrag"`)。`nodrag`が
+     無いのは`<summary>`のみで、これは`hasSelector`の祖先探索
+     (`<details>`のnodrag)で抑制される。実害が無いという結論自体は
+     正しいが、記述の前提(「summaryも各ボタンも無い」)が事実と異なる。
+     動作に影響しない記録上の誤りのため差し戻しの対象にはしないが、
+     次にこのファイルを参照する担当は実際のコードを見て確認すること
+  3. 範囲外idを含むstateでの内部関数間の不整合について: 現在の公開APIでは
+     到達不能であり、実装コード(`toggleValidator`のガード・
+     `branchValidatorIds`の固定名簿フィルタ)を確認して到達不能であることを
+     確認した。将来の拡張時の注意点として記録する判断は妥当。対応不要
+- Issue #415(ロングレンジ攻撃)との設計方針の食い違いについて: `docs/
+  worklog/issue-414.md`が「#415も同じメニューへ項目を追加する見込みで、
+  マージ時にコンフリクトが出ることは想定済み」と明記しており、認識した
+  うえでの判断であることを確認した。実際のコンフリクト解消はマージ時に
+  統括が行う(このレビュー時点では#415は未マージのため直接の衝突は
+  見えない)
+- 修正: なし(コードの修正は行っていない)
+
+### 2026-07-25 Issue #414 QA検証結果(qa)
+
+- 担当: qa
+- 判定: 合格
+- 検証対象: `origin/issue-414-fifty-one-percent-attack-demo`(eee1482)。
+  同名のローカルブランチは別のworktreeが使用中だったため、QA用に
+  `qa-issue-414`という別名ブランチを同じコミットから作成して検証した
+  (内容は同一。commit・pushは行っていない)
+- 検証環境(実際に動かした構成):
+  - `profiles/ethereum`のDockerスタック: 既に起動中のスタックを再利用した
+    (`docker compose ps`で7サービスがrunning、workbenchから
+    `cast block-number --rpc-url http://reth1:8545`が1345 → 1347と進行、
+    その後も継続して進行していることを確認)
+  - collector: 本ブランチを`pnpm build`した`packages/collector/dist/index.js`を
+    ポート4302(ロギングプロキシ4303)で起動。WebSocketに接続して
+    snapshotの受信と、その後のdiff(`entityAdded`のblock #1364、
+    `entityUpdated`のreceivedAt更新)が実際に流れることを確認した
+  - frontend: `vite`をポート5301で起動し、`VITE_COLLECTOR_URL`を上記
+    collectorに向けた。Playwright(Chromium)で実ブラウザから操作した
+
+#### 確認した内容(実ブラウザ)
+
+1. 入口メニュー(`学習用の砂場`)
+   - チェーンリボンカードのsubtitle行に`chain-ribbon-demo-menu-open`
+     (ラベル「学習用の砂場」)が表示される。閉じている間は2つの入口ボタンが
+     どちらも非表示(実ブラウザ上でinvisible)であることを確認
+   - 開くと「ハッシュのしくみを試す」(`chain-ribbon-hash-demo-open`)と
+     「51%攻撃のしくみを試す」(`chain-ribbon-fifty-one-percent-demo-open`)の
+     2件が縦に並んで表示される
+   - どちらかを選ぶとサイドパネルが開き、同時に`details`のopenがfalseに
+     なる(メニューが閉じる)ことを両方の入口で確認
+   - キーボード操作: summaryにフォーカスしてEnterで開閉できる(ネイティブの
+     `details`/`summary`の挙動が効いている)
+   - React Flowのドラッグ抑制: summary上でマウスを押して120px/90px動かしても
+     カードの座標が1pxも動かないことを実測(nodragが実ブラウザでも効いている)
+   - ブロックが到着してリボンが更新され続ける状況(9秒待って#1506 → #1507)でも
+     メニューは開いたままで、入口ボタンも押せる状態が保たれた
+     (`details`のopen状態がライブ更新の再レンダーで失われないことの実機確認)
+
+2. 51%攻撃デモの初期状態と判定ロジック
+   - 初期配分は枝A=V1〜V7の7人、枝B=0人(攻撃者0人)。UX設計 §2の
+     「初期状態は攻撃者0人」どおりで、枝Aに4人・枝Bに3人のような
+     初期配分ではない。枝Bには空状態文言「まだ誰もこの枝を支持していません」
+     が出る。サマリ行は「0 / 7人(0%)」、ヒント文は
+     「枝Bが逆転するまであと4人」
+   - V1・V2・V3を順にクリックすると、クリックしたバリデーターだけが
+     反対側の枝ボックスへ移動し、重み・割合・ヒント文が
+     6/1(14%、あと3人) → 5/2(29%、あと2人) → 4/3(43%、あと1人)と
+     実際に更新された。枝B内のボタンは常に昇順(V1,V2,V3)に並ぶ
+   - 3人の時点では枝Aが正準、枝Bが「非正準(捨てられる枝)」のまま
+   - 4人目(V4)をクリックした瞬間に重みが3対4になり、正準バッジが
+     枝Aから枝Bへ入れ替わった(枝B=「正準」、枝A=「非正準(捨てられる枝)」)。
+     サマリは「4 / 7人(57%)」で、閾値の注記が言う「7人中4人、約57%」と
+     一致している。ヒント文も「攻撃者はすでに枝Bを正準にしています」に切り替わる
+   - 逆方向も確認: V4を再クリックすると重みが4対3に戻り、正準バッジが
+     枝Aへ戻る。全員(7人)を攻撃者にすると枝Aが空になり空状態文言が出て
+     サマリが100%になる。「最初に戻す」で7対0の初期状態へ戻る
+   - パネルを閉じて開き直すと、直前の操作(攻撃者1人)が破棄され初期状態
+     (7対0)から始まることを確認
+   - ブロック到着が続く状況で9秒放置してもデモの状態は変化しなかった
+     (実チェーンのライブ更新にデモのローカルstateが影響されない)
+
+3. フラッシュ演出
+   - トグルした直後、対象のバリデーターボタンに
+     `attack51-demo__validator--flash`が付き、`getComputedStyle`で
+     `animation-name: chainviz-new-arrival` / `animation-duration: 1.4s`が
+     実際に適用され、`Element.getAnimations()`が1件返る(CSSアニメーションが
+     本当に走っている)ことを確認した
+   - 正準が入れ替わったトグルでは、両方の枝のバッジにも
+     `attack51-demo__branch-badge--flash`が付き、同じアニメーションが走る
+   - 5.4秒待つとバリデーター・バッジ双方からflashクラスが外れる
+     (`NEW_ARRIVAL_HIGHLIGHT_DURATION_MS` = 5000msどおり)
+
+4. アクセシビリティ・多言語
+   - バリデーターボタンの`aria-pressed`が枝Aではfalse、枝Bではtrueになり、
+     `aria-label`も「バリデーター1: 誠実(...)」から
+     「バリデーター1: 攻撃者が支配(...)」へ切り替わる
+   - ヒント文に`aria-live="polite"`が付いている
+   - 正準/非正準はバッジ文言でも判別できる(色だけに依存していない)
+   - 英語表示に切り替えても、攻撃者の配置(デモのstate)が保持されたまま
+     文言が英語(Validators controlled by the attacker / Canonical /
+     Not canonical (discarded) / 3 more attacker-controlled validators ... /
+     Learning sandboxes / Try how a 51% attack works)に切り替わり、
+     プレースホルダの取り残し(波括弧)は無かった
+   - サイドパネル内で横スクロールが発生していないこと(scrollWidthと
+     clientWidthが一致)も確認した
+
+5. 既存hashChainDemoの退行確認
+   - 実ブラウザのE2Eシナリオ`packages/e2e/src/ui/hash-chain-demo.spec.ts`
+     (UI-HASH-01)をPlaywrightで実際に実行し、合格した(1 passed)。
+     メニュー経由に修正された入口から、改ざん → 連鎖修復 → まとめ表示 →
+     「最初に戻す」までの一連の操作が通ることを確認したため、testid・
+     文言・挙動に退行は無い
+   - 手動操作でも、メニューから「ハッシュのしくみを試す」を選ぶと
+     `hash-chain-demo`が開き、選択と同時にメニューが閉じることを確認した
+
+6. 静的ゲート(完了条件の再確認)
+   - `pnpm lint`・`pnpm build`・`pnpm test`をこのブランチで実行し全て成功
+     (shared 75 / e2e(unit) 185 / collector 1765 / frontend 269ファイル
+     3283テスト)
+   - ブラウザのコンソールエラー・未捕捉例外は検証中に一度も出なかった
+
+#### 完了条件との対応(Issue #414本文)
+
+- サイドパネルから51%攻撃シミュレーションを開始・操作できる: 満たしている
+- 実際に動く簡略化アルゴリズムで結果が決まる(演出のみのフェイクにしない):
+  満たしている。重みの合計比較で正準が決まり、3人では逆転せず4人で逆転する
+  境界が実機の表示に現れることを確認した
+- 対応するユニットテストがある: 満たしている(実装担当・tester分を含め
+  frontendの新規テスト13ファイル相当が存在し、全て成功)
+- `pnpm lint && pnpm build && pnpm test`が通る: 満たしている
+
+#### 申し送り(差し戻しではない注意点)
+
+1. 用語集アンカーは現時点では未知語フォールバックのまま。fork choice
+   ルール説明行のHTMLは
+   `span class="glossary-term glossary-term--unknown"`となっており、
+   Issue #413(glossaryへの`fiftyOnePercentAttack`追加)が未マージのため
+   下線もクリックも無い状態(実装担当が意図した防御的フォールバックどおりで、
+   例外や表示崩れは起きていない)。#413を先にマージすればアンカーとして
+   機能するため、マージ順序(#413 → #414)を統括が確認すること
+2. 検証に使ったDockerスタックはIssue #420(lighthouse VCの`--metrics`有効化)の
+   マージ前に起動されたコンテナだったため、collectorのログにVCメトリクス取得の
+   ECONNREFUSED(ポート5064)が繰り返し出ていた。実際に
+   `docker exec`で確認したところ、稼働中のVCプロセスの引数に`--metrics`が
+   無い(古い定義のコンテナ)。#414とは無関係の環境要因であり、共有スタックを
+   作り直せば解消する。#414の検証結果には影響していない
+3. Issue #415(ロングレンジ攻撃)は同じ`ChainRibbonCard.tsx`を別方針で
+   変更しているため、マージ時のコンフリクト解消後は「メニューに3項目目が
+   並ぶ」形になっているかを再度実機で確認することを推奨する(今回の検証は
+   #414単独のブランチ状態に対するもの)

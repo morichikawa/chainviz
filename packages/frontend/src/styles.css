@@ -3168,15 +3168,59 @@ button.mempool-panel__row:hover {
   gap: 8px;
 }
 
-.chain-ribbon-card__hash-demo-open {
+/* Issue #414: subtitle-row の常設入口を単一メニューへ統合
+   (`<details>`/`<summary>`。docs/worklog/issue-414.md UX設計 §4)。 */
+.chain-ribbon-card__demo-menu {
+  position: relative;
   flex: none;
-  background: none;
-  border: none;
-  padding: 0;
+}
+
+.chain-ribbon-card__demo-menu-summary {
+  list-style: none;
   color: var(--accent);
   font-size: 11px;
   text-decoration: underline;
   cursor: pointer;
+}
+
+.chain-ribbon-card__demo-menu-summary::-webkit-details-marker {
+  display: none;
+}
+
+.chain-ribbon-card__demo-menu-list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 200px;
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--glass-popover-bg);
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
+  border: 1px solid var(--glass-border);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 var(--glass-highlight);
+}
+
+.chain-ribbon-card__demo-menu-item {
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+
+.chain-ribbon-card__demo-menu-item:hover,
+.chain-ribbon-card__demo-menu-item:focus-visible {
+  background: rgba(79, 157, 255, 0.16);
 }
 
 /* Issue #409: ポップオーバー末尾のブロック詳細パネルへの導線。「受信した
@@ -3812,6 +3856,228 @@ button.mempool-panel__row:hover {
   font-size: 11px;
 }
 
+/* --- Issue #414: 「51%攻撃のしくみ」デモ(kind: fiftyOnePercentAttackDemo) ---
+   共通の親ブロック → 分岐ツリー(枝A/枝B) → ヒント文、という縦構成
+   (docs/worklog/issue-414.md UX設計 §3レイアウト)。枝の配色は既存の
+   フォークパレット(--fork-color-a/--fork-color-b。ARCHITECTURE.md §9.3)を
+   流用する。 */
+.attack51-demo__intro {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+
+.attack51-demo__summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+
+.attack51-demo__summary-label {
+  color: var(--muted);
+}
+
+.attack51-demo__summary-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.attack51-demo__tree {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.attack51-demo__common-parent {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--muted);
+  background: linear-gradient(180deg, rgba(32, 39, 58, 0.9), rgba(24, 30, 46, 0.95));
+}
+
+/* 共通の親ブロックから2本の線が分かれて2つの枝ボックスへ繋がる、
+   border を使った簡易な折れ線（UX設計 §3「SVG または border を使った
+   折れ線で十分」）。 */
+.attack51-demo__connectors {
+  position: relative;
+  width: 100%;
+  height: 20px;
+}
+
+.attack51-demo__connector {
+  position: absolute;
+  top: 0;
+  width: 42%;
+  height: 100%;
+  border-top: 2px solid var(--border);
+}
+
+.attack51-demo__connector--a {
+  left: 8%;
+  border-right: 2px solid var(--border);
+  border-top-right-radius: 8px;
+}
+
+.attack51-demo__connector--b {
+  right: 8%;
+  border-left: 2px solid var(--border);
+  border-top-left-radius: 8px;
+}
+
+.attack51-demo__branches {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+
+.attack51-demo__branch {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: linear-gradient(180deg, rgba(32, 39, 58, 0.9), rgba(24, 30, 46, 0.95));
+}
+
+.attack51-demo__branch--a {
+  border-color: var(--fork-color-a);
+}
+
+.attack51-demo__branch--b {
+  border-color: var(--fork-color-b);
+}
+
+/* canonical な枝は実線の縁取り + 発光（.infra-card--fork-0/1 と同系）、
+   非canonicalな枝は淡い縁取りにする（色だけに頼らずバッジ文言でも
+   伝える。a11y。UX設計 §3）。 */
+.attack51-demo__branch--canonical.attack51-demo__branch--a {
+  box-shadow: 0 0 10px rgba(255, 204, 0, 0.4);
+}
+
+.attack51-demo__branch--canonical.attack51-demo__branch--b {
+  box-shadow: 0 0 10px rgba(0, 224, 255, 0.4);
+}
+
+.attack51-demo__branch--not-canonical {
+  opacity: 0.75;
+}
+
+.attack51-demo__branch-heading {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.attack51-demo__branch-validators {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 24px;
+  margin-bottom: 8px;
+}
+
+.attack51-demo__branch-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: italic;
+}
+
+.attack51-demo__validator {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  padding: 3px 7px;
+  cursor: pointer;
+}
+
+.attack51-demo__validator:hover {
+  border-color: var(--accent);
+}
+
+/* Issue #414: バリデーターをトグルした直後の短いフラッシュ（既存の新着
+   ハイライトの流儀 `chainviz-new-arrival` を再利用）。 */
+.attack51-demo__validator--flash {
+  animation: chainviz-new-arrival 1.4s ease-in-out infinite;
+}
+
+.attack51-demo__branch-weight {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.attack51-demo__branch-weight-label {
+  color: var(--muted);
+}
+
+.attack51-demo__branch-weight-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.attack51-demo__branch-badge {
+  margin-top: 6px;
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.attack51-demo__branch--canonical .attack51-demo__branch-badge {
+  color: #a8f0d4;
+  border-color: var(--synced);
+  background: rgba(56, 211, 159, 0.14);
+}
+
+.attack51-demo__branch-badge--flash {
+  animation: chainviz-new-arrival 1.4s ease-in-out infinite;
+}
+
+.attack51-demo__margin-hint {
+  margin: 12px 0;
+  font-size: 13px;
+}
+
+.attack51-demo__fork-choice-rule {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 6px 0;
+}
+
+.attack51-demo__threshold-note {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: italic;
+  margin: 6px 0 12px;
+}
+
+.attack51-demo__reset {
+  display: block;
+  margin: 14px 0;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.attack51-demo__footer-note {
+  color: var(--muted);
+  font-size: 11px;
+  margin: 6px 0;
+}
+
 /* --- Issue #327 フォールバック ---
    backdrop-filter 非対応環境では var(--glass-bg)/var(--glass-popover-bg) の
    半透明地だけが残り、ぼかしが効かない分ちらつき・可読性低下につながる
@@ -3841,7 +4107,8 @@ button.mempool-panel__row:hover {
   .glossary-popover,
   .tx-lifecycle-popover,
   .operation-panel,
-  .side-panel {
+  .side-panel,
+  .chain-ribbon-card__demo-menu-list {
     background: #0c1119;
   }
 }

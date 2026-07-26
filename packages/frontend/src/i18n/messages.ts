@@ -490,6 +490,9 @@ export const messages = {
     ja: "新しいブロックが右端に積まれていきます",
     en: "New blocks stack up on the right",
   },
+  // Issue #414: subtitle-row の学習用砂場入口を単一メニューへ統合する
+  // `<summary>` ラベル（`docs/worklog/issue-414.md` UX設計 §4）。
+  "chainRibbon.demoMenu.open": { ja: "学習用の砂場", en: "Learning sandboxes" },
   "chainRibbon.latest": { ja: "#{number}", en: "#{number}" },
   "chainRibbon.older.tooltip": {
     ja: "これより前のブロックは表示していません",
@@ -821,6 +824,69 @@ export const messages = {
   "sigDemo.simplifiedNote": {
     ja: "実際の tx はここに出した項目のほかにも多くの情報（nonce・gas など）を含み、決められた形式（RLP）で並べてから署名します。この砂場では「内容と署名が結びついている」ことに絞って簡略化しています。",
     en: "A real tx contains many more fields than shown here (such as nonce and gas) and is encoded in a fixed format (RLP) before signing. This sandbox is simplified down to the single idea that the content and the signature are bound together.",
+  },
+  // --- 「51%攻撃のしくみ」デモ（kind: "fiftyOnePercentAttackDemo"。Issue #414。
+  // docs/worklog/issue-414.md UX設計 §5。英語版は初稿で、
+  // chainviz-i18n のレビュー対象） ---
+  "attack51Demo.open": { ja: "51%攻撃のしくみを試す", en: "Try how a 51% attack works" },
+  "attack51Demo.title": { ja: "51%攻撃のしくみ", en: "How a 51% attack works" },
+  "attack51Demo.intro": {
+    ja: "ここは学習用の砂場です。実際のチェーンには影響しません。7人の疑似バリデーターが、分岐した2つの候補（枝A・枝B）のどちらを正しいチェーンとして見ているかを表しています。バリデーターのボタンをクリックすると、そのバリデーターを攻撃者が支配している状態に切り替えられます。",
+    en: "This is a learning sandbox. It doesn't affect the real chain. 7 pseudo-validators each regard one of two candidate branches (Branch A / Branch B) as the chain they follow. Click a validator's button to toggle whether the attacker controls it.",
+  },
+  "attack51Demo.summaryLabel": {
+    ja: "攻撃者が支配するバリデーター",
+    en: "Validators controlled by the attacker",
+  },
+  "attack51Demo.summaryValue": {
+    ja: "{attacker} / {total}人（{percent}%）",
+    en: "{attacker} / {total} ({percent}%)",
+  },
+  "attack51Demo.commonParent": { ja: "共通の親ブロック", en: "Common parent block" },
+  "attack51Demo.branchA": { ja: "枝A", en: "Branch A" },
+  "attack51Demo.branchB": { ja: "枝B", en: "Branch B" },
+  "attack51Demo.weight": { ja: "重み", en: "Weight" },
+  "attack51Demo.badge.canonical": { ja: "正準", en: "Canonical" },
+  "attack51Demo.badge.notCanonical": {
+    ja: "非正準（捨てられる枝）",
+    en: "Not canonical (discarded)",
+  },
+  "attack51Demo.branchEmpty": {
+    ja: "まだ誰もこの枝を支持していません",
+    en: "No validator is backing this branch yet",
+  },
+  "attack51Demo.validator.honest": {
+    ja: "バリデーター{n}: 誠実（クリックで攻撃者が支配する状態に切り替え）",
+    en: "Validator {n}: honest (click to make attacker-controlled)",
+  },
+  "attack51Demo.validator.attacker": {
+    ja: "バリデーター{n}: 攻撃者が支配（クリックで誠実な状態に戻す）",
+    en: "Validator {n}: attacker-controlled (click to make honest)",
+  },
+  "attack51Demo.forkChoiceRule": {
+    ja: "fork choiceルール（簡略化）: 重みの合計が大きい枝が正準になります。",
+    en: "Simplified fork-choice rule: the branch with the larger total weight becomes canonical.",
+  },
+  "attack51Demo.marginToFlip": {
+    ja: "枝Bが逆転するまであと{count}人",
+    en: "{count} more attacker-controlled validators would flip Branch B to canonical",
+  },
+  "attack51Demo.alreadyFlipped": {
+    ja: "攻撃者はすでに枝Bを正準にしています",
+    en: "The attacker has already made Branch B canonical",
+  },
+  "attack51Demo.thresholdNote": {
+    ja: "「51%攻撃」という名前ですが、実際に必要な割合はバリデーター総数によって変わります（この砂場では7人中4人、約57%で逆転します）。",
+    en: 'Despite the name "51% attack," the share actually needed depends on the total validator count (in this sandbox, 4 of 7 — about 57% — flips the outcome).',
+  },
+  "attack51Demo.reset": { ja: "最初に戻す", en: "Reset" },
+  "attack51Demo.simplifiedNote": {
+    ja: "実際のfork choice（LMD-GHOST）は、各バリデーターの証明（attestation）が指すブロックや経過時間なども考慮する、より複雑なルールです。ここでは学習のため「重みの合計が大きい枝が勝つ」という単純化したルールだけを使っています。",
+    en: "The real fork-choice rule (LMD-GHOST) is more complex — it also weighs which block each validator's attestation points to, how much time has passed, and more. This sandbox uses a simplified rule: the branch with more total weight wins.",
+  },
+  "attack51Demo.whoDecides": {
+    ja: "実際のネットワークでは、1人の攻撃者がバリデーターの半数以上を握るには莫大なステーク（担保資産）を用意する必要があり、経済的コストが非常に高くなります。バリデーターが少数に集中していないことこそが、この仕組みの安全性の土台です。",
+    en: "In a real network, an attacker would need an enormous amount of stake to control more than half the validators — an extremely costly undertaking. Keeping validators from concentrating in a few hands is exactly what makes this mechanism secure.",
   },
 } as const satisfies Record<string, Localized>;
 

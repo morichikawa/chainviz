@@ -161,6 +161,15 @@ export function ChainRibbonCard({ data }: NodeProps<ChainRibbonFlowNode>) {
   // SidePanelProvider 無しでこのカードをレンダーしているため、throw する
   // useSidePanel() ではなく optional 版を使う（GlossaryTerm と同じパターン）。
   const sidePanel = useOptionalSidePanel();
+  // Issue #414: subtitle-row の学習用砂場入口を単一メニューへ統合する
+  // （`docs/worklog/issue-414.md` UX設計 §4）。`<details>` 自体の開閉状態は
+  // ブラウザ標準に任せ（uncontrolled）、メニュー項目を選んだときだけ ref
+  // 経由で明示的に閉じる（開いたままサイドパネルが表示されると見た目が
+  // 窮屈なため）。
+  const demoMenuRef = useRef<HTMLDetailsElement>(null);
+  const closeDemoMenu = useCallback(() => {
+    if (demoMenuRef.current) demoMenuRef.current.open = false;
+  }, []);
   const [openPopoverHashes, setOpenPopoverHashes] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -250,16 +259,45 @@ export function ChainRibbonCard({ data }: NodeProps<ChainRibbonFlowNode>) {
       </div>
       <div className="chain-ribbon-card__subtitle-row">
         <span className="chain-ribbon-card__subtitle">{t("chainRibbon.subtitle")}</span>
-        {/* Issue #401: 常設入口(発見性のため)。ポップオーバー側にも文脈導線
-            (ChainRibbonPopover)を別途持つ。 */}
-        <button
-          type="button"
-          className="chain-ribbon-card__hash-demo-open nodrag"
-          onClick={() => sidePanel?.open({ kind: "hashChainDemo" })}
-          data-testid="chain-ribbon-hash-demo-open"
-        >
-          {t("hashDemo.open")}
-        </button>
+        {/* Issue #401→#414: 常設入口(発見性のため)。ポップオーバー側にも
+            文脈導線(ChainRibbonPopover)を別途持つ。カード幅に対して入口
+            ボタンが複数（ハッシュのしくみ・51%攻撃…）になると1行のテキスト
+            リンクでは手狭になるため、`<details>`/`<summary>` の開閉式
+            メニューへ統合した（`docs/worklog/issue-414.md` UX設計 §4。
+            ブラウザ標準の開閉状態管理・キーボード操作・スクリーンリーダー
+            通知をそのまま使う）。 */}
+        <details className="chain-ribbon-card__demo-menu nodrag" ref={demoMenuRef}>
+          <summary
+            className="chain-ribbon-card__demo-menu-summary"
+            data-testid="chain-ribbon-demo-menu-open"
+          >
+            {t("chainRibbon.demoMenu.open")}
+          </summary>
+          <div className="chain-ribbon-card__demo-menu-list">
+            <button
+              type="button"
+              className="chain-ribbon-card__demo-menu-item nodrag"
+              onClick={() => {
+                sidePanel?.open({ kind: "hashChainDemo" });
+                closeDemoMenu();
+              }}
+              data-testid="chain-ribbon-hash-demo-open"
+            >
+              {t("hashDemo.open")}
+            </button>
+            <button
+              type="button"
+              className="chain-ribbon-card__demo-menu-item nodrag"
+              onClick={() => {
+                sidePanel?.open({ kind: "fiftyOnePercentAttackDemo" });
+                closeDemoMenu();
+              }}
+              data-testid="chain-ribbon-fifty-one-percent-demo-open"
+            >
+              {t("attack51Demo.open")}
+            </button>
+          </div>
+        </details>
       </div>
       {tiles.length === 0 ? (
         <div className="chain-ribbon-card__empty" data-testid="chain-ribbon-empty">
