@@ -316,3 +316,48 @@ chainviz-ux への正式な引き継ぎは不要と判断した:
   `blockDetail.jumpTieBreak.test.ts` が3実装の不一致を検出して落ちる。
   落ちたときは3箇所（`findBlockByNumber` / `findChildBlock` /
   `pickCanonicalPerNumber`）を同時に直すこと。
+
+### 2026-07-26 Issue #428 レビュー結果（reviewer、合格）
+
+- 担当: reviewer
+- 判定: **合格**。差し戻し事項なし、コードの修正は行っていない
+
+#### 確認内容
+
+- `docs/ARCHITECTURE.md` §18.3.1 の設計内容と実装が完全に一致することを
+  確認した。`packages/shared`・collector の変更は無く、既存の
+  `BlockEntity` 群の中で完結している。境界の遵守・チェーン固有語彙の
+  非漏出も問題なし
+- 品質ゲート観点: `parseBlockNumberInput` は異常系を `undefined` として
+  明示的に返すだけの純粋関数で、`catch` によるエラー握りつぶしは無い。
+  diff全体に `try`/`catch` は1つも追加されていない。`resolveBlockJump` の
+  `blocksByHash` 空Mapに対するフォールバックは理由がコード内コメントに
+  明記されている。e2eの「保持窓外」テストは絶対値ではなく相対オフセット
+  （現在表示中の番号 + 1,000,000）で作っており固定値ルール違反もない
+- Issue本文・ARCHITECTURE.md §18.3.1との突き合わせ: UI配置、
+  `type="text"` + `inputMode="numeric"`、バリデーション、エラー出し分け、
+  i18nキー4種、関数構成、コンポーネント分離、E2E 3ケース、すべて設計どおり
+- `findBlockByNumber`/`findChildBlock`/`pickCanonicalPerNumber` の
+  tie-break規則の意図的な重複実装は、Issue #409の前例を踏襲したもので、
+  `blockDetail.jumpTieBreak.test.ts` が3実装の相互一致を固定しているため
+  ドリフトのリスクは抑制されている。設計判断として妥当と判断
+- `pnpm lint && pnpm build && pnpm test`: shared 75件・collector 1765件・
+  e2e 185件・frontend 4029件、すべて成功
+- テストコードの質: `blockDetail.jump.test.ts` は広範な異常系をカバーし、
+  実際の退行を検出する形になっている。`blockDetail.jumpTieBreak.test.ts`
+  は3実装の相互一致という不変条件そのものを固定しており意味のある検出力を
+  持つ。統合テストでジャンプ経由の遷移・ダングリングガードの連携まで検証
+  されている
+- コミット粒度: `git log main..HEAD` で13コミット、それぞれ独立した関心事
+  に対応しており「1つの変更内容 = 1コミット」の原則に沿っている
+
+#### 軽微な所感（ブロッキングではない）
+
+GitHub Issue #428にラベル・マイルストーンが付与されていないが、直近の
+他Issue（#420等）にも同様の欠落があり本Issue固有の問題ではないため指摘
+事項としては扱わない。
+
+#### 次の担当への申し送り
+
+`chainviz-qa` による実機検証（特に `packages/e2e/src/ui/block-detail-jump.spec.ts`
+のUI-B-07aシナリオが実機でgreenになるか）を推奨する。
