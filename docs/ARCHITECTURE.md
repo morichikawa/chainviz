@@ -3560,6 +3560,7 @@ tx 署名と、それを ecrecover で検証する部分**だけをインタラ�
 見る手段が無かった。既に collector が保持している範囲（`BLOCK_RETENTION =
 32` ブロック。§10.2）を、専用のサイドパネルとブロック間の前後ナビゲーション
 で辿れるようにする。設計の検討経緯は `docs/worklog/issue-409.md` を参照。
+番号を直接指定した移動（§18.3.1）は `docs/worklog/issue-428.md` を参照。
 
 ### 18.1 スコープの決定: 「保持窓の中を辿る」に限定し、フルのブロック
 エクスプローラーにはしない
@@ -3647,6 +3648,100 @@ tx 署名と、それを ecrecover で検証する部分**だけをインタラ�
 - 前後移動は `view` の `hash` を書き換えるだけ（`sidePanel.open({ kind:
   "blockDetail", hash: nextHash })`）。パネルは開いたまま中身だけが差し
   替わる
+
+#### 18.3.1 ブロック番号による直接ジャンプ（Issue #428）
+
+前後ボタンでの1つずつの移動に加え、ブロック番号を直接入力して保持窓内の
+任意のブロックへ一気に移動できる入力欄を追加する。**スコープは §18.1 の
+決定を変更しない**: 対象は collector が現在保持している範囲
+（`blocksByHash`。最大 `BLOCK_RETENTION` 件）に限定し、範囲外の番号を
+新規 RPC で遡及取得することはしない。`packages/shared`・collector の変更は
+不要（§18.2 と同じく、既にフロントへ届いている `BlockEntity` 群の中で
+完結する）。
+
+- **UI配置**: 前後ナビゲーションのボタン列（§18.3）と同じ「移動」の関心事
+  としてまとめ、ボタン列のすぐ上に置く。理由は2つ:
+  - 番号ジャンプは前後移動と並ぶ「保持窓内を移動する第3の手段」であり、
+    別の場所（例: ヘッダー）に置くと機能として独立しているかのように誤解
+    される。`SidePanel`（`side-panel/SidePanel.tsx`）のヘッダーは
+    `title`・文字サイズ操作・閉じるボタンのみを持つ汎用シェルで、
+    `view.kind` ごとの中身を一切知らない設計になっているため、ここに
+    `blockDetail` 固有の入力欄を割り込ませるのは避ける
+  - 「前のブロック」が保持期間外で disabled になった場面のすぐ近くに
+    ジャンプ欄があることで、「これより前には戻れないが、保持窓内の別の
+    番号になら移動できる」という代替手段に気づきやすくなる
+- **入力欄の実装方法**: `type="number"` ではなく `type="text"` +
+  `inputMode="numeric"`（`operations/TransferForm.tsx` の金額欄と同じ
+  流儀）。`type="number"` はブラウザごとに小数点・負号の入力可否や
+  バリデーション UI の挙動が揃わず、エラーメッセージを自前の i18n 文言で
+  一貫して出し分けられないため避ける。フォーム全体を `<form onSubmit>` に
+  し、Enter キーでの送信とクリックでの送信を1つのハンドラに揃える
+  （`TransferForm` と同じパターン）
+- **バリデーション**（`TransferForm` の「入力のたびに導出し、非空かつ
+  無効なときだけエラー文を出す」流儀を踏襲。送信ボタンは対象ブロックが
+  一意に定まらない間 disabled にする）:
+  - 入力文字列を trim して `^\d+$`（0以上の整数のみ。先頭 `+`/`-`・小数点・
+    指数表記・空白混じりは拒否）にマッチしない場合は無効。マッチしても
+    `Number.isSafeInteger` を超える桁数は無効として扱う
+  - 有効な整数が得られたら `blocksByHash` の全件から `number` 一致で検索
+    する。複数ヒットした場合（同一番号にフォークが観測されている場合）は
+    §18.3「次のブロック」・`findChildBlock` と同じ tie-break（最新受信
+    時刻が遅い方、同時刻なら hash 辞書順）で1件に絞る（表示の一貫性を
+    チェーンリボン・前後ナビゲーションと揃えるための意図的な重複。
+    既存の `findChildBlock` も同じ理由で `chainRibbon.ts` の
+    `pickCanonicalPerNumber` とロジックを重複させている）
+  - 該当ブロックが見つからない場合（保持窓の外、またはそもそも存在しない
+    番号）は「見つからない」エラーとして扱う。このとき `blocksByHash` の
+    `number` の最小値・最大値（パネルは `block !== undefined` の場合のみ
+    描画されるため、この時点で `blocksByHash` は必ず1件以上を含み、
+    範囲は必ず求まる）を使い、「現在保持しているのは #{min}〜#{max} です」
+    という具体的な範囲をエラーメッセージに含める。無効な入力（数値以外）と
+    「見つからない」は別のメッセージに出し分ける（前者は入力のやり直しを、
+    後者は保持範囲内の番号への言い換えを促すため）
+  - 見つかった場合は§18.3 と同じ `onNavigate(block.hash)` を呼ぶだけで、
+    以降の表示更新・ダングリングガードは既存の仕組みに乗る
+- **入力欄の初期値と同期**: 開いたとき・前後ボタンやジャンプで表示中の
+  ブロックが変わったときは、入力欄の値を表示中のブロック番号へ同期する
+  （アドレスバーのように「今どこにいるか」を表す）。表示中ブロックが変わる
+  たびに入力欄をリセットする実装（対象ブロックの hash が変わったことを
+  トリガーにする `useEffect`）は `side-panel/GlossaryPanelView.tsx` が
+  `termKey` prop の変化に応じて展開・スクロールし直す既存パターンと同種
+  で、この codebase で既に確立している
+- **関数構成（実装時の目安。フロント側で新規に書く）**:
+  - `entities/blockDetail.ts` に追加する純粋関数（データ変換のみ。React に
+    依存しない）:
+    - `parseBlockNumberInput(raw: string): number | undefined`
+    - `findBlockByNumber(number: number, blocksByHash: ReadonlyMap<string, BlockEntity>): BlockEntity | undefined`
+      （`findChildBlock` と同じ tie-break を持つ、意図的な重複実装）
+    - `blockNumberRange(blocksByHash: ReadonlyMap<string, BlockEntity>): { min: number; max: number } | undefined`
+    - 上記3つを束ねて UI から呼びやすくする
+      `resolveBlockJump(raw: string, blocksByHash): { kind: "found"; block: BlockEntity } | { kind: "invalid" } | { kind: "notFound"; range: { min: number; max: number } }`
+      （関数名・戻り値の型は実装時に調整してよい）
+  - 表示コンポーネントは `side-panel/BlockDetailView.tsx` に直接書き足さず、
+    新規ファイル `side-panel/BlockJumpForm.tsx` に分離する（1ファイル1責務。
+    `BlockDetailView.tsx` は既に約240行あり、フォーム状態
+    （入力値・エラー種別）を持ち込むとさらに肥大化するため）。
+    `BlockDetailView.tsx` は `blocksByHash`
+    （`SidePanelHost.tsx` から既に流れてきている）を新しい prop として
+    受け取り、`BlockJumpForm` にそのまま渡す
+- **i18n文言（初稿。ja/en）**:
+  - `blockDetail.jump.label`: 「ブロック番号で移動」/
+    "Jump to block number"
+  - `blockDetail.jump.submit`: 「移動」/ "Go"
+  - `blockDetail.jump.invalid`: 「0以上の整数を入力してください」/
+    "Enter a non-negative whole number"
+  - `blockDetail.jump.notFound`:
+    「指定したブロック番号は見つかりませんでした（現在保持しているのは
+    #{min} 〜 #{max}）」/
+    "No block found with that number (currently retained: #{min}–#{max})"
+- **E2E**: `packages/e2e/SCENARIOS.md` の UI-B-07（Issue #409）に隣接する
+  新規シナリオとして追記する。最低限、(1) ジャンプ欄に保持窓内の既存の
+  ブロック番号を入力して移動できる、(2) 保持窓外・存在しない番号を入力
+  すると `blockDetail.jump.notFound` のエラーが表示されパネルは移動しない、
+  (3) 数値以外を入力すると `blockDetail.jump.invalid` のエラーが表示され
+  送信ボタンが disabled になる、の3点を検証する（`docs/PLAN.md` の運用
+  ルール「UI に見える機能を実装するステップには SCENARIOS.md への追記 +
+  Playwright テストの実装を含める」に従う）
 
 ### 18.4 パネルの中身
 
