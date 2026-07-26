@@ -288,6 +288,7 @@ export function SidePanelHost({
         <BlockDetailView
           block={block}
           navigation={navigation}
+          blocksByHash={blocksByHash}
           receivedOrder={deriveReceivedOrder(block, blockNodeLabelById)}
           visibleTransactions={visibleTransactions}
           totalTxCount={blockTransactions.length}

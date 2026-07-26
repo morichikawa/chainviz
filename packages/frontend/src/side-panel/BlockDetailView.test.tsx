@@ -55,6 +55,11 @@ function renderView(overrides: Partial<BlockDetailViewProps> = {}) {
   const props: BlockDetailViewProps = {
     block: target,
     navigation: navigation(),
+    // ブロック番号ジャンプ欄（Issue #428）のテストは BlockJumpForm.test.tsx
+    // に分離しているため、このファイルでは対象ブロック自身のみを含む最小の
+    // 索引を既定値にする（`resolveBlockJump` が呼ばれても常に found になり、
+    // このファイルの他のテストの表示内容に影響しない）。
+    blocksByHash: new Map([[target.hash, target]]),
     receivedOrder: [],
     visibleTransactions: [],
     totalTxCount: 0,

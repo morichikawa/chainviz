@@ -177,6 +177,24 @@ describe("SidePanelHost: blockDetail dispatch", () => {
     );
   });
 
+  it("navigates via the block-number jump form (Issue #428), replacing the displayed content in place", () => {
+    const target = block({ hash: "0xtarget", number: 10 });
+    const other = block({ hash: "0xother", number: 25 });
+    const blocksByHash = new Map([
+      [target.hash, target],
+      [other.hash, other],
+    ]);
+    renderHost({ blocksByHash, hash: target.hash });
+    fireEvent.click(screen.getByText("open"));
+    expect(screen.getByText("#10")).toBeTruthy();
+
+    fireEvent.change(screen.getByTestId("block-jump-input"), { target: { value: "25" } });
+    fireEvent.click(screen.getByTestId("block-jump-submit"));
+    expect(screen.getByText("#25")).toBeTruthy();
+    expect(screen.queryByText("#10")).toBeNull();
+    expect(screen.getAllByTestId("side-panel")).toHaveLength(1);
+  });
+
   it("filters the transactions list to only those belonging to the displayed block", () => {
     const target = block({ hash: "0xtarget" });
     const included: TransactionEntity = {
