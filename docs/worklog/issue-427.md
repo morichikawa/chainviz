@@ -229,3 +229,83 @@ Issue本文に統括による事前調査結果（原因・修正方針案）が
 合格。上記1点（text-align）はレビュー側で軽微な修正を行った上で
 `pnpm lint && pnpm build && pnpm test` の全通過を再確認した。commit・pushは
 実施していない（統括が確認の上で実施する）。
+
+### 2026-07-26 QA検証結果
+
+- 担当: qa
+- ブランチ: issue-427-block-detail-font-fix（検証用に origin の同一コミット
+  `e99f3e0` を `qa-issue-427` としてチェックアウトして実施）
+
+#### 検証環境
+
+- `profiles/ethereum` の Docker スタック（reth1 / reth2 / beacon1 / beacon2 /
+  validator1 / validator2 / workbench の7コンテナ）が稼働していることを確認した。
+  workbench から `cast block-number` が 218 を返し、`eth_blockNumber` も 15秒間で
+  0xc2 → 0xc3 と進行しており、チェーンが止まっていないことを確認した
+- collector を port 4100（ロギングプロキシ 4101）、frontend（vite dev server）を
+  port 5273 で起動した（既定の 4000 / 5173 は別作業のプロセスが使用中だったため、
+  衝突しないポートを使った）。collector の WebSocket に接続し、`snapshot`
+  （`chainType` / `timestamp` / `entities` / `edges`）と `diff`（`entityUpdated`・
+  `nodeLinkActivity`）が仕様どおり流れることを確認した
+- 実ブラウザは Playwright + headless Chromium（実装担当が用意した非rootの
+  共有ライブラリ展開先を `LD_LIBRARY_PATH` で参照）。以降の数値はすべて
+  実際に動いているアプリ（http://localhost:5273 ）の `getComputedStyle` と
+  `getBoundingClientRect` の実測値
+
+#### 確認内容と結果
+
+1. 1個目のブロック（親が保持窓の外 = 親hash行が `<div class="infra-field">`）と
+   2個目以降のブロック（親hash行が `<button class="block-detail-view__parent-link
+   infra-field nodrag">`）の比較。チェーンリボンの最古タイルからブロック詳細を
+   開き、「前のブロック」が disabled になるまで11回さかのぼって保持窓の最古
+   ブロックを表示させ、その状態と、そこから「次のブロック」で1つ進めた状態の
+   同じ「親ブロック」行を測った。
+   - font-size: div 12px / button 12px（一致）
+   - 値側 `.infra-field__value` の font-size: 12px / 12px（一致）
+   - font-weight 400、line-height normal、letter-spacing normal、color
+     rgb(231, 236, 244) がいずれも一致
+   - 行のボックス: 左 1195 / 右 1586 / 幅 391 / 高さ 81 が完全に一致。ラベル幅も
+     12px で一致。値テキストの描画開始 x 座標も 1219 で一致し、行数（1行、高さ
+     14px）も同じ
+   - text-align は div が `start`、button が `left`。LTR では算出結果が同じ値を
+     指すため描画上の差は無く、実測でも値テキストの左端が一致している
+   - 値のボックス幅だけ 488.3px / 483.7px と 4.6px 違うが、これは表示している
+     hash の文字列自体が異なる（別ブロックの親hash）ことによる字形幅の差で、
+     スタイルの差ではない
+2. 修正が実際に効いていることの確認（不具合の再現と解消）。同じ画面に対して
+   実行時に `.block-detail-view__parent-link { font: inherit; }` を注入すると
+   親hash行だけ 12px → 16px（行の高さも 81px → 111px）に跳ね上がり、Issue #427
+   の症状が再現した。注入した style を取り除くと 12px に戻った。修正後のコードが
+   この症状を持たないことを、同一セッション内の前後比較として確認した
+3. サイドパネルの文字サイズ設定（A- / A+）。A+ を2回押して
+   `--side-panel-font-scale` が 1.3、`.side-panel__body` が 20.8px になった状態でも、
+   ブロック詳細の `.infra-field` 3行（ハッシュ・親ブロック・時刻）はすべて 12px で
+   一致していた。A- を3回押して 0.85（body 13.6px）にした場合も同様に3行とも 12px。
+   親hash行だけが浮くことはなく、他の `.infra-field` 行と同じ挙動になっている
+   （設計メモどおり `.infra-field` は font-scale に追従しない。この点は
+   Issue #409 からの既存仕様で、本Issueの完了条件ではない）
+4. 親hashボタンの機能。ボタンをクリックすると、表示中ブロックが親hash欄に
+   出ていた hash のブロックへ切り替わることを確認した（クリック前
+   `0x8980ed93...`、親hash欄 `0x75da6934...`、クリック後の表示ブロック
+   `0x75da6934...` で一致）。サイドパネルは1枚のままで、パネルが重複して
+   開くこともなかった
+5. 本Issueで追加・変更されたテスト4ファイル（`fontShorthandCollision.css.test.ts` /
+   `blockDetailParentLinkFont.css.test.ts` /
+   `blockDetailParentLinkButtonDefaults.css.test.ts` /
+   `BlockDetailView.parentRowParity.test.tsx`）を実行し、27件すべて成功することを
+   確認した
+
+#### 本Issueの範囲外として観測した点（差し戻しではない）
+
+- 既定のサイドパネル幅（実測で行の幅 391px）では、`.infra-field__value` の
+  フルhash（66文字）が折り返さずに行の右端（x=1586）を越えて x=1707 まで
+  はみ出している。またラベル「親ブロック」が1文字ずつ縦に折り返して行の高さが
+  81px になっている。いずれも div 版・button 版で完全に同一であり、Issue #427 の
+  修正が作った状態ではない（親hash行だけの問題でもなく、ハッシュ行も同様）。
+  気になる場合は別Issueで扱うのが適切
+
+#### 判定
+
+合格。`docs/PLAN.md` の該当項目は実装担当が既にチェック済みのため、追加の
+チェック操作は不要だった。commit・push・PR作成・マージ・Issueクローズは
+いずれも実施していない（統括の判断に委ねる）。
