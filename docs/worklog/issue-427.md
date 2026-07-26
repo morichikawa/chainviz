@@ -170,3 +170,62 @@ Issue本文に統括による事前調査結果（原因・修正方針案）が
   同一実装のまま4ファイルに複製されている（既存3ファイル + 今回追加分）。
   既存の流儀に合わせて今回も複製したが、これ以上増えるなら共通の
   テストヘルパーに切り出したほうがよい
+
+### 2026-07-26 レビュー結果
+
+- 担当: reviewer
+- ブランチ: issue-427-block-detail-font-fix
+
+#### 確認内容
+
+- `main` との差分全体（`packages/frontend/src/styles.css` の1行修正 + テスト4ファイル
+  + `docs/PLAN.md` / `docs/WORKLOG.md` / `docs/worklog/issue-427.md`）を確認した。
+  修正は `.block-detail-view__parent-link` の `font: inherit` を
+  `font-family: inherit` に限定するのみで、`BlockDetailView.tsx` 側のロジック変更は
+  無い。フロントが Docker/ノードに直接触れる変更でもなく、チェーン固有語彙の
+  漏れも無い。境界・チェーンプロファイル独立性・`packages/shared` 整合には抵触しない
+- `pnpm lint` / `pnpm build` / `pnpm test` をリポジトリ全体で実行し、いずれも成功した
+  （shared 75件・collector 1765件・e2e 185件・frontend 3959件、すべて成功）
+- テストコードの質: 4ファイルとも実測（headless Chromium + `getComputedStyle`）に
+  裏付けられた根拠を持ち、単一クラスの回帰固定（`blockDetailParentLinkFont`）・
+  横断的な一般化ガード（`fontShorthandCollision`。全 TSX の className 組み合わせと
+  CSS を突き合わせ、同種の衝突を将来検知する）・button の UA既定値による非継承
+  プロパティの境界条件固定（`blockDetailParentLinkButtonDefaults`）・CSS 検査だけでは
+  検出できない DOM 構造の変化に対するガード（`BlockDetailView.parentRowParity`）と、
+  観点が重複せず補完し合っている。いずれも「検出器自体が空振りしていないか」
+  「修正前の状態を意図的に再現して実際に検出できるか」を自己検証しており、
+  実装の詳細をなぞるだけの無意味なテストではない
+- コミット粒度: `git log main..HEAD` を確認。fix本体+回帰テスト1件を1コミット、
+  横断テスト3件をそれぞれ独立コミット、docs更新を2コミットに分けており、
+  「1つの変更内容 = 1コミット」の原則に沿っている
+
+#### テスト強化担当からの申し送り3点への判断
+
+1. `text-align` の流儀不揃い: 対応必要と判断し、レビュー側で直接修正した。
+   `.block-detail-view__parent-link` に `text-align: left;` を追加し、他の
+   ボタン化リセット（`.contract-list-panel__row` / `.mempool-panel__row` /
+   `.mempool-panel__node-row`）と揃えた。現状の見た目（親hashが1トークンで
+   折り返さない）には影響しないことを `pnpm test` で確認済み。あわせて
+   `blockDetailParentLinkButtonDefaults.css.test.ts` の該当テストを、
+   「リセットしていないことの前提条件」を固定するテストから
+   「`text-align: left` が明示されていることを固定する」テストへ更新した
+   （修正後の状態に合わせてテストの意図も追従させた）
+2. `--side-panel-font-scale` 追従の部分性: Issue #427 が作った状態ではなく
+   Issue #409 時点からの既存の積み残しであることをコード実測
+   （`.block-detail-view__hash` のみ `calc()` 、`.infra-field` は固定 px で
+   `WalletPopover`/`ChainRibbonPopover` と共有）で確認した。今回のスコープ外と
+   判断する。別Issue化を検討する価値はあるが、今回のfix/PRの完了条件には含めない
+3. テストヘルパー（`findStylesFile()`/`ruleBodyFor()`）の重複: 確認したところ
+   `walletPopoverStyles.test.ts` / `sidePanelFontScale.css.test.ts` に既に
+   同一実装が存在し、今回追加した2ファイルはこの既存の流儀を踏襲したものだった
+   （Issue #427で新たに生んだ重複ではない）。機能上の欠陥ではなく、実装の詳細を
+   なぞるだけの無意味なテストにもなっていないため、今回のマージをブロックする
+   理由はないと判断した。ただし4ファイルに増えた時点でDRY違反が看過しにくい
+   規模になっているため、共通テストユーティリティへの切り出しは別Issueとして
+   検討する価値があると記録しておく
+
+#### 判定
+
+合格。上記1点（text-align）はレビュー側で軽微な修正を行った上で
+`pnpm lint && pnpm build && pnpm test` の全通過を再確認した。commit・pushは
+実施していない（統括が確認の上で実施する）。
