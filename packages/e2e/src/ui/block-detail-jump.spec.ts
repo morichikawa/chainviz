@@ -96,15 +96,24 @@ test("UI-B-07a: 保持窓外の番号を入力するとエラーが表示され�
   // （最大 32 ブロック分）の外になる値を作る。
   const outOfRangeNumber = displayedNumber + 1_000_000;
 
-  await test.step("保持窓より明らかに大きい番号を入力して「移動」を押す", async () => {
+  await test.step("保持窓より明らかに大きい番号を入力する", async () => {
     await page.getByTestId("block-jump-input").fill(String(outOfRangeNumber));
-    await page.getByTestId("block-jump-submit").click();
   });
 
-  await test.step("notFound エラーが表示され、パネルの中身は変わらない", async () => {
-    await expect(page.getByTestId("block-jump-error-notFound")).toBeVisible();
-    expect(await getDisplayedBlockNumber(page)).toBe(displayedNumber);
-  });
+  await test.step(
+    "notFound エラーが保持範囲付きで表示され、「移動」ボタンは disabled のままパネルの中身も変わらない",
+    async () => {
+      const error = page.getByTestId("block-jump-error-notFound");
+      await expect(error).toBeVisible();
+      // 保持範囲（#{min} 〜 #{max}）が具体的な番号として埋め込まれていること。
+      await expect(error).toContainText(/#\d+/);
+      // 対象ブロックが一意に定まらない間、送信自体ができない
+      // （ARCHITECTURE.md §18.3.1）。ここで click すると Playwright は
+      // enabled になるのを待ってタイムアウトするため、押さずに状態を確認する。
+      await expect(page.getByTestId("block-jump-submit")).toBeDisabled();
+      expect(await getDisplayedBlockNumber(page)).toBe(displayedNumber);
+    },
+  );
 });
 
 test("UI-B-07a: 数値以外を入力すると invalid エラーが表示され「移動」ボタンが disabled になる", async ({
