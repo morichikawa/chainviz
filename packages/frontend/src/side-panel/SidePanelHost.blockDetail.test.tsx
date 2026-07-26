@@ -195,6 +195,97 @@ describe("SidePanelHost: blockDetail dispatch", () => {
     expect(screen.getAllByTestId("side-panel")).toHaveLength(1);
   });
 
+  it("re-syncs the jump input and the prev/next buttons to the block reached by the jump", () => {
+    // ジャンプ後は「今どこにいるか」を表す入力欄と、前後ボタンの対象
+    // （data-testid に hash を含む）が移動先のブロックに揃っている必要がある。
+    const target = block({ hash: "0xtarget", number: 10 });
+    const other = block({ hash: "0xother", number: 25 });
+    const blocksByHash = new Map([
+      [target.hash, target],
+      [other.hash, other],
+    ]);
+    renderHost({ blocksByHash, hash: target.hash });
+    fireEvent.click(screen.getByText("open"));
+
+    fireEvent.change(screen.getByTestId("block-jump-input"), { target: { value: "25" } });
+    fireEvent.click(screen.getByTestId("block-jump-submit"));
+    expect((screen.getByTestId("block-jump-input") as HTMLInputElement).value).toBe("25");
+    expect(screen.getByTestId(`block-detail-prev-${other.hash}`)).toBeTruthy();
+    expect(screen.queryByTestId(`block-detail-prev-${target.hash}`)).toBeNull();
+  });
+
+  it("keeps the panel on the current block when the entered number is outside the retention window", () => {
+    // UI-B-07a のシナリオ2に対応。送信ボタンが disabled になるため、
+    // クリックしてもパネルの中身は差し替わらない（Playwright 側では
+    // disabled 要素をクリックできないため、この経路は単体テストで押さえる）。
+    const target = block({ hash: "0xtarget", number: 10 });
+    renderHost({ blocksByHash: new Map([[target.hash, target]]), hash: target.hash });
+    fireEvent.click(screen.getByText("open"));
+
+    fireEvent.change(screen.getByTestId("block-jump-input"), {
+      target: { value: "1000010" },
+    });
+    expect(screen.getByTestId("block-jump-error-notFound").textContent).toContain(
+      "#10 〜 #10",
+    );
+    expect((screen.getByTestId("block-jump-submit") as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    fireEvent.click(screen.getByTestId("block-jump-submit"));
+    expect(screen.getByText("#10")).toBeTruthy();
+    expect(screen.getAllByTestId("side-panel")).toHaveLength(1);
+  });
+
+  it("closes the panel (dangling guard) when the block reached by a jump later falls out of the retention window", () => {
+    const target = block({ hash: "0xtarget", number: 10 });
+    const older = block({ hash: "0xolder", number: 9 });
+    const withBoth = new Map([
+      [older.hash, older],
+      [target.hash, target],
+    ]);
+    const { rerender } = render(
+      <LanguageProvider initialLanguage="ja">
+        <GlossaryProvider glossary={{}}>
+          <SidePanelProvider>
+            <OpenButton hash={target.hash} />
+            <SidePanelHost
+              contractsByAddress={new Map<string, ContractEntity>()}
+              commsLog={noopCommsLog}
+              commsLogNodeOptions={[]}
+              layerFilter="all"
+              onLayerFilterChange={() => {}}
+              blocksByHash={withBoth}
+            />
+          </SidePanelProvider>
+        </GlossaryProvider>
+      </LanguageProvider>,
+    );
+    fireEvent.click(screen.getByText("open"));
+    fireEvent.change(screen.getByTestId("block-jump-input"), { target: { value: "9" } });
+    fireEvent.click(screen.getByTestId("block-jump-submit"));
+    expect(screen.getByText("#9")).toBeTruthy();
+
+    // ジャンプで遡った古いブロックが保持窓から外れた（チェーンが進行した）。
+    rerender(
+      <LanguageProvider initialLanguage="ja">
+        <GlossaryProvider glossary={{}}>
+          <SidePanelProvider>
+            <OpenButton hash={target.hash} />
+            <SidePanelHost
+              contractsByAddress={new Map<string, ContractEntity>()}
+              commsLog={noopCommsLog}
+              commsLogNodeOptions={[]}
+              layerFilter="all"
+              onLayerFilterChange={() => {}}
+              blocksByHash={new Map([[target.hash, target]])}
+            />
+          </SidePanelProvider>
+        </GlossaryProvider>
+      </LanguageProvider>,
+    );
+    expect(screen.queryByTestId("side-panel")).toBeNull();
+  });
+
   it("filters the transactions list to only those belonging to the displayed block", () => {
     const target = block({ hash: "0xtarget" });
     const included: TransactionEntity = {
