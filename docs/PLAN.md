@@ -1120,6 +1120,11 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       発見された所要時間サンプルの有限値チェック漏れも修正。実機で
       パルス点灯・ポップオーバー表示・用語集の整合を確認済み)
       [#420](https://github.com/morichikawa/chainviz/issues/420)
+- [x] ブロック詳細パネルで親ブロックの行のフォントが2個目以降だけ異常に
+      大きくなる（`.block-detail-view__parent-link`の`font: inherit`
+      ショートハンドが`.infra-field`の`font-size: 12px`をCSSソース順で
+      上書きしていたのが原因。`font-family: inherit`に限定して修正）
+      [#427](https://github.com/morichikawa/chainviz/issues/427)
 - [x] 51%攻撃デモで共通の親ブロックから枝A/枝Bへの接続線が分かりにくい
       (ユーザーからの指摘。原因は`.attack51-demo__connector`の`width`/
       `left`/`right`が実際の枝ボックスの中心とかけ離れており、2本の
