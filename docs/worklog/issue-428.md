@@ -646,3 +646,87 @@ commit・pushは行っていない。
 「壊れたコードでも通ってしまう」看板倒れにはなっていない。
 `pnpm lint && pnpm build && pnpm test` はすべて成功した。マージ判断は
 統括に委ねる。
+### 2026-07-27 Issue #428 実機再検証（QA、合格）
+
+- 担当: qa
+- ブランチ: issue-428-block-detail-number-jump（origin の ff0333a 時点）
+- 判定: **合格**。前回差し戻した e2e テストの不備は解消されており、UI-B-07a の
+  3シナリオと UI-B-07 が実機で green になることを確認した。
+
+#### 検証環境
+
+- `profiles/ethereum` の Docker スタック（reth1/reth2・beacon1/beacon2・
+  validator1/validator2・workbench の7コンテナ）が Up であること、および
+  `cast block-number` がブロック 157 → 158 と進み続けることを確認してから
+  検証を開始した。
+- Playwright の globalSetup が collector（WS 4125 / プロキシ 4126）を、
+  webServer が vite dev server（5275）を起動し、chromium から実際に操作した。
+- 当環境の chromium 起動には
+  `LD_LIBRARY_PATH=/home/zoe/chrome-deps/root/usr/lib/x86_64-linux-gnu`
+  が必要（Issue #373 / #409 と同じ環境側の既知の準備。リポジトリには影響しない）。
+- 検証用の worktree で `pnpm install --frozen-lockfile` と `pnpm build`
+  （shared/collector/frontend/e2e すべて成功）を実施してから実行した。
+
+#### 1. UI-B-07a（`block-detail-jump.spec.ts`）の実行結果 → 3件すべて成功
+
+`pnpm --filter @chainviz/e2e exec playwright test src/ui/block-detail-jump.spec.ts`
+
+- シナリオ1「保持窓内ジャンプ成功」: **成功**（前回は決定論的に失敗していた箇所）
+- シナリオ2「保持窓外の番号でエラー」: 成功
+- シナリオ3「数値以外で送信ボタン disabled」: 成功
+
+#### 2. UI-B-07（`block-detail.spec.ts`）のデグレ確認 → 成功
+
+前後ナビゲーション・保持窓境界での disabled と理由表示は従来どおり動作して
+いる。両ファイルを同一セッションでまとめて実行（計4件）しても4件すべて成功
+することを確認した。
+
+#### 3. 修正前後の再現確認
+
+「直したはず」で済ませないため、修正が実際に効いていることを自分の手で確認した。
+
+- `block-detail-jump.spec.ts` を修正前の状態（`66ebb6e^`）に戻すと、シナリオ1が
+  前回の QA 報告とまったく同じ strict mode violation で失敗した
+  （`block-detail-prev-<hash>` の button と `block-detail-prev-reason` の `<p>` の
+  2要素にマッチ）。シナリオ2・3 は成功。
+- 修正後の状態に戻すと3件すべて成功する。
+- 確認後はファイルを HEAD の内容へ復元済みで、作業ツリーに差分は残していない。
+
+#### 4. 再発防止テスト（`testid-prefix-locator.unit.test.ts`）の検出力
+
+- 現状のコードでは45件すべて成功する。
+- セレクタを修正前の状態に戻すと、この構造整合テストが
+  `block-detail-prev- -> block-detail-prev-reason` という衝突を名指しで報告して
+  失敗することを確認した。tester の申告どおり実際の検出力を持っている。
+- 「frontend から固定 data-testid を実際に収集できている」というアンチ空振りの
+  検査を別ケースとして持っており、収集が空になって検査が常に通ってしまう状態を
+  防いでいる点も確認した。
+
+#### 5. 実装コードが無変更であることの確認
+
+`git diff --stat 6c32207..HEAD`（前回 QA で機能面を合格と判定した時点との差分）を
+取り、変更が `docs/worklog/issue-428.md`・`packages/e2e/src/ui/block-detail-jump.spec.ts`・
+`packages/e2e/src/ui/block-detail.spec.ts`・`packages/e2e/src/ui/support/testid-prefix-locator.ts`・
+同 `.unit.test.ts` の5ファイルのみで、`packages/frontend/src`・`packages/shared`・
+`packages/collector` には一切変更が無いことを確認した。したがって前回の実機での
+手動確認（保持窓内ジャンプ・入力欄の同期・Enter 送信・保持窓外エラーの範囲表示・
+数値以外の入力9パターン・英語表示での `{min}`/`{max}` 置換・配置）の結果はそのまま
+有効であり、今回は再実施していない。
+
+#### 静的チェック
+
+- `pnpm lint`: エラーなし
+- `pnpm build`: 成功
+- `pnpm test`: shared 75 / e2e 230 / collector 1765 / frontend 4029、すべて成功
+
+#### 判定と申し送り
+
+- Issue #428 の受け入れ条件（保持窓内の番号を直接指定して移動できる／保持窓外・
+  不正入力は移動せずエラーを出し分ける／既存の前後ナビゲーションを壊さない／
+  UI-B-07a として e2e シナリオを追加する）をすべて満たしていると判断し、**合格**
+  とする。差し戻し事項なし。
+- `docs/PLAN.md` の該当項目（1123行目）は実装担当が既にチェック済みで、qa 担当
+  と明記された別項目は無いため、今回の追加のチェックは行っていない。
+- 本記録の追記のみを行い、commit・push・PR 作成・マージ・Issue のクローズは
+  行っていない（統括に委ねる）。
+
