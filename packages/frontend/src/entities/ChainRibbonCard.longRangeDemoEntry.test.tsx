@@ -1,7 +1,8 @@
-// チェーンリボンカードの「攻撃を学ぶ」入口行(Issue #415。既存 subtitle-row
-// とは別の新規行)が SidePanel を開くこと・SidePanelProvider が無い単体
-// レンダーでも壊れないことの確認。カード自体の他の挙動は
-// ChainRibbonCard.test.tsx が扱う(CLAUDE.md の1ファイル1責務)。
+// チェーンリボンカードの学習用砂場メニュー内の「ロングレンジ攻撃を体験する」
+// 入口(Issue #415→#430で単一メニューへ統合)が SidePanel を開くこと・
+// SidePanelProvider が無い単体レンダーでも壊れないことの確認。メニュー自体の
+// 開閉挙動は ChainRibbonCard.demoMenu.test.tsx が扱う(CLAUDE.md の1ファイル
+// 1責務)。
 import { ReactFlowProvider } from "@xyflow/react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -38,67 +39,65 @@ function renderCard() {
     <ReactFlowProvider>
       <LanguageProvider initialLanguage="ja">
         <GlossaryProvider glossary={{}}>
-          <RibbonHoverProvider transactions={[]}>
-            <ChainRibbonCard {...props()} />
-          </RibbonHoverProvider>
+          <SidePanelProvider>
+            <RibbonHoverProvider transactions={[]}>
+              <ChainRibbonCard {...props()} />
+            </RibbonHoverProvider>
+            <SidePanelViewProbe />
+          </SidePanelProvider>
         </GlossaryProvider>
       </LanguageProvider>
     </ReactFlowProvider>,
   );
 }
 
-describe("ChainRibbonCard: long-range attack demo entry point (Issue #415)", () => {
-  it("renders without a SidePanelProvider (no-op click, matching the hash demo entry's pattern)", () => {
-    renderCard();
+describe("ChainRibbonCard: long-range attack demo entry point (Issue #415, menu-integrated in #430)", () => {
+  it("renders without a SidePanelProvider (no-op click, matching the other menu entries' pattern)", () => {
+    render(
+      <ReactFlowProvider>
+        <LanguageProvider initialLanguage="ja">
+          <GlossaryProvider glossary={{}}>
+            <RibbonHoverProvider transactions={[]}>
+              <ChainRibbonCard {...props()} />
+            </RibbonHoverProvider>
+          </GlossaryProvider>
+        </LanguageProvider>
+      </ReactFlowProvider>,
+    );
+    fireEvent.click(screen.getByTestId("chain-ribbon-demo-menu-open"));
     const button = screen.getByTestId("chain-ribbon-long-range-demo-open");
     expect(() => fireEvent.click(button)).not.toThrow();
   });
 
-  it("exposes the entry as a real <button> with an accessible name (keyboard reachable)", () => {
+  it("exposes the entry as a real <button> with an accessible name once the menu is open", () => {
     renderCard();
+    fireEvent.click(screen.getByTestId("chain-ribbon-demo-menu-open"));
     const button = screen.getByRole("button", { name: "ロングレンジ攻撃を体験する" });
     expect(button.tagName).toBe("BUTTON");
     expect((button as HTMLButtonElement).type).toBe("button");
   });
 
-  it("opens the longRangeAttackDemo side panel view when clicked", () => {
-    render(
-      <ReactFlowProvider>
-        <LanguageProvider initialLanguage="ja">
-          <GlossaryProvider glossary={{}}>
-            <SidePanelProvider>
-              <RibbonHoverProvider transactions={[]}>
-                <ChainRibbonCard {...props()} />
-              </RibbonHoverProvider>
-              <SidePanelViewProbe />
-            </SidePanelProvider>
-          </GlossaryProvider>
-        </LanguageProvider>
-      </ReactFlowProvider>,
-    );
+  it("opens the longRangeAttackDemo side panel view when clicked, and closes the menu", () => {
+    renderCard();
     expect(screen.getByTestId("side-panel-view-kind").textContent).toBe("none");
+    fireEvent.click(screen.getByTestId("chain-ribbon-demo-menu-open"));
     fireEvent.click(screen.getByTestId("chain-ribbon-long-range-demo-open"));
     expect(screen.getByTestId("side-panel-view-kind").textContent).toBe("longRangeAttackDemo");
+    expect(
+      screen.getByTestId("chain-ribbon-demo-menu-open").closest("details")?.hasAttribute("open"),
+    ).toBe(false);
   });
 
-  it("keeps the hash demo entry (subtitle-row) and the attack-demo-row entry both present and independent", () => {
-    render(
-      <ReactFlowProvider>
-        <LanguageProvider initialLanguage="ja">
-          <GlossaryProvider glossary={{}}>
-            <SidePanelProvider>
-              <RibbonHoverProvider transactions={[]}>
-                <ChainRibbonCard {...props()} />
-              </RibbonHoverProvider>
-              <SidePanelViewProbe />
-            </SidePanelProvider>
-          </GlossaryProvider>
-        </LanguageProvider>
-      </ReactFlowProvider>,
-    );
+  it("keeps all three sandbox entries independent (hash / 51% / long-range)", () => {
+    renderCard();
+    fireEvent.click(screen.getByTestId("chain-ribbon-demo-menu-open"));
     expect(screen.getByTestId("chain-ribbon-hash-demo-open")).toBeTruthy();
+    expect(screen.getByTestId("chain-ribbon-fifty-one-percent-demo-open")).toBeTruthy();
+
     fireEvent.click(screen.getByTestId("chain-ribbon-long-range-demo-open"));
     expect(screen.getByTestId("side-panel-view-kind").textContent).toBe("longRangeAttackDemo");
+
+    fireEvent.click(screen.getByTestId("chain-ribbon-demo-menu-open"));
     fireEvent.click(screen.getByTestId("chain-ribbon-hash-demo-open"));
     expect(screen.getByTestId("side-panel-view-kind").textContent).toBe("hashChainDemo");
   });

@@ -94,6 +94,15 @@ Docker 上の Ethereum ノード群を Miro 風の無限キャンバスでリア
   `docs/PLAN.md` のチェックボックスは進捗管理用であり、経緯の記録は
   `docs/worklog/` の役割（1ファイルに追記し続けると肥大化し読み込み
   コストが際限なく増えるため、Issue単位でファイルを分けている）
+- Issueのレビュー・QAを通過してマージする際、**統括（指揮統）が** 対応する
+  `docs/worklog/issue-<番号>.md` を確認し、chainviz固有の詳細（型名・
+  Issue番号・ファイルパス等）を除いても一般化できる技術的知見（ハマり
+  どころ・ライブラリの非自明な挙動・LLMが開発時に躓きやすいパターン等）が
+  あれば、Obsidian vault `llm_knowledge`（MCPサーバー `obsidian`、
+  `mcp__obsidian__*` ツール）にも記録する。カテゴリ分け・記録方針は
+  `~/.claude/CLAUDE.md`（グローバル設定）に従う。実装担当エージェントは
+  この記録を自分で行わない（レビュー・QA前の情報は未確定なため、統括が
+  マージ判断と合わせて行う）
 - 実装着手前に、どう実装するかの方針（データフロー・主要な関数構成・
   既存パターンとの対応）を`docs/worklog/issue-<番号>.md`に「設計メモ」
   として簡潔に残してから着手する。事前に chainviz-designer / chainviz-ux
@@ -161,6 +170,20 @@ Docker 上の Ethereum ノード群を Miro 風の無限キャンバスでリア
   ブランチへ`git checkout`するなど並行して手を入れない（レビュー対象が
   レビュー中に書き換わる事故につながる。並行作業させたい場合は
   `isolation: "worktree"` で別ディレクトリを割り当てる）
+- **worktreeは`git worktree remove`で片付け、`rm -rf`で直接消さない**。
+  過去に`/home/zoe/workspace/`直下（`chainviz`のクローンと同階層）に
+  `chainviz-wt-*`という名前の空の残骸ディレクトリが複数個放置されていた
+  事故があった。`git worktree add`で作成したworktreeの中身だけを
+  `rm -rf`等で消すと、gitのworktree管理台帳（`.git/worktrees/`）には
+  参照が残り続け、実体だけが空の骨組みとして残る。後片付けは必ず
+  `git worktree remove <path>`（登録ごと解除）を使う。誤って中身だけ
+  消してしまった場合は`git worktree remove --force <path>`または
+  `git worktree prune`で台帳側を掃除する。`isolation: "worktree"`で
+  Agentツールが自動作成する`.claude/worktrees/agent-*`についても同様で、
+  そのIssueがマージ完了し当該worktreeが不要になった時点（都度である
+  必要はないが、`docs/PLAN.md`のステップ区切りや作業の節目）で統括が
+  `git worktree remove`を実行し、`git worktree list`に孤立した参照が
+  溜まっていないか随時確認する
 
 ## 開発体制
 

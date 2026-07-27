@@ -1120,6 +1120,11 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       発見された所要時間サンプルの有限値チェック漏れも修正。実機で
       パルス点灯・ポップオーバー表示・用語集の整合を確認済み)
       [#420](https://github.com/morichikawa/chainviz/issues/420)
+- [x] ブロック詳細パネルで親ブロックの行のフォントが2個目以降だけ異常に
+      大きくなる（`.block-detail-view__parent-link`の`font: inherit`
+      ショートハンドが`.infra-field`の`font-size: 12px`をCSSソース順で
+      上書きしていたのが原因。`font-family: inherit`に限定して修正）
+      [#427](https://github.com/morichikawa/chainviz/issues/427)
 - [x] ブロック詳細パネルでブロック番号を直接指定して遡れるようにしたい
       (ユーザーからの要望。Issue #409の既存スコープ(保持窓
       `BLOCK_RETENTION`内に限定し、保持窓外への新規RPC遡及取得・全チェーン
@@ -1136,6 +1141,26 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       いる範囲を具体的に提示する。packages/e2e/SCENARIOS.mdにUI-B-07aとして
       追記しPlaywrightテストを実装)
       [#428](https://github.com/morichikawa/chainviz/issues/428)
+- [x] 51%攻撃デモで共通の親ブロックから枝A/枝Bへの接続線が分かりにくい
+      (ユーザーからの指摘。原因は`.attack51-demo__connector`の`width`/
+      `left`/`right`が実際の枝ボックスの中心とかけ離れており、2本の
+      connectorの縦線がほぼ同じ位置(コンテナ中央)に収束していたこと。
+      枝ボックスの中心座標をCSS変数化した`gap`から`calc()`で正確に
+      算出し、共通の親ブロック直下から伸びる1本の幹が枝A/枝Bの中心
+      それぞれへ分かれて繋がる形に修正。`packages/frontend/src/styles.css`
+      のみの変更で、実装ロジック・マークアップは変更していないため
+      新規ユニットテストは追加していない。実機(Playwright)で修正前の
+      収束を再現し、修正後にconnectorの端点が枝の中心座標と一致する
+      ことを複数のパネル幅で確認)
+      [#429](https://github.com/morichikawa/chainviz/issues/429)
+- [x] ロングレンジ攻撃デモの入口を「学習用の砂場」メニューに統合する
+      (ユーザーからの指摘。Issue #414(51%攻撃)は入口を単一メニューに
+      統合する設計で実装されたが、Issue #415(ロングレンジ攻撃)は#414の
+      マージ前に並行開発が進んでいたため独自の専用行のまま実装され、
+      マージ時に両方が別々のUI要素として共存する形で残っていた。
+      ロングレンジ攻撃デモのボタンを既存メニュー内へ移設し、専用行と
+      不要になったCSS・i18nキーを削除)
+      [#430](https://github.com/morichikawa/chainviz/issues/430)
 
 ## 運用ルール（全ステップ共通）
 

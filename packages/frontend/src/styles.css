@@ -3248,32 +3248,6 @@ button.mempool-panel__row:hover {
   background: rgba(79, 157, 255, 0.16);
 }
 
-/* Issue #415: 「攻撃を学ぶ」入口行。subtitle-row とは別の行にすることで
-   幅の混雑を避ける（UX設計 §6）。`flex-wrap: wrap` にしておき、将来ボタンが
-   増えても折り返すだけで既存ボタンの表示を壊さない。 */
-.chain-ribbon-card__attack-demo-row {
-  margin-top: 4px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.chain-ribbon-card__attack-demo-label {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.chain-ribbon-card__long-range-demo-open {
-  flex: none;
-  background: none;
-  border: none;
-  padding: 0;
-  color: var(--accent);
-  font-size: 11px;
-  text-decoration: underline;
-  cursor: pointer;
-}
 /* Issue #409: ポップオーバー末尾のブロック詳細パネルへの導線。「受信した
    ノード」欄との区切りとして上ボーダーを持つ（このボタンが先頭）。 */
 .chain-ribbon-popover__block-detail-open {
@@ -3970,13 +3944,25 @@ button.mempool-panel__row:hover {
 }
 
 /* 親hashフィールドをクリック可能な移動導線にする際のボタン化リセット
-   （見た目は `.infra-field` のまま、ボタン既定の枠・背景・フォントだけ消す）。 */
+   （見た目は `.infra-field` のまま、ボタン既定の枠・背景・フォントだけ消す）。
+   Issue #427: ここで `font: inherit` を使うとショートハンドが font-size も
+   含めてリセットしてしまい、CSS ソース順で後にあるこのルールが
+   `.infra-field` の `font-size: 12px` を上書きしてしまう（同じ詳細度の
+   クラスセレクタなので後勝ち）。button のデフォルトフォントファミリーだけ
+   リセットしたいので `font-family: inherit` に限定し、`.infra-field` の
+   font-size を上書きしないようにする。`text-align: left`
+   は他のボタン化リセット（`.contract-list-panel__row` /
+   `.mempool-panel__row` / `.mempool-panel__node-row`）と流儀を揃えるため
+   明示する（button の UA既定は `text-align: center`。値が折り返さない
+   現状は見た目に影響しないが、将来 `.infra-field__value` に
+   `overflow-wrap` 等を足して折り返しを許すときのため）。 */
 .block-detail-view__parent-link {
   width: 100%;
   border: none;
   background: none;
   color: inherit;
-  font: inherit;
+  font-family: inherit;
+  text-align: left;
   cursor: pointer;
   border-radius: 4px;
 }
@@ -4424,6 +4410,10 @@ button.mempool-panel__row:hover {
   display: flex;
   flex-direction: column;
   align-items: center;
+  /* 枝A/枝Bの間隔。.attack51-demo__branches の gap と共通の値にし、
+     .attack51-demo__connector--a/--b の位置計算（calc()）が実際の
+     枝ボックスの中心とズレないようにする（Issue #429）。 */
+  --attack51-branch-gap: 10px;
 }
 
 .attack51-demo__common-parent {
@@ -4437,7 +4427,23 @@ button.mempool-panel__row:hover {
 
 /* 共通の親ブロックから2本の線が分かれて2つの枝ボックスへ繋がる、
    border を使った簡易な折れ線（UX設計 §3「SVG または border を使った
-   折れ線で十分」）。 */
+   折れ線で十分」）。
+
+   .attack51-demo__branches は `flex: 1` の2要素 + gap の等分割なので、
+   枝ボックス1個分の中心 x 座標はコンテナ幅を w とすると
+   (w - gap) / 4 ＝ 25% - gap/4 （枝A側。枝B側はその左右反転）になる。
+   共通の親ブロックはコンテナの中央（50%）に来るため、各 connector は
+   「トランク（50%、共通の親ブロック直下）から枝の中心（25%±gap/4）まで」
+   を1本のボックスとして表現する。
+
+   ボックスの縦の辺（border-left/right）は高さいっぱい（0〜height）に
+   伸びるため、トランク側の辺に縦線を置くと両側の connector の縦線が
+   x=50%上で重なり、共通の親ブロックから伸びる1本の幹に見える。
+   横の辺（border-bottom）は枝ボックスの真上（strip の下端）に置き、
+   枝の中心までまっすぐ伸ばすことで、幹から左右に分かれてそれぞれの
+   枝の中心へちょうど繋がる形になる（Issue #429。以前は幅
+   `42%`・オフセット`8%`が実際の枝の中心とかけ離れており、2本の
+   connector の縦線がほぼ同じ位置に収束して分かりにくかった）。 */
 .attack51-demo__connectors {
   position: relative;
   width: 100%;
@@ -4447,26 +4453,28 @@ button.mempool-panel__row:hover {
 .attack51-demo__connector {
   position: absolute;
   top: 0;
-  width: 42%;
   height: 100%;
-  border-top: 2px solid var(--border);
 }
 
 .attack51-demo__connector--a {
-  left: 8%;
+  left: calc(25% - (var(--attack51-branch-gap) / 4));
+  width: calc(25% + (var(--attack51-branch-gap) / 4));
+  border-bottom: 2px solid var(--border);
   border-right: 2px solid var(--border);
-  border-top-right-radius: 8px;
+  border-bottom-right-radius: 8px;
 }
 
 .attack51-demo__connector--b {
-  right: 8%;
+  right: calc(25% - (var(--attack51-branch-gap) / 4));
+  width: calc(25% + (var(--attack51-branch-gap) / 4));
+  border-bottom: 2px solid var(--border);
   border-left: 2px solid var(--border);
-  border-top-left-radius: 8px;
+  border-bottom-left-radius: 8px;
 }
 
 .attack51-demo__branches {
   display: flex;
-  gap: 10px;
+  gap: var(--attack51-branch-gap);
   width: 100%;
 }
 

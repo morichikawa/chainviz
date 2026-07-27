@@ -132,14 +132,3 @@ describe("longRangeDemo glossary anchor substrings", () => {
     expect(messages[key].en).toContain(en);
   });
 });
-
-describe("chainRibbon.attackDemoRowLabel (Issue #415 の入口行見出し)", () => {
-  it("has non-empty, distinct, placeholder-free ja/en translations", () => {
-    const entry = messages["chainRibbon.attackDemoRowLabel"];
-    expect(entry.ja.trim().length).toBeGreaterThan(0);
-    expect(entry.en.trim().length).toBeGreaterThan(0);
-    expect(entry.ja).not.toBe(entry.en);
-    expect(placeholders(entry.ja)).toEqual([]);
-    expect(placeholders(entry.en)).toEqual([]);
-  });
-});
