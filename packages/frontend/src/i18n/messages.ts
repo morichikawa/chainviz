@@ -888,11 +888,6 @@ export const messages = {
     ja: "実際のネットワークでは、1人の攻撃者がバリデーターの半数以上を握るには莫大なステーク（担保資産）を用意する必要があり、経済的コストが非常に高くなります。バリデーターが少数に集中していないことこそが、この仕組みの安全性の土台です。",
     en: "In a real network, an attacker would need an enormous amount of stake to control more than half the validators — an extremely costly undertaking. Keeping validators from concentrating in a few hands is exactly what makes this mechanism secure.",
   },
-  // --- チェーンリボンカードの「攻撃を学ぶ」入口行（Issue #415。
-  // `docs/worklog/issue-415.md` UX設計 §6。既存 subtitle-row とは別の
-  // 新規行。将来 #414（51%攻撃）が同種の入口を必要とした場合、この行に
-  // ボタンを1つ追加するだけで済む想定） ---
-  "chainRibbon.attackDemoRowLabel": { ja: "攻撃を学ぶ", en: "Learn about attacks" },
   // --- 「ロングレンジ攻撃」デモ（kind: "longRangeAttackDemo"。Issue #415。
   // docs/worklog/issue-415.md UX設計 §8。英語版は初稿で、
   // chainviz-i18n のレビュー対象） ---
