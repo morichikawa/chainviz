@@ -474,3 +474,77 @@ Error: locator.getAttribute: Error: strict mode violation:
   再検証は UI-B-07a の実行が中心になる。
 - `docs/PLAN.md` のチェックボックスは実装担当が既にチェック済み。今回は
   e2e テストの差し戻しがあるため QA 側での追加のチェックは行っていない。
+
+### 2026-07-27 Issue #428 QA差し戻し対応（tester、e2e テストの修正）
+
+- 担当: tester
+- ブランチ: issue-428-block-detail-number-jump
+- 対象: QA が報告した e2e テストの不備のみ。実装コード
+  （`entities/blockDetail.ts` / `BlockJumpForm.tsx` / `BlockDetailView.tsx`）は
+  変更していない。
+
+#### 1. 表示中 hash 取得ヘルパーのセレクタ修正
+
+`packages/e2e/src/ui/block-detail-jump.spec.ts` の `currentHash()` と、
+`packages/e2e/src/ui/block-detail.spec.ts` の `getDisplayedBlockHash()` の
+セレクタを `[data-testid^="block-detail-prev-"]` から
+`button[data-testid^="block-detail-prev-"]` へ変更した。
+
+`BlockDetailView` は「前のブロック」が disabled のとき理由文
+`<p data-testid="block-detail-prev-reason">` も描画するため、前方一致だけだと
+ボタンと理由文の2要素にマッチして Playwright の strict mode 違反になる。
+UI-B-07a のシナリオ1は保持窓の最古ブロックでパネルを開くので prev が必ず
+disabled になり、毎回確実に失敗していた。`block-detail.spec.ts` 側は prev が
+enabled の状態でしか呼んでいなかったため露見していなかったが、同じ潜在バグ
+なので併せて修正した。なぜ `button` で絞る必要があるかは両ヘルパーの
+docstring に残してある。
+
+実機（`profiles/ethereum` の Docker スタック + collector 4125/4126 + vite 5275）
+で以下を確認した。
+
+- 修正前: UI-B-07a シナリオ1が QA 報告と同じ strict mode violation で失敗
+  （シナリオ2・3 は成功）
+- 修正後: `block-detail-jump.spec.ts`（3件）と `block-detail.spec.ts`（1件）の
+  計4件がすべて成功
+
+#### 2. 同種の衝突を検知する構造整合テストの追加（再発防止）
+
+`packages/e2e/src/ui/support/testid-prefix-locator.ts`（判定ロジック）と
+`testid-prefix-locator.unit.test.ts`（ユニットテスト + 実走査）を追加した。
+`support/cleanup-consistency.unit.test.ts`（Issue #233）と同じ考え方で、
+「同型の書き方が別ファイルに取り残される」ことを構造的に検知する。
+
+- `src/ui/*.spec.ts` に現れる `[data-testid^="..."]` の前方一致ロケータと、
+  frontend 側に書かれた固定（テンプレートリテラルでない）data-testid を
+  突き合わせ、衝突しうる組み合わせを検出する
+- 要素名で絞っていないロケータは同じ接頭辞の固定 testid があれば衝突。
+  要素名で絞ったロケータは接頭辞とタグの両方が一致する場合のみ衝突
+- UI 層 E2E は実 Docker を要するため pre-push（`pnpm test`）では走らない。
+  この検査は Docker 非依存のユニットテストなので pre-push で毎回走る
+- 判定前にコメントを除去する。アンチパターンを注意書きとしてコメントに
+  書けるようにするため。素朴に「`//` 以降を削る」実装だと `"http://..."`
+  のような文字列リテラルを巻き込み、同じ行にある本物のロケータを見落とす
+  ので、引用符の状態を追いながら除去している
+- セレクタを修正前の状態に戻すと、この構造整合テストが実際に
+  `block-detail-jump.spec.ts` の衝突を検出して失敗することを確認済み
+
+現時点でリポジトリ全体を走査した結果、接頭辞を共有する固定 testid は
+`block-detail-prev-reason` / `block-detail-next-reason` の2件のみで、
+他の前方一致ロケータ（`chain-ribbon-tile-` / `toast-` / `ghost-card-` /
+`wallet-tx-chip-` / `contract-activity-chip-` / `p2p-legend-count-`）に
+衝突は無い。`block-detail-next-` 側は現在どの spec も前方一致で掴んで
+いないが、掴む場合は同じく `button` で絞る必要がある（この検査が検出する）。
+
+#### 実行した検証
+
+- `pnpm lint` / `pnpm build` / `pnpm test`（shared 75・e2e 230・
+  collector 1765・frontend 4029、すべて成功）
+- 実機での UI-B-07a・UI-B-07 の Playwright 実行（上記のとおり）
+
+#### 次の担当への申し送り
+
+- 実装ロジックのバグは見つかっていない。QA の再検証は UI-B-07a と
+  UI-B-07 の実行が中心になる。
+- 当環境では Playwright chromium の起動に
+  `LD_LIBRARY_PATH=/home/zoe/chrome-deps/root/usr/lib/x86_64-linux-gnu`
+  が必要（Issue #373 / #409 / QA 記録と同じ環境側の既知の準備）。
