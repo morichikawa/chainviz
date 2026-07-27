@@ -1125,6 +1125,22 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       ショートハンドが`.infra-field`の`font-size: 12px`をCSSソース順で
       上書きしていたのが原因。`font-family: inherit`に限定して修正）
       [#427](https://github.com/morichikawa/chainviz/issues/427)
+- [x] ブロック詳細パネルでブロック番号を直接指定して遡れるようにしたい
+      (ユーザーからの要望。Issue #409の既存スコープ(保持窓
+      `BLOCK_RETENTION`内に限定し、保持窓外への新規RPC遡及取得・全チェーン
+      検索UIは対象外)は変更せず、保持窓内の移動手段に前後ナビゲーション
+      に加えて番号直接指定を追加した。`packages/shared`・collectorの変更は
+      不要。前後ナビゲーションのボタン列のすぐ上に入力欄
+      (`side-panel/BlockJumpForm.tsx`。1ファイル1責務のため
+      `BlockDetailView.tsx`から分離)を配置し、`type="text"` +
+      `inputMode="numeric"`(`TransferForm`と同じ流儀)で入力を受け付け、
+      `^\d+$`+`Number.isSafeInteger`でバリデーションした上で保持窓内を
+      検索する。フォーク時のtie-breakは既存の`findChildBlock`と同じ規則を
+      `findBlockByNumber`に意図的に重複実装。無効な入力と「保持窓内に
+      見つからない」は別のエラーメッセージに出し分け、後者は現在保持して
+      いる範囲を具体的に提示する。packages/e2e/SCENARIOS.mdにUI-B-07aとして
+      追記しPlaywrightテストを実装)
+      [#428](https://github.com/morichikawa/chainviz/issues/428)
 - [x] 51%攻撃デモで共通の親ブロックから枝A/枝Bへの接続線が分かりにくい
       (ユーザーからの指摘。原因は`.attack51-demo__connector`の`width`/
       `left`/`right`が実際の枝ボックスの中心とかけ離れており、2本の

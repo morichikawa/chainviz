@@ -22,11 +22,16 @@ const CHAIN_RIBBON_TILE_SELECTOR =
  * ボタンの `data-testid`（`block-detail-prev-<hash>`）は常に「今表示している
  * ブロック」の hash で採番される（disabled でも要素自体は残る）ため、これを
  * 読み取ることで表示内容の hash を確実に取得できる。
+ *
+ * セレクタは必ず `button` で絞る。「前のブロック」が disabled のときは理由文
+ * `<p data-testid="block-detail-prev-reason">` も描画されるため、前方一致だけ
+ * だと2要素にマッチして strict mode 違反になる（このテストは prev が enabled
+ * の状態でしか呼んでいなかったため露見していなかった。Issue #428）。
  */
 async function getDisplayedBlockHash(page: Page): Promise<string> {
   const testId = await page
     .getByTestId("block-detail-view")
-    .locator('[data-testid^="block-detail-prev-"]')
+    .locator('button[data-testid^="block-detail-prev-"]')
     .getAttribute("data-testid");
   const hash = testId?.replace("block-detail-prev-", "") ?? "";
   if (!hash) throw new Error("block detail view has no prev button data-testid");

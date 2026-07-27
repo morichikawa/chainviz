@@ -539,6 +539,17 @@ export const messages = {
     ja: "次のブロックが見つかりません",
     en: "No next block found",
   },
+  // --- ブロック番号ジャンプ欄（Issue #428。ARCHITECTURE.md §18.3.1） ---
+  "blockDetail.jump.label": { ja: "ブロック番号で移動", en: "Jump to block number" },
+  "blockDetail.jump.submit": { ja: "移動", en: "Go" },
+  "blockDetail.jump.invalid": {
+    ja: "0以上の整数を入力してください",
+    en: "Enter a non-negative whole number",
+  },
+  "blockDetail.jump.notFound": {
+    ja: "指定したブロック番号は見つかりませんでした（現在保持しているのは #{min} 〜 #{max}）",
+    en: "No block found with that number (currently retained: #{min}–#{max})",
+  },
   // --- ブロック生成タイミングのインジケータ（チェーンリボンカードのヘッダ。
   // ARCHITECTURE.md §10.5。Issue #343） ---
   "ribbon.nextBlockCountdown": {

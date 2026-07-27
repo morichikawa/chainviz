@@ -129,6 +129,101 @@ export interface BlockDetailTxVisibleEntries {
   overflowCount: number;
 }
 
+/**
+ * ブロック番号ジャンプ欄（Issue #428。ARCHITECTURE.md §18.3.1）の入力文字列を
+ * 検証する。trim 後に `^\d+$`（0以上の整数のみ。符号・小数点・指数表記・
+ * 空白混じりは拒否）にマッチしない場合、またはマッチしても
+ * `Number.isSafeInteger` を超える場合は undefined を返す。
+ */
+export function parseBlockNumberInput(raw: string): number | undefined {
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) return undefined;
+  const value = Number(trimmed);
+  return Number.isSafeInteger(value) ? value : undefined;
+}
+
+/**
+ * 保持窓内（`blocksByHash`）から指定番号のブロックを探す。同一番号に複数
+ * ブロックが観測されている場合（フォーク）は `findChildBlock` と同じ
+ * tie-break（最新受信時刻が遅い方、同時刻なら hash 辞書順）で1件に絞る
+ * （意図的な重複実装。ARCHITECTURE.md §18.3.1 参照）。
+ */
+export function findBlockByNumber(
+  number: number,
+  blocksByHash: ReadonlyMap<string, BlockEntity>,
+): BlockEntity | undefined {
+  let best: BlockEntity | undefined;
+  for (const candidate of blocksByHash.values()) {
+    if (candidate.number !== number) continue;
+    if (best === undefined) {
+      best = candidate;
+      continue;
+    }
+    const bestLatest = latestReceiptTime(best) ?? Number.NEGATIVE_INFINITY;
+    const candidateLatest = latestReceiptTime(candidate) ?? Number.NEGATIVE_INFINITY;
+    const prefersCandidate =
+      candidateLatest > bestLatest ||
+      (candidateLatest === bestLatest && candidate.hash < best.hash);
+    if (prefersCandidate) best = candidate;
+  }
+  return best;
+}
+
+export interface BlockNumberRange {
+  min: number;
+  max: number;
+}
+
+/**
+ * 現在保持しているブロック番号の範囲（最小値・最大値）を求める。
+ * `blocksByHash` が空の場合は undefined（呼び出し側はブロック詳細パネルが
+ * 開いている間、対象ブロックが必ず1件は存在する前提で呼ぶため、通常は
+ * undefined にならない。ARCHITECTURE.md §18.3.1）。
+ */
+export function blockNumberRange(
+  blocksByHash: ReadonlyMap<string, BlockEntity>,
+): BlockNumberRange | undefined {
+  let min: number | undefined;
+  let max: number | undefined;
+  for (const candidate of blocksByHash.values()) {
+    if (min === undefined || candidate.number < min) min = candidate.number;
+    if (max === undefined || candidate.number > max) max = candidate.number;
+  }
+  return min === undefined || max === undefined ? undefined : { min, max };
+}
+
+export type BlockJumpResult =
+  | { kind: "found"; block: BlockEntity }
+  | { kind: "invalid" }
+  | { kind: "notFound"; range: BlockNumberRange };
+
+/**
+ * ブロック番号ジャンプ欄の入力からナビゲーション結果を1回で導出する
+ * （`parseBlockNumberInput` → `findBlockByNumber` → `blockNumberRange` を
+ * 束ねる。UI 側はこの結果だけを見て表示を出し分ければよい。
+ * ARCHITECTURE.md §18.3.1）。
+ */
+export function resolveBlockJump(
+  raw: string,
+  blocksByHash: ReadonlyMap<string, BlockEntity>,
+): BlockJumpResult {
+  const number = parseBlockNumberInput(raw);
+  if (number === undefined) return { kind: "invalid" };
+
+  const found = findBlockByNumber(number, blocksByHash);
+  if (found !== undefined) return { kind: "found", block: found };
+
+  const range = blockNumberRange(blocksByHash);
+  if (range !== undefined) return { kind: "notFound", range };
+
+  // 呼び出し側（BlockJumpForm）はブロック詳細パネルが開いている間、つまり
+  // 対象ブロックが blocksByHash に必ず1件以上存在する状況でのみ使うため、
+  // ここには到達しない想定（ARCHITECTURE.md §18.3.1「範囲は常に求まる」）。
+  // それでも空の blocksByHash が渡された場合に例外を投げず落ち着いた結果を
+  // 返せるよう、探索対象の番号そのものを範囲として代用する。
+  return { kind: "notFound", range: { min: number, max: number } };
+}
+
 /** 並び済みの tx 配列から先頭 `limit` 件だけを残し、超過分の件数を返す。 */
 export function limitBlockTransactions(
   transactions: readonly TransactionEntity[],

@@ -4071,6 +4071,44 @@ button.mempool-panel__row:hover {
   font-size: 12px;
 }
 
+/* Issue #428: ブロック番号ジャンプ欄。前後ナビゲーション（block-detail-view__nav）
+   のすぐ上、同じ「保持窓内を移動する」関心事としてまとめて配置する。 */
+.block-jump-form {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--divider);
+}
+
+.block-jump-form__row {
+  display: flex;
+  gap: 6px;
+}
+
+.block-jump-form__input {
+  flex: 1;
+  min-width: 0;
+}
+
+.block-jump-form__submit {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+.block-jump-form__submit:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.block-jump-form__submit:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .block-detail-view__nav {
   display: flex;
   gap: 8px;

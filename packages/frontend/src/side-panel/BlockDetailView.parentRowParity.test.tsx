@@ -39,14 +39,18 @@ function block(overrides: Partial<BlockEntity> & { hash: string }): BlockEntity 
 }
 
 function renderView(navigation: BlockNavigation) {
+  const target = block({ hash: TARGET_HASH });
+  const blocksByHash = new Map<string, BlockEntity>([[TARGET_HASH, target]]);
+  if (navigation.parent) blocksByHash.set(navigation.parent.hash, navigation.parent);
   const props: BlockDetailViewProps = {
-    block: block({ hash: TARGET_HASH }),
+    block: target,
     navigation,
     receivedOrder: [],
     visibleTransactions: [],
     totalTxCount: 0,
     overflowCount: 0,
     contractsByAddress: new Map<string, ContractEntity>(),
+    blocksByHash,
     onNavigate: vi.fn(),
   };
   const { container } = render(

@@ -7,11 +7,18 @@ import { deriveTxCallPreview } from "../entities/txCallPreview.js";
 import { GlossaryTerm } from "../glossary/GlossaryTerm.js";
 import { format } from "../i18n/i18n.js";
 import { useLanguage } from "../i18n/LanguageProvider.js";
+import { BlockJumpForm } from "./BlockJumpForm.js";
 
 export interface BlockDetailViewProps {
   block: BlockEntity;
   /** 前後ナビゲーションの導出結果（`resolveBlockNavigation` の出力）。 */
   navigation: BlockNavigation;
+  /**
+   * 保持窓内の全ブロックの hash 索引（Issue #428: ブロック番号ジャンプ欄
+   * `BlockJumpForm` へそのまま渡す。`SidePanelHost.tsx` から既に流れてきて
+   * いるものと同じ）。
+   */
+  blocksByHash: ReadonlyMap<string, BlockEntity>;
   /** 受信ノード一覧（`deriveReceivedOrder` の出力。チェーンリボンポップオーバーと同じ関数）。 */
   receivedOrder: ReceivedOrderEntry[];
   /** 表示上限で切り出し済みの tx 行（`limitBlockTransactions` の出力）。 */
@@ -103,6 +110,7 @@ function BlockDetailTxRow({
 export function BlockDetailView({
   block,
   navigation,
+  blocksByHash,
   receivedOrder,
   visibleTransactions,
   totalTxCount,
@@ -199,6 +207,8 @@ export function BlockDetailView({
           </>
         )}
       </div>
+
+      <BlockJumpForm block={block} blocksByHash={blocksByHash} onNavigate={onNavigate} />
 
       <div className="block-detail-view__nav">
         <button
