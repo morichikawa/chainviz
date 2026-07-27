@@ -361,3 +361,116 @@ GitHub Issue #428にラベル・マイルストーンが付与されていない
 
 `chainviz-qa` による実機検証（特に `packages/e2e/src/ui/block-detail-jump.spec.ts`
 のUI-B-07aシナリオが実機でgreenになるか）を推奨する。
+
+### 2026-07-27 Issue #428 実機検証（QA、条件付き不合格・e2e テストのみ差し戻し）
+
+- 担当: qa
+- ブランチ: issue-428-block-detail-number-jump（origin の 6c32207 時点）
+- 判定: **ブロック番号ジャンプ機能そのものは合格**。ただし
+  `packages/e2e/src/ui/block-detail-jump.spec.ts` の UI-B-07a シナリオ1が
+  **実機で決定論的に失敗する**ため、この e2e テストファイルの修正を
+  frontend 担当へ差し戻す。実装ロジック側のバグではない。
+
+#### 検証環境
+
+- `profiles/ethereum` の Docker スタックを起動し（Playwright の globalSetup
+  が `ensureChainRunning` 経由で `docker compose up -d` する）、reth1/reth2・
+  beacon1/beacon2・validator1/validator2・workbench の7コンテナが Up、
+  `eth_blockNumber` が増え続けることを確認した。
+- collector は globalSetup が UI 層 E2E 用ポート（WS 4125 / プロキシ 4126）で
+  起動、frontend は vite dev server（5275）を起動して chromium から操作した。
+- 当環境の Playwright chromium はシステムに `libnspr4.so` 等が無く起動でき
+  ないため、`LD_LIBRARY_PATH=/home/zoe/chrome-deps/root/usr/lib/x86_64-linux-gnu`
+  を付けて実行した（Issue #373 / #409 と同じ環境側の既知の準備。リポジトリ
+  には影響しない）。
+- 検証の途中で PC が再起動されたため、コンテナを作り直した状態（genesis 直後の
+  チェーン）でも同じ手順を最初からやり直し、同じ結果になることを確認している。
+
+#### 1. UI-B-07a（`block-detail-jump.spec.ts`）の実行結果
+
+`pnpm --filter @chainviz/e2e exec playwright test src/ui/block-detail-jump.spec.ts`
+
+- シナリオ1「保持窓内ジャンプ成功」: **失敗**（2回実行して2回とも同じ箇所。
+  チェーンを作り直した後も再現するので実行タイミング依存ではない）
+- シナリオ2「保持窓外の番号でエラー」: 成功
+- シナリオ3「数値以外で送信ボタン disabled」: 成功
+
+失敗の原因は **e2e テストコードのロケータの不備**で、実装のバグではない。
+
+```
+Error: locator.getAttribute: Error: strict mode violation:
+  getByTestId('block-detail-view').locator('[data-testid^="block-detail-prev-"]') resolved to 2 elements:
+    1) <button ... data-testid="block-detail-prev-0x4bc5...3a63">前のブロック</button>
+    2) <p class="block-detail-view__nav-reason" data-testid="block-detail-prev-reason">
+       これより前は保持期間外のため表示できません</p>
+```
+
+- 同ファイル末尾のヘルパー `currentHash()`（143行目）が
+  `[data-testid^="block-detail-prev-"]` という前方一致だけでボタンを
+  特定している。`BlockDetailView.tsx` は「前のブロック」が disabled の
+  ときに `data-testid="block-detail-prev-reason"` の `<p>` も描画する
+  （同ファイル 237〜241 行）ため、この前方一致は **ボタンと理由文の2要素**
+  にマッチし、Playwright の strict mode 違反になる。
+- シナリオ1は「最初のタイル」＝保持窓の最古のブロックでパネルを開くので、
+  `parent === undefined` すなわち理由文が必ず描画される。したがってこの
+  失敗は毎回・確実に発生する。
+- 既存の `block-detail.spec.ts`（UI-B-07）にも同じ書き方のヘルパー
+  `getDisplayedBlockHash()` があるが、そちらは「子ブロックへ移動した後」
+  （＝ prev が enabled で理由文が無い状態）でしか呼ばれないため露見して
+  いなかった。今回の新規テストが最古ブロックの状態で呼んだことで初めて
+  顕在化した。
+- 修正の方向（frontend 担当向け）: セレクタを
+  `button[data-testid^="block-detail-prev-"]` のように要素名で絞る。
+  QA 側の手動検証スクリプトではこの形で問題なく hash を取得できることを
+  実機で確認済み。`block-detail-next-` 側にも `block-detail-next-reason`
+  が存在するので同じ注意が必要。
+
+#### 2. ブロック番号ジャンプ機能そのものの実機確認（すべて期待どおり）
+
+ブラウザ（chromium）で実際に操作し、以下を確認した。
+
+- **保持窓内ジャンプ成功**: 保持窓が #29〜#37 の状態で、#29 を表示中に
+  `37` を入力して「移動」を押すとパネルが #37 に差し替わり、逆に `29` で
+  戻れた。中間の `33` へのジャンプも成功。1ブロック隣だけでなく
+  8ブロック離れた移動が両方向で動く。サイドパネルは1枚のまま中身だけが
+  差し替わる（`side-panel` の要素数は1のまま）。
+- **入力欄の同期**: 前後ボタンで移動しても、ジャンプで移動しても、入力欄の
+  値が移動先のブロック番号に追随することを確認した。
+- **Enter 送信**: 入力欄で Enter を押しても「移動」ボタンと同じく移動する。
+- **保持窓外の番号**: 表示中の番号 + 1,000,000 を入力すると
+  「指定したブロック番号は見つかりませんでした（現在保持しているのは
+  #12 〜 #13）」のように保持範囲を具体値で提示するエラーが出て、「移動」
+  ボタンは disabled のまま、パネルの中身も変わらなかった。
+- **数値以外の入力**: `abc` / `12a` / `-5` / `1.5` / `1,000` / `0x10` /
+  `#12` / `＃12` / 全角数字 `１２３` のいずれでも
+  「0以上の整数を入力してください」が表示され、「移動」ボタンは disabled。
+  空白のみの入力ではエラーを出さずに disabled のみ（仕様どおり）。
+  前後空白付き・先頭ゼロ付き（`  012  ` 等）は有効な入力として受け付けられた。
+- **英語表示**: 言語を English に切り替えると
+  「No block found with that number (currently retained: #29–#37)」と
+  `{min}`/`{max}` が正しく置換されて表示された。ラベルは
+  「Jump to block number」、ボタンは「Go」。
+- **配置**: 設計どおり「前のブロック」「次のブロック」のボタン列のすぐ上に
+  ジャンプ欄が置かれており、prev が disabled で「これより前は保持期間外の
+  ため表示できません」と出ている場面でも、その直前にジャンプ欄が見える。
+
+#### 3. 既存の前後ナビゲーションのデグレ確認
+
+- `packages/e2e/src/ui/block-detail.spec.ts`（UI-B-07）を実機で実行し
+  **成功**。前後ナビゲーション・保持窓境界での disabled と理由表示・
+  チェーン先端での「最新のブロックです」まで従来どおり動作している。
+- 手動確認でも、ジャンプで移動した直後に「次のブロック」を押して
+  1つ先へ進めること（#33 → #34）を確認した。ジャンプと前後ボタンの
+  併用でパネルの状態が壊れることはない。
+
+#### 次の担当への申し送り
+
+- frontend 担当へ: `packages/e2e/src/ui/block-detail-jump.spec.ts` の
+  `currentHash()` のセレクタを修正し、実機で UI-B-07a の3シナリオが
+  green になることを確認してほしい。実装コード
+  （`entities/blockDetail.ts` / `BlockJumpForm.tsx` / `BlockDetailView.tsx`）
+  には手を入れる必要はない。
+- 修正後は QA で再検証する。機能面は本記録のとおり確認済みなので、
+  再検証は UI-B-07a の実行が中心になる。
+- `docs/PLAN.md` のチェックボックスは実装担当が既にチェック済み。今回は
+  e2e テストの差し戻しがあるため QA 側での追加のチェックは行っていない。
