@@ -548,3 +548,101 @@ docstring に残してある。
 - 当環境では Playwright chromium の起動に
   `LD_LIBRARY_PATH=/home/zoe/chrome-deps/root/usr/lib/x86_64-linux-gnu`
   が必要（Issue #373 / #409 / QA 記録と同じ環境側の既知の準備）。
+
+### 2026-07-27 Issue #428 QA差し戻し対応のレビュー結果（reviewer、合格）
+
+- 担当: reviewer
+- ブランチ: issue-428-block-detail-number-jump（origin の ff0333a 時点）
+- 判定: **合格**。差し戻し事項なし、コードの修正は行っていない
+
+#### 確認内容
+
+1. 修正内容が問題を解消しているか
+   - `packages/e2e/src/ui/block-detail-jump.spec.ts` の `currentHash()` と
+     `packages/e2e/src/ui/block-detail.spec.ts` の `getDisplayedBlockHash()` の
+     セレクタが `[data-testid^="block-detail-prev-"]`（前方一致のみ）から
+     `button[data-testid^="block-detail-prev-"]`（要素名で絞る）に変更されて
+     いることを確認した。`BlockDetailView.tsx` を確認し、prev disabled 時に
+     `<p data-testid="block-detail-prev-reason">` が実際に描画されること、
+     修正後のセレクタがこの `<p>` を除外し `<button>` のみに絞れることを
+     ソースレベルで確認した。QA が報告した strict mode violation の原因と
+     修正内容が一致している。
+2. 実装コード（`packages/frontend/`）に変更が無いこと
+   - reviewer 合格コミット（6c32207）から今回の HEAD（ff0333a）までの
+     `git diff --stat` を確認し、変更ファイルは
+     `docs/worklog/issue-428.md` / `packages/e2e/src/ui/block-detail-jump.spec.ts` /
+     `packages/e2e/src/ui/block-detail.spec.ts` /
+     `packages/e2e/src/ui/support/testid-prefix-locator.ts` /
+     `packages/e2e/src/ui/support/testid-prefix-locator.unit.test.ts` の5件のみ
+     であることを確認した。`packages/frontend/` 配下の差分は0件で、テストのみの
+     修正という報告どおりだった。
+3. 新規構造整合テストの設計
+   - `testid-prefix-locator.ts` はコメント除去（引用符の状態を追いながら
+     `//`・`/* */` を同じ長さの空白に置換）→ 前方一致ロケータ抽出・固定
+     `data-testid` 抽出 → 衝突判定、という Docker 非依存の純粋関数群になって
+     おり、Playwright/docker への依存は無い。ファイル名が `*.unit.test.ts` に
+     なっているため `packages/e2e/vitest.unit.config.ts`（`pnpm test` が使う
+     設定）の対象になり、`vitest.config.ts`（`test:e2e` が使う設定、
+     `*.unit.test.ts` を明示的に除外）には含まれないことをコード上で確認した。
+     実行結果でも e2e パッケージのテストが230件成功しており、Docker を
+     使わない `pnpm test` の枠内で実行されていることと整合する。
+   - コメント除去ロジックは文字列・テンプレートリテラル中の `//`・URL を
+     巻き込まないよう引用符の状態を追跡しており、対応する単体テスト
+     （`stripComments`）でこの境界値（URL の後ろに書かれた本物のロケータを
+     取りこぼさない、エスケープされた引用符での誤認防止等）を確認している。
+   - `listSpecFiles()` / `listFrontendSources()` は決め打ちのファイル一覧では
+     なく `readdirSync` による実走査になっている。Issue #233 で過去に
+     指摘された「リストと実体がずれても検知できない看板倒れ」パターンを
+     踏まえた設計になっている。「frontend から固定 data-testid を実際に
+     収集できている」という空振り防止テストも含まれており、収集ロジックが
+     壊れて0件になっても検査が黙って green になる事態を防いでいる。
+   - 修正前の状態（前方一致のみ）に戻すとこの構造整合テストが実際に失敗する
+     ことを tester が確認済みと worklog に記録されており、意味のある検出力を
+     持つテストであることの裏付けがある。
+4. `pnpm lint && pnpm build && pnpm test` の全通過
+   - リポジトリルートで実行し、以下を確認した（`pnpm install --frozen-lockfile`
+     で依存関係を再現した上で実行）。
+     - `pnpm lint`: エラーなし
+     - `pnpm build`: shared / e2e（`tsc --noEmit`）/ collector / frontend
+       すべて成功
+     - `pnpm test`: shared 75・e2e 230・collector 1765・frontend 4029、
+       すべて成功（worklog記載の件数と一致）
+5. 既存 `packages/e2e/src/ui/block-detail.spec.ts`（UI-B-07）の修正
+   - 同ファイルの `getDisplayedBlockHash()` も同じ理由（prev が disabled の
+     ときにしか顕在化しない潜在バグ）で `button` 要素名に絞る修正がされて
+     おり、コメントにも修正理由が明記されている。妥当な修正。
+
+#### その他の確認
+
+- コミット粒度: 今回追加された3コミット
+  （`66ebb6e` セレクタ修正のみ / `55fcb37` 新規構造整合テストのみ /
+  `ff0333a` worklog記録のみ）はそれぞれ独立した関心事に対応しており、
+  「1つの変更内容 = 1コミット」の原則に沿っている。ブランチ全体
+  （`git log origin/main..origin/issue-428-block-detail-number-jump`、
+  19コミット）を通しても関心事の混在は見当たらない。
+- `docs/ARCHITECTURE.md` / `packages/e2e/SCENARIOS.md`: 今回の変更で差分は
+  無い。テストコードのみの修正であり設計内容に変更は無いため、ドキュメント
+  更新が不要という判断は妥当。`SCENARIOS.md` の UI-B-07a の記述（「移動」を
+  押せないため確認ではクリックを行わない旨）は前回のtester対応時点で既に
+  実態と一致しており、今回の修正内容とも矛盾しない。
+- エラー握りつぶし: 今回の diff に `try`/`catch` の追加は無い。
+
+#### 手続き上の補足
+
+作業用に割り当てられた worktree
+（`/home/zoe/workspace/chainviz/.claude/worktrees/agent-af7fea485aeadc54e`）が
+ブランチの最初のコミット（design時点）のまま更新されておらず、かつ
+`issue-428-block-detail-number-jump` は既に別worktreeにチェックアウト済み
+だったため、本レビューは `origin/issue-428-block-detail-number-jump`
+（ff0333a）からdetachedで作成した一時worktreeで実施した。この節を含む
+レビュー結果は当該一時worktree内の同ファイルに追記しており、統括側で
+実際のブランチへの反映（追記内容のコピーまたはcherry-pick）が必要。
+commit・pushは行っていない。
+
+#### 総合判定
+
+**合格**。QAが報告した e2e テストの不備は解消されており、実装コードへの
+影響も無い。新規追加の構造整合テストは意味のある検出力を持ち、
+「壊れたコードでも通ってしまう」看板倒れにはなっていない。
+`pnpm lint && pnpm build && pnpm test` はすべて成功した。マージ判断は
+統括に委ねる。
