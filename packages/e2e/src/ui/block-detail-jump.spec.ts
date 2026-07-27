@@ -135,11 +135,19 @@ test("UI-B-07a: 数値以外を入力すると invalid エラーが表示され�
   });
 });
 
-/** 表示中のブロックの hash（prev ボタンの data-testid から読み取る）。 */
+/**
+ * 表示中のブロックの hash（prev ボタンの data-testid から読み取る）。
+ *
+ * セレクタは必ず `button` で絞る。`BlockDetailView` は「前のブロック」が
+ * disabled のとき理由文 `<p data-testid="block-detail-prev-reason">` も
+ * 描画するため、`[data-testid^="block-detail-prev-"]` の前方一致だけでは
+ * ボタンと理由文の2要素にマッチし、Playwright の strict mode 違反になる
+ * （保持窓の最古ブロックを開くシナリオで必ず踏む。Issue #428 の QA 差し戻し）。
+ */
 async function currentHash(page: Page): Promise<string> {
   const testId = await page
     .getByTestId("block-detail-view")
-    .locator('[data-testid^="block-detail-prev-"]')
+    .locator('button[data-testid^="block-detail-prev-"]')
     .getAttribute("data-testid");
   const hash = testId?.replace("block-detail-prev-", "");
   if (!hash) throw new Error("block detail view has no prev button data-testid");
