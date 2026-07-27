@@ -1125,6 +1125,18 @@ pnpm test`(pre-push フックの対象)には UI 層テストが混入しない
       ショートハンドが`.infra-field`の`font-size: 12px`をCSSソース順で
       上書きしていたのが原因。`font-family: inherit`に限定して修正）
       [#427](https://github.com/morichikawa/chainviz/issues/427)
+- [x] 51%攻撃デモで共通の親ブロックから枝A/枝Bへの接続線が分かりにくい
+      (ユーザーからの指摘。原因は`.attack51-demo__connector`の`width`/
+      `left`/`right`が実際の枝ボックスの中心とかけ離れており、2本の
+      connectorの縦線がほぼ同じ位置(コンテナ中央)に収束していたこと。
+      枝ボックスの中心座標をCSS変数化した`gap`から`calc()`で正確に
+      算出し、共通の親ブロック直下から伸びる1本の幹が枝A/枝Bの中心
+      それぞれへ分かれて繋がる形に修正。`packages/frontend/src/styles.css`
+      のみの変更で、実装ロジック・マークアップは変更していないため
+      新規ユニットテストは追加していない。実機(Playwright)で修正前の
+      収束を再現し、修正後にconnectorの端点が枝の中心座標と一致する
+      ことを複数のパネル幅で確認)
+      [#429](https://github.com/morichikawa/chainviz/issues/429)
 
 ## 運用ルール（全ステップ共通）
 
